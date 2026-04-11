@@ -15,7 +15,7 @@ import (
 
 func TestSidecarEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 	if os.Getenv("RUN_JINA_MLX_INTEGRATION") != "1" {
-		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve` to enable")
+		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve` or `mise run jina-torch-serve` to enable")
 	}
 
 	baseURL := os.Getenv("JINA_MLX_URL")
@@ -36,7 +36,7 @@ func TestSidecarEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 		"woman_office.jpg",
 	})
 
-	client := NewHTTPClient(baseURL)
+	client := NewHTTPClientWithImageMode(baseURL, string(ImageModeAuto))
 	vectors := map[string][]float32{}
 	for name, path := range staged {
 		vec, err := client.EmbedImage(context.Background(), path)
@@ -66,6 +66,48 @@ func TestSidecarEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 	cross := (catDog + catWoman + womanDog) / 3
 	if within <= cross {
 		t.Fatalf("expected within-category similarity above cross-category: within=%.4f cross=%.4f", within, cross)
+	}
+}
+
+func TestSidecarTextEmbeddingIsStableAcrossAlternatingQueries(t *testing.T) {
+	if os.Getenv("RUN_JINA_MLX_INTEGRATION") != "1" {
+		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve` or `mise run jina-torch-serve` to enable")
+	}
+
+	baseURL := os.Getenv("JINA_MLX_URL")
+	if baseURL == "" {
+		baseURL = "http://127.0.0.1:9009"
+	}
+
+	if err := waitForSidecar(baseURL, 90*time.Second); err != nil {
+		t.Fatalf("sidecar not ready at %s: %v", baseURL, err)
+	}
+
+	client := NewHTTPClientWithImageMode(baseURL, string(ImageModeAuto))
+	baselineWoman, err := client.EmbedText(context.Background(), "woman")
+	if err != nil {
+		t.Fatalf("baseline woman embedding: %v", err)
+	}
+	baselineCat, err := client.EmbedText(context.Background(), "cat")
+	if err != nil {
+		t.Fatalf("baseline cat embedding: %v", err)
+	}
+
+	for i := 0; i < 120; i++ {
+		query := "woman"
+		baseline := baselineWoman
+		if i%2 == 1 {
+			query = "cat"
+			baseline = baselineCat
+		}
+
+		vec, err := client.EmbedText(context.Background(), query)
+		if err != nil {
+			t.Fatalf("embed query %q at iter=%d: %v", query, i, err)
+		}
+		if sim := cosine(vec, baseline); sim < 0.999999 {
+			t.Fatalf("unstable embedding for %q at iter=%d: cosine=%.8f", query, i, sim)
+		}
 	}
 }
 

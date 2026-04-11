@@ -28,8 +28,9 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
-	embedderType := flag.String("embedder", "jina-mlx", "embedder backend: jina-mlx or deterministic")
-	jinaURL := flag.String("jina-mlx-url", "http://127.0.0.1:9009", "jina mlx local server URL")
+	embedderType := flag.String("embedder", "jina-mlx", "embedder backend: jina-mlx, jina-torch, or deterministic")
+	jinaURL := flag.String("jina-mlx-url", "http://127.0.0.1:9009", "embedding sidecar URL (jina-mlx or jina-torch)")
+	embedImageMode := flag.String("embed-image-mode", "auto", "image transport mode for sidecar embedders: path, bytes, or auto")
 	vectorBackend := flag.String("vector-backend", vectorBackendAuto, "vector backend: auto, sqlite-vector, bruteforce")
 	sqliteVectorPath := flag.String("sqlite-vector-path", "", "path to sqlite-vector extension binary (optional: defaults to SQLITE_VECTOR_PATH or tools/sqlite-vector/vector)")
 	flag.Parse()
@@ -126,7 +127,7 @@ func main() {
 		log.Printf("enqueued %d missing index jobs for model_id=%d", enqueuedMissing, modelID)
 	}
 
-	embedder, err := newEmbedder(*embedderType, *jinaURL, modelSpec.Dimensions)
+	embedder, err := newEmbedder(*embedderType, *jinaURL, modelSpec.Dimensions, *embedImageMode)
 	if err != nil {
 		log.Fatalf("configure embedder: %v", err)
 	}

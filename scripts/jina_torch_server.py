@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Minimal local HTTP server for jina-embeddings-v4-mlx-8bit.
+"""Local HTTP server for jina-embeddings-v4 (PyTorch).
 
 Endpoints:
-  POST /embed/text   body: {"text": "..."}
+  POST /embed/text   body: {"text": "...", "prompt_name": "query|passage"}
   POST /embed/image  body: {"path": "/abs/or/rel/path.jpg"}
+  GET  /healthz
+  GET  /readyz
+  GET  /stats
 
-Response:
+Response for embed endpoints:
   {"embedding": [float, ...]}
 """
 
@@ -13,13 +16,9 @@ from __future__ import annotations
 
 import argparse
 import base64
-import gc
-import importlib.util
 import json
-import math
 import os
 import resource
-import shutil
 import sys
 import threading
 import time
@@ -113,96 +112,101 @@ class SidecarMetrics:
             }
 
 
-class JinaMLXService:
+class JinaTorchService:
     def __init__(
         self,
         model_id: str,
-        processor_id: str,
         allowed_dirs: list[str],
+        device: str,
         max_image_pixels: int,
+        enable_mps_fallback: bool,
     ) -> None:
+        if enable_mps_fallback and "PYTORCH_ENABLE_MPS_FALLBACK" not in os.environ:
+            os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+
         try:
-            import mlx.core as mx
-            from huggingface_hub import snapshot_download
-            from transformers import AutoProcessor
+            import torch
+            from transformers import AutoModel
         except Exception as exc:  # pragma: no cover
             raise RuntimeError(
                 "Missing dependencies. Install with: "
-                "pip install mlx mlx-lm numpy huggingface_hub 'transformers==4.52.0' "
-                "pillow requests torch peft torchvision"
+                "pip install torch transformers peft torchvision pillow requests"
             ) from exc
 
-        self.mx = mx
+        self.torch = torch
         self.model_id = model_id
-        self.processor_id = processor_id
         self.allowed_dirs = [os.path.realpath(d) for d in allowed_dirs]
-        self.max_image_pixels = max(256 * 256, max_image_pixels)
+        self.max_image_pixels = max(3136, max_image_pixels)
 
-        model_dir = snapshot_download(model_id)
-        self._ensure_weight_aliases(model_dir)
-        load_mlx_model = self._load_model_loader(model_dir)
+        self.device = self._resolve_device(device)
+        self._patch_autocast_for_mps()
 
-        self.model = load_mlx_model(model_dir)
-        # Upstream MLX model aggressively clears weights after first image call.
-        # For a long-running HTTP service we need repeated text/image requests.
-        self.model.visual.clear_weights = lambda: None
-        self.model._clear_model_weights = lambda: None
-        self.processor = AutoProcessor.from_pretrained(
-            processor_id,
+        dtype = (
+            self.torch.float16
+            if self.device.startswith("cuda") or self.device == "mps"
+            else self.torch.float32
+        )
+        self.model = AutoModel.from_pretrained(
+            model_id,
             trust_remote_code=True,
+            torch_dtype=dtype,
+            attn_implementation="sdpa",
         )
+        self.model = self.model.to(self.device)
+        self.model.task = "retrieval"
+        self.model.eval()
 
-    def clear_runtime_caches(self) -> None:
-        # The upstream MLX model caches results keyed by Python object id().
-        # In long-running HTTP services, id() reuse can return stale embeddings
-        # for unrelated requests, so we clear these caches before each embed call.
-        self.model._text_result_cache = None
-        self.model._text_result_cache_key = None
-        self.model._img_result_cache = None
-        self.model._img_result_cache_key_ids = None
-        self.model._img_result_cache_key_pv = None
-        self.model._vision_cache = None
-        self.model._vision_cache_key = None
-        self.model._img_cos_sin_cache = None
-        self.model._img_cos_sin_cache_key = None
-
-    def _load_model_loader(self, model_dir: str):
-        loader_path = os.path.join(model_dir, "load_model.py")
-        spec = importlib.util.spec_from_file_location(
-            "jina_mlx_load_model", loader_path
-        )
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"cannot load model loader from {loader_path}")
-        module = importlib.util.module_from_spec(spec)
-
-        inserted = False
-        if model_dir not in sys.path:
-            sys.path.insert(0, model_dir)
-            inserted = True
-        try:
-            spec.loader.exec_module(module)
-        finally:
-            if inserted and sys.path and sys.path[0] == model_dir:
-                sys.path.pop(0)
-
-        if not hasattr(module, "load_mlx_model"):
-            raise RuntimeError(f"load_mlx_model not found in {loader_path}")
-        return module.load_mlx_model
-
-    def _ensure_weight_aliases(self, model_dir: str) -> None:
-        aliases = [
-            ("model.safetensors.index.json", "weights.safetensors.index.json"),
-            ("model.safetensors", "weights.safetensors"),
-        ]
-        for source_name, alias_name in aliases:
-            source = os.path.join(model_dir, source_name)
-            alias = os.path.join(model_dir, alias_name)
-            if os.path.exists(alias) or not os.path.exists(source):
-                continue
+    def _resolve_device(self, requested: str) -> str:
+        requested = requested.strip().lower()
+        if requested in {"", "auto"}:
+            if self.torch.cuda.is_available():
+                return "cuda"
+            if self.torch.backends.mps.is_available():
+                return "mps"
+            return "cpu"
+        if requested == "cuda":
+            if not self.torch.cuda.is_available():
+                raise RuntimeError("requested device cuda but CUDA is not available")
+            return "cuda"
+        if requested.startswith("cuda:"):
+            if not self.torch.cuda.is_available():
+                raise RuntimeError(
+                    f"requested device {requested} but CUDA is not available"
+                )
             try:
-                os.symlink(source, alias)
-            except OSError:
-                shutil.copyfile(source, alias)
+                index = int(requested.split(":", 1)[1])
+            except ValueError as exc:
+                raise RuntimeError(
+                    "invalid cuda device format (expected cuda or cuda:N)"
+                ) from exc
+            if index < 0 or index >= self.torch.cuda.device_count():
+                raise RuntimeError(
+                    f"requested CUDA device index {index} out of range (found {self.torch.cuda.device_count()} devices)"
+                )
+            return requested
+        if requested == "mps":
+            if not self.torch.backends.mps.is_available():
+                raise RuntimeError("requested device mps but MPS is not available")
+            return "mps"
+        if requested == "cpu":
+            return "cpu"
+        raise RuntimeError("invalid device (expected: auto, cuda, cuda:N, mps, or cpu)")
+
+    def _patch_autocast_for_mps(self) -> None:
+        if self.device != "mps":
+            return
+
+        original_autocast = self.torch.autocast
+
+        def patched_autocast(*args, **kwargs):
+            device_type = kwargs.get("device_type")
+            if device_type is None and len(args) >= 1:
+                device_type = args[0]
+            if device_type == "mps":
+                kwargs["dtype"] = self.torch.float16
+            return original_autocast(*args, **kwargs)
+
+        self.torch.autocast = patched_autocast
 
     def resolve_allowed_path(self, candidate: str) -> str:
         real = os.path.realpath(candidate)
@@ -211,134 +215,47 @@ class JinaMLXService:
                 return real
         raise PermissionError("image path outside allowed directories")
 
-    def embed_text(self, text: str) -> list[float]:
-        self.clear_runtime_caches()
-        prompt = "<|im_start|>user\n" + text + "<|im_end|>"
-        inputs = self.processor(
-            text=[prompt],
-            return_tensors="np",
-            padding=True,
-            truncation=True,
-            max_length=512,
-        )
-
-        out = self.model.encode_text(
-            input_ids=self.mx.array(inputs["input_ids"]),
-            attention_mask=self.mx.array(inputs["attention_mask"]),
-            task="retrieval",
-        )
-        self.mx.eval(out)
-        return out.tolist()[0]
+    def embed_text(self, text: str, prompt_name: str) -> list[float]:
+        with self.torch.no_grad():
+            vec = self.model.encode_text(
+                texts=[text],
+                task="retrieval",
+                prompt_name=prompt_name,
+                return_numpy=False,
+            )[0]
+        return vec.float().cpu().tolist()
 
     def embed_image(self, path: str) -> list[float]:
-        try:
-            image = self._load_image_from_path(path)
-            return self._embed_image_once(image, self.max_image_pixels)
-        except RuntimeError as exc:
-            if not self._is_memory_error(exc):
-                raise
-
-            fallback_pixels = min(self.max_image_pixels, 1024 * 1024)
-            if fallback_pixels >= self.max_image_pixels:
-                raise
-
-            print(
-                f"retry image embedding with reduced pixels={fallback_pixels} path={path} error={exc}",
-                flush=True,
-            )
-            gc.collect()
-            image = self._load_image_from_path(path)
-            return self._embed_image_once(image, fallback_pixels)
+        with self.torch.no_grad():
+            vec = self.model.encode_image(
+                images=[path],
+                task="retrieval",
+                max_pixels=self.max_image_pixels,
+                return_numpy=False,
+            )[0]
+        return vec.float().cpu().tolist()
 
     def embed_image_bytes(self, image_bytes: bytes) -> list[float]:
         if not image_bytes:
             raise RuntimeError("missing image bytes")
-        try:
-            image = self._load_image_from_bytes(image_bytes)
-            return self._embed_image_once(image, self.max_image_pixels)
-        except RuntimeError as exc:
-            if not self._is_memory_error(exc):
-                raise
 
-            fallback_pixels = min(self.max_image_pixels, 1024 * 1024)
-            if fallback_pixels >= self.max_image_pixels:
-                raise
-
-            print(
-                f"retry image embedding with reduced pixels={fallback_pixels} error={exc}",
-                flush=True,
-            )
-            gc.collect()
-            image = self._load_image_from_bytes(image_bytes)
-            return self._embed_image_once(image, fallback_pixels)
-
-    def _is_memory_error(self, exc: Exception) -> bool:
-        msg = str(exc)
-        return (
-            "Unable to allocate" in msg
-            or "Command buffer execution failed" in msg
-            or "METAL" in msg
-        )
-
-    def _load_image_from_path(self, path: str):
         from PIL import Image
 
-        with Image.open(path) as source:
-            return source.convert("RGB")
+        with Image.open(BytesIO(image_bytes)) as image:
+            rgb = image.convert("RGB")
 
-    def _load_image_from_bytes(self, image_bytes: bytes):
-        from PIL import Image
-
-        with Image.open(BytesIO(image_bytes)) as source:
-            return source.convert("RGB")
-
-    def _prepare_image(self, image, max_pixels: int):
-        image = image.convert("RGB")
-
-        pixels = image.size[0] * image.size[1]
-        if pixels > max_pixels:
-            scale = math.sqrt(max_pixels / float(pixels))
-            width = max(1, int(image.size[0] * scale))
-            height = max(1, int(image.size[1] * scale))
-            image = image.resize((width, height), Image.Resampling.LANCZOS)
-
-        return image
-
-    def _embed_image_once(self, image, max_pixels: int) -> list[float]:
-        self.clear_runtime_caches()
-        image = self._prepare_image(image, max_pixels)
-        prompt = (
-            "<|im_start|>user\n"
-            "<|vision_start|><|image_pad|><|vision_end|>Describe the image."
-            "<|im_end|>"
-        )
-        inputs = self.processor(
-            text=[prompt],
-            images=[image],
-            return_tensors="np",
-            padding=True,
-        )
-
-        out = self.model.encode_image(
-            input_ids=self.mx.array(inputs["input_ids"]),
-            pixel_values=self.mx.array(
-                inputs["pixel_values"].reshape(-1, inputs["pixel_values"].shape[-1])
-            ),
-            image_grid_thw=[tuple(r) for r in inputs["image_grid_thw"]],
-            attention_mask=self.mx.array(inputs["attention_mask"]),
-            task="retrieval",
-        )
-        self.mx.eval(out)
-        vec = out.tolist()[0]
-        del out
-        del inputs
-        del image
-        gc.collect()
-        return vec
+        with self.torch.no_grad():
+            vec = self.model.encode_image(
+                images=[rgb],
+                task="retrieval",
+                max_pixels=self.max_image_pixels,
+                return_numpy=False,
+            )[0]
+        return vec.float().cpu().tolist()
 
 
 class Handler(BaseHTTPRequestHandler):
-    service: JinaMLXService
+    service: JinaTorchService
     metrics = SidecarMetrics()
     inference_lock = threading.Lock()
 
@@ -361,8 +278,17 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(text, str) or not text:
                     status = 400
                     return self._send(status, {"error": "missing text"})
+
+                prompt_name = payload.get("prompt_name", "query")
+                if not isinstance(prompt_name, str) or prompt_name not in {
+                    "query",
+                    "passage",
+                }:
+                    status = 400
+                    return self._send(status, {"error": "invalid prompt_name"})
+
                 with Handler.inference_lock:
-                    embedding = self.service.embed_text(text)
+                    embedding = self.service.embed_text(text, prompt_name)
                 status = 200
                 return self._send(status, {"embedding": embedding})
 
@@ -371,10 +297,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(path, str) or not path:
                     status = 400
                     return self._send(status, {"error": "missing path"})
+
                 safe_path = self.service.resolve_allowed_path(path)
                 if not os.path.exists(safe_path):
                     status = 404
                     return self._send(status, {"error": "image path not found"})
+
                 with Handler.inference_lock:
                     embedding = self.service.embed_image(safe_path)
                 status = 200
@@ -432,13 +360,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/stats":
             payload = Handler.metrics.snapshot()
             payload["model_id"] = self.service.model_id
-            payload["processor_id"] = self.service.processor_id
+            payload["device"] = self.service.device
             payload["max_image_pixels"] = self.service.max_image_pixels
             return self._send(200, payload)
         return self._send(404, {"error": "not found"})
 
     def log_message(self, fmt: str, *args: object) -> None:
-        # Keep stdout clean for local dev UX.
         return
 
     def _send(self, status: int, payload: dict) -> None:
@@ -451,11 +378,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Local jina mlx embedding server")
+    p = argparse.ArgumentParser(description="Local jina torch embedding server")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=9009)
-    p.add_argument("--model-id", default="jinaai/jina-embeddings-v4-mlx-8bit")
-    p.add_argument("--processor-id", default="jinaai/jina-embeddings-v4")
+    p.add_argument("--model-id", default="jinaai/jina-embeddings-v4")
+    p.add_argument("--device", default="auto", help="auto, cuda, cuda:N, mps, or cpu")
     p.add_argument(
         "--allow-dir",
         action="append",
@@ -465,8 +392,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--max-image-pixels",
         type=int,
-        default=3_145_728,
-        help="Maximum pixels per image before downscaling (default: 3,145,728 ~= 2048x1536)",
+        default=602112,
+        help="Maximum pixels for encode_image (default: 602112)",
+    )
+    p.add_argument(
+        "--disable-mps-fallback",
+        action="store_true",
+        help="Disable PYTORCH_ENABLE_MPS_FALLBACK=1 behavior",
     )
     return p.parse_args()
 
@@ -474,21 +406,24 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     allowed = args.allow_dir or [os.path.join(os.getcwd(), "data", "images")]
-    service = JinaMLXService(
+
+    service = JinaTorchService(
         args.model_id,
-        args.processor_id,
         allowed,
+        args.device,
         args.max_image_pixels,
+        not args.disable_mps_fallback,
     )
     Handler.service = service
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"jina-mlx server listening on http://{args.host}:{args.port}")
+    print(f"jina-torch server listening on http://{args.host}:{args.port}")
     print(f"model: {args.model_id}")
+    print(f"device: {service.device}")
+    print(f"max image pixels: {service.max_image_pixels}")
     print("allowed image roots:")
     for root in service.allowed_dirs:
         print(f"  - {root}")
-    print(f"max image pixels: {service.max_image_pixels}")
     server.serve_forever()
     return 0
 

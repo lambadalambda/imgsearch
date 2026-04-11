@@ -34,7 +34,7 @@ import (
 
 func TestAPIEndToEndWithJinaSidecar(t *testing.T) {
 	if os.Getenv("RUN_JINA_MLX_INTEGRATION") != "1" {
-		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve` to enable")
+		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve` or `mise run jina-torch-serve` to enable")
 	}
 
 	baseURL := os.Getenv("JINA_MLX_URL")
@@ -72,7 +72,7 @@ func TestAPIEndToEndWithJinaSidecar(t *testing.T) {
 		t.Fatalf("ensure model: %v", err)
 	}
 
-	embed := jinamlx.NewHTTPClient(baseURL)
+	embed := jinamlx.NewHTTPClientWithImageMode(baseURL, string(jinamlx.ImageModeAuto))
 	index := newMemoryIndex()
 
 	uploadSvc := &upload.Service{DB: dbConn, DataDir: dataDir, ModelID: modelID}

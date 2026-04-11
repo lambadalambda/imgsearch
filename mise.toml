@@ -6,7 +6,7 @@ description = "Run Go tests"
 run = "go test ./..."
 
 [tasks.jina-setup]
-description = "Create venv and install Jina MLX deps"
+description = "Create venv and install sidecar deps"
 run = "python3 -m venv .venv && .venv/bin/pip install mlx mlx-lm numpy huggingface_hub 'transformers==4.52.0' pillow requests torch peft torchvision"
 
 [tasks.sqlite-vector-setup]
@@ -21,6 +21,10 @@ run = "RUN_SQLITE_VECTOR_INTEGRATION=1 SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-
 description = "Ensure sqlite-vector exists and run imgsearch"
 run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" go run ./cmd/imgsearch -vector-backend sqlite-vector"
 
+[tasks.serve-torch]
+description = "Ensure sqlite-vector exists and run imgsearch with jina-torch"
+run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" go run ./cmd/imgsearch -embedder jina-torch -vector-backend sqlite-vector"
+
 [tasks.import-images]
 description = "Bulk upload images from a folder"
 run = "scripts/import_images.sh"
@@ -32,6 +36,10 @@ run = "mkdir -p ./data && rm -f ./data/imgsearch.sqlite ./data/imgsearch.sqlite-
 [tasks.jina-serve]
 description = "Run local Jina MLX embedding server"
 run = "sh -c '.venv/bin/python scripts/jina_mlx_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images --max-image-pixels \"${JINA_MLX_MAX_IMAGE_PIXELS:-3145728}\"; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
+
+[tasks.jina-torch-serve]
+description = "Run local Jina Torch embedding server"
+run = "sh -c '.venv/bin/python scripts/jina_torch_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images --device \"${JINA_TORCH_DEVICE:-auto}\" --max-image-pixels \"${JINA_TORCH_MAX_IMAGE_PIXELS:-602112}\"; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
 
 [tasks.jina-test]
 description = "Run embedder sidecar similarity integration test"

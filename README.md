@@ -40,29 +40,52 @@ It is designed as a simple Go application that:
 
 1. Install sqlite-vector extension for your platform:
    - `mise run sqlite-vector-setup`
-2. Install Python deps for the Jina MLX sidecar:
+2. Install Python deps for embedding sidecars:
    - `mise run jina-setup`
-3. Start the local embedding sidecar:
-   - `mise run jina-serve`
-   - Optional memory cap override: `JINA_MLX_MAX_IMAGE_PIXELS=1572864 mise run jina-serve`
+3. Start one embedding sidecar:
+   - Torch (recommended for quality): `mise run jina-torch-serve`
+   - MLX (faster, experimental quality): `mise run jina-serve`
 4. Start the app with sqlite-vector backend:
-   - `go run ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+   - Torch sidecar: `go run ./cmd/imgsearch -embedder jina-torch -embed-image-mode auto -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+   - MLX sidecar: `go run ./cmd/imgsearch -embedder jina-mlx -embed-image-mode auto -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
 5. Open the UI:
    - `http://127.0.0.1:8080/`
 
 One-command app startup (auto-installs sqlite-vector if missing):
 - `mise run serve`
+- `mise run serve-torch` (recommended when using `jina-torch` sidecar)
 
 Reset local database files:
 - `mise run reset-db`
 
 The app defaults to `-embedder jina-mlx` with `-jina-mlx-url http://127.0.0.1:9009`.
+Use `-embedder jina-torch` with `mise run jina-torch-serve` for higher retrieval quality.
 For fallback local testing without model runtime, run with `-embedder deterministic`.
+Use `-embed-image-mode path|bytes|auto` for sidecar image transport:
+- `path`: send file path to sidecar (fastest, requires shared filesystem access)
+- `bytes`: send base64 image payload to sidecar (works with remote sidecar)
+- `auto` (default): try `path`, then automatically fall back to `bytes` on path access errors
 The app defaults to `-vector-backend auto`, which uses `sqlite-vector` when available and falls back to `bruteforce` when it is not.
 Use `-vector-backend sqlite-vector` to require the extension, or `-vector-backend bruteforce` for compatibility-only mode.
 You can set `SQLITE_VECTOR_PATH` once instead of passing `-sqlite-vector-path` every run.
 If you change `-data-dir`, start the sidecar with matching allowed image roots, e.g.
 `python3 scripts/jina_mlx_server.py --allow-dir /path/to/data/images`.
+
+Torch sidecar tuning options:
+- `JINA_TORCH_DEVICE=auto|cuda|cuda:N|mps|cpu` (default: `auto`, which prefers CUDA then MPS then CPU)
+- `JINA_TORCH_MAX_IMAGE_PIXELS=602112` (default used by HF model)
+
+## Remote Sidecar (No Shared Filesystem)
+
+If the sidecar runs on another machine (for example via SSH tunnel), run app with byte transport:
+
+0. Start remote sidecar and wait for readiness (first startup may take several minutes to download model files):
+   - `~/imgsearch-sidecar/.venv/bin/python ~/imgsearch-sidecar/jina_torch_server.py --host 127.0.0.1 --port 9009 --allow-dir ~/imgsearch-sidecar/data/images --device auto`
+   - `curl -fsS http://127.0.0.1:9009/readyz`
+1. Forward local port to remote sidecar:
+   - `ssh -L 9009:127.0.0.1:9009 lain@aiko-1`
+2. Start app locally with remote sidecar URL and byte mode:
+   - `go run ./cmd/imgsearch -embedder jina-torch -jina-mlx-url http://127.0.0.1:9009 -embed-image-mode bytes`
 
 The UI includes:
 - upload form,
@@ -92,6 +115,8 @@ Optional arguments and behavior:
 - API action endpoint: `POST /api/jobs/retry-failed` (requeue failed jobs and enqueue missing jobs for the active model)
 - Sidecar status endpoints: `GET /healthz`, `GET /readyz`, `GET /stats`
 - Sidecar prints one log line per embed request with request id, status, and duration.
+- In sidecar `GET /stats`, `embed_image_*` counters include both `/embed/image` and `/embed/image-bytes` requests.
+- Sidecar `GET /stats` also reports runtime config (model id, device for torch, and max image pixels).
 
 From the UI, use the **Retry Failed / Queue Missing** button in the Indexing Status panel.
 
