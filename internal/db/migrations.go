@@ -1,20 +1,20 @@
 package db
 
 import (
-    "context"
-    "database/sql"
-    "fmt"
+	"context"
+	"database/sql"
+	"fmt"
 )
 
 type migration struct {
-    version int
-    sql     string
+	version int
+	sql     string
 }
 
 var migrations = []migration{
-    {
-        version: 1,
-        sql: `
+	{
+		version: 1,
+		sql: `
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
   applied_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -77,75 +77,75 @@ CREATE TABLE IF NOT EXISTS index_jobs (
 CREATE INDEX IF NOT EXISTS idx_index_jobs_state_run_after
 ON index_jobs(state, run_after);
 `,
-    },
+	},
 }
 
 func LatestVersion() int {
-    return len(migrations)
+	return len(migrations)
 }
 
 func RunMigrations(ctx context.Context, db *sql.DB) error {
-    if db == nil {
-        return fmt.Errorf("db is nil")
-    }
+	if db == nil {
+		return fmt.Errorf("db is nil")
+	}
 
-    if _, err := db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
   applied_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `); err != nil {
-        return fmt.Errorf("create schema_migrations: %w", err)
-    }
+		return fmt.Errorf("create schema_migrations: %w", err)
+	}
 
-    current, err := CurrentVersion(ctx, db)
-    if err != nil {
-        return err
-    }
+	current, err := CurrentVersion(ctx, db)
+	if err != nil {
+		return err
+	}
 
-    for _, m := range migrations {
-        if m.version <= current {
-            continue
-        }
+	for _, m := range migrations {
+		if m.version <= current {
+			continue
+		}
 
-        tx, err := db.BeginTx(ctx, nil)
-        if err != nil {
-            return fmt.Errorf("begin migration %d: %w", m.version, err)
-        }
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin migration %d: %w", m.version, err)
+		}
 
-        if _, err := tx.ExecContext(ctx, m.sql); err != nil {
-            _ = tx.Rollback()
-            return fmt.Errorf("apply migration %d: %w", m.version, err)
-        }
+		if _, err := tx.ExecContext(ctx, m.sql); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("apply migration %d: %w", m.version, err)
+		}
 
-        if _, err := tx.ExecContext(ctx,
-            `INSERT INTO schema_migrations(version) VALUES(?)`,
-            m.version,
-        ); err != nil {
-            _ = tx.Rollback()
-            return fmt.Errorf("record migration %d: %w", m.version, err)
-        }
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO schema_migrations(version) VALUES(?)`,
+			m.version,
+		); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record migration %d: %w", m.version, err)
+		}
 
-        if err := tx.Commit(); err != nil {
-            return fmt.Errorf("commit migration %d: %w", m.version, err)
-        }
-    }
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %d: %w", m.version, err)
+		}
+	}
 
-    return nil
+	return nil
 }
 
 func CurrentVersion(ctx context.Context, db *sql.DB) (int, error) {
-    if db == nil {
-        return 0, fmt.Errorf("db is nil")
-    }
+	if db == nil {
+		return 0, fmt.Errorf("db is nil")
+	}
 
-    var version sql.NullInt64
-    if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
-        return 0, fmt.Errorf("query current migration version: %w", err)
-    }
-    if !version.Valid {
-        return 0, nil
-    }
+	var version sql.NullInt64
+	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
+		return 0, fmt.Errorf("query current migration version: %w", err)
+	}
+	if !version.Valid {
+		return 0, nil
+	}
 
-    return int(version.Int64), nil
+	return int(version.Int64), nil
 }
