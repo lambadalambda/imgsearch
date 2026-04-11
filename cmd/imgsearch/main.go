@@ -11,14 +11,15 @@ import (
 	"path/filepath"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
-
 	"imgsearch/internal/app"
 	"imgsearch/internal/db"
+	"imgsearch/internal/embedder"
 	"imgsearch/internal/images"
 	"imgsearch/internal/search"
 	"imgsearch/internal/upload"
+	"imgsearch/internal/vectorindex"
 	"imgsearch/internal/vectorindex/sqlitevector"
+	"imgsearch/internal/webui"
 	"imgsearch/internal/worker"
 )
 
@@ -27,6 +28,8 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
 	embedderType := flag.String("embedder", "jina-mlx", "embedder backend: jina-mlx or deterministic")
 	jinaURL := flag.String("jina-mlx-url", "http://127.0.0.1:9009", "jina mlx local server URL")
+	vectorBackend := flag.String("vector-backend", vectorBackendAuto, "vector backend: auto, sqlite-vector, bruteforce")
+	sqliteVectorPath := flag.String("sqlite-vector-path", "", "path to sqlite-vector extension binary (optional: defaults to SQLITE_VECTOR_PATH or tools/sqlite-vector/vector)")
 	flag.Parse()
 
 	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
@@ -35,13 +38,71 @@ func main() {
 
 	dbPath := filepath.Join(*dataDir, "imgsearch.sqlite")
 	dsn := fmt.Sprintf("%s?_busy_timeout=5000", dbPath)
-	sqlDB, err := sql.Open("sqlite3", dsn)
+
+	resolvedSQLiteVectorPath, err := discoverSQLiteVectorPath(*sqliteVectorPath)
 	if err != nil {
-		log.Fatalf("open sqlite database: %v", err)
+		log.Fatalf("discover sqlite-vector extension: %v", err)
 	}
+
+	autoValidationErr := error(nil)
+	openWithVector := ""
+	if *vectorBackend == vectorBackendAuto {
+		if resolvedSQLiteVectorPath == "" {
+			autoValidationErr = fmt.Errorf("sqlite-vector extension path not found (run `mise run sqlite-vector-setup` or set SQLITE_VECTOR_PATH)")
+		} else {
+			openWithVector = resolvedSQLiteVectorPath
+		}
+	}
+	if *vectorBackend == vectorBackendSQLiteVector {
+		if resolvedSQLiteVectorPath == "" {
+			log.Fatalf("sqlite-vector backend requested but extension path was not found (set -sqlite-vector-path or SQLITE_VECTOR_PATH)")
+		}
+		openWithVector = resolvedSQLiteVectorPath
+	}
+
+	sqlDB, err := openSQLiteDB(dsn, openWithVector)
+	if err != nil {
+		if *vectorBackend == vectorBackendAuto && openWithVector != "" {
+			autoValidationErr = err
+			sqlDB, err = openSQLiteDB(dsn, "")
+			if err != nil {
+				log.Fatalf("open sqlite database: %v", err)
+			}
+			openWithVector = ""
+		} else {
+			log.Fatalf("open sqlite database: %v", err)
+		}
+	}
+
+	if *vectorBackend == vectorBackendAuto && openWithVector != "" && autoValidationErr == nil {
+		autoValidationErr = sqlitevector.ValidateAvailable(context.Background(), sqlDB)
+	}
+
+	resolvedVectorBackend, backendWarning, err := resolveVectorBackend(*vectorBackend, autoValidationErr)
+	if err != nil {
+		log.Fatalf("configure vector backend: %v", err)
+	}
+	if resolvedVectorBackend == vectorBackendBruteForce && openWithVector != "" {
+		_ = sqlDB.Close()
+		sqlDB, err = openSQLiteDB(dsn, "")
+		if err != nil {
+			log.Fatalf("open sqlite database: %v", err)
+		}
+	}
+
+	if backendWarning != "" {
+		log.Printf("%s", backendWarning)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
 	defer func() { _ = sqlDB.Close() }()
 
-	if err := app.Bootstrap(context.Background(), sqlDB, sqlitevector.ValidateAvailable); err != nil {
+	index, validateVectorBackend, err := buildVectorBackend(resolvedVectorBackend, sqlDB)
+	if err != nil {
+		log.Fatalf("build vector backend: %v", err)
+	}
+
+	if err := app.Bootstrap(context.Background(), sqlDB, validateVectorBackend); err != nil {
 		log.Fatalf("bootstrap app: %v", err)
 	}
 
@@ -59,8 +120,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("configure embedder: %v", err)
 	}
-	index := sqlitevector.NewIndex(sqlDB)
-
 	uploadSvc := &upload.Service{
 		DB:      sqlDB,
 		DataDir: *dataDir,
@@ -76,13 +135,31 @@ func main() {
 	}
 	go worker.RunLoop(context.Background(), queue, "main-worker", 500*time.Millisecond)
 
+	mux := newServerMux(sqlDB, *dataDir, modelID, embedder, index, uploadSvc)
+
+	log.Printf("imgsearch initialized with database %s", dbPath)
+	log.Printf("using vector backend %s", resolvedVectorBackend)
+	log.Printf("listening on http://%s", *addr)
+	if err := http.ListenAndServe(*addr, mux); err != nil {
+		log.Fatalf("serve http: %v", err)
+	}
+}
+
+func newServerMux(
+	sqlDB *sql.DB,
+	dataDir string,
+	modelID int64,
+	embedder embedder.Embedder,
+	index vectorindex.VectorIndex,
+	uploadSvc *upload.Service,
+) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/api/upload", upload.NewHandler(uploadSvc))
 	mux.Handle("/api/images", images.NewHandler(&images.Handler{DB: sqlDB, ModelID: modelID}))
 	searchHandler := search.NewHandler(&search.Handler{
 		DB:       sqlDB,
 		ModelID:  modelID,
-		DataDir:  *dataDir,
+		DataDir:  dataDir,
 		Embedder: embedder,
 		Index:    index,
 	})
@@ -91,10 +168,6 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-
-	log.Printf("imgsearch initialized with database %s", dbPath)
-	log.Printf("listening on http://%s", *addr)
-	if err := http.ListenAndServe(*addr, mux); err != nil {
-		log.Fatalf("serve http: %v", err)
-	}
+	mux.Handle("/", webui.NewHandler(dataDir))
+	return mux
 }

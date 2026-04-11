@@ -38,17 +38,33 @@ It is designed as a simple Go application that:
 
 ## Running Locally
 
-1. Install Python deps for the Jina MLX sidecar:
+1. Install sqlite-vector extension for your platform:
+   - `mise run sqlite-vector-setup`
+2. Install Python deps for the Jina MLX sidecar:
    - `mise run jina-setup`
-2. Start the local embedding sidecar:
+3. Start the local embedding sidecar:
    - `mise run jina-serve`
-3. Start the app:
-   - `go run ./cmd/imgsearch`
+4. Start the app with sqlite-vector backend:
+   - `go run ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+5. Open the UI:
+   - `http://127.0.0.1:8080/`
+
+One-command app startup (auto-installs sqlite-vector if missing):
+- `mise run serve`
 
 The app defaults to `-embedder jina-mlx` with `-jina-mlx-url http://127.0.0.1:9009`.
 For fallback local testing without model runtime, run with `-embedder deterministic`.
+The app defaults to `-vector-backend auto`, which uses `sqlite-vector` when available and falls back to `bruteforce` when it is not.
+Use `-vector-backend sqlite-vector` to require the extension, or `-vector-backend bruteforce` for compatibility-only mode.
+You can set `SQLITE_VECTOR_PATH` once instead of passing `-sqlite-vector-path` every run.
 If you change `-data-dir`, start the sidecar with matching allowed image roots, e.g.
 `python3 scripts/jina_mlx_server.py --allow-dir /path/to/data/images`.
+
+The UI includes:
+- upload form,
+- gallery view with indexing states,
+- text search,
+- similar-image search buttons on cards.
 
 ## Optional Integration Test (Requires Sidecar)
 
@@ -57,6 +73,7 @@ Run integration suites (all are skipped by default unless `RUN_JINA_MLX_INTEGRAT
 - `mise run jina-test` for embedder-level semantic similarity checks against fixture images.
 - `mise run jina-test-api` for API end-to-end flow (`/api/upload` -> queue processing -> `/api/search/text` and `/api/search/similar`).
 - `mise run jina-test-all` to run both integration suites together.
+- `mise run sqlite-vector-test` for sqlite-vector index integration checks.
 
 The semantic checks verify expected relative similarity trends, such as cat images ranking closer to each other than cat-vs-dog, and woman portraits clustering together.
 

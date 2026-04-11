@@ -9,6 +9,18 @@ run = "go test ./..."
 description = "Create venv and install Jina MLX deps"
 run = "python3 -m venv .venv && .venv/bin/pip install mlx mlx-lm numpy huggingface_hub 'transformers==4.52.0' pillow requests torch peft torchvision"
 
+[tasks.sqlite-vector-setup]
+description = "Download sqlite-vector extension for local platform"
+run = "scripts/setup_sqlite_vector.sh"
+
+[tasks.sqlite-vector-test]
+description = "Run sqlite-vector integration tests"
+run = "RUN_SQLITE_VECTOR_INTEGRATION=1 SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" go test ./internal/vectorindex/sqlitevector -run SQLiteVector -v"
+
+[tasks.serve]
+description = "Ensure sqlite-vector exists and run imgsearch"
+run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" go run ./cmd/imgsearch -vector-backend sqlite-vector"
+
 [tasks.jina-serve]
 description = "Run local Jina MLX embedding server"
 run = ".venv/bin/python scripts/jina_mlx_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images"

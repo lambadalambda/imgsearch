@@ -144,4 +144,4 @@ Unique key: (`kind`, `image_id`, `model_id`)
 - Add health endpoint for worker queue depth and failure count.
 - On startup, recover expired leases so no job stays stuck in `leased` indefinitely.
 - Restrict network binding to localhost by default.
-- Initialize and validate `sqlite-vector` on startup; fail fast with actionable error if extension cannot load.
+- Initialize and validate `sqlite-vector` on startup when selected; in `auto` mode, log a warning and fall back to brute-force search if extension cannot load.

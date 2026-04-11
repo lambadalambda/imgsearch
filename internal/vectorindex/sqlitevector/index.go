@@ -63,7 +63,7 @@ func (i *Index) Search(ctx context.Context, modelID int64, query []float32, limi
 	rows, err := i.DB.QueryContext(ctx, `
 SELECT ie.image_id, v.distance
 FROM image_embeddings AS ie
-JOIN vector_scan('image_embeddings', 'vector_blob', ?, ?) AS v
+JOIN vector_full_scan('image_embeddings', 'vector_blob', ?, ?) AS v
   ON ie.rowid = v.rowid
 WHERE ie.model_id = ?
 ORDER BY v.distance ASC

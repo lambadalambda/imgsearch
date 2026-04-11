@@ -2,3 +2,5 @@
 data/
 .venv/
 .ruff_cache/
+.tmp/
+tools/sqlite-vector/
