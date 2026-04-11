@@ -16,6 +16,7 @@ import (
 	"imgsearch/internal/app"
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder/deterministic"
+	"imgsearch/internal/images"
 	"imgsearch/internal/search"
 	"imgsearch/internal/upload"
 	"imgsearch/internal/vectorindex/sqlitevector"
@@ -74,6 +75,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/upload", upload.NewHandler(uploadSvc))
+	mux.Handle("/api/images", images.NewHandler(&images.Handler{DB: sqlDB, ModelID: modelID}))
 	searchHandler := search.NewHandler(&search.Handler{
 		DB:       sqlDB,
 		ModelID:  modelID,
