@@ -15,7 +15,6 @@ import (
 
 	"imgsearch/internal/app"
 	"imgsearch/internal/db"
-	"imgsearch/internal/embedder/deterministic"
 	"imgsearch/internal/images"
 	"imgsearch/internal/search"
 	"imgsearch/internal/upload"
@@ -26,6 +25,8 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
+	embedderType := flag.String("embedder", "jina-mlx", "embedder backend: jina-mlx or deterministic")
+	jinaURL := flag.String("jina-mlx-url", "http://127.0.0.1:9009", "jina mlx local server URL")
 	flag.Parse()
 
 	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
@@ -44,18 +45,20 @@ func main() {
 		log.Fatalf("bootstrap app: %v", err)
 	}
 
-	modelID, err := db.EnsureEmbeddingModel(context.Background(), sqlDB, db.EmbeddingModelSpec{
-		Name:       "jina-embeddings-v4",
-		Version:    "mlx-8bit",
-		Dimensions: 2048,
-		Metric:     "cosine",
-		Normalized: true,
-	})
+	modelSpec, err := embeddingModelSpec(*embedderType, 2048)
+	if err != nil {
+		log.Fatalf("configure model spec: %v", err)
+	}
+
+	modelID, err := db.EnsureEmbeddingModel(context.Background(), sqlDB, modelSpec)
 	if err != nil {
 		log.Fatalf("ensure embedding model: %v", err)
 	}
 
-	embedder := &deterministic.Embedder{Dimensions: 2048}
+	embedder, err := newEmbedder(*embedderType, *jinaURL, modelSpec.Dimensions)
+	if err != nil {
+		log.Fatalf("configure embedder: %v", err)
+	}
 	index := sqlitevector.NewIndex(sqlDB)
 
 	uploadSvc := &upload.Service{

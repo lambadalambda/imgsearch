@@ -4,3 +4,7 @@ go = "latest"
 [tasks.test]
 description = "Run Go tests"
 run = "go test ./..."
+
+[tasks.jina-serve]
+description = "Run local Jina MLX embedding server"
+run = "python3 scripts/jina_mlx_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images"

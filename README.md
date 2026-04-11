@@ -36,4 +36,18 @@ It is designed as a simple Go application that:
 - Search by text
 - Search by similar image
 
+## Running Locally
+
+1. Install Python deps for the Jina MLX sidecar:
+   - `pip install mlx mlx-lm numpy huggingface_hub transformers pillow requests`
+2. Start the local embedding sidecar:
+   - `mise run jina-serve`
+3. Start the app:
+   - `go run ./cmd/imgsearch`
+
+The app defaults to `-embedder jina-mlx` with `-jina-mlx-url http://127.0.0.1:9009`.
+For fallback local testing without model runtime, run with `-embedder deterministic`.
+If you change `-data-dir`, start the sidecar with matching allowed image roots, e.g.
+`python3 scripts/jina_mlx_server.py --allow-dir /path/to/data/images`.
+
 See `docs/architecture.md`, `docs/mvp-plan.md`, and `docs/decisions.md` for implementation details.

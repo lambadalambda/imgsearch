@@ -10,19 +10,15 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"imgsearch/internal/embedder"
 	"imgsearch/internal/vectorindex"
 )
-
-type Embedder interface {
-	EmbedText(ctx context.Context, text string) ([]float32, error)
-	EmbedImage(ctx context.Context, path string) ([]float32, error)
-}
 
 type Handler struct {
 	DB       *sql.DB
 	ModelID  int64
 	DataDir  string
-	Embedder Embedder
+	Embedder embedder.Embedder
 	Index    vectorindex.VectorIndex
 }
 

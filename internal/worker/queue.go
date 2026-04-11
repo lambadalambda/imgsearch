@@ -10,18 +10,15 @@ import (
 	"path/filepath"
 	"time"
 
+	"imgsearch/internal/embedder"
 	"imgsearch/internal/vectorindex"
 )
-
-type ImageEmbedder interface {
-	EmbedImage(ctx context.Context, path string) ([]float32, error)
-}
 
 type Queue struct {
 	DB            *sql.DB
 	DataDir       string
 	LeaseDuration time.Duration
-	Embedder      ImageEmbedder
+	Embedder      embedder.ImageEmbedder
 	Index         vectorindex.VectorIndex
 }
 
