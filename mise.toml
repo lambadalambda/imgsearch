@@ -21,9 +21,17 @@ run = "RUN_SQLITE_VECTOR_INTEGRATION=1 SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-
 description = "Ensure sqlite-vector exists and run imgsearch"
 run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" go run ./cmd/imgsearch -vector-backend sqlite-vector"
 
+[tasks.import-images]
+description = "Bulk upload images from a folder"
+run = "scripts/import_images.sh"
+
+[tasks.reset-db]
+description = "Delete local SQLite database files"
+run = "mkdir -p ./data && rm -f ./data/imgsearch.sqlite ./data/imgsearch.sqlite-journal ./data/imgsearch.sqlite-wal ./data/imgsearch.sqlite-shm"
+
 [tasks.jina-serve]
 description = "Run local Jina MLX embedding server"
-run = ".venv/bin/python scripts/jina_mlx_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images"
+run = "sh -c '.venv/bin/python scripts/jina_mlx_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
 
 [tasks.jina-test]
 description = "Run embedder sidecar similarity integration test"

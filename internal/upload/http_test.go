@@ -53,6 +53,35 @@ func TestUploadHandlerReturnsCreatedForNewImage(t *testing.T) {
 	}
 }
 
+func TestUploadHandlerAcceptsWEBPAndAVIF(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		fixture  string
+	}{
+		{name: "webp", filename: "cat_2.webp", fixture: "cat_2.webp"},
+		{name: "avif", filename: "dog_2.avif", fixture: "dog_2.avif"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, _ := setupService(t)
+			h := NewHandler(svc)
+
+			body, contentType := multipartBody(t, tc.filename, fixtureImageBytes(t, tc.fixture))
+			req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+			req.Header.Set("Content-Type", contentType)
+			rr := httptest.NewRecorder()
+
+			h.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusCreated {
+				t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusCreated, rr.Body.String())
+			}
+		})
+	}
+}
+
 func TestUploadHandlerReturnsOKForDuplicateImage(t *testing.T) {
 	svc, _ := setupService(t)
 	h := NewHandler(svc)

@@ -1,6 +1,7 @@
 package upload
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -17,6 +18,66 @@ import (
 )
 
 var ErrUnsupportedFormat = errors.New("unsupported image format")
+
+func isSupportedMime(mime string) bool {
+	switch mime {
+	case "image/png", "image/jpeg", "image/webp", "image/avif":
+		return true
+	default:
+		return false
+	}
+}
+
+func looksLikeWEBP(header []byte) bool {
+	return len(header) >= 12 && bytes.Equal(header[:4], []byte("RIFF")) && bytes.Equal(header[8:12], []byte("WEBP"))
+}
+
+func looksLikeAVIF(header []byte) bool {
+	if len(header) < 12 {
+		return false
+	}
+	if !bytes.Equal(header[4:8], []byte("ftyp")) {
+		return false
+	}
+	if bytes.Equal(header[8:12], []byte("avif")) || bytes.Equal(header[8:12], []byte("avis")) {
+		return true
+	}
+	for i := 16; i+4 <= len(header); i += 4 {
+		if bytes.Equal(header[i:i+4], []byte("avif")) || bytes.Equal(header[i:i+4], []byte("avis")) {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveMime(header []byte, detected string) string {
+	if isSupportedMime(detected) {
+		return detected
+	}
+	if looksLikeWEBP(header) {
+		return "image/webp"
+	}
+	if looksLikeAVIF(header) {
+		return "image/avif"
+	}
+	return ""
+}
+
+func decodeDimensions(tmpFile *os.File, mime string) (int, int, error) {
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return 0, 0, fmt.Errorf("seek for decode: %w", err)
+	}
+
+	cfg, _, err := image.DecodeConfig(tmpFile)
+	if err == nil {
+		return cfg.Width, cfg.Height, nil
+	}
+
+	if mime == "image/webp" || mime == "image/avif" {
+		return 0, 0, nil
+	}
+	return 0, 0, ErrUnsupportedFormat
+}
 
 type Service struct {
 	DB      *sql.DB
@@ -78,17 +139,17 @@ func (s *Service) Store(ctx context.Context, originalName string, src io.Reader)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return StoreResult{}, fmt.Errorf("read header bytes: %w", err)
 	}
-	mime := http.DetectContentType(header[:n])
-	if mime != "image/png" && mime != "image/jpeg" {
+	mime := resolveMime(header[:n], http.DetectContentType(header[:n]))
+	if !isSupportedMime(mime) {
 		return StoreResult{}, ErrUnsupportedFormat
 	}
 
-	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-		return StoreResult{}, fmt.Errorf("seek for decode: %w", err)
-	}
-	cfg, _, err := image.DecodeConfig(tmpFile)
+	width, height, err := decodeDimensions(tmpFile, mime)
 	if err != nil {
-		return StoreResult{}, ErrUnsupportedFormat
+		if errors.Is(err, ErrUnsupportedFormat) {
+			return StoreResult{}, ErrUnsupportedFormat
+		}
+		return StoreResult{}, err
 	}
 
 	digest := hex.EncodeToString(hasher.Sum(nil))
@@ -104,7 +165,7 @@ func (s *Service) Store(ctx context.Context, originalName string, src io.Reader)
 INSERT INTO images(sha256, original_name, storage_path, mime_type, width, height)
 VALUES(?, ?, ?, ?, ?, ?)
 ON CONFLICT(sha256) DO NOTHING
-`, digest, originalName, storageRel, mime, cfg.Width, cfg.Height)
+`, digest, originalName, storageRel, mime, width, height)
 	if err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert image: %w", err)

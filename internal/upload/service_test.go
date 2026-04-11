@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -62,6 +63,20 @@ func pngBytes(t *testing.T) []byte {
 		t.Fatalf("encode png: %v", err)
 	}
 	return buf.Bytes()
+}
+
+func fixtureImageBytes(t *testing.T, name string) []byte {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve caller location")
+	}
+	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "fixtures", "images", name)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", name, err)
+	}
+	return content
 }
 
 func TestStoreCreatesImageAndQueueJob(t *testing.T) {
@@ -138,6 +153,86 @@ func TestStoreRejectsUnsupportedFormat(t *testing.T) {
 	svc, sqlDB := setupService(t)
 
 	_, err := svc.Store(context.Background(), "notes.txt", bytes.NewReader([]byte("hello")))
+	if err == nil {
+		t.Fatal("expected unsupported format error")
+	}
+	if err != ErrUnsupportedFormat {
+		t.Fatalf("expected ErrUnsupportedFormat, got %v", err)
+	}
+
+	var imageCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM images`).Scan(&imageCount); err != nil {
+		t.Fatalf("count images: %v", err)
+	}
+	if imageCount != 0 {
+		t.Fatalf("expected no images written, got %d", imageCount)
+	}
+}
+
+func TestStoreAcceptsWEBP(t *testing.T) {
+	svc, sqlDB := setupService(t)
+
+	out, err := svc.Store(context.Background(), "cat_2.webp", bytes.NewReader(fixtureImageBytes(t, "cat_2.webp")))
+	if err != nil {
+		t.Fatalf("store webp: %v", err)
+	}
+	if out.ImageID == 0 {
+		t.Fatal("expected non-zero image id")
+	}
+
+	var mime string
+	if err := sqlDB.QueryRow(`SELECT mime_type FROM images WHERE id = ?`, out.ImageID).Scan(&mime); err != nil {
+		t.Fatalf("load stored mime: %v", err)
+	}
+	if mime != "image/webp" {
+		t.Fatalf("expected image/webp mime, got %q", mime)
+	}
+}
+
+func TestStoreAcceptsAVIF(t *testing.T) {
+	svc, sqlDB := setupService(t)
+
+	out, err := svc.Store(context.Background(), "dog_2.avif", bytes.NewReader(fixtureImageBytes(t, "dog_2.avif")))
+	if err != nil {
+		t.Fatalf("store avif: %v", err)
+	}
+	if out.ImageID == 0 {
+		t.Fatal("expected non-zero image id")
+	}
+
+	var mime string
+	if err := sqlDB.QueryRow(`SELECT mime_type FROM images WHERE id = ?`, out.ImageID).Scan(&mime); err != nil {
+		t.Fatalf("load stored mime: %v", err)
+	}
+	if mime != "image/avif" {
+		t.Fatalf("expected image/avif mime, got %q", mime)
+	}
+}
+
+func TestStoreRejectsFakeWEBPByExtension(t *testing.T) {
+	svc, sqlDB := setupService(t)
+
+	_, err := svc.Store(context.Background(), "fake.webp", bytes.NewReader([]byte("not an image")))
+	if err == nil {
+		t.Fatal("expected unsupported format error")
+	}
+	if err != ErrUnsupportedFormat {
+		t.Fatalf("expected ErrUnsupportedFormat, got %v", err)
+	}
+
+	var imageCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM images`).Scan(&imageCount); err != nil {
+		t.Fatalf("count images: %v", err)
+	}
+	if imageCount != 0 {
+		t.Fatalf("expected no images written, got %d", imageCount)
+	}
+}
+
+func TestStoreRejectsFakeAVIFByExtension(t *testing.T) {
+	svc, sqlDB := setupService(t)
+
+	_, err := svc.Store(context.Background(), "fake.avif", bytes.NewReader([]byte("not an image")))
 	if err == nil {
 		t.Fatal("expected unsupported format error")
 	}

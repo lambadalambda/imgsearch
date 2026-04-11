@@ -157,7 +157,7 @@ uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const file = uploadFile.files && uploadFile.files[0];
   if (!file) {
-    setStatus(uploadStatus, 'Choose a JPEG or PNG file first.', 'error');
+    setStatus(uploadStatus, 'Choose a JPEG, PNG, WEBP, or AVIF file first.', 'error');
     return;
   }
 

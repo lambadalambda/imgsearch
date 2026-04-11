@@ -24,7 +24,7 @@ It is designed as a simple Go application that:
 ## MVP Constraints
 - Scope target: personal collections up to about 10k indexed images.
 - Similar image search starts from an already indexed image in the gallery.
-- Supported formats (MVP): JPEG and PNG.
+- Supported formats (MVP): JPEG, PNG, WEBP, and AVIF.
 - Server binds to localhost by default (`127.0.0.1`).
 - Model runtime may be a local sidecar process in MVP; single-binary model packaging is post-MVP.
 - Vector backend is swappable; default implementation uses `sqlite-vector`.
@@ -52,6 +52,9 @@ It is designed as a simple Go application that:
 One-command app startup (auto-installs sqlite-vector if missing):
 - `mise run serve`
 
+Reset local database files:
+- `mise run reset-db`
+
 The app defaults to `-embedder jina-mlx` with `-jina-mlx-url http://127.0.0.1:9009`.
 For fallback local testing without model runtime, run with `-embedder deterministic`.
 The app defaults to `-vector-backend auto`, which uses `sqlite-vector` when available and falls back to `bruteforce` when it is not.
@@ -65,6 +68,21 @@ The UI includes:
 - gallery view with indexing states,
 - text search,
 - similar-image search buttons on cards.
+
+Supported upload formats: JPEG, PNG, WEBP, and AVIF.
+
+## Bulk Import
+
+With app running on `http://127.0.0.1:8080`, import a directory recursively:
+
+- `mise run import-images -- ./fixtures/images`
+
+Optional arguments and behavior:
+
+- `mise run import-images -- ./photos http://127.0.0.1:8080`
+- `IMGSEARCH_IMPORT_CONVERT=auto` (default): try direct upload first, then auto-convert WEBP/AVIF with `vips` on failure.
+- `IMGSEARCH_IMPORT_CONVERT=vips`: always convert WEBP/AVIF via `vips` before upload.
+- `IMGSEARCH_IMPORT_CONVERT=never`: never convert; upload files as-is.
 
 ## Optional Integration Test (Requires Sidecar)
 
