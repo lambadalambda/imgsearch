@@ -31,7 +31,7 @@ func TestSidecarEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 	staged := stageFixturesForSidecar(t, repoRoot, []string{
 		"cat_1.jpg",
 		"cat_2.webp",
-		"dog_1.jpg",
+		"dog_2.avif",
 		"woman_2.jpg",
 		"woman_office.jpg",
 	})
@@ -50,10 +50,10 @@ func TestSidecarEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 	}
 
 	catCat := cosine(vectors["cat_1.jpg"], vectors["cat_2.webp"])
-	catDog := cosine(vectors["cat_1.jpg"], vectors["dog_1.jpg"])
+	catDog := cosine(vectors["cat_1.jpg"], vectors["dog_2.avif"])
 	catWoman := cosine(vectors["cat_1.jpg"], vectors["woman_2.jpg"])
 	womanWoman := cosine(vectors["woman_2.jpg"], vectors["woman_office.jpg"])
-	womanDog := cosine(vectors["woman_2.jpg"], vectors["dog_1.jpg"])
+	womanDog := cosine(vectors["woman_2.jpg"], vectors["dog_2.avif"])
 
 	if !(catCat > catDog && catCat > catWoman) {
 		t.Fatalf("expected cat pair to be closer than cat cross-category pairs: cat-cat=%.4f cat-dog=%.4f cat-woman=%.4f", catCat, catDog, catWoman)

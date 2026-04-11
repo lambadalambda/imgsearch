@@ -15,6 +15,9 @@ import argparse
 import importlib.util
 import json
 import os
+import shutil
+import sys
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -31,8 +34,9 @@ class JinaMLXService:
             from transformers import AutoProcessor
         except Exception as exc:  # pragma: no cover
             raise RuntimeError(
-                "Missing dependencies. Install with: pip install mlx mlx-lm numpy "
-                "huggingface_hub transformers pillow requests"
+                "Missing dependencies. Install with: "
+                "pip install mlx mlx-lm numpy huggingface_hub 'transformers==4.52.0' "
+                "pillow requests torch peft torchvision"
             ) from exc
 
         self.mx = mx
@@ -41,10 +45,18 @@ class JinaMLXService:
         self.allowed_dirs = [os.path.realpath(d) for d in allowed_dirs]
 
         model_dir = snapshot_download(model_id)
+        self._ensure_weight_aliases(model_dir)
         load_mlx_model = self._load_model_loader(model_dir)
 
         self.model = load_mlx_model(model_dir)
-        self.processor = AutoProcessor.from_pretrained(processor_id)
+        # Upstream MLX model aggressively clears weights after first image call.
+        # For a long-running HTTP service we need repeated text/image requests.
+        self.model.visual.clear_weights = lambda: None
+        self.model._clear_model_weights = lambda: None
+        self.processor = AutoProcessor.from_pretrained(
+            processor_id,
+            trust_remote_code=True,
+        )
 
     def _load_model_loader(self, model_dir: str):
         loader_path = os.path.join(model_dir, "load_model.py")
@@ -54,10 +66,35 @@ class JinaMLXService:
         if spec is None or spec.loader is None:
             raise RuntimeError(f"cannot load model loader from {loader_path}")
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+
+        inserted = False
+        if model_dir not in sys.path:
+            sys.path.insert(0, model_dir)
+            inserted = True
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            if inserted and sys.path and sys.path[0] == model_dir:
+                sys.path.pop(0)
+
         if not hasattr(module, "load_mlx_model"):
             raise RuntimeError(f"load_mlx_model not found in {loader_path}")
         return module.load_mlx_model
+
+    def _ensure_weight_aliases(self, model_dir: str) -> None:
+        aliases = [
+            ("model.safetensors.index.json", "weights.safetensors.index.json"),
+            ("model.safetensors", "weights.safetensors"),
+        ]
+        for source_name, alias_name in aliases:
+            source = os.path.join(model_dir, source_name)
+            alias = os.path.join(model_dir, alias_name)
+            if os.path.exists(alias) or not os.path.exists(source):
+                continue
+            try:
+                os.symlink(source, alias)
+            except OSError:
+                shutil.copyfile(source, alias)
 
     def resolve_allowed_path(self, candidate: str) -> str:
         real = os.path.realpath(candidate)
@@ -143,6 +180,7 @@ class Handler(BaseHTTPRequestHandler):
         except PermissionError as exc:  # pragma: no cover
             return self._send(403, {"error": str(exc)})
         except Exception as exc:  # pragma: no cover
+            traceback.print_exc()
             return self._send(500, {"error": str(exc)})
 
     def do_GET(self) -> None:  # noqa: N802

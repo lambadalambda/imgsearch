@@ -5,6 +5,14 @@ go = "latest"
 description = "Run Go tests"
 run = "go test ./..."
 
+[tasks.jina-setup]
+description = "Create venv and install Jina MLX deps"
+run = "python3 -m venv .venv && .venv/bin/pip install mlx mlx-lm numpy huggingface_hub 'transformers==4.52.0' pillow requests torch peft torchvision"
+
 [tasks.jina-serve]
 description = "Run local Jina MLX embedding server"
-run = "python3 scripts/jina_mlx_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images"
+run = ".venv/bin/python scripts/jina_mlx_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images"
+
+[tasks.jina-test]
+description = "Run sidecar similarity integration test"
+run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=http://127.0.0.1:9009 go test ./internal/embedder/jinamlx -run Sidecar -v"

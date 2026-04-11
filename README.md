@@ -39,7 +39,7 @@ It is designed as a simple Go application that:
 ## Running Locally
 
 1. Install Python deps for the Jina MLX sidecar:
-   - `pip install mlx mlx-lm numpy huggingface_hub transformers pillow requests`
+   - `mise run jina-setup`
 2. Start the local embedding sidecar:
    - `mise run jina-serve`
 3. Start the app:
@@ -54,7 +54,7 @@ If you change `-data-dir`, start the sidecar with matching allowed image roots, 
 
 Run semantic similarity checks against fixture images (skipped by default):
 
-`RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=http://127.0.0.1:9009 go test ./internal/embedder/jinamlx -run Sidecar -v`
+`mise run jina-test`
 
 This test verifies expected relative similarity trends, such as cat images ranking closer to each other than cat-vs-dog, and woman portraits clustering together.
 
