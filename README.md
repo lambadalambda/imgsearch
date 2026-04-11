@@ -52,10 +52,12 @@ If you change `-data-dir`, start the sidecar with matching allowed image roots, 
 
 ## Optional Integration Test (Requires Sidecar)
 
-Run semantic similarity checks against fixture images (skipped by default):
+Run integration suites (all are skipped by default unless `RUN_JINA_MLX_INTEGRATION=1` is set by the task):
 
-`mise run jina-test`
+- `mise run jina-test` for embedder-level semantic similarity checks against fixture images.
+- `mise run jina-test-api` for API end-to-end flow (`/api/upload` -> queue processing -> `/api/search/text` and `/api/search/similar`).
+- `mise run jina-test-all` to run both integration suites together.
 
-This test verifies expected relative similarity trends, such as cat images ranking closer to each other than cat-vs-dog, and woman portraits clustering together.
+The semantic checks verify expected relative similarity trends, such as cat images ranking closer to each other than cat-vs-dog, and woman portraits clustering together.
 
 See `docs/architecture.md`, `docs/mvp-plan.md`, and `docs/decisions.md` for implementation details.
