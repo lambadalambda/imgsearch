@@ -4,3 +4,4 @@ data/
 .ruff_cache/
 .tmp/
 tools/sqlite-vector/
+__pycache__/

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -15,11 +16,12 @@ import (
 )
 
 type Queue struct {
-	DB            *sql.DB
-	DataDir       string
-	LeaseDuration time.Duration
-	Embedder      embedder.ImageEmbedder
-	Index         vectorindex.VectorIndex
+	DB             *sql.DB
+	DataDir        string
+	LeaseDuration  time.Duration
+	RetryBaseDelay time.Duration
+	Embedder       embedder.ImageEmbedder
+	Index          vectorindex.VectorIndex
 }
 
 type claimedJob struct {
@@ -57,6 +59,7 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
+	log.Printf("worker claimed job id=%d image_id=%d attempt=%d/%d", job.ID, job.ImageID, job.Attempts, job.MaxAttempts)
 
 	storagePath, err := q.loadImagePath(ctx, job.ImageID)
 	if err != nil {
@@ -88,8 +91,10 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 	}
 
 	if err := q.Index.Upsert(ctx, job.ImageID, job.ModelID, vec); err != nil {
+		_ = q.failOrRetry(ctx, job, err)
 		return true, err
 	}
+	log.Printf("worker completed job id=%d image_id=%d", job.ID, job.ImageID)
 
 	return true, nil
 }
@@ -216,18 +221,34 @@ func (q *Queue) failOrRetry(ctx context.Context, job claimedJob, procErr error) 
 		nextState = "failed"
 	}
 
+	runAfter := sql.NullString{}
+	if nextState == "pending" && q.RetryBaseDelay > 0 {
+		delay := q.RetryBaseDelay
+		if job.Attempts > 1 {
+			mul := 1 << (job.Attempts - 1)
+			delay = delay * time.Duration(mul)
+		}
+		maxDelay := 5 * time.Minute
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+		runAfter = sql.NullString{String: fmt.Sprintf("+%d seconds", int(delay.Seconds())), Valid: true}
+	}
+
 	_, err := q.DB.ExecContext(ctx, `
 UPDATE index_jobs
 SET state = ?,
+    run_after = CASE WHEN ? <> '' THEN datetime('now', ?) ELSE NULL END,
     leased_until = NULL,
     lease_owner = NULL,
     last_error = ?,
     updated_at = datetime('now')
 WHERE id = ?
-`, nextState, procErr.Error(), job.ID)
+`, nextState, runAfter.String, runAfter.String, procErr.Error(), job.ID)
 	if err != nil {
 		return fmt.Errorf("update failed job: %w", err)
 	}
+	log.Printf("worker job id=%d image_id=%d state=%s err=%v", job.ID, job.ImageID, nextState, procErr)
 	return nil
 }
 

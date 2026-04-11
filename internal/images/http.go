@@ -27,6 +27,7 @@ type ImageItem struct {
 
 type ListResponse struct {
 	Images []ImageItem `json:"images"`
+	Total  int64       `json:"total"`
 }
 
 func NewHandler(h *Handler) http.Handler {
@@ -38,6 +39,12 @@ func NewHandler(h *Handler) http.Handler {
 
 		limit := parseLimit(r, 50)
 		offset := parseOffset(r)
+
+		var total int64
+		if err := h.DB.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM images`).Scan(&total); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "query failed")
+			return
+		}
 
 		rows, err := h.DB.QueryContext(r.Context(), `
 SELECT i.id, i.original_name, i.storage_path, i.thumbnail_path, i.mime_type, i.width, i.height,
@@ -85,7 +92,7 @@ LIMIT ? OFFSET ?
 			return
 		}
 
-		writeJSON(w, http.StatusOK, ListResponse{Images: items})
+		writeJSON(w, http.StatusOK, ListResponse{Images: items, Total: total})
 	})
 }
 

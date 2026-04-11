@@ -1,6 +1,8 @@
 const state = {
   images: [],
   results: [],
+  imagesTotal: 0,
+  stats: null,
 };
 
 const galleryGrid = document.getElementById('gallery-grid');
@@ -13,6 +15,12 @@ const textQuery = document.getElementById('text-query');
 const searchStatus = document.getElementById('search-status');
 const refreshImagesButton = document.getElementById('refresh-images');
 const clearResultsButton = document.getElementById('clear-results');
+const refreshStatsButton = document.getElementById('refresh-stats');
+const retryFailedButton = document.getElementById('retry-failed');
+const statsSummary = document.getElementById('stats-summary');
+const statsDetail = document.getElementById('stats-detail');
+const statsProgress = document.getElementById('stats-progress');
+const statsFailures = document.getElementById('stats-failures');
 
 function setStatus(target, message, kind) {
   target.textContent = message;
@@ -99,6 +107,71 @@ function renderResults() {
   resultsGrid.innerHTML = state.results.map((item) => cardMarkup(item, 'result')).join('');
 }
 
+function renderStats() {
+  const payload = state.stats;
+  if (!payload || !payload.queue) {
+    setStatus(statsSummary, 'No queue stats available yet.', 'info');
+    statsDetail.textContent = '';
+    statsProgress.style.width = '0%';
+    statsFailures.innerHTML = '';
+    retryFailedButton.disabled = true;
+    return;
+  }
+
+  const queue = payload.queue;
+  const total = Number(queue.total || 0);
+  const done = Number(queue.done || 0);
+  const failed = Number(queue.failed || 0);
+  const pending = Number(queue.pending || 0);
+  const leased = Number(queue.leased || 0);
+  const completed = done + failed;
+  const pct = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+
+  statsProgress.style.width = `${pct}%`;
+  setStatus(
+    statsSummary,
+    `Indexed ${done}/${total} jobs (${pct}%). Failed: ${failed}.`,
+    failed > 0 ? 'error' : 'success',
+  );
+
+  const imagesTotal = Number(payload.images_total || state.imagesTotal || 0);
+  statsDetail.textContent = `Images: ${imagesTotal}. Queue pending: ${pending}. In progress: ${leased}.`;
+  retryFailedButton.disabled = failed === 0;
+
+  const failures = payload.recent_failures || [];
+  if (failures.length === 0) {
+    statsFailures.innerHTML = '';
+    return;
+  }
+
+  statsFailures.innerHTML = failures
+    .map((item) => {
+      const safeName = escapeHTML(item.original_name || `image #${item.image_id}`);
+      const safeError = escapeHTML(item.last_error || 'unknown error');
+      return `<article class="failure-item"><p><strong>${safeName}</strong> (attempt ${item.attempts})</p><p>${safeError}</p></article>`;
+    })
+    .join('');
+}
+
+async function loadStats() {
+  const response = await fetch('/api/stats');
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not load queue stats');
+  }
+  state.stats = payload;
+  renderStats();
+}
+
+async function retryFailedJobs() {
+  const response = await fetch('/api/jobs/retry-failed', { method: 'POST' });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || 'Retry failed jobs request failed');
+  }
+  return Number(payload.retried || 0);
+}
+
 async function loadImages() {
   setStatus(uploadStatus, 'Loading gallery...', 'info');
   const response = await fetch('/api/images' + '?limit=120&offset=0');
@@ -107,8 +180,9 @@ async function loadImages() {
     throw new Error(payload.error || 'Could not load images');
   }
   state.images = payload.images || [];
+  state.imagesTotal = Number(payload.total || state.images.length);
   renderGallery();
-  setStatus(uploadStatus, `Loaded ${state.images.length} image(s).`, 'success');
+  setStatus(uploadStatus, `Loaded ${state.images.length} of ${state.imagesTotal} image(s) (newest first).`, 'success');
 }
 
 async function runTextSearch(query) {
@@ -230,6 +304,26 @@ refreshImagesButton.addEventListener('click', () => {
   loadImages().catch((err) => setStatus(uploadStatus, err.message || 'Refresh failed', 'error'));
 });
 
+refreshStatsButton.addEventListener('click', () => {
+  loadStats().catch((err) => setStatus(statsSummary, err.message || 'Status refresh failed', 'error'));
+});
+
+retryFailedButton.addEventListener('click', async () => {
+  retryFailedButton.disabled = true;
+  setStatus(statsSummary, 'Retrying failed jobs...', 'info');
+  try {
+    const retried = await retryFailedJobs();
+    await loadStats();
+    await loadImages();
+    setStatus(statsSummary, `Requeued ${retried} failed job(s).`, retried > 0 ? 'success' : 'info');
+  } catch (err) {
+    setStatus(statsSummary, err.message || 'Retry failed jobs failed', 'error');
+  } finally {
+    const failed = state.stats && state.stats.queue ? Number(state.stats.queue.failed || 0) : 0;
+    retryFailedButton.disabled = failed === 0;
+  }
+});
+
 clearResultsButton.addEventListener('click', () => {
   state.results = [];
   renderResults();
@@ -238,4 +332,11 @@ clearResultsButton.addEventListener('click', () => {
 
 renderGallery();
 renderResults();
+renderStats();
 loadImages().catch((err) => setStatus(uploadStatus, err.message || 'Initial load failed', 'error'));
+loadStats().catch((err) => setStatus(statsSummary, err.message || 'Initial status load failed', 'error'));
+
+window.setInterval(() => {
+  loadImages().catch((err) => setStatus(uploadStatus, err.message || 'Auto-refresh failed', 'error'));
+  loadStats().catch((err) => setStatus(statsSummary, err.message || 'Auto-refresh failed', 'error'));
+}, 5000);

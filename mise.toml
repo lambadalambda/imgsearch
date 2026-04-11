@@ -31,7 +31,7 @@ run = "mkdir -p ./data && rm -f ./data/imgsearch.sqlite ./data/imgsearch.sqlite-
 
 [tasks.jina-serve]
 description = "Run local Jina MLX embedding server"
-run = "sh -c '.venv/bin/python scripts/jina_mlx_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
+run = "sh -c '.venv/bin/python scripts/jina_mlx_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images --max-image-pixels \"${JINA_MLX_MAX_IMAGE_PIXELS:-3145728}\"; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
 
 [tasks.jina-test]
 description = "Run embedder sidecar similarity integration test"

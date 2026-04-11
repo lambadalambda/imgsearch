@@ -70,6 +70,9 @@ func TestListImagesReturnsResults(t *testing.T) {
 	if len(resp.Images) != 2 {
 		t.Fatalf("expected 2 images, got %d", len(resp.Images))
 	}
+	if resp.Total != 3 {
+		t.Fatalf("expected total=3, got %d", resp.Total)
+	}
 	if resp.Images[0].ImageID != 3 || resp.Images[1].ImageID != 2 {
 		t.Fatalf("unexpected order: %+v", resp.Images)
 	}

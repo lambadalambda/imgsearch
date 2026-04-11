@@ -44,6 +44,7 @@ It is designed as a simple Go application that:
    - `mise run jina-setup`
 3. Start the local embedding sidecar:
    - `mise run jina-serve`
+   - Optional memory cap override: `JINA_MLX_MAX_IMAGE_PIXELS=1572864 mise run jina-serve`
 4. Start the app with sqlite-vector backend:
    - `go run ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
 5. Open the UI:
@@ -65,6 +66,7 @@ If you change `-data-dir`, start the sidecar with matching allowed image roots, 
 
 The UI includes:
 - upload form,
+- indexing status panel (queue totals, progress, recent failures),
 - gallery view with indexing states,
 - text search,
 - similar-image search buttons on cards.
@@ -83,6 +85,15 @@ Optional arguments and behavior:
 - `IMGSEARCH_IMPORT_CONVERT=auto` (default): try direct upload first, then auto-convert WEBP/AVIF with `vips` on failure.
 - `IMGSEARCH_IMPORT_CONVERT=vips`: always convert WEBP/AVIF via `vips` before upload.
 - `IMGSEARCH_IMPORT_CONVERT=never`: never convert; upload files as-is.
+
+## Observability
+
+- API status endpoint: `GET /api/stats`
+- API action endpoint: `POST /api/jobs/retry-failed` (requeue failed jobs for the active model)
+- Sidecar status endpoints: `GET /healthz`, `GET /readyz`, `GET /stats`
+- Sidecar prints one log line per embed request with request id, status, and duration.
+
+From the UI, use the **Retry Failed** button in the Indexing Status panel to requeue failed jobs.
 
 ## Optional Integration Test (Requires Sidecar)
 

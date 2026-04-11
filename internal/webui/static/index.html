@@ -17,6 +17,22 @@
         </p>
       </header>
 
+      <section class="panel" aria-labelledby="indexing-title">
+        <div class="panel-head">
+          <h2 id="indexing-title">Indexing Status</h2>
+          <div class="panel-actions">
+            <button id="retry-failed" type="button" class="ghost">Retry Failed</button>
+            <button id="refresh-stats" type="button" class="ghost">Refresh Status</button>
+          </div>
+        </div>
+        <p id="stats-summary" class="status" role="status" aria-live="polite"></p>
+        <div class="progress-track" aria-hidden="true">
+          <div id="stats-progress" class="progress-fill"></div>
+        </div>
+        <p id="stats-detail" class="status"></p>
+        <div id="stats-failures" class="failure-list"></div>
+      </section>
+
       <section class="panel" aria-labelledby="upload-title">
         <div class="panel-head">
           <h2 id="upload-title">Upload</h2>

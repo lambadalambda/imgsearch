@@ -208,3 +208,41 @@ WHERE id = 1
 		t.Fatalf("expected done after reclaim, got %s", state)
 	}
 }
+
+func TestProcessOneSetsRunAfterWhenRetryDelayConfigured(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	q.Embedder = &fakeEmbedder{err: errors.New("sidecar unavailable")}
+	q.RetryBaseDelay = 2 * time.Second
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+
+	var state string
+	var runAfter sql.NullString
+	if err := sqlDB.QueryRow(`SELECT state, run_after FROM index_jobs WHERE id = 1`).Scan(&state, &runAfter); err != nil {
+		t.Fatalf("select job retry data: %v", err)
+	}
+	if state != "pending" {
+		t.Fatalf("expected pending state for retry, got %s", state)
+	}
+	if !runAfter.Valid || runAfter.String == "" {
+		t.Fatal("expected run_after to be set for delayed retry")
+	}
+
+	var future int
+	if err := sqlDB.QueryRow(`
+SELECT CASE WHEN run_after > datetime('now') THEN 1 ELSE 0 END
+FROM index_jobs
+WHERE id = 1
+`).Scan(&future); err != nil {
+		t.Fatalf("compare run_after with now: %v", err)
+	}
+	if future != 1 {
+		t.Fatalf("expected run_after in the future, got run_after=%q", runAfter.String)
+	}
+}

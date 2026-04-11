@@ -15,7 +15,9 @@ import (
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/images"
+	"imgsearch/internal/jobs"
 	"imgsearch/internal/search"
+	"imgsearch/internal/stats"
 	"imgsearch/internal/upload"
 	"imgsearch/internal/vectorindex"
 	"imgsearch/internal/vectorindex/sqlitevector"
@@ -127,11 +129,12 @@ func main() {
 	}
 
 	queue := &worker.Queue{
-		DB:            sqlDB,
-		DataDir:       *dataDir,
-		LeaseDuration: 30 * time.Second,
-		Embedder:      embedder,
-		Index:         index,
+		DB:             sqlDB,
+		DataDir:        *dataDir,
+		LeaseDuration:  30 * time.Second,
+		RetryBaseDelay: 5 * time.Second,
+		Embedder:       embedder,
+		Index:          index,
 	}
 	go worker.RunLoop(context.Background(), queue, "main-worker", 500*time.Millisecond)
 
@@ -156,6 +159,8 @@ func newServerMux(
 	mux := http.NewServeMux()
 	mux.Handle("/api/upload", upload.NewHandler(uploadSvc))
 	mux.Handle("/api/images", images.NewHandler(&images.Handler{DB: sqlDB, ModelID: modelID}))
+	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: sqlDB, ModelID: modelID}))
+	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: sqlDB, ModelID: modelID}))
 	searchHandler := search.NewHandler(&search.Handler{
 		DB:       sqlDB,
 		ModelID:  modelID,
