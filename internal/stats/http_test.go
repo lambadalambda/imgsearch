@@ -32,7 +32,8 @@ VALUES
 	(1, 'a', 'one.jpg', 'images/a', 'image/jpeg', 10, 10),
 	(2, 'b', 'two.jpg', 'images/b', 'image/jpeg', 10, 10),
 	(3, 'c', 'three.jpg', 'images/c', 'image/jpeg', 10, 10),
-	(4, 'd', 'four.jpg', 'images/d', 'image/jpeg', 10, 10)
+	(4, 'd', 'four.jpg', 'images/d', 'image/jpeg', 10, 10),
+	(5, 'e', 'five.jpg', 'images/e', 'image/jpeg', 10, 10)
 `)
 	if err != nil {
 		t.Fatalf("seed images: %v", err)
@@ -71,11 +72,17 @@ func TestStatsHandlerReturnsQueueCountsAndFailures(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 
-	if resp.ImagesTotal != 4 {
-		t.Fatalf("images_total: got=%d want=4", resp.ImagesTotal)
+	if resp.ImagesTotal != 5 {
+		t.Fatalf("images_total: got=%d want=5", resp.ImagesTotal)
 	}
-	if resp.Queue.Total != 4 {
-		t.Fatalf("queue.total: got=%d want=4", resp.Queue.Total)
+	if resp.Queue.Tracked != 4 {
+		t.Fatalf("queue.tracked: got=%d want=4", resp.Queue.Tracked)
+	}
+	if resp.Queue.Missing != 1 {
+		t.Fatalf("queue.missing: got=%d want=1", resp.Queue.Missing)
+	}
+	if resp.Queue.Total != 5 {
+		t.Fatalf("queue.total: got=%d want=5", resp.Queue.Total)
 	}
 	if resp.Queue.Done != 1 || resp.Queue.Pending != 1 || resp.Queue.Leased != 1 || resp.Queue.Failed != 1 {
 		t.Fatalf("unexpected queue counts: %+v", resp.Queue)

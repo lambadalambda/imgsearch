@@ -39,7 +39,7 @@ func main() {
 	}
 
 	dbPath := filepath.Join(*dataDir, "imgsearch.sqlite")
-	dsn := fmt.Sprintf("%s?_busy_timeout=5000", dbPath)
+	dsn := fmt.Sprintf("%s?_busy_timeout=30000", dbPath)
 
 	resolvedSQLiteVectorPath, err := discoverSQLiteVectorPath(*sqliteVectorPath)
 	if err != nil {
@@ -116,6 +116,14 @@ func main() {
 	modelID, err := db.EnsureEmbeddingModel(context.Background(), sqlDB, modelSpec)
 	if err != nil {
 		log.Fatalf("ensure embedding model: %v", err)
+	}
+
+	enqueuedMissing, err := db.EnsureIndexJobsForModel(context.Background(), sqlDB, modelID)
+	if err != nil {
+		log.Fatalf("ensure model index jobs: %v", err)
+	}
+	if enqueuedMissing > 0 {
+		log.Printf("enqueued %d missing index jobs for model_id=%d", enqueuedMissing, modelID)
 	}
 
 	embedder, err := newEmbedder(*embedderType, *jinaURL, modelSpec.Dimensions)

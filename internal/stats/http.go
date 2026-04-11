@@ -13,6 +13,8 @@ type Handler struct {
 
 type QueueStats struct {
 	Total   int64 `json:"total"`
+	Tracked int64 `json:"tracked"`
+	Missing int64 `json:"missing"`
 	Pending int64 `json:"pending"`
 	Leased  int64 `json:"leased"`
 	Done    int64 `json:"done"`
@@ -63,7 +65,7 @@ SELECT
 FROM index_jobs
 WHERE kind = 'embed_image' AND model_id = ?
 `, h.ModelID).Scan(
-			&resp.Queue.Total,
+			&resp.Queue.Tracked,
 			&resp.Queue.Pending,
 			&resp.Queue.Leased,
 			&resp.Queue.Done,
@@ -72,6 +74,12 @@ WHERE kind = 'embed_image' AND model_id = ?
 			writeJSONError(w, http.StatusInternalServerError, "query failed")
 			return
 		}
+
+		resp.Queue.Missing = resp.ImagesTotal - resp.Queue.Tracked
+		if resp.Queue.Missing < 0 {
+			resp.Queue.Missing = 0
+		}
+		resp.Queue.Total = resp.Queue.Tracked + resp.Queue.Missing
 
 		rows, err := h.DB.QueryContext(r.Context(), `
 SELECT j.id, j.image_id, i.original_name, j.attempts, COALESCE(j.last_error, ''), j.updated_at

@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"imgsearch/internal/embedder"
@@ -124,6 +125,9 @@ LIMIT 1
 	}
 	if err != nil {
 		_ = tx.Rollback()
+		if isSQLiteLockError(err) {
+			return claimedJob{}, false, nil
+		}
 		return claimedJob{}, false, fmt.Errorf("select claimable job: %w", err)
 	}
 
@@ -147,6 +151,9 @@ WHERE id = ?
 `, owner, fmt.Sprintf("+%d seconds", leaseSeconds), job.ID)
 	if err != nil {
 		_ = tx.Rollback()
+		if isSQLiteLockError(err) {
+			return claimedJob{}, false, nil
+		}
 		return claimedJob{}, false, fmt.Errorf("update claimed job: %w", err)
 	}
 
@@ -258,4 +265,12 @@ func floatsToBlob(values []float32) []byte {
 		binary.LittleEndian.PutUint32(blob[i*4:], math.Float32bits(v))
 	}
 	return blob
+}
+
+func isSQLiteLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "database is busy")
 }

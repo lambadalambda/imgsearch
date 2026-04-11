@@ -89,11 +89,11 @@ Optional arguments and behavior:
 ## Observability
 
 - API status endpoint: `GET /api/stats`
-- API action endpoint: `POST /api/jobs/retry-failed` (requeue failed jobs for the active model)
+- API action endpoint: `POST /api/jobs/retry-failed` (requeue failed jobs and enqueue missing jobs for the active model)
 - Sidecar status endpoints: `GET /healthz`, `GET /readyz`, `GET /stats`
 - Sidecar prints one log line per embed request with request id, status, and duration.
 
-From the UI, use the **Retry Failed** button in the Indexing Status panel to requeue failed jobs.
+From the UI, use the **Retry Failed / Queue Missing** button in the Indexing Status panel.
 
 ## Optional Integration Test (Requires Sidecar)
 

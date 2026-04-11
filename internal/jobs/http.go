@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+
+	"imgsearch/internal/db"
 )
 
 type RetryFailedHandler struct {
@@ -12,7 +14,8 @@ type RetryFailedHandler struct {
 }
 
 type RetryFailedResponse struct {
-	Retried int64 `json:"retried"`
+	Retried  int64 `json:"retried"`
+	Enqueued int64 `json:"enqueued_missing"`
 }
 
 func NewRetryFailedHandler(h *RetryFailedHandler) http.Handler {
@@ -50,7 +53,13 @@ WHERE kind = 'embed_image'
 			return
 		}
 
-		writeJSON(w, http.StatusOK, RetryFailedResponse{Retried: rows})
+		enqueued, err := db.EnsureIndexJobsForModel(r.Context(), h.DB, h.ModelID)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "retry failed")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, RetryFailedResponse{Retried: rows, Enqueued: enqueued})
 	})
 }
 

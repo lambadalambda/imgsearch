@@ -122,6 +122,7 @@ function renderStats() {
   const total = Number(queue.total || 0);
   const done = Number(queue.done || 0);
   const failed = Number(queue.failed || 0);
+  const missing = Number(queue.missing || 0);
   const pending = Number(queue.pending || 0);
   const leased = Number(queue.leased || 0);
   const completed = done + failed;
@@ -130,13 +131,13 @@ function renderStats() {
   statsProgress.style.width = `${pct}%`;
   setStatus(
     statsSummary,
-    `Indexed ${done}/${total} jobs (${pct}%). Failed: ${failed}.`,
-    failed > 0 ? 'error' : 'success',
+    `Indexed ${done}/${total} jobs (${pct}%). Failed: ${failed}. Missing jobs: ${missing}.`,
+    failed > 0 ? 'error' : missing > 0 ? 'info' : 'success',
   );
 
   const imagesTotal = Number(payload.images_total || state.imagesTotal || 0);
   statsDetail.textContent = `Images: ${imagesTotal}. Queue pending: ${pending}. In progress: ${leased}.`;
-  retryFailedButton.disabled = failed === 0;
+  retryFailedButton.disabled = failed === 0 && missing === 0;
 
   const failures = payload.recent_failures || [];
   if (failures.length === 0) {
@@ -169,7 +170,10 @@ async function retryFailedJobs() {
   if (!response.ok) {
     throw new Error(payload.error || 'Retry failed jobs request failed');
   }
-  return Number(payload.retried || 0);
+  return {
+    retried: Number(payload.retried || 0),
+    enqueuedMissing: Number(payload.enqueued_missing || 0),
+  };
 }
 
 async function loadImages() {
@@ -309,18 +313,24 @@ refreshStatsButton.addEventListener('click', () => {
 });
 
 retryFailedButton.addEventListener('click', async () => {
-  retryFailedButton.disabled = true;
+    retryFailedButton.disabled = true;
   setStatus(statsSummary, 'Retrying failed jobs...', 'info');
   try {
-    const retried = await retryFailedJobs();
+    const result = await retryFailedJobs();
     await loadStats();
     await loadImages();
-    setStatus(statsSummary, `Requeued ${retried} failed job(s).`, retried > 0 ? 'success' : 'info');
+    const hadWork = result.retried > 0 || result.enqueuedMissing > 0;
+    setStatus(
+      statsSummary,
+      `Requeued ${result.retried} failed job(s), enqueued ${result.enqueuedMissing} missing job(s).`,
+      hadWork ? 'success' : 'info',
+    );
   } catch (err) {
     setStatus(statsSummary, err.message || 'Retry failed jobs failed', 'error');
   } finally {
     const failed = state.stats && state.stats.queue ? Number(state.stats.queue.failed || 0) : 0;
-    retryFailedButton.disabled = failed === 0;
+    const missing = state.stats && state.stats.queue ? Number(state.stats.queue.missing || 0) : 0;
+    retryFailedButton.disabled = failed === 0 && missing === 0;
   }
 });
 

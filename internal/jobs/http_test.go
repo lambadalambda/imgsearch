@@ -31,7 +31,8 @@ INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, he
 VALUES
 	(1, 'a', 'one.jpg', 'images/a', 'image/jpeg', 10, 10),
 	(2, 'b', 'two.jpg', 'images/b', 'image/jpeg', 10, 10),
-	(3, 'c', 'three.jpg', 'images/c', 'image/jpeg', 10, 10)
+	(3, 'c', 'three.jpg', 'images/c', 'image/jpeg', 10, 10),
+	(4, 'd', 'four.jpg', 'images/d', 'image/jpeg', 10, 10)
 `)
 	if err != nil {
 		t.Fatalf("seed images: %v", err)
@@ -70,6 +71,9 @@ func TestRetryFailedHandlerResetsFailedJobsForModel(t *testing.T) {
 	}
 	if resp.Retried != 2 {
 		t.Fatalf("retried: got=%d want=2", resp.Retried)
+	}
+	if resp.Enqueued != 1 {
+		t.Fatalf("enqueued_missing: got=%d want=1", resp.Enqueued)
 	}
 
 	rows, err := dbConn.Query(`
@@ -111,6 +115,14 @@ ORDER BY id ASC
 	}
 	if otherModelState != "failed" {
 		t.Fatalf("expected model 2 failed to remain unchanged, got %s", otherModelState)
+	}
+
+	var missingState string
+	if err := dbConn.QueryRow(`SELECT state FROM index_jobs WHERE kind='embed_image' AND model_id = 1 AND image_id = 4`).Scan(&missingState); err != nil {
+		t.Fatalf("query missing job after retry: %v", err)
+	}
+	if missingState != "pending" {
+		t.Fatalf("expected missing image to be queued as pending, got %s", missingState)
 	}
 }
 
