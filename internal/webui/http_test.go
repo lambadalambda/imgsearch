@@ -29,6 +29,9 @@ func TestRootServesIndexPage(t *testing.T) {
 	if !strings.Contains(body, "id=\"upload-form\"") {
 		t.Fatalf("expected upload form in page")
 	}
+	if !strings.Contains(body, "id=\"negative-query\"") {
+		t.Fatalf("expected optional negative prompt field in page")
+	}
 	if !strings.Contains(body, "id=\"image-lightbox\"") {
 		t.Fatalf("expected lightbox container in page")
 	}
@@ -52,6 +55,9 @@ func TestAssetsAreServed(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "is_anchor") {
 		t.Fatalf("expected similar-search anchor behavior in javascript")
+	}
+	if !strings.Contains(rr.Body.String(), "params.set('neg'") {
+		t.Fatalf("expected negative prompt query parameter in javascript")
 	}
 }
 

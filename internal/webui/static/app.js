@@ -12,6 +12,7 @@ const uploadFile = document.getElementById('upload-file');
 const uploadStatus = document.getElementById('upload-status');
 const searchForm = document.getElementById('text-search-form');
 const textQuery = document.getElementById('text-query');
+const negativeQuery = document.getElementById('negative-query');
 const searchStatus = document.getElementById('search-status');
 const refreshImagesButton = document.getElementById('refresh-images');
 const clearResultsButton = document.getElementById('clear-results');
@@ -242,8 +243,11 @@ async function loadImages() {
   setStatus(uploadStatus, `Loaded ${state.images.length} of ${state.imagesTotal} image(s) (newest first).`, 'success');
 }
 
-async function runTextSearch(query) {
+async function runTextSearch(query, negative) {
   const params = new URLSearchParams({ q: query, limit: '24' });
+  if (negative) {
+    params.set('neg', negative);
+  }
   const response = await fetch(`/api/search/text?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok) {
@@ -343,14 +347,19 @@ uploadForm.addEventListener('submit', async (event) => {
 searchForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const q = textQuery.value.trim();
+  const neg = negativeQuery ? negativeQuery.value.trim() : '';
   if (!q) {
     setStatus(searchStatus, 'Enter a search phrase first.', 'error');
     return;
   }
 
-  setStatus(searchStatus, `Searching for "${q}"...`, 'info');
+  if (neg) {
+    setStatus(searchStatus, `Searching for "${q}" excluding "${neg}"...`, 'info');
+  } else {
+    setStatus(searchStatus, `Searching for "${q}"...`, 'info');
+  }
   try {
-    await runTextSearch(q);
+    await runTextSearch(q, neg);
   } catch (err) {
     setStatus(searchStatus, err.message || 'Text search failed', 'error');
   }

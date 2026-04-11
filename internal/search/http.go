@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/vectorindex"
@@ -33,6 +36,10 @@ type SearchResponse struct {
 	Results []SearchResult `json:"results"`
 }
 
+const maxNegativePromptChars = 500
+
+var errNegativePromptNearZero = errors.New("negative prompt too similar to query")
+
 func NewHandler(h *Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/search/text", h.handleTextSearch)
@@ -45,14 +52,23 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	q := r.URL.Query().Get("q")
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
 		writeJSONError(w, http.StatusBadRequest, "missing query")
 		return
 	}
+	neg := strings.TrimSpace(r.URL.Query().Get("neg"))
+	if len(neg) > maxNegativePromptChars {
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("negative prompt too long (max %d characters)", maxNegativePromptChars))
+		return
+	}
 
-	vec, err := h.Embedder.EmbedText(r.Context(), q)
+	vec, err := h.embedQueryVector(r.Context(), q, neg)
 	if err != nil {
+		if errors.Is(err, errNegativeEmbedding) {
+			writeJSONError(w, http.StatusInternalServerError, "negative embedding failed")
+			return
+		}
 		writeJSONError(w, http.StatusInternalServerError, "embedding failed")
 		return
 	}
@@ -71,6 +87,76 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, SearchResponse{Results: results})
+}
+
+var errNegativeEmbedding = errors.New("negative embedding failed")
+
+func (h *Handler) embedQueryVector(ctx context.Context, query string, negative string) ([]float32, error) {
+	if negative == "" {
+		return h.Embedder.EmbedText(ctx, query)
+	}
+
+	var queryVec []float32
+	var negativeVec []float32
+	var queryErr error
+	var negativeErr error
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		queryVec, queryErr = h.Embedder.EmbedText(ctx, query)
+	}()
+	go func() {
+		defer wg.Done()
+		negativeVec, negativeErr = h.Embedder.EmbedText(ctx, negative)
+	}()
+	wg.Wait()
+
+	if queryErr != nil {
+		return nil, queryErr
+	}
+	if negativeErr != nil {
+		return nil, errNegativeEmbedding
+	}
+
+	combined, err := combineQueryWithNegative(queryVec, negativeVec)
+	if err != nil {
+		if errors.Is(err, errNegativePromptNearZero) {
+			return queryVec, nil
+		}
+		return nil, err
+	}
+
+	return combined, nil
+}
+
+func combineQueryWithNegative(query []float32, negative []float32) ([]float32, error) {
+	if len(query) != len(negative) {
+		return nil, fmt.Errorf("query and negative dimensions differ: %d vs %d", len(query), len(negative))
+	}
+	if len(query) == 0 {
+		return nil, fmt.Errorf("query embedding is empty")
+	}
+
+	out := make([]float32, len(query))
+	var squareNorm float64
+	for i := range query {
+		v := float64(query[i]) - float64(negative[i])
+		out[i] = float32(v)
+		squareNorm += v * v
+	}
+
+	if squareNorm < 1e-12 {
+		return nil, errNegativePromptNearZero
+	}
+
+	invNorm := float32(1 / math.Sqrt(squareNorm))
+	for i := range out {
+		out[i] *= invNorm
+	}
+
+	return out, nil
 }
 
 func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {

@@ -125,7 +125,7 @@ The UI includes:
 - upload form,
 - indexing status panel (queue totals, progress, recent failures),
 - gallery view with indexing states,
-- text search,
+- text search (with optional negative prompt via `neg` query param),
 - similar-image search buttons on cards.
 
 Supported upload formats: JPEG, PNG, WEBP, and AVIF.
