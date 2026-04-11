@@ -1,0 +1,243 @@
+package worker
+
+import (
+	"context"
+	"database/sql"
+	"encoding/binary"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"time"
+
+	"imgsearch/internal/vectorindex"
+)
+
+type ImageEmbedder interface {
+	EmbedImage(ctx context.Context, path string) ([]float32, error)
+}
+
+type Queue struct {
+	DB            *sql.DB
+	DataDir       string
+	LeaseDuration time.Duration
+	Embedder      ImageEmbedder
+	Index         vectorindex.VectorIndex
+}
+
+type claimedJob struct {
+	ID          int64
+	ImageID     int64
+	ModelID     int64
+	Attempts    int
+	MaxAttempts int
+}
+
+func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
+	if q == nil || q.DB == nil {
+		return false, fmt.Errorf("queue db is nil")
+	}
+	if q.Embedder == nil {
+		return false, fmt.Errorf("queue embedder is nil")
+	}
+	if q.Index == nil {
+		return false, fmt.Errorf("queue index is nil")
+	}
+	if q.DataDir == "" {
+		return false, fmt.Errorf("queue data dir is empty")
+	}
+	if owner == "" {
+		owner = "worker"
+	}
+	if q.LeaseDuration <= 0 {
+		q.LeaseDuration = 30 * time.Second
+	}
+
+	job, ok, err := q.claimNext(ctx, owner)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+
+	storagePath, err := q.loadImagePath(ctx, job.ImageID)
+	if err != nil {
+		_ = q.failOrRetry(ctx, job, err)
+		return true, err
+	}
+
+	absPath := filepath.Join(q.DataDir, filepath.FromSlash(storagePath))
+	if _, err := os.Stat(absPath); err != nil {
+		_ = q.failOrRetry(ctx, job, fmt.Errorf("stat image file: %w", err))
+		return true, err
+	}
+
+	vec, err := q.Embedder.EmbedImage(ctx, absPath)
+	if err != nil {
+		_ = q.failOrRetry(ctx, job, err)
+		return true, nil
+	}
+
+	if len(vec) == 0 {
+		err := fmt.Errorf("empty embedding vector")
+		_ = q.failOrRetry(ctx, job, err)
+		return true, nil
+	}
+
+	if err := q.completeJob(ctx, job, vec); err != nil {
+		_ = q.failOrRetry(ctx, job, err)
+		return true, err
+	}
+
+	if err := q.Index.Upsert(ctx, job.ImageID, job.ModelID, vec); err != nil {
+		return true, err
+	}
+
+	return true, nil
+}
+
+func (q *Queue) claimNext(ctx context.Context, owner string) (claimedJob, bool, error) {
+	tx, err := q.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return claimedJob{}, false, fmt.Errorf("begin claim tx: %w", err)
+	}
+
+	var job claimedJob
+	err = tx.QueryRowContext(ctx, `
+SELECT id, image_id, model_id, attempts, max_attempts
+FROM index_jobs
+WHERE kind = 'embed_image'
+  AND (run_after IS NULL OR run_after <= datetime('now'))
+  AND (
+    state = 'pending'
+    OR (state = 'leased' AND leased_until IS NOT NULL AND leased_until <= datetime('now'))
+  )
+ORDER BY created_at ASC
+LIMIT 1
+`).Scan(&job.ID, &job.ImageID, &job.ModelID, &job.Attempts, &job.MaxAttempts)
+	if err == sql.ErrNoRows {
+		_ = tx.Rollback()
+		return claimedJob{}, false, nil
+	}
+	if err != nil {
+		_ = tx.Rollback()
+		return claimedJob{}, false, fmt.Errorf("select claimable job: %w", err)
+	}
+
+	leaseSeconds := int(q.LeaseDuration.Seconds())
+	if leaseSeconds <= 0 {
+		leaseSeconds = 30
+	}
+
+	res, err := tx.ExecContext(ctx, `
+UPDATE index_jobs
+SET state = 'leased',
+    attempts = attempts + 1,
+    lease_owner = ?,
+    leased_until = datetime('now', ?),
+    updated_at = datetime('now')
+WHERE id = ?
+  AND (
+    state = 'pending'
+    OR (state = 'leased' AND leased_until IS NOT NULL AND leased_until <= datetime('now'))
+  )
+`, owner, fmt.Sprintf("+%d seconds", leaseSeconds), job.ID)
+	if err != nil {
+		_ = tx.Rollback()
+		return claimedJob{}, false, fmt.Errorf("update claimed job: %w", err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return claimedJob{}, false, fmt.Errorf("rows affected claim job: %w", err)
+	}
+	if rows == 0 {
+		_ = tx.Rollback()
+		return claimedJob{}, false, nil
+	}
+
+	if err := tx.Commit(); err != nil {
+		return claimedJob{}, false, fmt.Errorf("commit claim tx: %w", err)
+	}
+
+	job.Attempts++
+	return job, true, nil
+}
+
+func (q *Queue) loadImagePath(ctx context.Context, imageID int64) (string, error) {
+	var storagePath string
+	if err := q.DB.QueryRowContext(ctx, `
+SELECT storage_path FROM images WHERE id = ?
+`, imageID).Scan(&storagePath); err != nil {
+		return "", fmt.Errorf("load image path: %w", err)
+	}
+	return storagePath, nil
+}
+
+func (q *Queue) completeJob(ctx context.Context, job claimedJob, vec []float32) error {
+	tx, err := q.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin complete tx: %w", err)
+	}
+
+	blob := floatsToBlob(vec)
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(image_id, model_id)
+DO UPDATE SET
+  dim = excluded.dim,
+  vector_blob = excluded.vector_blob,
+  updated_at = datetime('now')
+`, job.ImageID, job.ModelID, len(vec), blob)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("upsert image embedding: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE index_jobs
+SET state = 'done', leased_until = NULL, lease_owner = NULL, last_error = NULL, updated_at = datetime('now')
+WHERE id = ?
+`, job.ID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("mark job done: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit complete tx: %w", err)
+	}
+
+	return nil
+}
+
+func (q *Queue) failOrRetry(ctx context.Context, job claimedJob, procErr error) error {
+	nextState := "pending"
+	if job.Attempts >= job.MaxAttempts {
+		nextState = "failed"
+	}
+
+	_, err := q.DB.ExecContext(ctx, `
+UPDATE index_jobs
+SET state = ?,
+    leased_until = NULL,
+    lease_owner = NULL,
+    last_error = ?,
+    updated_at = datetime('now')
+WHERE id = ?
+`, nextState, procErr.Error(), job.ID)
+	if err != nil {
+		return fmt.Errorf("update failed job: %w", err)
+	}
+	return nil
+}
+
+func floatsToBlob(values []float32) []byte {
+	blob := make([]byte, len(values)*4)
+	for i, v := range values {
+		binary.LittleEndian.PutUint32(blob[i*4:], math.Float32bits(v))
+	}
+	return blob
+}
