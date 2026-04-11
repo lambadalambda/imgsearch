@@ -47,14 +47,24 @@ MVP design priorities:
 - Similar-image search: start from an indexed image ID and compare against other indexed vectors.
 - Optional future rerank step using metadata/tags.
 
-### 6) Vector Search Strategy (MVP)
-- Store vectors as float32 blobs in SQLite.
-- Keep an in-memory vector cache in the app process.
-- Use brute-force cosine similarity in Go for exact nearest neighbors.
-- Rebuild/refresh cache when new embeddings are written.
-- Target envelope: up to ~10k images in MVP.
+### 6) Vector Index Abstraction
+- Use a `VectorIndex` interface so search backend can be replaced without changing handlers.
+- MVP implementation: `SQLiteVectorIndex` backed by `sqlite-vector`.
+- Secondary implementation (test/fallback): `BruteForceVectorIndex` in Go.
 
-### 7) File Storage
+Proposed interface:
+- `Upsert(imageID int64, modelID int64, vec []float32) error`
+- `Delete(imageID int64, modelID int64) error`
+- `Search(modelID int64, query []float32, limit int) ([]SearchHit, error)`
+- `SearchByImageID(modelID int64, imageID int64, limit int) ([]SearchHit, error)`
+
+### 7) Vector Search Strategy (MVP)
+- Store vectors as float32 blobs in SQLite (`image_embeddings`) as source-of-truth.
+- Mirror vectors into `sqlite-vector` index tables for nearest-neighbor queries.
+- Query path uses `sqlite-vector` for top-k candidates.
+- Keep search backend behind `VectorIndex` so migration to another ANN library stays low-risk.
+
+### 8) File Storage
 - Configurable data directory (default: `./data`).
 - Layout:
   - `./data/images/<sha256>` for original images
@@ -102,6 +112,14 @@ MVP design priorities:
 
 Primary key: (`image_id`, `model_id`)
 
+### `vector_index_entries` (optional metadata table)
+- `image_id` (FK)
+- `model_id` (FK)
+- `indexed_at`
+- `index_backend` (e.g. `sqlite-vector`)
+
+Primary key: (`image_id`, `model_id`, `index_backend`)
+
 ### `index_jobs`
 - `id` (PK)
 - `kind` (e.g. `embed_image`)
@@ -126,3 +144,4 @@ Unique key: (`kind`, `image_id`, `model_id`)
 - Add health endpoint for worker queue depth and failure count.
 - On startup, recover expired leases so no job stays stuck in `leased` indefinitely.
 - Restrict network binding to localhost by default.
+- Initialize and validate `sqlite-vector` on startup; fail fast with actionable error if extension cannot load.

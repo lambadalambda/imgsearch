@@ -1,9 +1,9 @@
 # Architecture Decisions
 
 ## ADR-001: Vector Search Strategy for MVP
-- Context: The app needs nearest-neighbor search over image vectors while staying simple.
-- Decision: Use brute-force cosine similarity in Go over vectors stored in SQLite and cached in memory.
-- Consequences: Exact results and simple implementation, but limited practical scale for MVP-sized libraries.
+- Context: The app needs nearest-neighbor search over image vectors with better scaling than linear scans.
+- Decision: Use `sqlite-vector` as the default vector backend behind a `VectorIndex` interface.
+- Consequences: Better retrieval performance in SQLite while keeping backend swappable for future changes.
 
 ## ADR-002: Embedding Integration for MVP
 - Context: Different local model runtimes have different packaging constraints.

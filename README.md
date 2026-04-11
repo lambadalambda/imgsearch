@@ -18,7 +18,7 @@ It is designed as a simple Go application that:
 - Backend: Go
 - Frontend: HTML/CSS/JavaScript
 - Persistence: SQLite (metadata + vector storage)
-- Search (MVP): brute-force cosine similarity in Go over stored vectors
+- Search (MVP): `sqlite-vector` via a `VectorIndex` interface
 - Embeddings: local multimodal embedding model through a pluggable adapter
 
 ## MVP Constraints
@@ -27,6 +27,7 @@ It is designed as a simple Go application that:
 - Supported formats (MVP): JPEG and PNG.
 - Server binds to localhost by default (`127.0.0.1`).
 - Model runtime may be a local sidecar process in MVP; single-binary model packaging is post-MVP.
+- Vector backend is swappable; default implementation uses `sqlite-vector`.
 
 ## Initial Scope
 - Upload images from UI

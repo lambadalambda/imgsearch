@@ -17,11 +17,13 @@ Acceptance:
 ### Milestone 1: Project Bootstrap
 - Initialize Go module and directory layout.
 - Add SQLite connection and migration runner.
+- Add `VectorIndex` interface and `sqlite-vector` wiring.
 - Add baseline test harness.
 
 Acceptance:
 - App starts, runs migrations idempotently, and passes initial tests.
 - Migration version is tracked in `schema_migrations`.
+- `sqlite-vector` availability is validated at startup.
 
 ### Milestone 2: Upload + Persistence
 - Implement upload endpoint.
@@ -50,6 +52,7 @@ Acceptance:
 Acceptance:
 - Test fixtures return deterministic top results.
 - Cosine similarity ranking is deterministic and excludes self-match for similar-image search.
+- Search endpoints use `VectorIndex` abstraction rather than a hard-coded backend.
 
 ### Milestone 5: Web UI
 - Build minimal UI with:
@@ -68,16 +71,15 @@ Acceptance:
 - Use a fake embedder in early slices to avoid model-runtime coupling.
 
 ## First 3 TDD Slices
-1. SQLite migrations + queue leasing primitives + recovery tests.
+1. SQLite migrations + queue leasing primitives + `VectorIndex` contract tests.
 2. Upload endpoint + staged file writes + enqueue tests.
-3. Worker `ProcessOne` + fake embedder + deterministic ranking tests.
+3. Worker `ProcessOne` + fake embedder + `sqlite-vector` upsert/search tests.
 
 ## Out of Scope for MVP
 - User accounts/auth.
 - Distributed workers.
 - Cloud storage.
 - Advanced reranking and relevance feedback.
-- ANN indexes and SQLite vector extensions.
 - Full model packaging into a single binary.
 
 ## Post-MVP Priorities
