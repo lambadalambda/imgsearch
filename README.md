@@ -50,4 +50,12 @@ For fallback local testing without model runtime, run with `-embedder determinis
 If you change `-data-dir`, start the sidecar with matching allowed image roots, e.g.
 `python3 scripts/jina_mlx_server.py --allow-dir /path/to/data/images`.
 
+## Optional Integration Test (Requires Sidecar)
+
+Run semantic similarity checks against fixture images (skipped by default):
+
+`RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=http://127.0.0.1:9009 go test ./internal/embedder/jinamlx -run Sidecar -v`
+
+This test verifies expected relative similarity trends, such as cat images ranking closer to each other than cat-vs-dog, and woman portraits clustering together.
+
 See `docs/architecture.md`, `docs/mvp-plan.md`, and `docs/decisions.md` for implementation details.
