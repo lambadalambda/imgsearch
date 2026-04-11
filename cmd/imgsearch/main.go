@@ -9,13 +9,17 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 
 	"imgsearch/internal/app"
 	"imgsearch/internal/db"
+	"imgsearch/internal/embedder/deterministic"
+	"imgsearch/internal/search"
 	"imgsearch/internal/upload"
 	"imgsearch/internal/vectorindex/sqlitevector"
+	"imgsearch/internal/worker"
 )
 
 func main() {
@@ -50,14 +54,34 @@ func main() {
 		log.Fatalf("ensure embedding model: %v", err)
 	}
 
+	embedder := &deterministic.Embedder{Dimensions: 2048}
+	index := sqlitevector.NewIndex(sqlDB)
+
 	uploadSvc := &upload.Service{
 		DB:      sqlDB,
 		DataDir: *dataDir,
 		ModelID: modelID,
 	}
 
+	queue := &worker.Queue{
+		DB:            sqlDB,
+		DataDir:       *dataDir,
+		LeaseDuration: 30 * time.Second,
+		Embedder:      embedder,
+		Index:         index,
+	}
+	go worker.RunLoop(context.Background(), queue, "main-worker", 500*time.Millisecond)
+
 	mux := http.NewServeMux()
 	mux.Handle("/api/upload", upload.NewHandler(uploadSvc))
+	searchHandler := search.NewHandler(&search.Handler{
+		DB:       sqlDB,
+		ModelID:  modelID,
+		DataDir:  *dataDir,
+		Embedder: embedder,
+		Index:    index,
+	})
+	mux.Handle("/api/search/", searchHandler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))

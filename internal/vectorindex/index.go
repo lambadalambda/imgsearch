@@ -1,6 +1,11 @@
 package vectorindex
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var ErrNotFound = errors.New("vector not found")
 
 type SearchHit struct {
 	ImageID  int64
