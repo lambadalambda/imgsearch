@@ -60,6 +60,14 @@ func (i *Index) Search(ctx context.Context, modelID int64, query []float32, limi
 		return nil, err
 	}
 
+	scanK, err := i.countEmbeddings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if scanK <= 0 {
+		return []vectorindex.SearchHit{}, nil
+	}
+
 	rows, err := i.DB.QueryContext(ctx, `
 SELECT ie.image_id, v.distance
 FROM image_embeddings AS ie
@@ -68,7 +76,7 @@ JOIN vector_full_scan('image_embeddings', 'vector_blob', ?, ?) AS v
 WHERE ie.model_id = ?
 ORDER BY v.distance ASC
 LIMIT ?
-`, floatsToBlob(query), limit, modelID, limit)
+`, floatsToBlob(query), scanK, modelID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("vector search query: %w", err)
 	}
@@ -87,6 +95,14 @@ LIMIT ?
 		return nil, fmt.Errorf("iterate vector hits: %w", err)
 	}
 	return hits, nil
+}
+
+func (i *Index) countEmbeddings(ctx context.Context) (int64, error) {
+	var total int64
+	if err := i.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM image_embeddings`).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count embeddings: %w", err)
+	}
+	return total, nil
 }
 
 func (i *Index) SearchByImageID(ctx context.Context, modelID int64, imageID int64, limit int) ([]vectorindex.SearchHit, error) {

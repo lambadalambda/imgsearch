@@ -30,6 +30,10 @@ body {
   line-height: 1.45;
 }
 
+body.lightbox-open {
+  overflow: hidden;
+}
+
 .shell {
   width: min(1180px, 96vw);
   margin: 32px auto 48px;
@@ -233,11 +237,80 @@ button:disabled {
   grid-template-rows: 170px auto;
 }
 
+.thumb-button {
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.thumb-button:focus-visible {
+  outline: 2px solid #2e5f78;
+  outline-offset: -2px;
+}
+
 .card img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   background: linear-gradient(120deg, #ede7da, #dedad1);
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(18, 16, 13, 0.86);
+  display: none;
+  padding: 24px;
+}
+
+.lightbox:not([hidden]) {
+  display: grid;
+  place-items: center;
+}
+
+.lightbox-figure {
+  margin: 0;
+  max-width: min(92vw, 1400px);
+  max-height: 88vh;
+  display: grid;
+  gap: 10px;
+}
+
+.lightbox-figure img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: calc(88vh - 44px);
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.5);
+  background: #181714;
+}
+
+#lightbox-caption {
+  margin: 0;
+  color: #f2eee5;
+  font-size: 0.92rem;
+  text-align: center;
+  word-break: break-word;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(15, 14, 12, 0.68);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 999px;
+}
+
+.lightbox-close:hover:not(:disabled) {
+  background: rgba(37, 33, 27, 0.88);
 }
 
 .meta {
@@ -292,6 +365,11 @@ button:disabled {
 .state.leased {
   background: #e2f0f6;
   color: var(--leased);
+}
+
+.state.anchor {
+  background: #e7ebfa;
+  color: #2f458c;
 }
 
 .empty {

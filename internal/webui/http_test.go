@@ -29,6 +29,9 @@ func TestRootServesIndexPage(t *testing.T) {
 	if !strings.Contains(body, "id=\"upload-form\"") {
 		t.Fatalf("expected upload form in page")
 	}
+	if !strings.Contains(body, "id=\"image-lightbox\"") {
+		t.Fatalf("expected lightbox container in page")
+	}
 }
 
 func TestAssetsAreServed(t *testing.T) {
@@ -43,6 +46,12 @@ func TestAssetsAreServed(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "fetch('/api/images'") {
 		t.Fatalf("expected app javascript payload")
+	}
+	if !strings.Contains(rr.Body.String(), "openLightbox") {
+		t.Fatalf("expected lightbox javascript behavior")
+	}
+	if !strings.Contains(rr.Body.String(), "is_anchor") {
+		t.Fatalf("expected similar-search anchor behavior in javascript")
 	}
 }
 

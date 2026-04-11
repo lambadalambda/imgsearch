@@ -21,6 +21,12 @@ const statsSummary = document.getElementById('stats-summary');
 const statsDetail = document.getElementById('stats-detail');
 const statsProgress = document.getElementById('stats-progress');
 const statsFailures = document.getElementById('stats-failures');
+const lightbox = document.getElementById('image-lightbox');
+const lightboxImage = document.getElementById('lightbox-image');
+const lightboxCaption = document.getElementById('lightbox-caption');
+const lightboxCloseButton = document.getElementById('lightbox-close');
+
+let lastFocusedElement = null;
 
 function setStatus(target, message, kind) {
   target.textContent = message;
@@ -70,25 +76,72 @@ function cardMarkup(item, mode) {
   const safeName = escapeHTML(item.original_name);
   const safePath = escapeHTML(item.storage_path);
   const safeImageURL = escapeHTML(toMediaURL(item.storage_path));
-  const score = typeof item.distance === 'number' ? `<p class="distance">distance ${item.distance.toFixed(4)}</p>` : '';
+  const score = typeof item.distance === 'number' && !item.is_anchor ? `<p class="distance">distance ${item.distance.toFixed(4)}</p>` : '';
   const status = item.index_state || 'done';
   const canSearchSimilar = status === 'done';
-  const actionLabel = mode === 'result' ? 'Use as anchor' : 'Find similar';
+  const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : 'Use as anchor') : 'Find similar';
   const disabled = canSearchSimilar ? '' : 'disabled';
   const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';
+  const anchorBadge = item.is_anchor ? '<p class="state anchor">anchor</p>' : '';
 
   return `
     <article class="card">
-      <img src="${safeImageURL}" alt="${safeName}" loading="lazy" />
+      <button
+        type="button"
+        class="thumb-button"
+        data-lightbox-src="${safeImageURL}"
+        data-lightbox-caption="${safeName}"
+        aria-label="Open full image for ${safeName}"
+      >
+        <img src="${safeImageURL}" alt="${safeName}" loading="lazy" />
+      </button>
       <div class="meta">
         <h3>${safeName}</h3>
         <p class="path">${safePath}</p>
         <p class="${stateClass(status)}">${status}</p>
+        ${anchorBadge}
         ${score}
         <button class="ghost similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
       </div>
     </article>
   `;
+}
+
+function openLightbox(source, caption) {
+  if (!lightbox || !lightboxImage || !lightboxCaption || !source) {
+    return;
+  }
+
+  lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  lightboxImage.src = source;
+  lightboxImage.alt = caption || 'Full-size image preview';
+  lightboxCaption.textContent = caption || '';
+  lightbox.hidden = false;
+  document.body.classList.add('lightbox-open');
+
+  if (lightboxCloseButton) {
+    lightboxCloseButton.focus();
+  }
+}
+
+function closeLightbox() {
+  if (!lightbox || !lightboxImage || !lightboxCaption) {
+    return;
+  }
+
+  if (lightbox.hidden) {
+    return;
+  }
+
+  lightbox.hidden = true;
+  lightboxImage.removeAttribute('src');
+  lightboxCaption.textContent = '';
+  document.body.classList.remove('lightbox-open');
+
+  if (lastFocusedElement) {
+    lastFocusedElement.focus();
+  }
+  lastFocusedElement = null;
 }
 
 function renderGallery() {
@@ -204,13 +257,14 @@ async function runTextSearch(query) {
       ...image,
       ...item,
       index_state: image.index_state || 'done',
+      is_anchor: false,
     };
   });
   renderResults();
   setStatus(searchStatus, `Text search returned ${state.results.length} result(s).`, 'success');
 }
 
-async function runSimilarSearch(imageID) {
+async function runSimilarSearch(imageID, anchorHint) {
   const params = new URLSearchParams({ image_id: String(imageID), limit: '24' });
   const response = await fetch(`/api/search/similar?${params.toString()}`);
   const payload = await response.json();
@@ -219,7 +273,7 @@ async function runSimilarSearch(imageID) {
   }
 
   const imageByID = new Map(state.images.map((item) => [item.image_id, item]));
-  state.results = (payload.results || []).map((item) => {
+  const mergedResults = (payload.results || []).map((item) => {
     const image = imageByID.get(item.image_id) || {};
     return {
       ...image,
@@ -227,6 +281,29 @@ async function runSimilarSearch(imageID) {
       index_state: image.index_state || 'done',
     };
   });
+
+  const existingAnchor = mergedResults.find((item) => Number(item.image_id) === imageID) || null;
+  const anchorSource = imageByID.get(imageID) || anchorHint || existingAnchor;
+
+  let anchorResult = null;
+  if (anchorSource) {
+    anchorResult = {
+      ...anchorSource,
+      image_id: imageID,
+      index_state: anchorSource.index_state || 'done',
+      distance: typeof anchorSource.distance === 'number' ? anchorSource.distance : 0,
+      is_anchor: true,
+    };
+  }
+
+  const nonAnchorResults = mergedResults
+    .filter((item) => Number(item.image_id) !== imageID)
+    .map((item) => ({
+      ...item,
+      is_anchor: false,
+    }));
+
+  state.results = anchorResult ? [anchorResult, ...nonAnchorResults] : nonAnchorResults;
   renderResults();
   setStatus(searchStatus, `Similar search returned ${state.results.length} result(s).`, 'success');
 }
@@ -293,16 +370,53 @@ function attachSimilarHandler(target) {
     }
 
     setStatus(searchStatus, `Searching similar images for #${imageID}...`, 'info');
+    const anchorHint =
+      state.results.find((item) => Number(item.image_id) === imageID) ||
+      state.images.find((item) => Number(item.image_id) === imageID) ||
+      null;
     try {
-      await runSimilarSearch(imageID);
+      await runSimilarSearch(imageID, anchorHint);
     } catch (err) {
       setStatus(searchStatus, err.message || 'Similar search failed', 'error');
     }
   });
 }
 
+function attachLightboxHandler(target) {
+  target.addEventListener('click', (event) => {
+    const trigger = event.target.closest('.thumb-button');
+    if (!trigger || !target.contains(trigger)) {
+      return;
+    }
+
+    const source = trigger.dataset.lightboxSrc || '';
+    const caption = trigger.dataset.lightboxCaption || '';
+    openLightbox(source, caption);
+  });
+}
+
 attachSimilarHandler(galleryGrid);
 attachSimilarHandler(resultsGrid);
+attachLightboxHandler(galleryGrid);
+attachLightboxHandler(resultsGrid);
+
+if (lightboxCloseButton) {
+  lightboxCloseButton.addEventListener('click', closeLightbox);
+}
+
+if (lightbox) {
+  lightbox.addEventListener('click', (event) => {
+    if (event.target === lightbox) {
+      closeLightbox();
+    }
+  });
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeLightbox();
+  }
+});
 
 refreshImagesButton.addEventListener('click', () => {
   loadImages().catch((err) => setStatus(uploadStatus, err.message || 'Refresh failed', 'error'));

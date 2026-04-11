@@ -81,6 +81,74 @@ VALUES
 	}
 }
 
+func TestSQLiteVectorSearchKeepsModelIsolation(t *testing.T) {
+	if os.Getenv("RUN_SQLITE_VECTOR_INTEGRATION") != "1" {
+		t.Skip("set RUN_SQLITE_VECTOR_INTEGRATION=1 to enable")
+	}
+
+	extensionPath := os.Getenv("SQLITE_VECTOR_PATH")
+	if extensionPath == "" {
+		t.Skip("set SQLITE_VECTOR_PATH to sqlite-vector binary path")
+	}
+
+	dbConn := openWithSQLiteVector(t, extensionPath)
+
+	if err := db.RunMigrations(context.Background(), dbConn); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
+	_, err := dbConn.Exec(`
+INSERT INTO embedding_models(id, name, version, dimensions, metric, normalized)
+VALUES
+	(1, 'jina-embeddings-v4', 'mlx-8bit', 2, 'cosine', 1),
+	(2, 'deterministic-sha256', 'v1', 2, 'cosine', 1)
+`)
+	if err != nil {
+		t.Fatalf("insert models: %v", err)
+	}
+
+	_, err = dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES
+	(1, 'a', 'one.jpg', 'images/a', 'image/jpeg', 10, 10),
+	(2, 'b', 'two.jpg', 'images/b', 'image/jpeg', 10, 10)
+`)
+	if err != nil {
+		t.Fatalf("insert images: %v", err)
+	}
+
+	idx := NewIndex(dbConn)
+
+	// Model 1 vectors are far from query [1, 0].
+	if err := idx.Upsert(context.Background(), 1, 1, []float32{0, 1}); err != nil {
+		t.Fatalf("upsert model1 image1: %v", err)
+	}
+	if err := idx.Upsert(context.Background(), 2, 1, []float32{0, -1}); err != nil {
+		t.Fatalf("upsert model1 image2: %v", err)
+	}
+
+	// Model 2 vectors are near query [1, 0].
+	if err := idx.Upsert(context.Background(), 1, 2, []float32{1, 0}); err != nil {
+		t.Fatalf("upsert model2 image1: %v", err)
+	}
+	if err := idx.Upsert(context.Background(), 2, 2, []float32{0.99, 0.01}); err != nil {
+		t.Fatalf("upsert model2 image2: %v", err)
+	}
+
+	hits, err := idx.Search(context.Background(), 1, []float32{1, 0}, 2)
+	if err != nil {
+		t.Fatalf("search model1: %v", err)
+	}
+	if len(hits) != 2 {
+		t.Fatalf("expected 2 hits for model1, got %d", len(hits))
+	}
+	for _, hit := range hits {
+		if hit.ModelID != 1 {
+			t.Fatalf("expected hit model_id=1, got %d", hit.ModelID)
+		}
+	}
+}
+
 func openWithSQLiteVector(t *testing.T, extensionPath string) *sql.DB {
 	t.Helper()
 	absPath, err := filepath.Abs(extensionPath)
