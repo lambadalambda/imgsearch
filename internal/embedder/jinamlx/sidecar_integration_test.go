@@ -15,7 +15,7 @@ import (
 
 func TestSidecarEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 	if os.Getenv("RUN_JINA_MLX_INTEGRATION") != "1" {
-		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve` or `mise run jina-torch-serve` to enable")
+		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve`, `mise run jina-torch-serve`, or `mise run qwen3-serve` to enable")
 	}
 
 	baseURL := os.Getenv("JINA_MLX_URL")
@@ -71,7 +71,7 @@ func TestSidecarEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 
 func TestSidecarTextEmbeddingIsStableAcrossAlternatingQueries(t *testing.T) {
 	if os.Getenv("RUN_JINA_MLX_INTEGRATION") != "1" {
-		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve` or `mise run jina-torch-serve` to enable")
+		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve`, `mise run jina-torch-serve`, or `mise run qwen3-serve` to enable")
 	}
 
 	baseURL := os.Getenv("JINA_MLX_URL")

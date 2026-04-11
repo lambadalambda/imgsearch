@@ -41,6 +41,30 @@ run = "sh -c '.venv/bin/python scripts/jina_mlx_server.py --host 127.0.0.1 --por
 description = "Run local Jina Torch embedding server"
 run = "sh -c '.venv/bin/python scripts/jina_torch_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images --device \"${JINA_TORCH_DEVICE:-auto}\" --max-image-pixels \"${JINA_TORCH_MAX_IMAGE_PIXELS:-602112}\"; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
 
+[tasks.qwen3-setup]
+description = "Create venv and install Qwen3 sidecar deps"
+run = "python3 -m venv .venv-qwen3 && .venv-qwen3/bin/pip install --upgrade pip && .venv-qwen3/bin/pip install --extra-index-url https://download.pytorch.org/whl/cu128 'torch>=2.8,<2.9' torchvision && .venv-qwen3/bin/pip install accelerate qwen-vl-utils pillow requests 'transformers>=4.57.3,<5'"
+
+[tasks.qwen3-serve]
+description = "Run local Qwen3-VL-Embedding-8B sidecar"
+run = "sh -c '.venv-qwen3/bin/python scripts/qwen3_vl_server.py --host 127.0.0.1 --port 9010 --repo-path \"${QWEN3_VL_REPO_PATH:?set QWEN3_VL_REPO_PATH to cloned Qwen3-VL-Embedding repo}\" --allow-dir ./data/images --model-id \"${QWEN3_VL_MODEL_ID:-Qwen/Qwen3-VL-Embedding-8B}\" --attn-implementation \"${QWEN3_VL_ATTN_IMPL:-sdpa}\" --torch-dtype \"${QWEN3_VL_TORCH_DTYPE:-auto}\" --max-image-pixels \"${QWEN3_VL_MAX_IMAGE_PIXELS:-1843200}\"; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
+
+[tasks.serve-qwen-remote]
+description = "Run imgsearch against remote Qwen3 sidecar"
+run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" go run ./cmd/imgsearch -embedder qwen3-vl-embedding-8b -jina-mlx-url \"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" -embed-image-mode auto -vector-backend sqlite-vector"
+
+[tasks.qwen3-test]
+description = "Run sidecar semantic integration test against Qwen3"
+run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" go test ./internal/embedder/jinamlx -run SidecarEmbeddingsAreSemanticallyReasonable -v"
+
+[tasks.qwen3-test-api]
+description = "Run API sidecar integration test against Qwen3"
+run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" JINA_MLX_MODEL_NAME=Qwen3-VL-Embedding-8B JINA_MLX_MODEL_VERSION=transformers JINA_MLX_MODEL_DIMS=4096 go test ./internal/integration -run APIEndToEndWithJinaSidecar -v"
+
+[tasks.qwen3-test-all]
+description = "Run all integration tests against Qwen3 sidecar"
+run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" go test ./internal/embedder/jinamlx -run Sidecar -v && RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" JINA_MLX_MODEL_NAME=Qwen3-VL-Embedding-8B JINA_MLX_MODEL_VERSION=transformers JINA_MLX_MODEL_DIMS=4096 go test ./internal/integration -run APIEndToEndWithJinaSidecar -v"
+
 [tasks.jina-test]
 description = "Run embedder sidecar similarity integration test"
 run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=http://127.0.0.1:9009 go test ./internal/embedder/jinamlx -run Sidecar -v"

@@ -28,8 +28,8 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
-	embedderType := flag.String("embedder", "jina-mlx", "embedder backend: jina-mlx, jina-torch, or deterministic")
-	jinaURL := flag.String("jina-mlx-url", "http://127.0.0.1:9009", "embedding sidecar URL (jina-mlx or jina-torch)")
+	embedderType := flag.String("embedder", "jina-mlx", "embedder backend: jina-mlx, jina-torch, qwen3-vl-embedding-8b, or deterministic")
+	jinaURL := flag.String("jina-mlx-url", "http://127.0.0.1:9009", "embedding sidecar URL (jina-mlx, jina-torch, or qwen3-vl-embedding-8b)")
 	embedImageMode := flag.String("embed-image-mode", "auto", "image transport mode for sidecar embedders: path, bytes, or auto")
 	vectorBackend := flag.String("vector-backend", vectorBackendAuto, "vector backend: auto, sqlite-vector, bruteforce")
 	sqliteVectorPath := flag.String("sqlite-vector-path", "", "path to sqlite-vector extension binary (optional: defaults to SQLITE_VECTOR_PATH or tools/sqlite-vector/vector)")
@@ -109,7 +109,12 @@ func main() {
 		log.Fatalf("bootstrap app: %v", err)
 	}
 
-	modelSpec, err := embeddingModelSpec(*embedderType, 2048)
+	embedDimensions, err := embedderDimensionsForType(*embedderType)
+	if err != nil {
+		log.Fatalf("configure embedder dimensions: %v", err)
+	}
+
+	modelSpec, err := embeddingModelSpec(*embedderType, embedDimensions)
 	if err != nil {
 		log.Fatalf("configure model spec: %v", err)
 	}

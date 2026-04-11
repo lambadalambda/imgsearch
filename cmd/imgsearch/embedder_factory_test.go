@@ -18,11 +18,18 @@ func TestNewEmbedderDeterministic(t *testing.T) {
 }
 
 func TestNewEmbedderJinaRequiresURL(t *testing.T) {
-	tests := []string{"jina-mlx", "jina-torch"}
-	for _, kind := range tests {
-		_, err := newEmbedder(kind, "", 2048, "auto")
+	tests := []struct {
+		kind       string
+		dimensions int
+	}{
+		{kind: "jina-mlx", dimensions: 2048},
+		{kind: "jina-torch", dimensions: 2048},
+		{kind: "qwen3-vl-embedding-8b", dimensions: 4096},
+	}
+	for _, tc := range tests {
+		_, err := newEmbedder(tc.kind, "", tc.dimensions, "auto")
 		if err == nil {
-			t.Fatalf("expected error for empty URL for %s", kind)
+			t.Fatalf("expected error for empty URL for %s", tc.kind)
 		}
 	}
 }
@@ -41,6 +48,13 @@ func TestNewEmbedderJinaRejectsUnexpectedDimensions(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected dimensions mismatch error for %s", kind)
 		}
+	}
+}
+
+func TestNewEmbedderQwenRejectsUnexpectedDimensions(t *testing.T) {
+	_, err := newEmbedder("qwen3-vl-embedding-8b", "http://127.0.0.1:9009", 2048, "auto")
+	if err == nil {
+		t.Fatal("expected dimensions mismatch error for qwen3-vl-embedding-8b")
 	}
 }
 
@@ -74,5 +88,31 @@ func TestEmbeddingModelSpecUsesEmbedderType(t *testing.T) {
 	}
 	if torch.Name != "jina-embeddings-v4" || torch.Version != "torch" {
 		t.Fatalf("unexpected jina torch spec: %+v", torch)
+	}
+
+	qwen, err := embeddingModelSpec("qwen3-vl-embedding-8b", 4096)
+	if err != nil {
+		t.Fatalf("qwen spec: %v", err)
+	}
+	if qwen.Name != "Qwen3-VL-Embedding-8B" || qwen.Version != "transformers" {
+		t.Fatalf("unexpected qwen spec: %+v", qwen)
+	}
+}
+
+func TestEmbedderDimensionsForType(t *testing.T) {
+	if got, err := embedderDimensionsForType("jina-mlx"); err != nil || got != 2048 {
+		t.Fatalf("jina-mlx dims: got=%d err=%v", got, err)
+	}
+	if got, err := embedderDimensionsForType("jina-torch"); err != nil || got != 2048 {
+		t.Fatalf("jina-torch dims: got=%d err=%v", got, err)
+	}
+	if got, err := embedderDimensionsForType("qwen3-vl-embedding-8b"); err != nil || got != 4096 {
+		t.Fatalf("qwen dims: got=%d err=%v", got, err)
+	}
+	if got, err := embedderDimensionsForType("deterministic"); err != nil || got != 2048 {
+		t.Fatalf("deterministic dims: got=%d err=%v", got, err)
+	}
+	if _, err := embedderDimensionsForType("unknown"); err == nil {
+		t.Fatal("expected error for unknown embedder")
 	}
 }

@@ -34,7 +34,7 @@ import (
 
 func TestAPIEndToEndWithJinaSidecar(t *testing.T) {
 	if os.Getenv("RUN_JINA_MLX_INTEGRATION") != "1" {
-		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve` or `mise run jina-torch-serve` to enable")
+		t.Skip("set RUN_JINA_MLX_INTEGRATION=1 and run `mise run jina-serve`, `mise run jina-torch-serve`, or `mise run qwen3-serve` to enable")
 	}
 
 	baseURL := os.Getenv("JINA_MLX_URL")
@@ -61,13 +61,8 @@ func TestAPIEndToEndWithJinaSidecar(t *testing.T) {
 		t.Fatalf("migrate db: %v", err)
 	}
 
-	modelID, err := db.EnsureEmbeddingModel(context.Background(), dbConn, db.EmbeddingModelSpec{
-		Name:       "jina-embeddings-v4",
-		Version:    "mlx-8bit",
-		Dimensions: 2048,
-		Metric:     "cosine",
-		Normalized: true,
-	})
+	modelSpec := embeddingModelSpecFromEnv(t)
+	modelID, err := db.EnsureEmbeddingModel(context.Background(), dbConn, modelSpec)
 	if err != nil {
 		t.Fatalf("ensure model: %v", err)
 	}
@@ -151,6 +146,43 @@ func TestAPIEndToEndWithJinaSidecar(t *testing.T) {
 	if simResp.Results[0].OriginalName != "woman_office.jpg" {
 		t.Fatalf("expected top similar result woman_office.jpg, got %s", simResp.Results[0].OriginalName)
 	}
+}
+
+func embeddingModelSpecFromEnv(t *testing.T) db.EmbeddingModelSpec {
+	t.Helper()
+
+	name := envStringOrDefault("JINA_MLX_MODEL_NAME", "jina-embeddings-v4")
+	version := envStringOrDefault("JINA_MLX_MODEL_VERSION", "mlx-8bit")
+	dimensions := envIntOrDefault(t, "JINA_MLX_MODEL_DIMS", 2048)
+
+	return db.EmbeddingModelSpec{
+		Name:       name,
+		Version:    version,
+		Dimensions: dimensions,
+		Metric:     "cosine",
+		Normalized: true,
+	}
+}
+
+func envStringOrDefault(key string, fallback string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+func envIntOrDefault(t *testing.T, key string, fallback int) int {
+	t.Helper()
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		t.Fatalf("parse %s as int: %v", key, err)
+	}
+	return n
 }
 
 func uploadImage(t *testing.T, client *http.Client, baseURL string, filename string, content []byte) upload.UploadResponse {
