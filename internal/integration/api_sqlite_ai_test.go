@@ -74,7 +74,7 @@ func TestAPIEndToEndWithSQLiteAIEmbedder(t *testing.T) {
 		ModelOptions:       sqliteAIEnvOr("SQLITE_AI_MODEL_OPTIONS", "gpu_layers=99"),
 		VisionModelPath:    visionPath,
 		VisionModelOptions: sqliteAIEnvOr("SQLITE_AI_VISION_OPTIONS", "use_gpu=1"),
-		ContextOptions:     sqliteAIEnvOr("SQLITE_AI_CONTEXT_OPTIONS", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=mean"),
+		ContextOptions:     sqliteAIEnvOr("SQLITE_AI_CONTEXT_OPTIONS", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=last"),
 	})
 	if err != nil {
 		t.Fatalf("new sqlite-ai embedder: %v", err)

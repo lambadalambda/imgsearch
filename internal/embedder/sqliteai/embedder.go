@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultContextOptions     = "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=mean"
+	defaultContextOptions     = "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=last"
 	defaultImageMaxSide       = 512
 	defaultQueryInstruction   = "Retrieve images or text relevant to the user's query."
 	defaultPassageInstruction = "Represent this image or text for retrieval."

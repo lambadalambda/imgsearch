@@ -37,7 +37,7 @@ func main() {
 	sqliteAIVisionModelPath := flag.String("sqlite-ai-vision-model-path", "", "path to sqlite-ai GGUF vision projector model (required for -embedder sqlite-ai)")
 	sqliteAIModelOptions := flag.String("sqlite-ai-model-options", "gpu_layers=99", "llm_model_load options for sqlite-ai embedder")
 	sqliteAIVisionOptions := flag.String("sqlite-ai-vision-options", "use_gpu=1", "llm_vision_load options for sqlite-ai embedder")
-	sqliteAIContextOptions := flag.String("sqlite-ai-context-options", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=mean", "llm_context_create_embedding options for sqlite-ai embedder")
+	sqliteAIContextOptions := flag.String("sqlite-ai-context-options", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=last", "llm_context_create_embedding options for sqlite-ai embedder")
 	sqliteAIQueryInstruction := flag.String("sqlite-ai-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for sqlite-ai text query embeddings")
 	sqliteAIPassageInstruction := flag.String("sqlite-ai-passage-instruction", "Represent this image or text for retrieval.", "instruction used for sqlite-ai image/document embeddings")
 	sqliteAIImageMaxSide := flag.Int("sqlite-ai-image-max-side", 512, "maximum image side length used before sqlite-ai embedding (resized with vips)")

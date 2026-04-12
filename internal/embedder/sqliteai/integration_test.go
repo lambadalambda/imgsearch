@@ -113,7 +113,7 @@ func TestSQLiteAIEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 
 	modelOptions := envOr("SQLITE_AI_MODEL_OPTIONS", "gpu_layers=99")
 	visionOptions := envOr("SQLITE_AI_VISION_OPTIONS", "use_gpu=1")
-	contextOptions := envOr("SQLITE_AI_CONTEXT_OPTIONS", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=mean")
+	contextOptions := envOr("SQLITE_AI_CONTEXT_OPTIONS", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=last")
 	expectedDimensions := envIntOrDefault("SQLITE_AI_DIMS", 4096)
 
 	embedder, err := New(Config{
@@ -199,7 +199,7 @@ func TestSQLiteAIFixtureRetrievalQuality(t *testing.T) {
 		ModelOptions:       envOr("SQLITE_AI_MODEL_OPTIONS", "gpu_layers=99"),
 		VisionModelPath:    visionPath,
 		VisionModelOptions: envOr("SQLITE_AI_VISION_OPTIONS", "use_gpu=1"),
-		ContextOptions:     envOr("SQLITE_AI_CONTEXT_OPTIONS", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=mean"),
+		ContextOptions:     envOr("SQLITE_AI_CONTEXT_OPTIONS", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=last"),
 		QueryInstruction:   envOr("SQLITE_AI_QUERY_INSTRUCTION", "Retrieve images or text relevant to the user's query."),
 		PassageInstruction: envOr("SQLITE_AI_PASSAGE_INSTRUCTION", "Represent this image or text for retrieval."),
 		ImageMaxSide:       envIntOrDefault("SQLITE_AI_MAX_SIDE", 512),
