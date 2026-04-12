@@ -10,14 +10,16 @@ Compatible with the existing imgsearch sidecar API:
   - GET  /readyz
   - GET  /stats
 
-This server expects the official Qwen3-VL-Embedding repo to be available so
-`src.models.qwen3_vl_embedding.Qwen3VLEmbedder` can be imported.
+This server expects a Qwen3-VL-Embedding checkout containing either:
+  - src/models/qwen3_vl_embedding.py
+  - scripts/qwen3_vl_embedding.py
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
+import importlib.util
 import json
 import os
 import resource
@@ -166,21 +168,56 @@ class Qwen3VLService:
             )
 
         real = os.path.realpath(candidate)
-        expected = os.path.join(real, "src", "models", "qwen3_vl_embedding.py")
-        if not os.path.exists(expected):
-            raise RuntimeError(f"invalid qwen repo path {real}: expected {expected}")
+        if not self._find_embedder_module_path(real):
+            expected_primary = os.path.join(
+                real, "src", "models", "qwen3_vl_embedding.py"
+            )
+            expected_fallback = os.path.join(real, "scripts", "qwen3_vl_embedding.py")
+            raise RuntimeError(
+                f"invalid qwen repo path {real}: expected {expected_primary} or {expected_fallback}"
+            )
         return real
 
+    def _find_embedder_module_path(self, repo_path: str) -> str | None:
+        candidates = [
+            os.path.join(repo_path, "src", "models", "qwen3_vl_embedding.py"),
+            os.path.join(repo_path, "scripts", "qwen3_vl_embedding.py"),
+        ]
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+        return None
+
     def _load_embedder_class(self, repo_path: str):
-        if repo_path not in sys.path:
-            sys.path.insert(0, repo_path)
+        module_path = self._find_embedder_module_path(repo_path)
+        if not module_path:
+            raise RuntimeError(
+                "cannot import Qwen3VLEmbedder from repo path; missing qwen3_vl_embedding.py"
+            )
+
+        module_name = f"_qwen3_vl_embedding_{abs(hash(module_path))}"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if not spec or not spec.loader:
+            raise RuntimeError(
+                "cannot import Qwen3VLEmbedder from repo path; failed to load module spec"
+            )
+
+        module = importlib.util.module_from_spec(spec)
         try:
-            from src.models.qwen3_vl_embedding import Qwen3VLEmbedder
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
         except Exception as exc:
             raise RuntimeError(
                 "cannot import Qwen3VLEmbedder from repo path; ensure repo dependencies are installed"
             ) from exc
-        return Qwen3VLEmbedder
+
+        qwen_embedder_class = getattr(module, "Qwen3VLEmbedder", None)
+        if qwen_embedder_class is None:
+            raise RuntimeError(
+                "cannot import Qwen3VLEmbedder from repo path; class not found in module"
+            )
+
+        return qwen_embedder_class
 
     def _resolve_dtype(self, requested: str):
         req = requested.strip().lower()

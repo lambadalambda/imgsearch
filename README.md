@@ -85,7 +85,8 @@ Torch sidecar tuning options:
 
 Qwen3 sidecar tuning options:
 - `QWEN3_VL_URL=http://127.0.0.1:9010` (app/test URL)
-- `QWEN3_VL_MODEL_ID=Qwen/Qwen3-VL-Embedding-8B`
+- `QWEN3_VL_REPO_PATH=~/repos/Qwen3-VL-Embedding` (optional override for `mise run qwen3-serve`; autodetects common `~/repos` paths)
+- `QWEN3_VL_MODEL_ID=Qwen/Qwen3-VL-Embedding-8B` (optional; defaults to repo path when local model files exist)
 - `QWEN3_VL_MAX_IMAGE_PIXELS=1843200`
 - `QWEN3_VL_ATTN_IMPL=sdpa`
 - `QWEN3_VL_TORCH_DTYPE=auto|bfloat16|float16|float32`
@@ -105,7 +106,8 @@ Run Qwen3 sidecar on a GPU machine and tunnel it locally:
    - `git clone https://github.com/QwenLM/Qwen3-VL-Embedding ~/Qwen3-VL-Embedding`
    - `~/.local/bin/virtualenv ~/imgsearch-qwen/.venv` (or `python3 -m venv` if `python3-venv` is installed)
    - `~/imgsearch-qwen/.venv/bin/pip install --upgrade pip`
-   - `~/imgsearch-qwen/.venv/bin/pip install --extra-index-url https://download.pytorch.org/whl/cu128 'torch>=2.8,<2.9' torchvision`
+   - NVIDIA/CUDA host: `~/imgsearch-qwen/.venv/bin/pip install --extra-index-url https://download.pytorch.org/whl/cu128 'torch>=2.9,<3' torchvision`
+   - macOS/CPU-only host: `~/imgsearch-qwen/.venv/bin/pip install 'torch>=2.9,<3' torchvision`
    - `~/imgsearch-qwen/.venv/bin/pip install accelerate qwen-vl-utils pillow requests 'transformers>=4.57.3,<5'`
 2. Copy this project script to remote host and start server:
    - `scp scripts/qwen3_vl_server.py lain@aiko-1:~/imgsearch-sidecar/qwen3_vl_server.py`

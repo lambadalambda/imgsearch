@@ -63,11 +63,11 @@ run = "sh -c '.venv/bin/python scripts/jina_torch_server.py --host 127.0.0.1 --p
 
 [tasks.qwen3-setup]
 description = "Create venv and install Qwen3 sidecar deps"
-run = "python3 -m venv .venv-qwen3 && .venv-qwen3/bin/pip install --upgrade pip && .venv-qwen3/bin/pip install --extra-index-url https://download.pytorch.org/whl/cu128 'torch>=2.8,<2.9' torchvision && .venv-qwen3/bin/pip install accelerate qwen-vl-utils pillow requests 'transformers>=4.57.3,<5'"
+run = "sh -c 'python3 -m venv .venv-qwen3 && .venv-qwen3/bin/pip install --upgrade pip && if [ \"$(uname -s)\" = \"Linux\" ] && command -v nvidia-smi >/dev/null 2>&1; then .venv-qwen3/bin/pip install --extra-index-url https://download.pytorch.org/whl/cu128 \"torch>=2.9,<3\" torchvision; else .venv-qwen3/bin/pip install \"torch>=2.9,<3\" torchvision; fi && .venv-qwen3/bin/pip install accelerate numpy qwen-vl-utils pillow requests \"transformers>=4.57.3,<5\"'"
 
 [tasks.qwen3-serve]
 description = "Run local Qwen3-VL-Embedding-8B sidecar"
-run = "sh -c '.venv-qwen3/bin/python scripts/qwen3_vl_server.py --host 127.0.0.1 --port 9010 --repo-path \"${QWEN3_VL_REPO_PATH:?set QWEN3_VL_REPO_PATH to cloned Qwen3-VL-Embedding repo}\" --allow-dir ./data/images --model-id \"${QWEN3_VL_MODEL_ID:-Qwen/Qwen3-VL-Embedding-8B}\" --attn-implementation \"${QWEN3_VL_ATTN_IMPL:-sdpa}\" --torch-dtype \"${QWEN3_VL_TORCH_DTYPE:-auto}\" --max-image-pixels \"${QWEN3_VL_MAX_IMAGE_PIXELS:-1843200}\"; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
+run = "sh -c 'repo=\"${QWEN3_VL_REPO_PATH:-}\"; if [ -z \"$repo\" ]; then for candidate in \"$HOME/repos/Qwen3-VL-Embedding\" \"$HOME/repos/Qwen3-VL-Embedding-8B\" \"$HOME/repos/qwen3\"; do if [ -f \"$candidate/src/models/qwen3_vl_embedding.py\" ] || [ -f \"$candidate/scripts/qwen3_vl_embedding.py\" ]; then repo=\"$candidate\"; break; fi; done; fi; if [ -z \"$repo\" ]; then echo \"set QWEN3_VL_REPO_PATH to a checkout containing src/models/qwen3_vl_embedding.py or scripts/qwen3_vl_embedding.py\" >&2; exit 1; fi; model_id=\"${QWEN3_VL_MODEL_ID:-}\"; if [ -z \"$model_id\" ]; then if [ -f \"$repo/config.json\" ]; then model_id=\"$repo\"; else model_id=\"Qwen/Qwen3-VL-Embedding-8B\"; fi; fi; .venv-qwen3/bin/python scripts/qwen3_vl_server.py --host 127.0.0.1 --port 9010 --repo-path \"$repo\" --allow-dir ./data/images --model-id \"$model_id\" --attn-implementation \"${QWEN3_VL_ATTN_IMPL:-sdpa}\" --torch-dtype \"${QWEN3_VL_TORCH_DTYPE:-auto}\" --max-image-pixels \"${QWEN3_VL_MAX_IMAGE_PIXELS:-1843200}\"; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
 
 [tasks.serve-qwen-remote]
 description = "Run imgsearch against remote Qwen3 sidecar"
