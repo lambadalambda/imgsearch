@@ -121,6 +121,7 @@ Run fixture sanity checks against Qwen3 sidecar:
 - `mise run qwen3-test`
 - `mise run qwen3-test-api`
 - `mise run qwen3-test-all`
+- `mise run qwen3-eval-fixtures` (checks `fixtures/images/expected.txt` retrieval expectations)
 
 Run sqlite-ai integration checks (local extension + GGUF files):
 - `mise run sqlite-ai-test` (embedder-level semantic sanity)

@@ -85,6 +85,10 @@ run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.
 description = "Run all integration tests against Qwen3 sidecar"
 run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" go test ./internal/embedder/jinamlx -run Sidecar -v && RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" JINA_MLX_MODEL_NAME=Qwen3-VL-Embedding-8B JINA_MLX_MODEL_VERSION=transformers JINA_MLX_MODEL_DIMS=4096 go test ./internal/integration -run APIEndToEndWithJinaSidecar -v"
 
+[tasks.qwen3-eval-fixtures]
+description = "Evaluate fixture retrieval quality against Qwen3 sidecar"
+run = "python3 scripts/qwen3_fixture_eval.py --base-url \"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" --images-dir ./fixtures/images --expected ./fixtures/images/expected.txt"
+
 [tasks.jina-test]
 description = "Run embedder sidecar similarity integration test"
 run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=http://127.0.0.1:9009 go test ./internal/embedder/jinamlx -run Sidecar -v"
