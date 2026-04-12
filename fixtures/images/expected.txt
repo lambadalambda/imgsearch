@@ -1,0 +1,9 @@
+Clusters by text query:
+
+"cat" - cat_1.jpg, cat_2.jpg
+
+"dog" - dog_1.jpg, dog_2.jpg
+
+"woman in office": woman_office.jpg
+
+"how are you feeling today?": baileys.png, guiness.png, gyaru_stream.png, stream.png
