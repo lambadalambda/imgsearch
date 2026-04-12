@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -16,6 +18,75 @@ import (
 
 	sqlite3 "github.com/mattn/go-sqlite3"
 )
+
+type fixtureExpectation struct {
+	Query         string
+	ExpectedNames []string
+}
+
+type scoredFixture struct {
+	Name  string
+	Score float64
+}
+
+var fixtureExpectationPattern = regexp.MustCompile(`^"(.+?)"\s*[:\-]\s*(.+)$`)
+
+func TestParseFixtureExpectationsSupportsDashAndColon(t *testing.T) {
+	text := strings.Join([]string{
+		"Clusters by text query:",
+		"",
+		"\"cat\" - cat_1.jpg, cat_2.jpg",
+		"\"woman in office\": woman_office.jpg",
+		"\"how are you feeling today?\": baileys.png, guiness.png",
+	}, "\n")
+
+	got := parseFixtureExpectations(text)
+	if len(got) != 3 {
+		t.Fatalf("expectation count: got=%d want=3", len(got))
+	}
+
+	if got[0].Query != "cat" {
+		t.Fatalf("first query: got=%q want=cat", got[0].Query)
+	}
+	if strings.Join(got[0].ExpectedNames, ",") != "cat_1.jpg,cat_2.jpg" {
+		t.Fatalf("first expected names: got=%v", got[0].ExpectedNames)
+	}
+
+	if got[1].Query != "woman in office" {
+		t.Fatalf("second query: got=%q want=woman in office", got[1].Query)
+	}
+	if len(got[1].ExpectedNames) != 1 || got[1].ExpectedNames[0] != "woman_office.jpg" {
+		t.Fatalf("second expected names: got=%v", got[1].ExpectedNames)
+	}
+}
+
+func TestFixtureExpectationHitCountUsesTopK(t *testing.T) {
+	scored := []scoredFixture{
+		{Name: "a.jpg", Score: 0.9},
+		{Name: "b.jpg", Score: 0.8},
+		{Name: "c.jpg", Score: 0.7},
+		{Name: "d.jpg", Score: 0.6},
+	}
+	hitCount := fixtureExpectationHitCount(scored, []string{"a.jpg", "d.jpg"})
+	if hitCount != 1 {
+		t.Fatalf("hit count: got=%d want=1", hitCount)
+	}
+}
+
+func TestFixtureExpectationPassesRelaxedAndStrict(t *testing.T) {
+	if !fixtureExpectationPasses(2, 2, true) {
+		t.Fatal("expected strict pass for perfect hits")
+	}
+	if fixtureExpectationPasses(1, 2, true) {
+		t.Fatal("expected strict failure when not all expected names hit")
+	}
+	if !fixtureExpectationPasses(3, 4, false) {
+		t.Fatal("expected relaxed pass for one miss in four")
+	}
+	if fixtureExpectationPasses(2, 4, false) {
+		t.Fatal("expected relaxed failure for two misses in four")
+	}
+}
 
 func TestSQLiteAIEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 	if os.Getenv("RUN_SQLITE_AI_INTEGRATION") != "1" {
@@ -97,6 +168,245 @@ func TestSQLiteAIEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 	if dogScore <= catScore {
 		t.Fatalf("expected dog query to rank dog above cat: dog=%.4f cat=%.4f woman=%.4f", dogScore, catScore, womanScore)
 	}
+}
+
+func TestSQLiteAIFixtureRetrievalQuality(t *testing.T) {
+	if os.Getenv("RUN_SQLITE_AI_INTEGRATION") != "1" {
+		t.Skip("set RUN_SQLITE_AI_INTEGRATION=1 with SQLITE_AI_PATH, SQLITE_AI_MODEL_PATH, and SQLITE_AI_VISION_PATH")
+	}
+	if _, err := exec.LookPath("vips"); err != nil {
+		t.Skip("vips CLI is required for sqlite-ai image preprocessing")
+	}
+
+	extensionPath := os.Getenv("SQLITE_AI_PATH")
+	if extensionPath == "" {
+		t.Skip("set SQLITE_AI_PATH to sqlite-ai extension binary path")
+	}
+	modelPath := os.Getenv("SQLITE_AI_MODEL_PATH")
+	if modelPath == "" {
+		t.Skip("set SQLITE_AI_MODEL_PATH to sqlite-ai GGUF embedding model")
+	}
+	visionPath := os.Getenv("SQLITE_AI_VISION_PATH")
+	if visionPath == "" {
+		t.Skip("set SQLITE_AI_VISION_PATH to sqlite-ai GGUF vision projector")
+	}
+
+	dbConn := openWithSQLiteAI(t, extensionPath)
+
+	embedder, err := New(Config{
+		DB:                 dbConn,
+		ModelPath:          modelPath,
+		ModelOptions:       envOr("SQLITE_AI_MODEL_OPTIONS", "gpu_layers=99"),
+		VisionModelPath:    visionPath,
+		VisionModelOptions: envOr("SQLITE_AI_VISION_OPTIONS", "use_gpu=1"),
+		ContextOptions:     envOr("SQLITE_AI_CONTEXT_OPTIONS", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=mean"),
+		QueryInstruction:   envOr("SQLITE_AI_QUERY_INSTRUCTION", "Retrieve images or text relevant to the user's query."),
+		PassageInstruction: envOr("SQLITE_AI_PASSAGE_INSTRUCTION", "Represent this image or text for retrieval."),
+		ImageMaxSide:       envIntOrDefault("SQLITE_AI_MAX_SIDE", 512),
+		VipsPath:           envOr("SQLITE_AI_VIPS_PATH", "vips"),
+	})
+	if err != nil {
+		t.Fatalf("new sqlite-ai embedder: %v", err)
+	}
+
+	root := findRepoRoot(t)
+	fixturesDir := filepath.Join(root, "fixtures", "images")
+	expectedPath := filepath.Join(fixturesDir, "expected.txt")
+
+	expectedRaw, err := os.ReadFile(expectedPath)
+	if err != nil {
+		t.Fatalf("read expected fixture mapping: %v", err)
+	}
+	expectations := parseFixtureExpectations(string(expectedRaw))
+	if len(expectations) == 0 {
+		t.Fatalf("no fixture expectations parsed from %s", expectedPath)
+	}
+
+	entries, err := os.ReadDir(fixturesDir)
+	if err != nil {
+		t.Fatalf("read fixtures dir: %v", err)
+	}
+	imageNames := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if isFixtureImageName(name) {
+			imageNames = append(imageNames, name)
+		}
+	}
+	sort.Strings(imageNames)
+	if len(imageNames) == 0 {
+		t.Fatal("no fixture images found")
+	}
+
+	missingNames := missingExpectedFixtureNames(imageNames, expectations)
+	if len(missingNames) > 0 {
+		t.Fatalf("expected fixture names missing from fixtures/images: %s", strings.Join(missingNames, ", "))
+	}
+
+	expectedDimensions := envIntOrDefault("SQLITE_AI_DIMS", 4096)
+	vectors := make(map[string][]float32, len(imageNames))
+	for _, name := range imageNames {
+		path := filepath.Join(fixturesDir, name)
+		vec, err := embedder.EmbedImage(context.Background(), path)
+		if err != nil {
+			t.Fatalf("embed fixture %s: %v", name, err)
+		}
+		if len(vec) != expectedDimensions {
+			t.Fatalf("embedding dimensions for %s: got=%d want=%d", name, len(vec), expectedDimensions)
+		}
+		vectors[name] = vec
+	}
+
+	failures := make([]string, 0)
+	for _, expectation := range expectations {
+		queryVec, err := embedder.EmbedText(context.Background(), expectation.Query)
+		if err != nil {
+			t.Fatalf("embed query %q: %v", expectation.Query, err)
+		}
+		if len(queryVec) != expectedDimensions {
+			t.Fatalf("query embedding dimensions for %q: got=%d want=%d", expectation.Query, len(queryVec), expectedDimensions)
+		}
+
+		scored := make([]scoredFixture, 0, len(imageNames))
+		for _, name := range imageNames {
+			scored = append(scored, scoredFixture{Name: name, Score: cosine(queryVec, vectors[name])})
+		}
+		sort.Slice(scored, func(i int, j int) bool {
+			if scored[i].Score == scored[j].Score {
+				return scored[i].Name < scored[j].Name
+			}
+			return scored[i].Score > scored[j].Score
+		})
+
+		hitCount := fixtureExpectationHitCount(scored, expectation.ExpectedNames)
+		expectedCount := len(expectation.ExpectedNames)
+		strictPass := hitCount == expectedCount
+		relaxedPass := fixtureExpectationPasses(hitCount, expectedCount, false)
+
+		topN := 5
+		if len(scored) < topN {
+			topN = len(scored)
+		}
+		expectedSet := make(map[string]struct{}, len(expectation.ExpectedNames))
+		for _, expectedName := range expectation.ExpectedNames {
+			expectedSet[expectedName] = struct{}{}
+		}
+		lines := make([]string, 0, topN)
+		for i := 0; i < topN; i++ {
+			marker := " "
+			if _, ok := expectedSet[scored[i].Name]; ok {
+				marker = "*"
+			}
+			lines = append(lines, fmt.Sprintf("%d. %s %.4f%s", i+1, scored[i].Name, scored[i].Score, marker))
+		}
+		t.Logf("query=%q expected=%v hits=%d/%d strict=%t relaxed=%t top%d=%s", expectation.Query, expectation.ExpectedNames, hitCount, expectedCount, strictPass, relaxedPass, topN, strings.Join(lines, " | "))
+
+		if !relaxedPass {
+			failures = append(failures, fmt.Sprintf("query %q expected hits %d/%d", expectation.Query, hitCount, expectedCount))
+		}
+	}
+
+	if len(failures) > 0 {
+		t.Fatalf("sqlite-ai fixture retrieval failed: %s", strings.Join(failures, "; "))
+	}
+}
+
+func parseFixtureExpectations(contents string) []fixtureExpectation {
+	out := make([]fixtureExpectation, 0)
+	for _, rawLine := range strings.Split(contents, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(strings.ToLower(line), "clusters by") {
+			continue
+		}
+
+		match := fixtureExpectationPattern.FindStringSubmatch(line)
+		if len(match) != 3 {
+			continue
+		}
+
+		query := strings.TrimSpace(match[1])
+		namesRaw := strings.Split(match[2], ",")
+		names := make([]string, 0, len(namesRaw))
+		for _, name := range namesRaw {
+			trimmed := strings.TrimSpace(name)
+			if trimmed != "" {
+				names = append(names, trimmed)
+			}
+		}
+
+		if query != "" && len(names) > 0 {
+			out = append(out, fixtureExpectation{Query: query, ExpectedNames: names})
+		}
+	}
+	return out
+}
+
+func fixtureExpectationHitCount(scored []scoredFixture, expectedNames []string) int {
+	k := len(expectedNames)
+	if k <= 0 {
+		return 0
+	}
+	if k > len(scored) {
+		k = len(scored)
+	}
+
+	expectedSet := make(map[string]struct{}, len(expectedNames))
+	for _, name := range expectedNames {
+		expectedSet[name] = struct{}{}
+	}
+
+	hits := 0
+	for _, row := range scored[:k] {
+		if _, ok := expectedSet[row.Name]; ok {
+			hits++
+		}
+	}
+	return hits
+}
+
+func fixtureExpectationPasses(hitCount int, expectedCount int, strict bool) bool {
+	if expectedCount <= 0 {
+		return false
+	}
+	if strict {
+		return hitCount == expectedCount
+	}
+	return hitCount >= max(1, expectedCount-1)
+}
+
+func isFixtureImageName(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") ||
+		strings.HasSuffix(lower, ".png") ||
+		strings.HasSuffix(lower, ".webp") ||
+		strings.HasSuffix(lower, ".avif")
+}
+
+func missingExpectedFixtureNames(imageNames []string, expectations []fixtureExpectation) []string {
+	present := make(map[string]struct{}, len(imageNames))
+	for _, name := range imageNames {
+		present[name] = struct{}{}
+	}
+
+	missingSet := map[string]struct{}{}
+	for _, expectation := range expectations {
+		for _, name := range expectation.ExpectedNames {
+			if _, ok := present[name]; !ok {
+				missingSet[name] = struct{}{}
+			}
+		}
+	}
+
+	missing := make([]string, 0, len(missingSet))
+	for name := range missingSet {
+		missing = append(missing, name)
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 func envOr(key string, fallback string) string {

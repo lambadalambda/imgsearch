@@ -132,6 +132,7 @@ Run sqlite-ai integration checks (local extension + GGUF files):
 - `mise run sqlite-ai-test` (embedder-level semantic sanity)
 - `mise run sqlite-ai-test-api` (API end-to-end: upload -> index -> text/similar search)
 - `mise run sqlite-ai-test-all` (both sqlite-ai integration suites)
+- `mise run sqlite-ai-test-fixtures` (checks `fixtures/images/expected.txt` retrieval expectations)
 
 ## Remote Sidecar (No Shared Filesystem)
 
