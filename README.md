@@ -46,7 +46,7 @@ It is designed as a simple Go application that:
    - Torch (recommended for quality): `mise run jina-torch-serve`
    - MLX (faster, experimental quality): `mise run jina-serve`
    - Qwen3-VL-Embedding-8B (remote recommended): `scripts/qwen3_vl_server.py` on a GPU host
-   - SQLite-AI in-DB embedder (no sidecar): `mise run sqlite-ai-build`
+   - SQLite-AI in-DB embedder (no sidecar): `mise run sqlite-ai-build` (requires `vips` CLI for image preprocessing)
 4. Start the app with sqlite-vector backend:
    - Torch sidecar: `go run ./cmd/imgsearch -embedder jina-torch -embed-image-mode auto -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
    - MLX sidecar: `go run ./cmd/imgsearch -embedder jina-mlx -embed-image-mode auto -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
@@ -67,7 +67,8 @@ Reset local database files:
 The app defaults to `-embedder jina-mlx` with `-jina-mlx-url http://127.0.0.1:9009`.
 Use `-embedder jina-torch` with `mise run jina-torch-serve` for higher retrieval quality.
 Use `-embedder qwen3-vl-embedding-8b` for Qwen3-VL-Embedding-8B sidecar (4096-dim embeddings).
-Use `-embedder sqlite-ai` to run multimodal embedding inside SQLite (requires `sqlite-ai` extension and GGUF model files).
+Use `-embedder sqlite-ai` to run multimodal embedding inside SQLite (requires `sqlite-ai` extension, GGUF model files, and `vips`).
+For sqlite-ai image indexing, images are preprocessed with `vips`: converted to JPEG and resized to max side `512` by default before embedding.
 For fallback local testing without model runtime, run with `-embedder deterministic`.
 Use `-embed-image-mode path|bytes|auto` for sidecar image transport:
 - `path`: send file path to sidecar (fastest, requires shared filesystem access)
@@ -96,6 +97,10 @@ SQLite-AI embedder options:
 - `-sqlite-ai-model-path` path to embedding GGUF model
 - `-sqlite-ai-vision-model-path` path to vision projector GGUF model
 - `-sqlite-ai-dimensions` embedding dimensions (Qwen3-VL-Embedding-8B is 4096)
+- `-sqlite-ai-image-max-side` max side length for pre-embedding resize (default: `512`)
+- `-sqlite-ai-vips-path` optional path to `vips` binary (default: PATH lookup)
+- `-sqlite-ai-query-instruction` default: `Retrieve images or text relevant to the user's query.`
+- `-sqlite-ai-passage-instruction` default: `Represent this image or text for retrieval.`
 - Optional: `-sqlite-ai-model-options`, `-sqlite-ai-vision-options`, `-sqlite-ai-context-options`
 
 ## Qwen3-VL-Embedding-8B Remote Sidecar
