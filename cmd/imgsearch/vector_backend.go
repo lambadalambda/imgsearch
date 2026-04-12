@@ -25,12 +25,14 @@ const (
 	vectorBackendSQLiteVector = "sqlite-vector"
 	vectorBackendBruteForce   = "bruteforce"
 	sqliteVectorEntryPoint    = "sqlite3_vector_init"
+	sqliteAIEntryPoint        = "sqlite3_ai_init"
 )
 
 var (
 	vectorDriverMu       sync.Mutex
 	vectorDriversByName  = make(map[string]struct{})
 	vectorEnvPathKeyName = "SQLITE_VECTOR_PATH"
+	aiEnvPathKeyName     = "SQLITE_AI_PATH"
 )
 
 func resolveVectorBackend(requested string, sqliteValidateErr error) (backend string, warning string, err error) {
@@ -89,10 +91,60 @@ func discoverSQLiteVectorPath(explicitPath string) (string, error) {
 	return "", nil
 }
 
+func discoverSQLiteAIPath(explicitPath string) (string, error) {
+	if explicitPath != "" {
+		if resolved, ok := resolveExistingExtensionPath(explicitPath); ok {
+			return resolved, nil
+		}
+		return "", fmt.Errorf("sqlite-ai extension not found at %q", explicitPath)
+	}
+
+	if envPath := strings.TrimSpace(os.Getenv(aiEnvPathKeyName)); envPath != "" {
+		if resolved, ok := resolveExistingExtensionPath(envPath); ok {
+			return resolved, nil
+		}
+		return "", fmt.Errorf("sqlite-ai extension not found at %q from %s", envPath, aiEnvPathKeyName)
+	}
+
+	for _, candidate := range sqliteAIPathCandidates() {
+		if resolved, ok := resolveExistingExtensionPath(candidate); ok {
+			return resolved, nil
+		}
+	}
+
+	return "", nil
+}
+
 func sqliteVectorPathCandidates() []string {
 	baseNames := []string{
 		filepath.Join("tools", "sqlite-vector", "vector"),
 		filepath.Join(".tools", "sqlite-vector", "vector"),
+	}
+
+	exts := []string{""}
+	switch runtime.GOOS {
+	case "darwin":
+		exts = append(exts, ".dylib")
+	case "windows":
+		exts = append(exts, ".dll")
+	default:
+		exts = append(exts, ".so")
+	}
+
+	out := make([]string, 0, len(baseNames)*len(exts))
+	for _, base := range baseNames {
+		for _, ext := range exts {
+			out = append(out, base+ext)
+		}
+	}
+	return out
+}
+
+func sqliteAIPathCandidates() []string {
+	baseNames := []string{
+		filepath.Join("tools", "sqlite-ai", "ai"),
+		filepath.Join(".tools", "sqlite-ai", "ai"),
+		filepath.Join("..", "sqlite-ai", "dist", "ai"),
 	}
 
 	exts := []string{""}
@@ -139,26 +191,43 @@ func resolveExistingExtensionPath(candidate string) (string, bool) {
 	return "", false
 }
 
-func openSQLiteDB(dsn string, sqliteVectorPath string) (*sql.DB, error) {
-	if sqliteVectorPath == "" {
+func openSQLiteDB(dsn string, sqliteVectorPath string, sqliteAIPath string) (*sql.DB, error) {
+	if sqliteVectorPath == "" && sqliteAIPath == "" {
 		return sql.Open("sqlite3", dsn)
 	}
 
-	driverName, err := registerSQLiteVectorDriver(sqliteVectorPath)
+	driverName, err := registerSQLiteExtensionDriver(sqliteVectorPath, sqliteAIPath)
 	if err != nil {
 		return nil, err
 	}
 	return sql.Open(driverName, dsn)
 }
 
-func registerSQLiteVectorDriver(sqliteVectorPath string) (string, error) {
-	abs, err := filepath.Abs(sqliteVectorPath)
-	if err != nil {
-		return "", fmt.Errorf("resolve sqlite-vector path: %w", err)
+func registerSQLiteExtensionDriver(sqliteVectorPath string, sqliteAIPath string) (string, error) {
+	vectorAbs := ""
+	vectorLoadTarget := ""
+	if sqliteVectorPath != "" {
+		abs, err := filepath.Abs(sqliteVectorPath)
+		if err != nil {
+			return "", fmt.Errorf("resolve sqlite-vector path: %w", err)
+		}
+		vectorAbs = abs
+		vectorLoadTarget = sqliteExtensionLoadTarget(abs)
 	}
 
-	loadTarget := sqliteVectorLoadTarget(abs)
-	sum := sha1.Sum([]byte(abs))
+	aiAbs := ""
+	aiLoadTarget := ""
+	if sqliteAIPath != "" {
+		abs, err := filepath.Abs(sqliteAIPath)
+		if err != nil {
+			return "", fmt.Errorf("resolve sqlite-ai path: %w", err)
+		}
+		aiAbs = abs
+		aiLoadTarget = sqliteExtensionLoadTarget(abs)
+	}
+
+	driverKey := vectorAbs + "|" + aiAbs
+	sum := sha1.Sum([]byte(driverKey))
 	driverName := "sqlite3_with_vector_" + hex.EncodeToString(sum[:8])
 
 	vectorDriverMu.Lock()
@@ -170,8 +239,15 @@ func registerSQLiteVectorDriver(sqliteVectorPath string) (string, error) {
 
 	sql.Register(driverName, &sqlite3.SQLiteDriver{
 		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
-			if err := conn.LoadExtension(loadTarget, sqliteVectorEntryPoint); err != nil {
-				return fmt.Errorf("load sqlite-vector extension from %q: %w", loadTarget, err)
+			if vectorLoadTarget != "" {
+				if err := conn.LoadExtension(vectorLoadTarget, sqliteVectorEntryPoint); err != nil {
+					return fmt.Errorf("load sqlite-vector extension from %q: %w", vectorLoadTarget, err)
+				}
+			}
+			if aiLoadTarget != "" {
+				if err := conn.LoadExtension(aiLoadTarget, sqliteAIEntryPoint); err != nil {
+					return fmt.Errorf("load sqlite-ai extension from %q: %w", aiLoadTarget, err)
+				}
 			}
 			return nil
 		},
@@ -181,7 +257,7 @@ func registerSQLiteVectorDriver(sqliteVectorPath string) (string, error) {
 	return driverName, nil
 }
 
-func sqliteVectorLoadTarget(path string) string {
+func sqliteExtensionLoadTarget(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
 	if ext == ".dylib" || ext == ".so" || ext == ".dll" {
 		return strings.TrimSuffix(path, filepath.Ext(path))

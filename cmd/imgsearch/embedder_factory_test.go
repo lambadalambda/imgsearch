@@ -1,6 +1,13 @@
 package main
 
-import "testing"
+import (
+	"database/sql"
+	"os"
+	"path/filepath"
+	"testing"
+
+	_ "github.com/mattn/go-sqlite3"
+)
 
 func TestNewEmbedderDeterministic(t *testing.T) {
 	e, err := newEmbedder("deterministic", "", 16, "auto")
@@ -114,5 +121,36 @@ func TestEmbedderDimensionsForType(t *testing.T) {
 	}
 	if _, err := embedderDimensionsForType("unknown"); err == nil {
 		t.Fatal("expected error for unknown embedder")
+	}
+}
+
+func TestNewSQLiteAIEmbedderRequiresModelPath(t *testing.T) {
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = dbConn.Close() })
+
+	_, err = newSQLiteAIEmbedder(dbConn, sqliteAIEmbedderOptions{})
+	if err == nil {
+		t.Fatal("expected missing model path error")
+	}
+}
+
+func TestNewSQLiteAIEmbedderRequiresVisionModelPath(t *testing.T) {
+	dbConn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = dbConn.Close() })
+
+	modelPath := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(modelPath, []byte("model"), 0o644); err != nil {
+		t.Fatalf("write model: %v", err)
+	}
+
+	_, err = newSQLiteAIEmbedder(dbConn, sqliteAIEmbedderOptions{ModelPath: modelPath})
+	if err == nil {
+		t.Fatal("expected missing vision model path error")
 	}
 }

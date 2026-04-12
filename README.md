@@ -46,10 +46,12 @@ It is designed as a simple Go application that:
    - Torch (recommended for quality): `mise run jina-torch-serve`
    - MLX (faster, experimental quality): `mise run jina-serve`
    - Qwen3-VL-Embedding-8B (remote recommended): `scripts/qwen3_vl_server.py` on a GPU host
+   - SQLite-AI in-DB embedder (no sidecar): `mise run sqlite-ai-build`
 4. Start the app with sqlite-vector backend:
    - Torch sidecar: `go run ./cmd/imgsearch -embedder jina-torch -embed-image-mode auto -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
    - MLX sidecar: `go run ./cmd/imgsearch -embedder jina-mlx -embed-image-mode auto -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
    - Qwen3 sidecar: `go run ./cmd/imgsearch -embedder qwen3-vl-embedding-8b -jina-mlx-url http://127.0.0.1:9010 -embed-image-mode auto -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+   - SQLite-AI embedder: `go run ./cmd/imgsearch -embedder sqlite-ai -vector-backend sqlite-vector -sqlite-ai-path ../sqlite-ai/dist/ai -sqlite-ai-model-path ../sqlite-ai/tests/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf -sqlite-ai-vision-model-path ../sqlite-ai/tests/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf -sqlite-ai-dimensions 4096`
 5. Open the UI:
    - `http://127.0.0.1:8080/`
 
@@ -57,6 +59,7 @@ One-command app startup (auto-installs sqlite-vector if missing):
 - `mise run serve`
 - `mise run serve-torch` (recommended when using `jina-torch` sidecar)
 - `mise run serve-qwen-remote` (run app against remote Qwen3 sidecar URL)
+- `mise run serve-sqlite-ai` (run app with sqlite-ai in-DB embedder)
 
 Reset local database files:
 - `mise run reset-db`
@@ -64,6 +67,7 @@ Reset local database files:
 The app defaults to `-embedder jina-mlx` with `-jina-mlx-url http://127.0.0.1:9009`.
 Use `-embedder jina-torch` with `mise run jina-torch-serve` for higher retrieval quality.
 Use `-embedder qwen3-vl-embedding-8b` for Qwen3-VL-Embedding-8B sidecar (4096-dim embeddings).
+Use `-embedder sqlite-ai` to run multimodal embedding inside SQLite (requires `sqlite-ai` extension and GGUF model files).
 For fallback local testing without model runtime, run with `-embedder deterministic`.
 Use `-embed-image-mode path|bytes|auto` for sidecar image transport:
 - `path`: send file path to sidecar (fastest, requires shared filesystem access)
@@ -85,6 +89,13 @@ Qwen3 sidecar tuning options:
 - `QWEN3_VL_MAX_IMAGE_PIXELS=1843200`
 - `QWEN3_VL_ATTN_IMPL=sdpa`
 - `QWEN3_VL_TORCH_DTYPE=auto|bfloat16|float16|float32`
+
+SQLite-AI embedder options:
+- `SQLITE_AI_PATH=../sqlite-ai/dist/ai`
+- `-sqlite-ai-model-path` path to embedding GGUF model
+- `-sqlite-ai-vision-model-path` path to vision projector GGUF model
+- `-sqlite-ai-dimensions` embedding dimensions (Qwen3-VL-Embedding-8B is 4096)
+- Optional: `-sqlite-ai-model-options`, `-sqlite-ai-vision-options`, `-sqlite-ai-context-options`
 
 ## Qwen3-VL-Embedding-8B Remote Sidecar
 
@@ -108,6 +119,11 @@ Run fixture sanity checks against Qwen3 sidecar:
 - `mise run qwen3-test`
 - `mise run qwen3-test-api`
 - `mise run qwen3-test-all`
+
+Run sqlite-ai integration checks (local extension + GGUF files):
+- `mise run sqlite-ai-test` (embedder-level semantic sanity)
+- `mise run sqlite-ai-test-api` (API end-to-end: upload -> index -> text/similar search)
+- `mise run sqlite-ai-test-all` (both sqlite-ai integration suites)
 
 ## Remote Sidecar (No Shared Filesystem)
 
