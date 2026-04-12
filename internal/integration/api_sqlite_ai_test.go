@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -26,6 +27,9 @@ import (
 func TestAPIEndToEndWithSQLiteAIEmbedder(t *testing.T) {
 	if os.Getenv("RUN_SQLITE_AI_INTEGRATION") != "1" {
 		t.Skip("set RUN_SQLITE_AI_INTEGRATION=1 with SQLITE_AI_PATH, SQLITE_AI_MODEL_PATH, and SQLITE_AI_VISION_PATH to enable")
+	}
+	if _, err := exec.LookPath("vips"); err != nil {
+		t.Skip("vips CLI is required for sqlite-ai image preprocessing")
 	}
 
 	extensionPath := strings.TrimSpace(os.Getenv("SQLITE_AI_PATH"))

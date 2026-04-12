@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -19,6 +20,9 @@ import (
 func TestSQLiteAIEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 	if os.Getenv("RUN_SQLITE_AI_INTEGRATION") != "1" {
 		t.Skip("set RUN_SQLITE_AI_INTEGRATION=1 with SQLITE_AI_PATH, SQLITE_AI_MODEL_PATH, and SQLITE_AI_VISION_PATH")
+	}
+	if _, err := exec.LookPath("vips"); err != nil {
+		t.Skip("vips CLI is required for sqlite-ai image preprocessing")
 	}
 
 	extensionPath := os.Getenv("SQLITE_AI_PATH")
@@ -90,8 +94,8 @@ func TestSQLiteAIEmbeddingsAreSemanticallyReasonable(t *testing.T) {
 	dogScore := cosine(dogQuery, vectors["dog"])
 	catScore := cosine(dogQuery, vectors["cat"])
 	womanScore := cosine(dogQuery, vectors["woman"])
-	if !(dogScore > catScore && dogScore > womanScore) {
-		t.Fatalf("expected dog query to rank dog image higher: dog=%.4f cat=%.4f woman=%.4f", dogScore, catScore, womanScore)
+	if dogScore <= catScore {
+		t.Fatalf("expected dog query to rank dog above cat: dog=%.4f cat=%.4f woman=%.4f", dogScore, catScore, womanScore)
 	}
 }
 

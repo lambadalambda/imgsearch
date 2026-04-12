@@ -16,6 +16,10 @@ type sqliteAIEmbedderOptions struct {
 	VisionModelPath    string
 	VisionModelOptions string
 	ContextOptions     string
+	QueryInstruction   string
+	PassageInstruction string
+	ImageMaxSide       int
+	VipsPath           string
 }
 
 func newSQLiteAIEmbedder(sqlDB *sql.DB, opts sqliteAIEmbedderOptions) (embedder.Embedder, error) {
@@ -39,6 +43,10 @@ func newSQLiteAIEmbedder(sqlDB *sql.DB, opts sqliteAIEmbedderOptions) (embedder.
 		return nil, fmt.Errorf("sqlite-ai vision model path: %w", err)
 	}
 
+	if opts.ImageMaxSide <= 0 {
+		return nil, fmt.Errorf("sqlite-ai image max side must be positive")
+	}
+
 	return sqliteai.New(sqliteai.Config{
 		DB:                 sqlDB,
 		ModelPath:          modelPath,
@@ -46,6 +54,10 @@ func newSQLiteAIEmbedder(sqlDB *sql.DB, opts sqliteAIEmbedderOptions) (embedder.
 		VisionModelPath:    visionPath,
 		VisionModelOptions: strings.TrimSpace(opts.VisionModelOptions),
 		ContextOptions:     strings.TrimSpace(opts.ContextOptions),
+		QueryInstruction:   strings.TrimSpace(opts.QueryInstruction),
+		PassageInstruction: strings.TrimSpace(opts.PassageInstruction),
+		ImageMaxSide:       opts.ImageMaxSide,
+		VipsPath:           strings.TrimSpace(opts.VipsPath),
 	})
 }
 

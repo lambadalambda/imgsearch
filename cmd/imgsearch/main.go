@@ -38,6 +38,10 @@ func main() {
 	sqliteAIModelOptions := flag.String("sqlite-ai-model-options", "gpu_layers=99", "llm_model_load options for sqlite-ai embedder")
 	sqliteAIVisionOptions := flag.String("sqlite-ai-vision-options", "use_gpu=1", "llm_vision_load options for sqlite-ai embedder")
 	sqliteAIContextOptions := flag.String("sqlite-ai-context-options", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=mean", "llm_context_create_embedding options for sqlite-ai embedder")
+	sqliteAIQueryInstruction := flag.String("sqlite-ai-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for sqlite-ai text query embeddings")
+	sqliteAIPassageInstruction := flag.String("sqlite-ai-passage-instruction", "Represent this image or text for retrieval.", "instruction used for sqlite-ai image/document embeddings")
+	sqliteAIImageMaxSide := flag.Int("sqlite-ai-image-max-side", 512, "maximum image side length used before sqlite-ai embedding (resized with vips)")
+	sqliteAIVipsPath := flag.String("sqlite-ai-vips-path", "", "path to vips binary for sqlite-ai image preprocessing (defaults to PATH lookup)")
 	sqliteAIDimensions := flag.Int("sqlite-ai-dimensions", 4096, "embedding dimensions for sqlite-ai model metadata")
 	sqliteAIModelName := flag.String("sqlite-ai-model-name", "sqlite-ai-embedding", "embedding model name used in metadata for sqlite-ai")
 	sqliteAIModelVersion := flag.String("sqlite-ai-model-version", "", "embedding model version used in metadata for sqlite-ai (defaults to sqlite-ai model filename)")
@@ -191,6 +195,10 @@ func main() {
 			VisionModelPath:    *sqliteAIVisionModelPath,
 			VisionModelOptions: *sqliteAIVisionOptions,
 			ContextOptions:     *sqliteAIContextOptions,
+			QueryInstruction:   *sqliteAIQueryInstruction,
+			PassageInstruction: *sqliteAIPassageInstruction,
+			ImageMaxSide:       *sqliteAIImageMaxSide,
+			VipsPath:           *sqliteAIVipsPath,
 		})
 	} else {
 		embedder, err = newEmbedder(*embedderType, *jinaURL, modelSpec.Dimensions, *embedImageMode)
