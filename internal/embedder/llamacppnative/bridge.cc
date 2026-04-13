@@ -86,13 +86,16 @@ std::string compose_prompt(const char * instruction, const char * content) {
     const std::string inst = trim(instruction);
     const std::string body = trim(content);
 
-    if (inst.empty()) {
-        return body;
-    }
-    if (body.empty()) {
-        return inst;
-    }
-    return inst + "\n\n" + body;
+    const std::string system_message = inst.empty() ? "Represent the user's input." : inst;
+
+    std::string prompt;
+    prompt.reserve(system_message.size() + body.size() + 96);
+    prompt += "<|im_start|>system\n";
+    prompt += system_message;
+    prompt += "<|im_end|>\n<|im_start|>user\n";
+    prompt += body;
+    prompt += "<|im_end|>\n<|im_start|>assistant\n";
+    return prompt;
 }
 
 void normalize_l2(float * out, int32_t n) {

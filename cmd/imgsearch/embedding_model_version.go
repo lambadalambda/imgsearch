@@ -20,7 +20,7 @@ func llamaNativeModelVersion(modelPath string, visionModelPath string, dimension
 	visionToken := sanitizeModelVersionToken(filepath.Base(strings.TrimSpace(visionModelPath)))
 
 	return fmt.Sprintf(
-		"native-v3-vipsjpeg-%s-%s-d%d-s%d-t%d",
+		"native-v4-chatml-vipsjpeg-%s-%s-d%d-s%d-t%d",
 		modelToken,
 		visionToken,
 		dimensions,
