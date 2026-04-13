@@ -9,83 +9,137 @@
   </head>
   <body>
     <main class="shell">
-      <header class="hero">
-        <p class="eyebrow">Local-First Retrieval Playground</p>
-        <h1>imgsearch</h1>
-        <p class="lede">
-          Upload images, watch indexing status, then run text and similar-image search from one page.
-        </p>
-        <p id="live-connection" class="connection-badge" data-state="connecting" role="status" aria-live="polite">
-          <span class="connection-dot" aria-hidden="true"></span>
-          <span id="live-connection-label">Connecting live updates...</span>
-        </p>
+      <header class="masthead panel">
+        <div class="brand-block">
+          <p class="eyebrow">Personal Archive Search</p>
+          <div class="brand-row">
+            <h1>imgsearch</h1>
+            <p id="live-connection" class="connection-badge" data-state="connecting" role="status" aria-live="polite">
+              <span class="connection-dot" aria-hidden="true"></span>
+              <span id="live-connection-label">Connecting live updates...</span>
+            </p>
+          </div>
+          <p class="lede">
+            Search your image library by phrase or by example, then move between fresh imports, the full gallery, and result sets without leaving the page.
+          </p>
+        </div>
+
+        <div class="control-block">
+          <form id="text-search-form" class="search-bar">
+            <label class="field field-primary">
+              <span class="field-label">Search</span>
+              <input
+                id="text-query"
+                type="search"
+                placeholder="cute cosplay, dog on grass, woman portrait"
+                autocomplete="off"
+                required
+              />
+            </label>
+            <label class="field field-secondary">
+              <span class="field-label">Exclude</span>
+              <input
+                id="negative-query"
+                type="search"
+                placeholder="text, meme caption, cartoon"
+                autocomplete="off"
+              />
+            </label>
+            <div class="search-actions">
+              <button type="submit" class="cta">Search</button>
+              <button id="upload-open" type="button" class="ghost">Upload</button>
+            </div>
+          </form>
+          <p id="search-status" class="status search-status" role="status" aria-live="polite"></p>
+
+          <section class="status-strip" aria-labelledby="indexing-title">
+            <div class="status-strip-head">
+              <div>
+                <p class="section-label">Indexing</p>
+                <h2 id="indexing-title">Library status</h2>
+              </div>
+              <div class="status-actions">
+                <button id="retry-failed" type="button" class="ghost">Retry Failed</button>
+                <button id="refresh-stats" type="button" class="ghost">Refresh</button>
+              </div>
+            </div>
+            <p id="stats-summary" class="status summary-status" role="status" aria-live="polite"></p>
+            <div class="progress-track progress-track-compact" aria-hidden="true">
+              <div id="stats-progress" class="progress-fill"></div>
+            </div>
+            <p id="stats-detail" class="status detail-status"></p>
+            <div id="stats-failures" class="failure-list failure-list-compact"></div>
+          </section>
+        </div>
       </header>
 
-      <section class="panel" aria-labelledby="indexing-title">
-        <div class="panel-head">
-          <h2 id="indexing-title">Indexing Status</h2>
-          <div class="panel-actions">
-            <button id="retry-failed" type="button" class="ghost">Retry Failed / Queue Missing</button>
-            <button id="refresh-stats" type="button" class="ghost">Refresh Status</button>
+      <section class="workspace panel" aria-labelledby="library-view-title">
+        <div class="workspace-head">
+          <div>
+            <p class="section-label">Browse</p>
+            <h2 id="library-view-title">Library view</h2>
+          </div>
+          <div class="workspace-tools">
+            <button id="refresh-images" type="button" class="ghost">Refresh Gallery</button>
+            <button id="clear-results" type="button" class="ghost">Clear Results</button>
           </div>
         </div>
-        <p id="stats-summary" class="status" role="status" aria-live="polite"></p>
-        <div class="progress-track" aria-hidden="true">
-          <div id="stats-progress" class="progress-fill"></div>
-        </div>
-        <p id="stats-detail" class="status"></p>
-        <div id="stats-failures" class="failure-list"></div>
-      </section>
 
-      <section class="panel" aria-labelledby="upload-title">
-        <div class="panel-head">
-          <h2 id="upload-title">Upload</h2>
-          <button id="refresh-images" type="button" class="ghost">Refresh Gallery</button>
+        <div class="tablist" role="tablist" aria-label="Gallery views">
+          <button id="tab-gallery" type="button" class="tab-button" role="tab" aria-selected="true" aria-controls="gallery-panel">
+            <span>Gallery</span>
+            <span id="tab-gallery-count" class="tab-count">0</span>
+          </button>
+          <button id="tab-results" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="results-panel">
+            <span>Search Results</span>
+            <span id="tab-results-count" class="tab-count">0</span>
+          </button>
         </div>
-        <form id="upload-form" class="row">
+
+        <section id="gallery-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-gallery">
+          <div class="panel-toolbar gallery-toolbar">
+            <div>
+              <p id="gallery-status" class="status toolbar-status" role="status" aria-live="polite"></p>
+            </div>
+            <div class="pagination-controls" aria-label="Gallery pagination">
+              <button id="gallery-prev" type="button" class="ghost">Newer</button>
+              <p id="gallery-page-label" class="pagination-label">Page 1</p>
+              <button id="gallery-next" type="button" class="ghost">Older</button>
+            </div>
+          </div>
+          <div id="gallery-grid" class="grid gallery-grid"></div>
+        </section>
+
+        <section id="results-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-results" hidden>
+          <div class="panel-toolbar">
+            <p class="status toolbar-status">Latest text or similar-image search results stay here until you clear them.</p>
+          </div>
+          <div id="results-grid" class="grid results-grid"></div>
+        </section>
+      </section>
+    </main>
+
+    <div id="upload-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="upload-title" hidden>
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <p class="section-label">Import</p>
+            <h2 id="upload-title">Add an image</h2>
+          </div>
+          <button id="upload-close" type="button" class="ghost" aria-label="Close upload dialog">Close</button>
+        </div>
+        <form id="upload-form" class="upload-form">
           <label class="file-input">
             <span>Select image (JPEG/PNG/WEBP/AVIF)</span>
             <input id="upload-file" type="file" name="file" accept="image/png,image/jpeg,image/webp,image/avif" required />
           </label>
-          <button type="submit" class="cta">Upload</button>
+          <div class="modal-actions">
+            <button type="submit" class="cta">Upload</button>
+          </div>
         </form>
         <p id="upload-status" class="status" role="status" aria-live="polite"></p>
-      </section>
-
-      <section class="panel" aria-labelledby="search-title">
-        <div class="panel-head">
-          <h2 id="search-title">Search</h2>
-          <button id="clear-results" type="button" class="ghost">Clear Results</button>
-        </div>
-        <form id="text-search-form" class="row">
-          <input
-            id="text-query"
-            type="search"
-            placeholder="Try: dog on grass, woman portrait, cat"
-            autocomplete="off"
-            required
-          />
-          <input
-            id="negative-query"
-            type="search"
-            placeholder="Exclude (optional): cartoon, drawing, text"
-            autocomplete="off"
-          />
-          <button type="submit" class="cta">Search Text</button>
-        </form>
-        <p id="search-status" class="status" role="status" aria-live="polite"></p>
-      </section>
-
-      <section class="panel" aria-labelledby="results-title">
-        <h2 id="results-title">Search Results</h2>
-        <div id="results-grid" class="grid"></div>
-      </section>
-
-      <section class="panel" aria-labelledby="gallery-title">
-        <h2 id="gallery-title">Gallery</h2>
-        <div id="gallery-grid" class="grid"></div>
-      </section>
-    </main>
+      </div>
+    </div>
 
     <div id="image-lightbox" class="lightbox" role="dialog" aria-modal="true" aria-labelledby="lightbox-caption" hidden>
       <button id="lightbox-close" type="button" class="lightbox-close" aria-label="Close image preview">Close</button>
@@ -94,6 +148,7 @@
         <figcaption id="lightbox-caption"></figcaption>
       </figure>
     </div>
+
     <div id="live-announcer" class="sr-only" role="status" aria-live="polite"></div>
   </body>
 </html>
