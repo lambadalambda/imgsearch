@@ -29,30 +29,6 @@ run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vecto
 description = "Ensure sqlite-vector exists and run imgsearch with jina-torch"
 run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" go run ./cmd/imgsearch -embedder jina-torch -vector-backend sqlite-vector"
 
-[tasks.sqlite-ai-build]
-description = "DEPRECATED: Build sqlite-ai extension"
-run = "make -C ../sqlite-ai extension"
-
-[tasks.serve-sqlite-ai]
-description = "DEPRECATED: Run imgsearch with sqlite-ai embedding"
-run = "if ! command -v \"${SQLITE_AI_VIPS_PATH:-vips}\" >/dev/null 2>&1; then echo 'vips CLI is required (set SQLITE_AI_VIPS_PATH if needed)' >&2; exit 1; fi; if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; if [ ! -f ../sqlite-ai/dist/ai ] && [ ! -f ../sqlite-ai/dist/ai.dylib ] && [ ! -f ../sqlite-ai/dist/ai.so ] && [ ! -f ../sqlite-ai/dist/ai.dll ]; then make -C ../sqlite-ai extension; fi; SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" SQLITE_AI_PATH=\"${SQLITE_AI_PATH:-$(pwd)/../sqlite-ai/dist/ai}\" go run ./cmd/imgsearch -embedder sqlite-ai -vector-backend sqlite-vector -sqlite-ai-model-path \"${SQLITE_AI_MODEL_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" -sqlite-ai-vision-model-path \"${SQLITE_AI_VISION_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" -sqlite-ai-dimensions \"${SQLITE_AI_DIMS:-4096}\" -sqlite-ai-image-max-side \"${SQLITE_AI_MAX_SIDE:-512}\" -sqlite-ai-vips-path \"${SQLITE_AI_VIPS_PATH:-}\" -sqlite-ai-model-version \"${SQLITE_AI_MODEL_VERSION:-Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\""
-
-[tasks.sqlite-ai-test]
-description = "DEPRECATED: Run sqlite-ai embedding integration"
-run = "if ! command -v \"${SQLITE_AI_VIPS_PATH:-vips}\" >/dev/null 2>&1; then echo 'vips CLI is required (set SQLITE_AI_VIPS_PATH if needed)' >&2; exit 1; fi; RUN_SQLITE_AI_INTEGRATION=1 SQLITE_AI_PATH=\"${SQLITE_AI_PATH:-$(pwd)/../sqlite-ai/dist/ai}\" SQLITE_AI_MODEL_PATH=\"${SQLITE_AI_MODEL_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" SQLITE_AI_VISION_PATH=\"${SQLITE_AI_VISION_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" SQLITE_AI_DIMS=\"${SQLITE_AI_DIMS:-4096}\" go test ./internal/embedder/sqliteai -run SQLiteAIEmbeddingsAreSemanticallyReasonable -v"
-
-[tasks.sqlite-ai-test-api]
-description = "DEPRECATED: Run sqlite-ai API integration"
-run = "if ! command -v \"${SQLITE_AI_VIPS_PATH:-vips}\" >/dev/null 2>&1; then echo 'vips CLI is required (set SQLITE_AI_VIPS_PATH if needed)' >&2; exit 1; fi; RUN_SQLITE_AI_INTEGRATION=1 SQLITE_AI_PATH=\"${SQLITE_AI_PATH:-$(pwd)/../sqlite-ai/dist/ai}\" SQLITE_AI_MODEL_PATH=\"${SQLITE_AI_MODEL_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" SQLITE_AI_VISION_PATH=\"${SQLITE_AI_VISION_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" SQLITE_AI_DIMS=\"${SQLITE_AI_DIMS:-4096}\" go test ./internal/integration -run APIEndToEndWithSQLiteAIEmbedder -v"
-
-[tasks.sqlite-ai-test-all]
-description = "DEPRECATED: Run all sqlite-ai integrations"
-run = "if ! command -v \"${SQLITE_AI_VIPS_PATH:-vips}\" >/dev/null 2>&1; then echo 'vips CLI is required (set SQLITE_AI_VIPS_PATH if needed)' >&2; exit 1; fi; RUN_SQLITE_AI_INTEGRATION=1 SQLITE_AI_PATH=\"${SQLITE_AI_PATH:-$(pwd)/../sqlite-ai/dist/ai}\" SQLITE_AI_MODEL_PATH=\"${SQLITE_AI_MODEL_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" SQLITE_AI_VISION_PATH=\"${SQLITE_AI_VISION_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" SQLITE_AI_DIMS=\"${SQLITE_AI_DIMS:-4096}\" go test ./internal/embedder/sqliteai -run SQLiteAIEmbeddingsAreSemanticallyReasonable -v && RUN_SQLITE_AI_INTEGRATION=1 SQLITE_AI_PATH=\"${SQLITE_AI_PATH:-$(pwd)/../sqlite-ai/dist/ai}\" SQLITE_AI_MODEL_PATH=\"${SQLITE_AI_MODEL_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" SQLITE_AI_VISION_PATH=\"${SQLITE_AI_VISION_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" SQLITE_AI_DIMS=\"${SQLITE_AI_DIMS:-4096}\" go test ./internal/integration -run APIEndToEndWithSQLiteAIEmbedder -v"
-
-[tasks.sqlite-ai-test-fixtures]
-description = "DEPRECATED: Evaluate sqlite-ai fixture retrieval"
-run = "if ! command -v \"${SQLITE_AI_VIPS_PATH:-vips}\" >/dev/null 2>&1; then echo 'vips CLI is required (set SQLITE_AI_VIPS_PATH if needed)' >&2; exit 1; fi; RUN_SQLITE_AI_INTEGRATION=1 SQLITE_AI_PATH=\"${SQLITE_AI_PATH:-$(pwd)/../sqlite-ai/dist/ai}\" SQLITE_AI_MODEL_PATH=\"${SQLITE_AI_MODEL_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" SQLITE_AI_VISION_PATH=\"${SQLITE_AI_VISION_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" SQLITE_AI_DIMS=\"${SQLITE_AI_DIMS:-4096}\" go test ./internal/embedder/sqliteai -run SQLiteAIFixtureRetrievalQuality -v"
-
 [tasks.llama-cpp-test]
 description = "Run llama.cpp semantic integration test"
 run = "RUN_LLAMACPP_INTEGRATION=1 LLAMA_CPP_URL=\"${LLAMA_CPP_URL:-http://127.0.0.1:8081}\" LLAMA_CPP_DIMS=\"${LLAMA_CPP_DIMS:-2048}\" LLAMA_CPP_MODEL=\"${LLAMA_CPP_MODEL:-}\" LLAMA_CPP_QUERY_INSTRUCTION=\"${LLAMA_CPP_QUERY_INSTRUCTION:-Retrieve images or text relevant to the user's query.}\" LLAMA_CPP_PASSAGE_INSTRUCTION=\"${LLAMA_CPP_PASSAGE_INSTRUCTION:-Represent this image or text for retrieval.}\" go test ./internal/embedder/llamacpp -run LlamaCPPEmbeddingsAreSemanticallyReasonable -v"
@@ -84,10 +60,6 @@ run = "if [ ! -f ./deps/llama.cpp/build/bin/libllama.dylib ] && [ ! -f ./deps/ll
 [tasks.llama-cpp-native-bench-qwen8b]
 description = "Benchmark native embedder with Qwen 8B"
 run = "if [ ! -f ./deps/llama.cpp/build/bin/libllama.dylib ] && [ ! -f ./deps/llama.cpp/build/bin/libllama.so ] && [ ! -f ./deps/llama.cpp/build/bin/libllama.dll ]; then cmake -S ./deps/llama.cpp -B ./deps/llama.cpp/build -DCMAKE_BUILD_TYPE=Release && cmake --build ./deps/llama.cpp/build --target llama-server -j; fi; RUN_LLAMACPP_NATIVE_INTEGRATION=1 LLAMA_NATIVE_MODEL_PATH=\"${LLAMA_NATIVE_MODEL_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" LLAMA_NATIVE_MMPROJ_PATH=\"${LLAMA_NATIVE_MMPROJ_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" LLAMA_NATIVE_DIMS=\"${LLAMA_NATIVE_DIMS:-4096}\" LLAMA_NATIVE_GPU_LAYERS=\"${LLAMA_NATIVE_GPU_LAYERS:-99}\" LLAMA_NATIVE_USE_GPU=\"${LLAMA_NATIVE_USE_GPU:-true}\" LLAMA_NATIVE_CONTEXT_SIZE=\"${LLAMA_NATIVE_CONTEXT_SIZE:-8192}\" LLAMA_NATIVE_BATCH_SIZE=\"${LLAMA_NATIVE_BATCH_SIZE:-512}\" LLAMA_NATIVE_THREADS=\"${LLAMA_NATIVE_THREADS:-0}\" LLAMA_NATIVE_IMAGE_MAX_SIDE=\"${LLAMA_NATIVE_IMAGE_MAX_SIDE:-512}\" LLAMA_NATIVE_IMAGE_MAX_TOKENS=\"${LLAMA_NATIVE_IMAGE_MAX_TOKENS:-0}\" go test -tags llamacpp_native ./internal/embedder/llamacppnative -run '^$' -bench BenchmarkNativeEmbedImage -benchtime=\"${BENCH_TIME:-3x}\" -count=\"${BENCH_COUNT:-3}\" -benchmem"
-
-[tasks.sqlite-ai-bench]
-description = "DEPRECATED: Benchmark sqlite-ai embedding"
-run = "if ! command -v \"${SQLITE_AI_VIPS_PATH:-vips}\" >/dev/null 2>&1; then echo 'vips CLI is required (set SQLITE_AI_VIPS_PATH if needed)' >&2; exit 1; fi; RUN_SQLITE_AI_INTEGRATION=1 SQLITE_AI_PATH=\"${SQLITE_AI_PATH:-$(pwd)/../sqlite-ai/dist/ai}\" SQLITE_AI_MODEL_PATH=\"${SQLITE_AI_MODEL_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" SQLITE_AI_VISION_PATH=\"${SQLITE_AI_VISION_PATH:-$(pwd)/../sqlite-ai/tests/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" SQLITE_AI_DIMS=\"${SQLITE_AI_DIMS:-4096}\" go test ./internal/embedder/sqliteai -run '^$' -bench BenchmarkSQLiteAIEmbedImage -benchtime=\"${BENCH_TIME:-3x}\" -count=\"${BENCH_COUNT:-3}\" -benchmem"
 
 [tasks.import-images]
 description = "Bulk upload images from a folder"

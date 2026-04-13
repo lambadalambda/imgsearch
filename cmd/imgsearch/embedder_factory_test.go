@@ -1,12 +1,9 @@
 package main
 
 import (
-	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func TestNewEmbedderDeterministic(t *testing.T) {
@@ -235,63 +232,5 @@ func TestNewLlamaCPPNativeEmbedderRejectsNegativeImageMaxTokens(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected negative image max tokens error")
-	}
-}
-
-func TestNewSQLiteAIEmbedderRequiresModelPath(t *testing.T) {
-	dbConn, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = dbConn.Close() })
-
-	_, err = newSQLiteAIEmbedder(dbConn, sqliteAIEmbedderOptions{})
-	if err == nil {
-		t.Fatal("expected missing model path error")
-	}
-}
-
-func TestNewSQLiteAIEmbedderRequiresVisionModelPath(t *testing.T) {
-	dbConn, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = dbConn.Close() })
-
-	modelPath := filepath.Join(t.TempDir(), "model.gguf")
-	if err := os.WriteFile(modelPath, []byte("model"), 0o644); err != nil {
-		t.Fatalf("write model: %v", err)
-	}
-
-	_, err = newSQLiteAIEmbedder(dbConn, sqliteAIEmbedderOptions{ModelPath: modelPath})
-	if err == nil {
-		t.Fatal("expected missing vision model path error")
-	}
-}
-
-func TestNewSQLiteAIEmbedderRejectsNonPositiveImageMaxSide(t *testing.T) {
-	dbConn, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = dbConn.Close() })
-
-	tmp := t.TempDir()
-	modelPath := filepath.Join(tmp, "model.gguf")
-	if err := os.WriteFile(modelPath, []byte("model"), 0o644); err != nil {
-		t.Fatalf("write model: %v", err)
-	}
-	visionPath := filepath.Join(tmp, "vision.gguf")
-	if err := os.WriteFile(visionPath, []byte("vision"), 0o644); err != nil {
-		t.Fatalf("write vision model: %v", err)
-	}
-
-	_, err = newSQLiteAIEmbedder(dbConn, sqliteAIEmbedderOptions{
-		ModelPath:       modelPath,
-		VisionModelPath: visionPath,
-		ImageMaxSide:    0,
-	})
-	if err == nil {
-		t.Fatal("expected non-positive image max side error")
 	}
 }

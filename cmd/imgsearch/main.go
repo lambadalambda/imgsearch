@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"imgsearch/internal/app"
@@ -30,22 +29,9 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
-	embedderType := flag.String("embedder", "llama-cpp-native", "embedder backend (default): llama-cpp-native; alternatives: llama-cpp, sqlite-ai (deprecated), jina-mlx, jina-torch, qwen3-vl-embedding-8b, deterministic")
+	embedderType := flag.String("embedder", "llama-cpp-native", "embedder backend (default): llama-cpp-native; alternatives: llama-cpp, jina-mlx, jina-torch, qwen3-vl-embedding-8b, deterministic")
 	jinaURL := flag.String("jina-mlx-url", "http://127.0.0.1:9009", "embedding sidecar URL (jina-mlx, jina-torch, or qwen3-vl-embedding-8b)")
 	embedImageMode := flag.String("embed-image-mode", "auto", "image transport mode for sidecar embedders: path, bytes, or auto")
-	sqliteAIPath := flag.String("sqlite-ai-path", "", "[deprecated] path to sqlite-ai extension binary (optional: defaults to SQLITE_AI_PATH or ../sqlite-ai/dist/ai)")
-	sqliteAIModelPath := flag.String("sqlite-ai-model-path", "", "[deprecated] path to sqlite-ai GGUF embedding model (required for -embedder sqlite-ai)")
-	sqliteAIVisionModelPath := flag.String("sqlite-ai-vision-model-path", "", "[deprecated] path to sqlite-ai GGUF vision projector model (required for -embedder sqlite-ai)")
-	sqliteAIModelOptions := flag.String("sqlite-ai-model-options", "gpu_layers=99", "[deprecated] llm_model_load options for sqlite-ai embedder")
-	sqliteAIVisionOptions := flag.String("sqlite-ai-vision-options", "use_gpu=1", "[deprecated] llm_vision_load options for sqlite-ai embedder")
-	sqliteAIContextOptions := flag.String("sqlite-ai-context-options", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=last", "[deprecated] llm_context_create_embedding options for sqlite-ai embedder")
-	sqliteAIQueryInstruction := flag.String("sqlite-ai-query-instruction", "Retrieve images or text relevant to the user's query.", "[deprecated] instruction used for sqlite-ai text query embeddings")
-	sqliteAIPassageInstruction := flag.String("sqlite-ai-passage-instruction", "Represent this image or text for retrieval.", "[deprecated] instruction used for sqlite-ai image/document embeddings")
-	sqliteAIImageMaxSide := flag.Int("sqlite-ai-image-max-side", 512, "[deprecated] maximum image side length used before sqlite-ai embedding (resized with vips)")
-	sqliteAIVipsPath := flag.String("sqlite-ai-vips-path", "", "[deprecated] path to vips binary for sqlite-ai image preprocessing (defaults to PATH lookup)")
-	sqliteAIDimensions := flag.Int("sqlite-ai-dimensions", 4096, "[deprecated] embedding dimensions for sqlite-ai model metadata")
-	sqliteAIModelName := flag.String("sqlite-ai-model-name", "sqlite-ai-embedding", "[deprecated] embedding model name used in metadata for sqlite-ai")
-	sqliteAIModelVersion := flag.String("sqlite-ai-model-version", "", "[deprecated] embedding model version used in metadata for sqlite-ai (defaults to sqlite-ai model filename)")
 	llamaCPPURL := flag.String("llama-cpp-url", "http://127.0.0.1:8081", "llama.cpp server URL for -embedder llama-cpp")
 	llamaCPPDimensions := flag.Int("llama-cpp-dimensions", 2048, "embedding dimensions for llama-cpp model metadata")
 	llamaCPPModel := flag.String("llama-cpp-model", "", "optional model field passed to llama.cpp /v1/embeddings")
@@ -65,10 +51,6 @@ func main() {
 	sqliteVectorPath := flag.String("sqlite-vector-path", "", "path to sqlite-vector extension binary (optional: defaults to SQLITE_VECTOR_PATH or tools/sqlite-vector/vector)")
 	flag.Parse()
 
-	if *embedderType == "sqlite-ai" {
-		log.Printf("warning: embedder 'sqlite-ai' is deprecated; prefer '-embedder llama-cpp-native'")
-	}
-
 	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
 		log.Fatalf("create data directory: %v", err)
 	}
@@ -79,17 +61,6 @@ func main() {
 	resolvedSQLiteVectorPath, err := discoverSQLiteVectorPath(*sqliteVectorPath)
 	if err != nil {
 		log.Fatalf("discover sqlite-vector extension: %v", err)
-	}
-
-	resolvedSQLiteAIPath := ""
-	if *embedderType == "sqlite-ai" {
-		resolvedSQLiteAIPath, err = discoverSQLiteAIPath(*sqliteAIPath)
-		if err != nil {
-			log.Fatalf("discover sqlite-ai extension: %v", err)
-		}
-		if resolvedSQLiteAIPath == "" {
-			log.Fatalf("sqlite-ai embedder requested but extension path was not found (set -sqlite-ai-path or SQLITE_AI_PATH)")
-		}
 	}
 
 	autoValidationErr := error(nil)
@@ -108,11 +79,11 @@ func main() {
 		openWithVector = resolvedSQLiteVectorPath
 	}
 
-	sqlDB, err := openSQLiteDB(dsn, openWithVector, "")
+	sqlDB, err := openSQLiteDB(dsn, openWithVector)
 	if err != nil {
 		if *vectorBackend == vectorBackendAuto && openWithVector != "" {
 			autoValidationErr = err
-			sqlDB, err = openSQLiteDB(dsn, "", "")
+			sqlDB, err = openSQLiteDB(dsn, "")
 			if err != nil {
 				log.Fatalf("open sqlite database: %v", err)
 			}
@@ -132,7 +103,7 @@ func main() {
 	}
 	if resolvedVectorBackend == vectorBackendBruteForce && openWithVector != "" {
 		_ = sqlDB.Close()
-		sqlDB, err = openSQLiteDB(dsn, "", "")
+		sqlDB, err = openSQLiteDB(dsn, "")
 		if err != nil {
 			log.Fatalf("open sqlite database: %v", err)
 		}
@@ -155,12 +126,7 @@ func main() {
 	}
 
 	embedDimensions := 0
-	if *embedderType == "sqlite-ai" {
-		embedDimensions = *sqliteAIDimensions
-		if embedDimensions <= 0 {
-			log.Fatalf("configure embedder dimensions: sqlite-ai dimensions must be positive")
-		}
-	} else if *embedderType == "llama-cpp" {
+	if *embedderType == "llama-cpp" {
 		embedDimensions = *llamaCPPDimensions
 		if embedDimensions <= 0 {
 			log.Fatalf("configure embedder dimensions: llama-cpp dimensions must be positive")
@@ -186,43 +152,21 @@ func main() {
 		}
 	}
 
-	modelSpec := db.EmbeddingModelSpec{}
-	if *embedderType == "sqlite-ai" {
-		modelName := strings.TrimSpace(*sqliteAIModelName)
-		if modelName == "" {
-			log.Fatalf("configure model spec: sqlite-ai model name must not be empty")
-		}
-		modelVersion := strings.TrimSpace(*sqliteAIModelVersion)
-		if modelVersion == "" {
-			modelVersion = filepath.Base(strings.TrimSpace(*sqliteAIModelPath))
-		}
-		if modelVersion == "" {
-			log.Fatalf("configure model spec: sqlite-ai model version must not be empty")
-		}
-		modelSpec = db.EmbeddingModelSpec{
-			Name:       modelName,
-			Version:    modelVersion,
-			Dimensions: embedDimensions,
-			Metric:     "cosine",
-			Normalized: true,
-		}
-	} else {
-		modelSpec, err = embeddingModelSpec(*embedderType, embedDimensions)
-		if err != nil {
-			log.Fatalf("configure model spec: %v", err)
-		}
-		if *embedderType == "llama-cpp" {
-			modelSpec.Version = llamaCPPModelVersion(*llamaCPPModel, modelSpec.Dimensions)
-		}
-		if *embedderType == "llama-cpp-native" {
-			modelSpec.Version = llamaNativeModelVersion(
-				*llamaNativeModelPath,
-				*llamaNativeMMProjPath,
-				modelSpec.Dimensions,
-				resolvedLlamaNativeImageMaxSide,
-				resolvedLlamaNativeImageMaxTokens,
-			)
-		}
+	modelSpec, err := embeddingModelSpec(*embedderType, embedDimensions)
+	if err != nil {
+		log.Fatalf("configure model spec: %v", err)
+	}
+	if *embedderType == "llama-cpp" {
+		modelSpec.Version = llamaCPPModelVersion(*llamaCPPModel, modelSpec.Dimensions)
+	}
+	if *embedderType == "llama-cpp-native" {
+		modelSpec.Version = llamaNativeModelVersion(
+			*llamaNativeModelPath,
+			*llamaNativeMMProjPath,
+			modelSpec.Dimensions,
+			resolvedLlamaNativeImageMaxSide,
+			resolvedLlamaNativeImageMaxTokens,
+		)
 	}
 
 	modelID, err := db.EnsureEmbeddingModel(context.Background(), sqlDB, modelSpec)
@@ -239,25 +183,7 @@ func main() {
 	}
 
 	embedder := embedder.Embedder(nil)
-	if *embedderType == "sqlite-ai" {
-		sqliteAIEmbedDB, err := openSQLiteAIRuntimeDB(resolvedSQLiteAIPath)
-		if err != nil {
-			log.Fatalf("open sqlite-ai runtime db: %v", err)
-		}
-		defer func() { _ = sqliteAIEmbedDB.Close() }()
-
-		embedder, err = newSQLiteAIEmbedder(sqliteAIEmbedDB, sqliteAIEmbedderOptions{
-			ModelPath:          *sqliteAIModelPath,
-			ModelOptions:       *sqliteAIModelOptions,
-			VisionModelPath:    *sqliteAIVisionModelPath,
-			VisionModelOptions: *sqliteAIVisionOptions,
-			ContextOptions:     *sqliteAIContextOptions,
-			QueryInstruction:   *sqliteAIQueryInstruction,
-			PassageInstruction: *sqliteAIPassageInstruction,
-			ImageMaxSide:       *sqliteAIImageMaxSide,
-			VipsPath:           *sqliteAIVipsPath,
-		})
-	} else if *embedderType == "llama-cpp" {
+	if *embedderType == "llama-cpp" {
 		embedder, err = newLlamaCPPEmbedder(llamaCPPEmbedderOptions{
 			URL:                *llamaCPPURL,
 			Dimensions:         modelSpec.Dimensions,

@@ -39,7 +39,6 @@ It is designed as a simple Go application that:
 ## Running Locally (Default: llama.cpp Native)
 
 `llama-cpp-native` is the default and recommended embedder.
-`sqlite-ai` is deprecated and kept only for compatibility/migration.
 
 1. Install sqlite-vector for your platform:
    - `mise run sqlite-vector-setup`
@@ -59,51 +58,13 @@ It is designed as a simple Go application that:
 
 One-command startup (native default path):
 - `mise run serve`
+- `mise run "serve:8b"` for the 8B model defaults
 - Optional native tuning env vars for `mise run serve`: `LLAMA_NATIVE_IMAGE_MAX_SIDE` (default `512`), `LLAMA_NATIVE_IMAGE_MAX_TOKENS` (default `0` = model default).
-
-Legacy sqlite-ai startup (deprecated):
-- `mise run serve-sqlite-ai`
 
 Reset local database files:
 - `mise run reset-db`
 
 Note: native embedding requires build tag `llamacpp_native`; use `go run -tags llamacpp_native ...` or `mise run serve`.
-
-### Linux + CUDA Setup (sqlite-ai, deprecated)
-
-Use this setup on Linux with NVIDIA GPUs.
-
-1. Install system dependencies:
-   - `sudo apt-get update`
-   - `sudo apt-get install -y build-essential cmake pkg-config libsqlite3-dev libvips-tools curl git python3-pip`
-2. Install NVIDIA driver + CUDA toolkit, then verify:
-   - `nvidia-smi`
-   - `nvcc --version`
-3. Build `sqlite-ai` with CUDA-enabled llama.cpp:
-   - `CUDA_ARCH="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader,nounits | sed -n '1p' | tr -d '.')"`
-   - `make -C ../sqlite-ai clean extension LLAMA="-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=${CUDA_ARCH}"`
-4. If CUDA shared libraries are not found at runtime, set:
-   - `export LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}`
-5. Run imgsearch using sqlite-ai GPU options:
-   - `go run ./cmd/imgsearch -embedder sqlite-ai -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -sqlite-ai-path ../sqlite-ai/dist/ai.so -sqlite-ai-model-path ../sqlite-ai/tests/models/Qwen3-2B/Qwen3-VL-Embedding-2B-Q6_K.gguf -sqlite-ai-vision-model-path ../sqlite-ai/tests/models/Qwen3-2B/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -sqlite-ai-dimensions 2048 -sqlite-ai-model-options "gpu_layers=99" -sqlite-ai-vision-options "use_gpu=1"`
-
-SQLite-AI options (deprecated):
-- `SQLITE_AI_PATH=../sqlite-ai/dist/ai` (or `../sqlite-ai/dist/ai.so` on Linux)
-- `-sqlite-ai-model-path` path to embedding GGUF model
-- `-sqlite-ai-vision-model-path` path to vision projector GGUF model
-- `-sqlite-ai-dimensions` embedding dimensions (`2048` for Qwen3-VL-Embedding-2B, `4096` for Qwen3-VL-Embedding-8B)
-- `-sqlite-ai-image-max-side` max side length for pre-embedding resize (default: `512`)
-- `-sqlite-ai-vips-path` optional path to `vips` binary (default: PATH lookup)
-- `-sqlite-ai-query-instruction` default: `Retrieve images or text relevant to the user's query.`
-- `-sqlite-ai-passage-instruction` default: `Represent this image or text for retrieval.`
-- Optional: `-sqlite-ai-model-options`, `-sqlite-ai-vision-options`, `-sqlite-ai-context-options`
-
-Run deprecated sqlite-ai integration checks (local extension + GGUF files):
-- `mise run sqlite-ai-test` (deprecated embedder-level semantic sanity)
-- `mise run sqlite-ai-test-api` (deprecated API end-to-end: upload -> index -> text/similar search)
-- `mise run sqlite-ai-test-all` (deprecated combined sqlite-ai integration suites)
-- `mise run sqlite-ai-test-fixtures` (deprecated fixture retrieval expectation checks)
-- `mise run sqlite-ai-bench` (deprecated steady-state `EmbedImage` benchmark; defaults to Qwen3-VL-Embedding-8B)
 
 ### llama.cpp Embedder
 
@@ -142,8 +103,7 @@ Notes:
   - `mise run llama-cpp-native-test-fixtures`
 - Benchmark checks:
   - `mise run llama-cpp-native-bench`
-  - `mise run llama-cpp-native-bench-qwen8b` (recommended for direct comparison with sqlite-ai)
-  - `mise run sqlite-ai-bench`
+  - `mise run llama-cpp-native-bench-qwen8b`
 
 The UI includes:
 - upload form,
@@ -181,16 +141,12 @@ From the UI, use the **Retry Failed / Queue Missing** button in the Indexing Sta
 
 Run integration suites:
 
-- `mise run sqlite-ai-test` (deprecated) for embedder-level semantic similarity checks against fixture images.
-- `mise run sqlite-ai-test-api` (deprecated) for API end-to-end flow (`/api/upload` -> queue processing -> `/api/search/text` and `/api/search/similar`).
-- `mise run sqlite-ai-test-all` (deprecated) to run both sqlite-ai integration suites together.
-- `mise run sqlite-ai-test-fixtures` (deprecated) to validate retrieval behavior against `fixtures/images/expected.txt`.
 - `mise run llama-cpp-native-test` for semantic sanity checks against direct llama.cpp native embedding.
 - `mise run llama-cpp-native-test-fixtures` to validate fixture retrieval behavior against direct llama.cpp native embedding.
 - `mise run llama-cpp-test` for semantic sanity checks against a running `llama-server`.
 - `mise run llama-cpp-test-fixtures` to validate fixture retrieval behavior against a running `llama-server`.
 - `mise run sqlite-vector-test` for sqlite-vector index integration checks.
-- `mise run llama-cpp-native-bench-qwen8b` and `mise run sqlite-ai-bench` for apples-to-apples 8B image-embedding benchmarks.
+- `mise run llama-cpp-native-bench-qwen8b` for 8B image-embedding benchmarks.
 
 The semantic checks verify expected relative similarity trends, such as cat images ranking closer to each other than cat-vs-dog, and woman portraits clustering together.
 
