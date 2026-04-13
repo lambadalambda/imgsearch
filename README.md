@@ -47,7 +47,7 @@ It is designed as a simple Go application that:
 3. Build llama.cpp runtime libraries:
    - `mise run llama-cpp-native-build`
 4. Start the app with native embedding + sqlite-vector:
-   - `go run -tags llamacpp_native ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+   - `go run ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
 5. On first run, if `./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf` or `./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf` are missing, imgsearch downloads them automatically from `lainsoykaf/Qwen3-VL-Embedding-8B-GGUF` on Hugging Face.
 6. Open the UI:
    - `http://127.0.0.1:8080/`
@@ -60,7 +60,7 @@ One-command startup (native default path):
 Reset local database files:
 - `mise run reset-db`
 
-Note: native embedding requires build tag `llamacpp_native`; use `go run -tags llamacpp_native ...` or `mise run serve`.
+Note: native embedding is the default build path when CGO is enabled. The llama.cpp runtime libraries still need to be built first in source checkouts.
 
 ### llama.cpp Embedder
 
@@ -75,7 +75,7 @@ This repo includes two llama.cpp paths:
    - `cmake -S ./deps/llama.cpp -B ./deps/llama.cpp/build`
    - `cmake --build ./deps/llama.cpp/build --target llama-server -j`
 3. Start imgsearch with direct llama.cpp native embedding (default 8B config):
-   - `go run -tags llamacpp_native ./cmd/imgsearch -embedder llama-cpp-native -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+   - `go run ./cmd/imgsearch -embedder llama-cpp-native -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
 4. Convenience tasks:
    - `mise run llama-cpp-native-build`
    - `mise run serve-llama-cpp-native`

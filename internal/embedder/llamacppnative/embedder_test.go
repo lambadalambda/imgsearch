@@ -9,6 +9,6 @@ func TestNewRequiresNativeBuildTag(t *testing.T) {
 		Dimensions:      2048,
 	})
 	if err == nil {
-		t.Fatal("expected error without native build tag/runtime")
+		t.Fatal("expected error when native runtime is unavailable")
 	}
 }

@@ -1,4 +1,4 @@
-//go:build !llamacpp_native
+//go:build !cgo
 
 package llamacppnative
 
@@ -25,7 +25,7 @@ type Config struct {
 type Embedder struct{}
 
 func New(Config) (*Embedder, error) {
-	return nil, fmt.Errorf("llama-cpp-native requires build tag 'llamacpp_native' and a built llama.cpp runtime")
+	return nil, fmt.Errorf("llama-cpp-native requires cgo and a built llama.cpp runtime")
 }
 
 func (e *Embedder) Close() error { return nil }

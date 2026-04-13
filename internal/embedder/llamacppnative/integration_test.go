@@ -1,4 +1,4 @@
-//go:build llamacpp_native && cgo
+//go:build cgo
 
 package llamacppnative
 
