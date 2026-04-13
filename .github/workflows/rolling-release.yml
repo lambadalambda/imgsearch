@@ -1,0 +1,98 @@
+name: Rolling Release
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: linux-x86_64
+          - os: macos-14
+            target: macos-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libvips-dev patchelf
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install vips
+
+      - name: Build llama.cpp runtime libraries
+        run: |
+          cmake -S ./deps/llama.cpp -B ./deps/llama.cpp/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build ./deps/llama.cpp/build --target llama-server -j
+
+      - name: Download sqlite-vector
+        run: scripts/setup_sqlite_vector.sh
+
+      - name: Package release artifact
+        run: scripts/package_release.sh "${{ matrix.target }}" dist
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish rolling release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: rolling
+          name: Rolling Release
+          prerelease: true
+          allowUpdates: true
+          replacesArtifacts: true
+          artifactErrorsFailBuild: true
+          artifacts: "dist/*.tar.gz,dist/*.sha256"
+          body: |
+            Automated rolling release from `${{ github.ref_name }}`.
+
+            Included artifacts:
+            - Linux x86_64 build
+            - macOS arm64 build
+
+            Notes:
+            - The archives bundle `imgsearch`, llama.cpp shared libraries, and `sqlite-vector`.
+            - `libvips` must still be installed on the target system.
+            - On first run, the default 8B Qwen GGUF files download automatically if missing.
