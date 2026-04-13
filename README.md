@@ -48,11 +48,11 @@ It is designed as a simple Go application that:
    - `mise run llama-cpp-native-build`
 4. Download a model pair (example: Qwen3-VL-Embedding-2B):
    - `python3 -m pip install --user "huggingface_hub[cli]"`
-   - `mkdir -p ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
-   - `huggingface-cli download VesNFF/Qwen3-VL-Embedding-2B-GGUF Qwen3-VL-Embedding-2B-Q6_K.gguf --local-dir ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
-   - `huggingface-cli download VesNFF/Qwen3-VL-Embedding-2B-GGUF mmproj-Qwen3-VL-Embedding-2B-f16.gguf --local-dir ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
+   - `mkdir -p ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
+   - `huggingface-cli download VesNFF/Qwen3-VL-Embedding-2B-GGUF Qwen3-VL-Embedding-2B-Q6_K.gguf --local-dir ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
+   - `huggingface-cli download VesNFF/Qwen3-VL-Embedding-2B-GGUF mmproj-Qwen3-VL-Embedding-2B-f16.gguf --local-dir ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
 5. Start the app with native embedding + sqlite-vector:
-   - `go run -tags llamacpp_native ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -llama-native-model-path ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf -llama-native-mmproj-path ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -llama-native-dimensions 2048`
+   - `go run -tags llamacpp_native ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -llama-native-model-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf -llama-native-mmproj-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -llama-native-dimensions 2048`
 6. Open the UI:
    - `http://127.0.0.1:8080/`
 
@@ -79,12 +79,12 @@ This repo includes two llama.cpp paths:
    - `cmake -S ./deps/llama.cpp -B ./deps/llama.cpp/build`
    - `cmake --build ./deps/llama.cpp/build --target llama-server -j`
 3. Start imgsearch with direct llama.cpp native embedding (example with Qwen3-VL-Embedding-2B):
-   - `go run -tags llamacpp_native ./cmd/imgsearch -embedder llama-cpp-native -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -llama-native-model-path ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf -llama-native-mmproj-path ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -llama-native-dimensions 2048`
+   - `go run -tags llamacpp_native ./cmd/imgsearch -embedder llama-cpp-native -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -llama-native-model-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf -llama-native-mmproj-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -llama-native-dimensions 2048`
 4. Convenience tasks:
    - `mise run llama-cpp-native-build`
    - `mise run serve-llama-cpp-native`
 5. (Legacy) Run via `llama-server` HTTP API:
-   - Start server: `./deps/llama.cpp/build/bin/llama-server --host 127.0.0.1 --port 8081 --model ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf --mmproj ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf --embeddings --pooling last --ctx-size 8192 --gpu-layers 99`
+   - Start server: `./deps/llama.cpp/build/bin/llama-server --host 127.0.0.1 --port 8081 --model ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf --mmproj ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf --embeddings --pooling last --ctx-size 8192 --gpu-layers 99`
    - Run app: `go run ./cmd/imgsearch -embedder llama-cpp -llama-cpp-url http://127.0.0.1:8081 -llama-cpp-dimensions 2048 -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
 
 Notes:

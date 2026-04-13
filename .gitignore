@@ -5,3 +5,5 @@ data/
 .tmp/
 tools/sqlite-vector/
 __pycache__/
+models/**
+!models/.gitkeep
