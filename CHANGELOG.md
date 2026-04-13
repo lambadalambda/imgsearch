@@ -3,7 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
-- _No entries yet._
+- perf: speed up sqlite-ai image preprocessing by using a persistent vips helper process created before model load, avoiding expensive per-image fork/exec overhead.
+- test: add sqlite-ai helper and integration benchmarks covering preprocess and `EmbedImage` throughput.
 
 ## 2026-04-13
 - test: restore webp and avif upload fixtures (`7563fa7`)

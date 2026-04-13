@@ -431,7 +431,7 @@ func envIntOrDefault(key string, fallback int) int {
 
 var sqliteAIDriverCounter uint64
 
-func openWithSQLiteAI(t *testing.T, extensionPath string) *sql.DB {
+func openWithSQLiteAI(t testing.TB, extensionPath string) *sql.DB {
 	t.Helper()
 
 	abs, err := filepath.Abs(extensionPath)
@@ -462,7 +462,7 @@ func openWithSQLiteAI(t *testing.T, extensionPath string) *sql.DB {
 	return dbConn
 }
 
-func findRepoRoot(t *testing.T) string {
+func findRepoRoot(t testing.TB) string {
 	t.Helper()
 
 	_, file, _, ok := runtime.Caller(0)

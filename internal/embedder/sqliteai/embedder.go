@@ -9,7 +9,6 @@ import (
 	"math"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -22,7 +21,7 @@ const (
 )
 
 type commandRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
-type vipsResizeFunc func(sourcePath string, outputPath string, scale float64) []string
+type vipsResizeFunc func(sourcePath string, outputPath string, maxSide int) []string
 
 type Config struct {
 	DB                 *sql.DB
@@ -48,6 +47,7 @@ type Embedder struct {
 	passageInstruction string
 	imageMaxSide       int
 	vipsPath           string
+	vipsHelper         *vipsCommandHelper
 	runCommand         commandRunner
 	vipsResize         vipsResizeFunc
 
@@ -178,22 +178,6 @@ func (e *Embedder) prepareImageForEmbedding(ctx context.Context, sourcePath stri
 	if maxSide <= 0 {
 		maxSide = defaultImageMaxSide
 	}
-	width, height, err := e.imageDimensionsWithVips(ctx, sourcePath)
-	if err != nil {
-		return "", nil, err
-	}
-	maxDimension := width
-	if height > maxDimension {
-		maxDimension = height
-	}
-	if maxDimension <= 0 {
-		return "", nil, fmt.Errorf("invalid image dimensions for %q: %dx%d", sourcePath, width, height)
-	}
-
-	scale := 1.0
-	if maxDimension > maxSide {
-		scale = float64(maxSide) / float64(maxDimension)
-	}
 
 	tmpFile, err := os.CreateTemp("", "imgsearch-sqliteai-embed-*.jpg")
 	if err != nil {
@@ -221,14 +205,14 @@ func (e *Embedder) prepareImageForEmbedding(ctx context.Context, sourcePath stri
 		resizeArgs = defaultVipsResize
 	}
 
-	commandOutput, err := runner(ctx, vipsCmd, resizeArgs(sourcePath, outputPath, scale)...)
+	commandOutput, err := runner(ctx, vipsCmd, resizeArgs(sourcePath, outputPath, maxSide)...)
 	if err != nil {
 		_ = os.Remove(outputPath)
 		stderr := strings.TrimSpace(string(commandOutput))
 		if stderr != "" {
-			return "", nil, fmt.Errorf("vips resize failed: %w: %s", err, stderr)
+			return "", nil, fmt.Errorf("vips thumbnail failed: %w: %s", err, stderr)
 		}
-		return "", nil, fmt.Errorf("vips resize failed: %w", err)
+		return "", nil, fmt.Errorf("vips thumbnail failed: %w", err)
 	}
 
 	cleanup := func() {
@@ -245,22 +229,56 @@ func (e *Embedder) ensureInitialized(ctx context.Context) error {
 }
 
 func (e *Embedder) initialize(ctx context.Context) error {
+	// On macOS, spawning subprocesses becomes extremely slow once the embedding
+	// model is loaded into this process. Start a lightweight helper *before*
+	// llm_model_load so vips CLI calls remain fast.
+	var helper *vipsCommandHelper
+	if e.vipsHelper == nil {
+		var err error
+		helper, err = startVipsCommandHelper(context.Background())
+		if err != nil {
+			return fmt.Errorf("start vips command helper: %w", err)
+		}
+		e.vipsHelper = helper
+		e.runCommand = helper.Run
+	}
+
 	var version string
 	if err := e.db.QueryRowContext(ctx, `SELECT ai_version()`).Scan(&version); err != nil {
+		if helper != nil {
+			_ = helper.Close()
+			e.vipsHelper = nil
+			e.runCommand = runCommandCombinedOutput
+		}
 		return fmt.Errorf("sqlite-ai extension not available: %w", err)
 	}
 
 	if err := scanNilResult(e.db.QueryRowContext(ctx, `SELECT llm_model_load(?, ?)`, e.modelPath, e.modelOptions)); err != nil {
+		if helper != nil {
+			_ = helper.Close()
+			e.vipsHelper = nil
+			e.runCommand = runCommandCombinedOutput
+		}
 		return fmt.Errorf("load sqlite-ai model: %w", err)
 	}
 
 	if e.visionModelPath != "" {
 		if err := scanNilResult(e.db.QueryRowContext(ctx, `SELECT llm_vision_load(?, ?)`, e.visionModelPath, e.visionModelOptions)); err != nil {
+			if helper != nil {
+				_ = helper.Close()
+				e.vipsHelper = nil
+				e.runCommand = runCommandCombinedOutput
+			}
 			return fmt.Errorf("load sqlite-ai vision model: %w", err)
 		}
 	}
 
 	if err := scanNilResult(e.db.QueryRowContext(ctx, `SELECT llm_context_create_embedding(?)`, e.contextOptions)); err != nil {
+		if helper != nil {
+			_ = helper.Close()
+			e.vipsHelper = nil
+			e.runCommand = runCommandCombinedOutput
+		}
 		return fmt.Errorf("create sqlite-ai embedding context: %w", err)
 	}
 
@@ -296,46 +314,17 @@ func runCommandCombinedOutput(ctx context.Context, name string, args ...string) 
 	return cmd.CombinedOutput()
 }
 
-func defaultVipsResize(sourcePath string, outputPath string, scale float64) []string {
+func defaultVipsResize(sourcePath string, outputPath string, maxSide int) []string {
+	if maxSide <= 0 {
+		maxSide = defaultImageMaxSide
+	}
 	return []string{
-		"resize",
+		"thumbnail",
 		sourcePath,
 		outputPath,
-		fmt.Sprintf("%.6f", scale),
+		fmt.Sprintf("%d", maxSide),
+		"--size=down",
 	}
-}
-
-func (e *Embedder) imageDimensionsWithVips(ctx context.Context, sourcePath string) (int, int, error) {
-	width, err := e.readVipsHeaderDimension(ctx, sourcePath, "width")
-	if err != nil {
-		return 0, 0, err
-	}
-	height, err := e.readVipsHeaderDimension(ctx, sourcePath, "height")
-	if err != nil {
-		return 0, 0, err
-	}
-	return width, height, nil
-}
-
-func (e *Embedder) readVipsHeaderDimension(ctx context.Context, sourcePath string, field string) (int, error) {
-	runner := e.runCommand
-	if runner == nil {
-		runner = runCommandCombinedOutput
-	}
-	commandOutput, err := runner(ctx, "vipsheader", "-f", field, sourcePath)
-	if err != nil {
-		stderr := strings.TrimSpace(string(commandOutput))
-		if stderr != "" {
-			return 0, fmt.Errorf("read image %s via vipsheader: %w: %s", field, err, stderr)
-		}
-		return 0, fmt.Errorf("read image %s via vipsheader: %w", field, err)
-	}
-	valueText := strings.TrimSpace(string(commandOutput))
-	value, err := strconv.Atoi(valueText)
-	if err != nil {
-		return 0, fmt.Errorf("parse image %s %q: %w", field, valueText, err)
-	}
-	return value, nil
 }
 
 func embedInstructionOption(instruction string) string {
