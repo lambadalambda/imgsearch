@@ -3,6 +3,8 @@ data/
 .venv/
 .ruff_cache/
 .tmp/
+dist/
+dist-test/
 tools/sqlite-vector/
 __pycache__/
 models/**

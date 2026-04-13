@@ -36,6 +36,49 @@ It is designed as a simple Go application that:
 - Search by text
 - Search by similar image
 
+## Quick Start
+
+### Use the Release
+
+1. Download the latest artifact from the GitHub `rolling` release for your system.
+2. Extract the archive.
+3. Install `libvips` on your machine.
+4. Run `./imgsearch`.
+5. Open `http://127.0.0.1:8080/`.
+
+On first run, `imgsearch` downloads the default 8B embedding model into `./models/Qwen/` if it is missing.
+
+### Import Images
+
+With the app running, import a directory recursively:
+
+```bash
+./scripts/import_images.sh ~/Pictures/memes
+```
+
+Or point it at any other folder:
+
+```bash
+./scripts/import_images.sh /path/to/your/images
+```
+
+The script uploads supported images to the local app and indexing continues in the background.
+
+### Build From Source
+
+If there is no release for your system:
+
+1. Install Go, CMake, and `libvips`.
+2. Initialize the llama.cpp submodule:
+   - `git submodule update --init --recursive deps/llama.cpp`
+3. Build llama.cpp runtime libraries:
+   - `cmake -S ./deps/llama.cpp -B ./deps/llama.cpp/build -DCMAKE_BUILD_TYPE=Release`
+   - `cmake --build ./deps/llama.cpp/build --target llama-server -j`
+4. Install sqlite-vector:
+   - `./scripts/setup_sqlite_vector.sh`
+5. Run the app:
+   - `go run ./cmd/imgsearch`
+
 ## Running Locally (Default: llama.cpp Native)
 
 `llama-cpp-native` is the default and recommended embedder.
