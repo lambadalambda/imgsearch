@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLlamaCPPModelVersion(t *testing.T) {
 	if got := llamaCPPModelVersion("", 2048); got != "server-v2-default-d2048" {
@@ -16,6 +19,9 @@ func TestLlamaNativeModelVersionChangesWithConfig(t *testing.T) {
 	base := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 512, 0)
 	if base == "" {
 		t.Fatal("expected non-empty native model version")
+	}
+	if !strings.HasPrefix(base, "native-v3-vipsjpeg-") {
+		t.Fatalf("expected native version prefix to include vipsjpeg, got %q", base)
 	}
 
 	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 512, 0); got != base {

@@ -47,6 +47,7 @@ type Embedder struct {
 	mu                 sync.Mutex
 	handle             *C.imgsearch_llama_handle
 	dimensions         int
+	imageMaxSide       int
 	queryInstruction   string
 	passageInstruction string
 }
@@ -126,6 +127,7 @@ func New(cfg Config) (*Embedder, error) {
 	return &Embedder{
 		handle:             h,
 		dimensions:         actualDims,
+		imageMaxSide:       imageMaxSide,
 		queryInstruction:   queryInstruction,
 		passageInstruction: passageInstruction,
 	}, nil
@@ -172,17 +174,28 @@ func (e *Embedder) EmbedText(_ context.Context, text string) ([]float32, error) 
 }
 
 func (e *Embedder) EmbedImage(_ context.Context, path string) ([]float32, error) {
+	preprocessedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(path, e.imageMaxSide)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if e.handle == nil {
 		return nil, fmt.Errorf("llama-cpp-native embedder is closed")
 	}
-	if strings.TrimSpace(path) == "" {
-		return nil, fmt.Errorf("image path is empty")
-	}
 
 	out := make([]float32, e.dimensions)
+	if err := e.embedImagePathLocked(preprocessedPath, out); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+func (e *Embedder) embedImagePathLocked(path string, out []float32) error {
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
 	cInstruction := C.CString(e.passageInstruction)
@@ -195,10 +208,10 @@ func (e *Embedder) EmbedImage(_ context.Context, path string) ([]float32, error)
 		(*C.float)(unsafe.Pointer(&out[0])),
 		C.int32_t(len(out)),
 	) != 0 {
-		return nil, e.lastErrorLocked()
+		return e.lastErrorLocked()
 	}
 
-	return out, nil
+	return nil
 }
 
 func (e *Embedder) lastErrorLocked() error {

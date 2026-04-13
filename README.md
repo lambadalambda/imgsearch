@@ -131,6 +131,7 @@ Notes:
 - You can pass `-llama-cpp-model` to set the optional `model` field in `/v1/embeddings` requests.
 - Use `-llama-native-dimensions 4096` for Qwen3-VL-Embedding-8B models when using `llama-cpp-native`.
 - Native path defaults to `-llama-native-image-max-side 512` to cap indexing latency on very large images.
+- Native image embedding preprocesses every image through libvips (via `github.com/cshum/vipsgen`) and writes a temporary JPEG before mtmd, which avoids WEBP/AVIF decode failures in llama.cpp input handling.
 - Optional: set `-llama-native-image-max-tokens` to override mtmd image token cap (`0` keeps model defaults).
 - Native embedding model metadata includes model/mmproj filenames plus image cap settings; changing them creates a new model version and queues missing index jobs for re-embedding.
 - Sanity checks for embedding quality:
