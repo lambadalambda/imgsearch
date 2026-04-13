@@ -30,7 +30,7 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
-	embedderType := flag.String("embedder", "jina-mlx", "embedder backend: jina-mlx, jina-torch, qwen3-vl-embedding-8b, sqlite-ai, or deterministic")
+	embedderType := flag.String("embedder", "jina-mlx", "embedder backend: jina-mlx, jina-torch, qwen3-vl-embedding-8b, sqlite-ai, llama-cpp, or deterministic")
 	jinaURL := flag.String("jina-mlx-url", "http://127.0.0.1:9009", "embedding sidecar URL (jina-mlx, jina-torch, or qwen3-vl-embedding-8b)")
 	embedImageMode := flag.String("embed-image-mode", "auto", "image transport mode for sidecar embedders: path, bytes, or auto")
 	sqliteAIPath := flag.String("sqlite-ai-path", "", "path to sqlite-ai extension binary (optional: defaults to SQLITE_AI_PATH or ../sqlite-ai/dist/ai)")
@@ -46,6 +46,11 @@ func main() {
 	sqliteAIDimensions := flag.Int("sqlite-ai-dimensions", 4096, "embedding dimensions for sqlite-ai model metadata")
 	sqliteAIModelName := flag.String("sqlite-ai-model-name", "sqlite-ai-embedding", "embedding model name used in metadata for sqlite-ai")
 	sqliteAIModelVersion := flag.String("sqlite-ai-model-version", "", "embedding model version used in metadata for sqlite-ai (defaults to sqlite-ai model filename)")
+	llamaCPPURL := flag.String("llama-cpp-url", "http://127.0.0.1:8081", "llama.cpp server URL for -embedder llama-cpp")
+	llamaCPPDimensions := flag.Int("llama-cpp-dimensions", 2048, "embedding dimensions for llama-cpp model metadata")
+	llamaCPPModel := flag.String("llama-cpp-model", "", "optional model field passed to llama.cpp /v1/embeddings")
+	llamaCPPQueryInstruction := flag.String("llama-cpp-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp text query embeddings")
+	llamaCPPPassageInstruction := flag.String("llama-cpp-passage-instruction", "Represent this image or text for retrieval.", "instruction used for llama-cpp image/document embeddings")
 	vectorBackend := flag.String("vector-backend", vectorBackendAuto, "vector backend: auto, sqlite-vector, bruteforce")
 	sqliteVectorPath := flag.String("sqlite-vector-path", "", "path to sqlite-vector extension binary (optional: defaults to SQLITE_VECTOR_PATH or tools/sqlite-vector/vector)")
 	flag.Parse()
@@ -141,6 +146,11 @@ func main() {
 		if embedDimensions <= 0 {
 			log.Fatalf("configure embedder dimensions: sqlite-ai dimensions must be positive")
 		}
+	} else if *embedderType == "llama-cpp" {
+		embedDimensions = *llamaCPPDimensions
+		if embedDimensions <= 0 {
+			log.Fatalf("configure embedder dimensions: llama-cpp dimensions must be positive")
+		}
 	} else {
 		embedDimensions, err = embedderDimensionsForType(*embedderType)
 		if err != nil {
@@ -206,6 +216,14 @@ func main() {
 			PassageInstruction: *sqliteAIPassageInstruction,
 			ImageMaxSide:       *sqliteAIImageMaxSide,
 			VipsPath:           *sqliteAIVipsPath,
+		})
+	} else if *embedderType == "llama-cpp" {
+		embedder, err = newLlamaCPPEmbedder(llamaCPPEmbedderOptions{
+			URL:                *llamaCPPURL,
+			Dimensions:         modelSpec.Dimensions,
+			Model:              *llamaCPPModel,
+			QueryInstruction:   *llamaCPPQueryInstruction,
+			PassageInstruction: *llamaCPPPassageInstruction,
 		})
 	} else {
 		embedder, err = newEmbedder(*embedderType, *jinaURL, modelSpec.Dimensions, *embedImageMode)

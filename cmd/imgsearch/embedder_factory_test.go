@@ -104,6 +104,14 @@ func TestEmbeddingModelSpecUsesEmbedderType(t *testing.T) {
 	if qwen.Name != "Qwen3-VL-Embedding-8B" || qwen.Version != "transformers" {
 		t.Fatalf("unexpected qwen spec: %+v", qwen)
 	}
+
+	llama, err := embeddingModelSpec("llama-cpp", 2048)
+	if err != nil {
+		t.Fatalf("llama-cpp spec: %v", err)
+	}
+	if llama.Name != "llama.cpp-embedding" || llama.Version != "server" {
+		t.Fatalf("unexpected llama-cpp spec: %+v", llama)
+	}
 }
 
 func TestEmbedderDimensionsForType(t *testing.T) {
@@ -119,8 +127,25 @@ func TestEmbedderDimensionsForType(t *testing.T) {
 	if got, err := embedderDimensionsForType("deterministic"); err != nil || got != 2048 {
 		t.Fatalf("deterministic dims: got=%d err=%v", got, err)
 	}
+	if got, err := embedderDimensionsForType("llama-cpp"); err != nil || got != 2048 {
+		t.Fatalf("llama-cpp dims: got=%d err=%v", got, err)
+	}
 	if _, err := embedderDimensionsForType("unknown"); err == nil {
 		t.Fatal("expected error for unknown embedder")
+	}
+}
+
+func TestNewLlamaCPPEmbedderRequiresURL(t *testing.T) {
+	_, err := newLlamaCPPEmbedder(llamaCPPEmbedderOptions{Dimensions: 2048})
+	if err == nil {
+		t.Fatal("expected missing llama-cpp URL error")
+	}
+}
+
+func TestNewLlamaCPPEmbedderRejectsNonPositiveDimensions(t *testing.T) {
+	_, err := newLlamaCPPEmbedder(llamaCPPEmbedderOptions{URL: "http://127.0.0.1:8081", Dimensions: 0})
+	if err == nil {
+		t.Fatal("expected non-positive llama-cpp dimensions error")
 	}
 }
 

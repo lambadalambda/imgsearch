@@ -102,6 +102,27 @@ Run sqlite-ai integration checks (local extension + GGUF files):
 - `mise run sqlite-ai-test-all` (both sqlite-ai integration suites)
 - `mise run sqlite-ai-test-fixtures` (checks `fixtures/images/expected.txt` retrieval expectations)
 
+### Prototype: Direct llama.cpp Embedder
+
+This repo also includes a prototype `llama-cpp` embedder path that calls `llama-server` directly (without sqlite-ai in the embedding runtime).
+
+1. Add and initialize the submodule:
+   - `git submodule update --init --recursive deps/llama.cpp`
+2. Build `llama-server`:
+   - `cmake -S ./deps/llama.cpp -B ./deps/llama.cpp/build`
+   - `cmake --build ./deps/llama.cpp/build --target llama-server -j`
+3. Start llama.cpp embedding server (example with Qwen3-VL-Embedding-2B):
+   - `./deps/llama.cpp/build/bin/llama-server --host 127.0.0.1 --port 8081 --model ../sqlite-ai/tests/models/Qwen3-2B/Qwen3-VL-Embedding-2B-Q6_K.gguf --mmproj ../sqlite-ai/tests/models/Qwen3-2B/mmproj-Qwen3-VL-Embedding-2B-f16.gguf --embeddings --pooling last --ctx-size 8192 --gpu-layers 99`
+4. Start imgsearch against llama.cpp:
+   - `go run ./cmd/imgsearch -embedder llama-cpp -llama-cpp-url http://127.0.0.1:8081 -llama-cpp-dimensions 2048 -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+
+Notes:
+- Use `-llama-cpp-dimensions 4096` for Qwen3-VL-Embedding-8B models.
+- You can pass `-llama-cpp-model` to set the optional `model` field in `/v1/embeddings` requests.
+- Sanity checks for embedding quality:
+  - `mise run llama-cpp-test`
+  - `mise run llama-cpp-test-fixtures`
+
 The UI includes:
 - upload form,
 - indexing status panel (queue totals, progress, recent failures),
@@ -142,6 +163,8 @@ Run integration suites:
 - `mise run sqlite-ai-test-api` for API end-to-end flow (`/api/upload` -> queue processing -> `/api/search/text` and `/api/search/similar`).
 - `mise run sqlite-ai-test-all` to run both sqlite-ai integration suites together.
 - `mise run sqlite-ai-test-fixtures` to validate retrieval behavior against `fixtures/images/expected.txt`.
+- `mise run llama-cpp-test` for semantic sanity checks against a running `llama-server`.
+- `mise run llama-cpp-test-fixtures` to validate fixture retrieval behavior against a running `llama-server`.
 - `mise run sqlite-vector-test` for sqlite-vector index integration checks.
 
 The semantic checks verify expected relative similarity trends, such as cat images ranking closer to each other than cat-vs-dog, and woman portraits clustering together.
