@@ -151,6 +151,7 @@ The UI includes:
 - upload form,
 - indexing status panel (queue totals, progress, recent failures),
 - gallery view with indexing states,
+- live status/gallery updates over WebSocket (`/api/live`, ~2s snapshots) with automatic polling fallback,
 - text search (with optional negative prompt via `neg` query param),
 - similar-image search buttons on cards.
 

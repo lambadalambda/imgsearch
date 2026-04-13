@@ -28,10 +28,24 @@ const lightboxCaption = document.getElementById('lightbox-caption');
 const lightboxCloseButton = document.getElementById('lightbox-close');
 
 let lastFocusedElement = null;
+let liveSocket = null;
+let liveReconnectTimer = null;
+let pollingTimer = null;
+let receivedLiveSnapshot = false;
+let liveReconnectDelayMs = 1500;
+const liveReconnectDelayMaxMs = 30000;
 
 function setStatus(target, message, kind) {
   target.textContent = message;
   target.dataset.kind = kind || '';
+}
+
+function clearLiveReconnectTimer() {
+  if (liveReconnectTimer === null) {
+    return;
+  }
+  window.clearTimeout(liveReconnectTimer);
+  liveReconnectTimer = null;
 }
 
 function escapeHTML(value) {
@@ -216,6 +230,100 @@ async function loadStats() {
   }
   state.stats = payload;
   renderStats();
+}
+
+function applyLiveSnapshot(payload) {
+  if (!payload || payload.type !== 'snapshot') {
+    return false;
+  }
+
+  if (payload.images) {
+    state.images = payload.images.images || [];
+    state.imagesTotal = Number(payload.images.total || state.images.length);
+    renderGallery();
+  }
+
+  if (payload.stats) {
+    state.stats = payload.stats;
+    renderStats();
+  }
+
+  if (!receivedLiveSnapshot) {
+    receivedLiveSnapshot = true;
+    stopPollingFallback();
+  }
+  liveReconnectDelayMs = 1500;
+  return true;
+}
+
+function startPollingFallback() {
+  if (pollingTimer !== null) {
+    return;
+  }
+
+  pollingTimer = window.setInterval(() => {
+    loadImages().catch((err) => setStatus(uploadStatus, err.message || 'Auto-refresh failed', 'error'));
+    loadStats().catch((err) => setStatus(statsSummary, err.message || 'Auto-refresh failed', 'error'));
+  }, 5000);
+
+  if (!receivedLiveSnapshot) {
+    loadImages().catch((err) => setStatus(uploadStatus, err.message || 'Initial load failed', 'error'));
+    loadStats().catch((err) => setStatus(statsSummary, err.message || 'Initial status load failed', 'error'));
+  }
+}
+
+function stopPollingFallback() {
+  if (pollingTimer === null) {
+    return;
+  }
+  window.clearInterval(pollingTimer);
+  pollingTimer = null;
+}
+
+function connectLiveUpdates() {
+  clearLiveReconnectTimer();
+
+  if (typeof window.WebSocket !== 'function') {
+    startPollingFallback();
+    return;
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live`);
+  liveSocket = socket;
+
+  socket.addEventListener('open', () => {
+    liveReconnectDelayMs = 1500;
+  });
+
+  socket.addEventListener('message', (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      if (payload && payload.type === 'error') {
+        setStatus(statsSummary, payload.error || 'Live update failed', 'error');
+        return;
+      }
+      applyLiveSnapshot(payload);
+    } catch (_) {}
+  });
+
+  socket.addEventListener('error', () => {
+    socket.close();
+  });
+
+  socket.addEventListener('close', () => {
+    if (liveSocket === socket) {
+      liveSocket = null;
+    }
+    startPollingFallback();
+    clearLiveReconnectTimer();
+    const reconnectDelay = liveReconnectDelayMs;
+    liveReconnectDelayMs = Math.min(liveReconnectDelayMs * 2, liveReconnectDelayMaxMs);
+    liveReconnectTimer = window.setTimeout(() => {
+      liveReconnectTimer = null;
+      connectLiveUpdates();
+    }, reconnectDelay);
+  });
 }
 
 async function retryFailedJobs() {
@@ -468,8 +576,4 @@ renderResults();
 renderStats();
 loadImages().catch((err) => setStatus(uploadStatus, err.message || 'Initial load failed', 'error'));
 loadStats().catch((err) => setStatus(statsSummary, err.message || 'Initial status load failed', 'error'));
-
-window.setInterval(() => {
-  loadImages().catch((err) => setStatus(uploadStatus, err.message || 'Auto-refresh failed', 'error'));
-  loadStats().catch((err) => setStatus(statsSummary, err.message || 'Auto-refresh failed', 'error'));
-}, 5000);
+connectLiveUpdates();

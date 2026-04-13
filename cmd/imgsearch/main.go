@@ -17,6 +17,7 @@ import (
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/images"
 	"imgsearch/internal/jobs"
+	"imgsearch/internal/live"
 	"imgsearch/internal/search"
 	"imgsearch/internal/stats"
 	"imgsearch/internal/upload"
@@ -250,6 +251,7 @@ func newServerMux(
 	mux.Handle("/api/upload", upload.NewHandler(uploadSvc))
 	mux.Handle("/api/images", images.NewHandler(&images.Handler{DB: sqlDB, ModelID: modelID}))
 	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: sqlDB, ModelID: modelID}))
+	mux.Handle("/api/live", live.NewHandler(&live.Handler{DB: sqlDB, ModelID: modelID, Interval: 2 * time.Second, ImagesLimit: 120, ImagesOffset: 0}))
 	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: sqlDB, ModelID: modelID}))
 	searchHandler := search.NewHandler(&search.Handler{
 		DB:       sqlDB,

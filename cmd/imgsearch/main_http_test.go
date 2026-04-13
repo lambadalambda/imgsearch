@@ -50,4 +50,11 @@ func TestServerMuxServesUIAndMedia(t *testing.T) {
 	if strings.TrimSpace(healthRR.Body.String()) != "ok" {
 		t.Fatalf("unexpected health body: %q", healthRR.Body.String())
 	}
+
+	liveReq := httptest.NewRequest(http.MethodGet, "/api/live", nil)
+	liveRR := httptest.NewRecorder()
+	mux.ServeHTTP(liveRR, liveReq)
+	if liveRR.Code != http.StatusInternalServerError {
+		t.Fatalf("live status: got=%d want=%d", liveRR.Code, http.StatusInternalServerError)
+	}
 }
