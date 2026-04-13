@@ -38,7 +38,22 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake pkg-config libvips-dev patchelf
+          sudo apt-get install -y build-essential cmake curl meson ninja-build pkg-config patchelf \
+            libexpat1-dev libglib2.0-dev libheif-dev libimagequant-dev libjpeg-dev libpng-dev libwebp-dev
+
+      - name: Install Linux libvips 8.18
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL https://github.com/libvips/libvips/releases/download/v8.18.0/vips-8.18.0.tar.xz -o /tmp/vips-8.18.0.tar.xz
+          tar -xf /tmp/vips-8.18.0.tar.xz -C /tmp
+          meson setup /tmp/vips-8.18.0/build /tmp/vips-8.18.0 \
+            --buildtype=release \
+            --prefix=/usr/local \
+            -Dintrospection=disabled \
+            -Dmodules=disabled
+          meson compile -C /tmp/vips-8.18.0/build
+          sudo meson install -C /tmp/vips-8.18.0/build
+          sudo ldconfig
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
