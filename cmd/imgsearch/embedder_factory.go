@@ -17,6 +17,8 @@ func embedderDimensionsForType(kind string) (int, error) {
 		return 4096, nil
 	case "llama-cpp":
 		return 2048, nil
+	case "llama-cpp-native":
+		return 2048, nil
 	default:
 		return 0, fmt.Errorf("unsupported embedder %q", kind)
 	}
@@ -112,6 +114,17 @@ func embeddingModelSpec(kind string, dimensions int) (db.EmbeddingModelSpec, err
 		return db.EmbeddingModelSpec{
 			Name:       "llama.cpp-embedding",
 			Version:    "server",
+			Dimensions: dimensions,
+			Metric:     "cosine",
+			Normalized: true,
+		}, nil
+	case "llama-cpp-native":
+		if dimensions <= 0 {
+			return db.EmbeddingModelSpec{}, fmt.Errorf("llama-cpp-native expects positive dimensions, got %d", dimensions)
+		}
+		return db.EmbeddingModelSpec{
+			Name:       "llama.cpp-embedding",
+			Version:    "native",
 			Dimensions: dimensions,
 			Metric:     "cosine",
 			Normalized: true,

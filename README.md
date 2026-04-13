@@ -19,14 +19,14 @@ It is designed as a simple Go application that:
 - Frontend: HTML/CSS/JavaScript
 - Persistence: SQLite (metadata + vector storage)
 - Search (MVP): `sqlite-vector` via a `VectorIndex` interface
-- Embeddings: `sqlite-ai` in-DB multimodal embedding (primary path)
+- Embeddings: `llama-cpp-native` direct in-process multimodal embedding (primary path)
 
 ## MVP Constraints
 - Scope target: personal collections up to about 10k indexed images.
 - Similar image search starts from an already indexed image in the gallery.
 - Supported formats (MVP): JPEG, PNG, WEBP, and AVIF.
 - Server binds to localhost by default (`127.0.0.1`).
-- Model runtime is `sqlite-ai` loaded as a SQLite extension.
+- Model runtime defaults to `llama-cpp-native`.
 - Vector backend is swappable; default implementation uses `sqlite-vector`.
 
 ## Initial Scope
@@ -36,38 +36,40 @@ It is designed as a simple Go application that:
 - Search by text
 - Search by similar image
 
-## Running Locally (SQLite-AI)
+## Running Locally (Default: llama.cpp Native)
 
-`sqlite-ai` is the primary embedder for this project.
-`jina-mlx`, `jina-torch`, and `qwen3-vl-embedding-8b` are deprecated and kept only for backward compatibility.
+`llama-cpp-native` is the default and recommended embedder.
+`sqlite-ai` is deprecated and kept only for compatibility/migration.
 
 1. Install sqlite-vector for your platform:
    - `mise run sqlite-vector-setup`
-2. Ensure the sibling `sqlite-ai` repo exists and build the extension:
-   - `git clone https://github.com/sqliteai/sqlite-ai ../sqlite-ai` (if you do not already have it)
-   - `make -C ../sqlite-ai extension`
-3. Install `vips` (required for sqlite-ai image preprocessing):
-   - macOS: `brew install vips`
-   - Ubuntu/Debian: `sudo apt-get install -y libvips-tools`
+2. Add and initialize llama.cpp submodule:
+   - `git submodule update --init --recursive deps/llama.cpp`
+3. Build llama.cpp runtime libraries:
+   - `mise run llama-cpp-native-build`
 4. Download a model pair (example: Qwen3-VL-Embedding-2B):
    - `python3 -m pip install --user "huggingface_hub[cli]"`
-   - `mkdir -p ../sqlite-ai/tests/models/Qwen3-2B`
-   - `huggingface-cli download VesNFF/Qwen3-VL-Embedding-2B-GGUF Qwen3-VL-Embedding-2B-Q6_K.gguf --local-dir ../sqlite-ai/tests/models/Qwen3-2B`
-   - `huggingface-cli download VesNFF/Qwen3-VL-Embedding-2B-GGUF mmproj-Qwen3-VL-Embedding-2B-f16.gguf --local-dir ../sqlite-ai/tests/models/Qwen3-2B`
-5. Start the app with sqlite-ai + sqlite-vector:
-   - `go run ./cmd/imgsearch -embedder sqlite-ai -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -sqlite-ai-path ../sqlite-ai/dist/ai -sqlite-ai-model-path ../sqlite-ai/tests/models/Qwen3-2B/Qwen3-VL-Embedding-2B-Q6_K.gguf -sqlite-ai-vision-model-path ../sqlite-ai/tests/models/Qwen3-2B/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -sqlite-ai-dimensions 2048`
+   - `mkdir -p ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
+   - `huggingface-cli download VesNFF/Qwen3-VL-Embedding-2B-GGUF Qwen3-VL-Embedding-2B-Q6_K.gguf --local-dir ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
+   - `huggingface-cli download VesNFF/Qwen3-VL-Embedding-2B-GGUF mmproj-Qwen3-VL-Embedding-2B-f16.gguf --local-dir ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
+5. Start the app with native embedding + sqlite-vector:
+   - `go run -tags llamacpp_native ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -llama-native-model-path ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf -llama-native-mmproj-path ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -llama-native-dimensions 2048`
 6. Open the UI:
    - `http://127.0.0.1:8080/`
 
-One-command startup (sqlite-ai path):
+One-command startup (native default path):
+- `mise run serve`
+- Optional native tuning env vars for `mise run serve`: `LLAMA_NATIVE_IMAGE_MAX_SIDE` (default `512`), `LLAMA_NATIVE_IMAGE_MAX_TOKENS` (default `0` = model default).
+
+Legacy sqlite-ai startup (deprecated):
 - `mise run serve-sqlite-ai`
 
 Reset local database files:
 - `mise run reset-db`
 
-Note: the binary default embedder is still `jina-mlx` for backward compatibility, so use `-embedder sqlite-ai` (or `mise run serve-sqlite-ai`).
+Note: native embedding requires build tag `llamacpp_native`; use `go run -tags llamacpp_native ...` or `mise run serve`.
 
-### Linux + CUDA Setup (sqlite-ai)
+### Linux + CUDA Setup (sqlite-ai, deprecated)
 
 Use this setup on Linux with NVIDIA GPUs.
 
@@ -85,7 +87,7 @@ Use this setup on Linux with NVIDIA GPUs.
 5. Run imgsearch using sqlite-ai GPU options:
    - `go run ./cmd/imgsearch -embedder sqlite-ai -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -sqlite-ai-path ../sqlite-ai/dist/ai.so -sqlite-ai-model-path ../sqlite-ai/tests/models/Qwen3-2B/Qwen3-VL-Embedding-2B-Q6_K.gguf -sqlite-ai-vision-model-path ../sqlite-ai/tests/models/Qwen3-2B/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -sqlite-ai-dimensions 2048 -sqlite-ai-model-options "gpu_layers=99" -sqlite-ai-vision-options "use_gpu=1"`
 
-SQLite-AI options:
+SQLite-AI options (deprecated):
 - `SQLITE_AI_PATH=../sqlite-ai/dist/ai` (or `../sqlite-ai/dist/ai.so` on Linux)
 - `-sqlite-ai-model-path` path to embedding GGUF model
 - `-sqlite-ai-vision-model-path` path to vision projector GGUF model
@@ -96,32 +98,50 @@ SQLite-AI options:
 - `-sqlite-ai-passage-instruction` default: `Represent this image or text for retrieval.`
 - Optional: `-sqlite-ai-model-options`, `-sqlite-ai-vision-options`, `-sqlite-ai-context-options`
 
-Run sqlite-ai integration checks (local extension + GGUF files):
-- `mise run sqlite-ai-test` (embedder-level semantic sanity)
-- `mise run sqlite-ai-test-api` (API end-to-end: upload -> index -> text/similar search)
-- `mise run sqlite-ai-test-all` (both sqlite-ai integration suites)
-- `mise run sqlite-ai-test-fixtures` (checks `fixtures/images/expected.txt` retrieval expectations)
+Run deprecated sqlite-ai integration checks (local extension + GGUF files):
+- `mise run sqlite-ai-test` (deprecated embedder-level semantic sanity)
+- `mise run sqlite-ai-test-api` (deprecated API end-to-end: upload -> index -> text/similar search)
+- `mise run sqlite-ai-test-all` (deprecated combined sqlite-ai integration suites)
+- `mise run sqlite-ai-test-fixtures` (deprecated fixture retrieval expectation checks)
+- `mise run sqlite-ai-bench` (deprecated steady-state `EmbedImage` benchmark; defaults to Qwen3-VL-Embedding-8B)
 
-### Prototype: Direct llama.cpp Embedder
+### llama.cpp Embedder
 
-This repo also includes a prototype `llama-cpp` embedder path that calls `llama-server` directly (without sqlite-ai in the embedding runtime).
+This repo includes two llama.cpp paths:
+
+- `llama-cpp-native`: direct in-process llama.cpp/mtmd calls via cgo (default)
+- `llama-cpp`: HTTP calls to `llama-server` (legacy)
 
 1. Add and initialize the submodule:
    - `git submodule update --init --recursive deps/llama.cpp`
-2. Build `llama-server`:
+2. Build llama.cpp runtime libraries:
    - `cmake -S ./deps/llama.cpp -B ./deps/llama.cpp/build`
    - `cmake --build ./deps/llama.cpp/build --target llama-server -j`
-3. Start llama.cpp embedding server (example with Qwen3-VL-Embedding-2B):
-   - `./deps/llama.cpp/build/bin/llama-server --host 127.0.0.1 --port 8081 --model ../sqlite-ai/tests/models/Qwen3-2B/Qwen3-VL-Embedding-2B-Q6_K.gguf --mmproj ../sqlite-ai/tests/models/Qwen3-2B/mmproj-Qwen3-VL-Embedding-2B-f16.gguf --embeddings --pooling last --ctx-size 8192 --gpu-layers 99`
-4. Start imgsearch against llama.cpp:
-   - `go run ./cmd/imgsearch -embedder llama-cpp -llama-cpp-url http://127.0.0.1:8081 -llama-cpp-dimensions 2048 -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+3. Start imgsearch with direct llama.cpp native embedding (example with Qwen3-VL-Embedding-2B):
+   - `go run -tags llamacpp_native ./cmd/imgsearch -embedder llama-cpp-native -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -llama-native-model-path ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf -llama-native-mmproj-path ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -llama-native-dimensions 2048`
+4. Convenience tasks:
+   - `mise run llama-cpp-native-build`
+   - `mise run serve-llama-cpp-native`
+5. (Legacy) Run via `llama-server` HTTP API:
+   - Start server: `./deps/llama.cpp/build/bin/llama-server --host 127.0.0.1 --port 8081 --model ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf --mmproj ../sqlite-ai/tests/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf --embeddings --pooling last --ctx-size 8192 --gpu-layers 99`
+   - Run app: `go run ./cmd/imgsearch -embedder llama-cpp -llama-cpp-url http://127.0.0.1:8081 -llama-cpp-dimensions 2048 -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
 
 Notes:
 - Use `-llama-cpp-dimensions 4096` for Qwen3-VL-Embedding-8B models.
 - You can pass `-llama-cpp-model` to set the optional `model` field in `/v1/embeddings` requests.
+- Use `-llama-native-dimensions 4096` for Qwen3-VL-Embedding-8B models when using `llama-cpp-native`.
+- Native path defaults to `-llama-native-image-max-side 512` to cap indexing latency on very large images.
+- Optional: set `-llama-native-image-max-tokens` to override mtmd image token cap (`0` keeps model defaults).
+- Native embedding model metadata includes model/mmproj filenames plus image cap settings; changing them creates a new model version and queues missing index jobs for re-embedding.
 - Sanity checks for embedding quality:
   - `mise run llama-cpp-test`
   - `mise run llama-cpp-test-fixtures`
+  - `mise run llama-cpp-native-test`
+  - `mise run llama-cpp-native-test-fixtures`
+- Benchmark checks:
+  - `mise run llama-cpp-native-bench`
+  - `mise run llama-cpp-native-bench-qwen8b` (recommended for direct comparison with sqlite-ai)
+  - `mise run sqlite-ai-bench`
 
 The UI includes:
 - upload form,
@@ -159,13 +179,16 @@ From the UI, use the **Retry Failed / Queue Missing** button in the Indexing Sta
 
 Run integration suites:
 
-- `mise run sqlite-ai-test` for embedder-level semantic similarity checks against fixture images.
-- `mise run sqlite-ai-test-api` for API end-to-end flow (`/api/upload` -> queue processing -> `/api/search/text` and `/api/search/similar`).
-- `mise run sqlite-ai-test-all` to run both sqlite-ai integration suites together.
-- `mise run sqlite-ai-test-fixtures` to validate retrieval behavior against `fixtures/images/expected.txt`.
+- `mise run sqlite-ai-test` (deprecated) for embedder-level semantic similarity checks against fixture images.
+- `mise run sqlite-ai-test-api` (deprecated) for API end-to-end flow (`/api/upload` -> queue processing -> `/api/search/text` and `/api/search/similar`).
+- `mise run sqlite-ai-test-all` (deprecated) to run both sqlite-ai integration suites together.
+- `mise run sqlite-ai-test-fixtures` (deprecated) to validate retrieval behavior against `fixtures/images/expected.txt`.
+- `mise run llama-cpp-native-test` for semantic sanity checks against direct llama.cpp native embedding.
+- `mise run llama-cpp-native-test-fixtures` to validate fixture retrieval behavior against direct llama.cpp native embedding.
 - `mise run llama-cpp-test` for semantic sanity checks against a running `llama-server`.
 - `mise run llama-cpp-test-fixtures` to validate fixture retrieval behavior against a running `llama-server`.
 - `mise run sqlite-vector-test` for sqlite-vector index integration checks.
+- `mise run llama-cpp-native-bench-qwen8b` and `mise run sqlite-ai-bench` for apples-to-apples 8B image-embedding benchmarks.
 
 The semantic checks verify expected relative similarity trends, such as cat images ranking closer to each other than cat-vs-dog, and woman portraits clustering together.
 

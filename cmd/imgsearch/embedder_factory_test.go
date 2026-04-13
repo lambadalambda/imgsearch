@@ -112,6 +112,14 @@ func TestEmbeddingModelSpecUsesEmbedderType(t *testing.T) {
 	if llama.Name != "llama.cpp-embedding" || llama.Version != "server" {
 		t.Fatalf("unexpected llama-cpp spec: %+v", llama)
 	}
+
+	llamaNative, err := embeddingModelSpec("llama-cpp-native", 2048)
+	if err != nil {
+		t.Fatalf("llama-cpp-native spec: %v", err)
+	}
+	if llamaNative.Name != "llama.cpp-embedding" || llamaNative.Version != "native" {
+		t.Fatalf("unexpected llama-cpp-native spec: %+v", llamaNative)
+	}
 }
 
 func TestEmbedderDimensionsForType(t *testing.T) {
@@ -130,6 +138,9 @@ func TestEmbedderDimensionsForType(t *testing.T) {
 	if got, err := embedderDimensionsForType("llama-cpp"); err != nil || got != 2048 {
 		t.Fatalf("llama-cpp dims: got=%d err=%v", got, err)
 	}
+	if got, err := embedderDimensionsForType("llama-cpp-native"); err != nil || got != 2048 {
+		t.Fatalf("llama-cpp-native dims: got=%d err=%v", got, err)
+	}
 	if _, err := embedderDimensionsForType("unknown"); err == nil {
 		t.Fatal("expected error for unknown embedder")
 	}
@@ -146,6 +157,84 @@ func TestNewLlamaCPPEmbedderRejectsNonPositiveDimensions(t *testing.T) {
 	_, err := newLlamaCPPEmbedder(llamaCPPEmbedderOptions{URL: "http://127.0.0.1:8081", Dimensions: 0})
 	if err == nil {
 		t.Fatal("expected non-positive llama-cpp dimensions error")
+	}
+}
+
+func TestNewLlamaCPPNativeEmbedderRequiresModelPath(t *testing.T) {
+	_, err := newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
+		VisionModelPath: "/tmp/mmproj.gguf",
+		Dimensions:      2048,
+		ContextSize:     8192,
+		BatchSize:       512,
+	})
+	if err == nil {
+		t.Fatal("expected missing llama-cpp-native model path error")
+	}
+}
+
+func TestNewLlamaCPPNativeEmbedderRequiresVisionPath(t *testing.T) {
+	tmp := t.TempDir()
+	modelPath := filepath.Join(tmp, "model.gguf")
+	if err := os.WriteFile(modelPath, []byte("model"), 0o644); err != nil {
+		t.Fatalf("write model: %v", err)
+	}
+
+	_, err := newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
+		ModelPath:   modelPath,
+		Dimensions:  2048,
+		ContextSize: 8192,
+		BatchSize:   512,
+	})
+	if err == nil {
+		t.Fatal("expected missing llama-cpp-native vision path error")
+	}
+}
+
+func TestNewLlamaCPPNativeEmbedderRejectsNegativeImageMaxSide(t *testing.T) {
+	tmp := t.TempDir()
+	modelPath := filepath.Join(tmp, "model.gguf")
+	if err := os.WriteFile(modelPath, []byte("model"), 0o644); err != nil {
+		t.Fatalf("write model: %v", err)
+	}
+	visionPath := filepath.Join(tmp, "mmproj.gguf")
+	if err := os.WriteFile(visionPath, []byte("vision"), 0o644); err != nil {
+		t.Fatalf("write vision model: %v", err)
+	}
+
+	_, err := newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
+		ModelPath:       modelPath,
+		VisionModelPath: visionPath,
+		Dimensions:      2048,
+		ContextSize:     8192,
+		BatchSize:       512,
+		ImageMaxSide:    -1,
+	})
+	if err == nil {
+		t.Fatal("expected negative image max side error")
+	}
+}
+
+func TestNewLlamaCPPNativeEmbedderRejectsNegativeImageMaxTokens(t *testing.T) {
+	tmp := t.TempDir()
+	modelPath := filepath.Join(tmp, "model.gguf")
+	if err := os.WriteFile(modelPath, []byte("model"), 0o644); err != nil {
+		t.Fatalf("write model: %v", err)
+	}
+	visionPath := filepath.Join(tmp, "mmproj.gguf")
+	if err := os.WriteFile(visionPath, []byte("vision"), 0o644); err != nil {
+		t.Fatalf("write vision model: %v", err)
+	}
+
+	_, err := newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
+		ModelPath:       modelPath,
+		VisionModelPath: visionPath,
+		Dimensions:      2048,
+		ContextSize:     8192,
+		BatchSize:       512,
+		ImageMaxTokens:  -1,
+	})
+	if err == nil {
+		t.Fatal("expected negative image max tokens error")
 	}
 }
 

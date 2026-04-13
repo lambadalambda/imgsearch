@@ -35,11 +35,32 @@ ON CONFLICT(name, version) DO NOTHING
 		return 0, fmt.Errorf("upsert embedding model: %w", err)
 	}
 
-	var id int64
+	var (
+		id             int64
+		existingDims   int
+		existingMetric string
+		existingNorm   int
+	)
 	if err := db.QueryRowContext(ctx, `
-SELECT id FROM embedding_models WHERE name = ? AND version = ?
-`, spec.Name, spec.Version).Scan(&id); err != nil {
+SELECT id, dimensions, metric, normalized
+FROM embedding_models
+WHERE name = ? AND version = ?
+`, spec.Name, spec.Version).Scan(&id, &existingDims, &existingMetric, &existingNorm); err != nil {
 		return 0, fmt.Errorf("load embedding model id: %w", err)
+	}
+
+	if existingDims != spec.Dimensions || existingMetric != spec.Metric || existingNorm != normalized {
+		return 0, fmt.Errorf(
+			"existing embedding model %q version %q does not match requested spec (have dimensions=%d metric=%s normalized=%d, want dimensions=%d metric=%s normalized=%d)",
+			spec.Name,
+			spec.Version,
+			existingDims,
+			existingMetric,
+			existingNorm,
+			spec.Dimensions,
+			spec.Metric,
+			normalized,
+		)
 	}
 
 	return id, nil

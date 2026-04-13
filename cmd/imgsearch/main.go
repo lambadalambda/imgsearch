@@ -30,30 +30,44 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
-	embedderType := flag.String("embedder", "jina-mlx", "embedder backend: jina-mlx, jina-torch, qwen3-vl-embedding-8b, sqlite-ai, llama-cpp, or deterministic")
+	embedderType := flag.String("embedder", "llama-cpp-native", "embedder backend (default): llama-cpp-native; alternatives: llama-cpp, sqlite-ai (deprecated), jina-mlx, jina-torch, qwen3-vl-embedding-8b, deterministic")
 	jinaURL := flag.String("jina-mlx-url", "http://127.0.0.1:9009", "embedding sidecar URL (jina-mlx, jina-torch, or qwen3-vl-embedding-8b)")
 	embedImageMode := flag.String("embed-image-mode", "auto", "image transport mode for sidecar embedders: path, bytes, or auto")
-	sqliteAIPath := flag.String("sqlite-ai-path", "", "path to sqlite-ai extension binary (optional: defaults to SQLITE_AI_PATH or ../sqlite-ai/dist/ai)")
-	sqliteAIModelPath := flag.String("sqlite-ai-model-path", "", "path to sqlite-ai GGUF embedding model (required for -embedder sqlite-ai)")
-	sqliteAIVisionModelPath := flag.String("sqlite-ai-vision-model-path", "", "path to sqlite-ai GGUF vision projector model (required for -embedder sqlite-ai)")
-	sqliteAIModelOptions := flag.String("sqlite-ai-model-options", "gpu_layers=99", "llm_model_load options for sqlite-ai embedder")
-	sqliteAIVisionOptions := flag.String("sqlite-ai-vision-options", "use_gpu=1", "llm_vision_load options for sqlite-ai embedder")
-	sqliteAIContextOptions := flag.String("sqlite-ai-context-options", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=last", "llm_context_create_embedding options for sqlite-ai embedder")
-	sqliteAIQueryInstruction := flag.String("sqlite-ai-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for sqlite-ai text query embeddings")
-	sqliteAIPassageInstruction := flag.String("sqlite-ai-passage-instruction", "Represent this image or text for retrieval.", "instruction used for sqlite-ai image/document embeddings")
-	sqliteAIImageMaxSide := flag.Int("sqlite-ai-image-max-side", 512, "maximum image side length used before sqlite-ai embedding (resized with vips)")
-	sqliteAIVipsPath := flag.String("sqlite-ai-vips-path", "", "path to vips binary for sqlite-ai image preprocessing (defaults to PATH lookup)")
-	sqliteAIDimensions := flag.Int("sqlite-ai-dimensions", 4096, "embedding dimensions for sqlite-ai model metadata")
-	sqliteAIModelName := flag.String("sqlite-ai-model-name", "sqlite-ai-embedding", "embedding model name used in metadata for sqlite-ai")
-	sqliteAIModelVersion := flag.String("sqlite-ai-model-version", "", "embedding model version used in metadata for sqlite-ai (defaults to sqlite-ai model filename)")
+	sqliteAIPath := flag.String("sqlite-ai-path", "", "[deprecated] path to sqlite-ai extension binary (optional: defaults to SQLITE_AI_PATH or ../sqlite-ai/dist/ai)")
+	sqliteAIModelPath := flag.String("sqlite-ai-model-path", "", "[deprecated] path to sqlite-ai GGUF embedding model (required for -embedder sqlite-ai)")
+	sqliteAIVisionModelPath := flag.String("sqlite-ai-vision-model-path", "", "[deprecated] path to sqlite-ai GGUF vision projector model (required for -embedder sqlite-ai)")
+	sqliteAIModelOptions := flag.String("sqlite-ai-model-options", "gpu_layers=99", "[deprecated] llm_model_load options for sqlite-ai embedder")
+	sqliteAIVisionOptions := flag.String("sqlite-ai-vision-options", "use_gpu=1", "[deprecated] llm_vision_load options for sqlite-ai embedder")
+	sqliteAIContextOptions := flag.String("sqlite-ai-context-options", "embedding_type=FLOAT32,normalize_embedding=1,pooling_type=last", "[deprecated] llm_context_create_embedding options for sqlite-ai embedder")
+	sqliteAIQueryInstruction := flag.String("sqlite-ai-query-instruction", "Retrieve images or text relevant to the user's query.", "[deprecated] instruction used for sqlite-ai text query embeddings")
+	sqliteAIPassageInstruction := flag.String("sqlite-ai-passage-instruction", "Represent this image or text for retrieval.", "[deprecated] instruction used for sqlite-ai image/document embeddings")
+	sqliteAIImageMaxSide := flag.Int("sqlite-ai-image-max-side", 512, "[deprecated] maximum image side length used before sqlite-ai embedding (resized with vips)")
+	sqliteAIVipsPath := flag.String("sqlite-ai-vips-path", "", "[deprecated] path to vips binary for sqlite-ai image preprocessing (defaults to PATH lookup)")
+	sqliteAIDimensions := flag.Int("sqlite-ai-dimensions", 4096, "[deprecated] embedding dimensions for sqlite-ai model metadata")
+	sqliteAIModelName := flag.String("sqlite-ai-model-name", "sqlite-ai-embedding", "[deprecated] embedding model name used in metadata for sqlite-ai")
+	sqliteAIModelVersion := flag.String("sqlite-ai-model-version", "", "[deprecated] embedding model version used in metadata for sqlite-ai (defaults to sqlite-ai model filename)")
 	llamaCPPURL := flag.String("llama-cpp-url", "http://127.0.0.1:8081", "llama.cpp server URL for -embedder llama-cpp")
 	llamaCPPDimensions := flag.Int("llama-cpp-dimensions", 2048, "embedding dimensions for llama-cpp model metadata")
 	llamaCPPModel := flag.String("llama-cpp-model", "", "optional model field passed to llama.cpp /v1/embeddings")
 	llamaCPPQueryInstruction := flag.String("llama-cpp-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp text query embeddings")
 	llamaCPPPassageInstruction := flag.String("llama-cpp-passage-instruction", "Represent this image or text for retrieval.", "instruction used for llama-cpp image/document embeddings")
+	llamaNativeModelPath := flag.String("llama-native-model-path", "", "path to llama.cpp GGUF embedding model for -embedder llama-cpp-native")
+	llamaNativeMMProjPath := flag.String("llama-native-mmproj-path", "", "path to llama.cpp GGUF mmproj model for -embedder llama-cpp-native")
+	llamaNativeDimensions := flag.Int("llama-native-dimensions", 2048, "embedding dimensions for llama-cpp-native model metadata")
+	llamaNativeGPULayers := flag.Int("llama-native-gpu-layers", 99, "number of layers to offload for llama-cpp-native")
+	llamaNativeUseGPU := flag.Bool("llama-native-use-gpu", true, "whether llama-cpp-native should use GPU for mtmd/mmproj")
+	llamaNativeContextSize := flag.Int("llama-native-context-size", 8192, "context size for llama-cpp-native runtime")
+	llamaNativeBatchSize := flag.Int("llama-native-batch-size", 512, "batch size for llama-cpp-native runtime")
+	llamaNativeThreads := flag.Int("llama-native-threads", 0, "thread count for llama-cpp-native runtime (0 uses backend default)")
+	llamaNativeImageMaxSide := flag.Int("llama-native-image-max-side", 512, "maximum image side length used before llama-cpp-native embedding")
+	llamaNativeImageMaxTokens := flag.Int("llama-native-image-max-tokens", 0, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
 	vectorBackend := flag.String("vector-backend", vectorBackendAuto, "vector backend: auto, sqlite-vector, bruteforce")
 	sqliteVectorPath := flag.String("sqlite-vector-path", "", "path to sqlite-vector extension binary (optional: defaults to SQLITE_VECTOR_PATH or tools/sqlite-vector/vector)")
 	flag.Parse()
+
+	if *embedderType == "sqlite-ai" {
+		log.Printf("warning: embedder 'sqlite-ai' is deprecated; prefer '-embedder llama-cpp-native'")
+	}
 
 	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
 		log.Fatalf("create data directory: %v", err)
@@ -151,10 +165,24 @@ func main() {
 		if embedDimensions <= 0 {
 			log.Fatalf("configure embedder dimensions: llama-cpp dimensions must be positive")
 		}
+	} else if *embedderType == "llama-cpp-native" {
+		embedDimensions = *llamaNativeDimensions
+		if embedDimensions <= 0 {
+			log.Fatalf("configure embedder dimensions: llama-cpp-native dimensions must be positive")
+		}
 	} else {
 		embedDimensions, err = embedderDimensionsForType(*embedderType)
 		if err != nil {
 			log.Fatalf("configure embedder dimensions: %v", err)
+		}
+	}
+
+	resolvedLlamaNativeImageMaxSide := *llamaNativeImageMaxSide
+	resolvedLlamaNativeImageMaxTokens := *llamaNativeImageMaxTokens
+	if *embedderType == "llama-cpp-native" {
+		resolvedLlamaNativeImageMaxSide, resolvedLlamaNativeImageMaxTokens, err = resolveLlamaCPPNativeImageLimits(*llamaNativeImageMaxSide, *llamaNativeImageMaxTokens)
+		if err != nil {
+			log.Fatalf("configure llama-cpp-native options: %v", err)
 		}
 	}
 
@@ -182,6 +210,18 @@ func main() {
 		modelSpec, err = embeddingModelSpec(*embedderType, embedDimensions)
 		if err != nil {
 			log.Fatalf("configure model spec: %v", err)
+		}
+		if *embedderType == "llama-cpp" {
+			modelSpec.Version = llamaCPPModelVersion(*llamaCPPModel, modelSpec.Dimensions)
+		}
+		if *embedderType == "llama-cpp-native" {
+			modelSpec.Version = llamaNativeModelVersion(
+				*llamaNativeModelPath,
+				*llamaNativeMMProjPath,
+				modelSpec.Dimensions,
+				resolvedLlamaNativeImageMaxSide,
+				resolvedLlamaNativeImageMaxTokens,
+			)
 		}
 	}
 
@@ -222,6 +262,21 @@ func main() {
 			URL:                *llamaCPPURL,
 			Dimensions:         modelSpec.Dimensions,
 			Model:              *llamaCPPModel,
+			QueryInstruction:   *llamaCPPQueryInstruction,
+			PassageInstruction: *llamaCPPPassageInstruction,
+		})
+	} else if *embedderType == "llama-cpp-native" {
+		embedder, err = newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
+			ModelPath:          *llamaNativeModelPath,
+			VisionModelPath:    *llamaNativeMMProjPath,
+			Dimensions:         modelSpec.Dimensions,
+			GPULayers:          *llamaNativeGPULayers,
+			UseGPU:             *llamaNativeUseGPU,
+			ContextSize:        *llamaNativeContextSize,
+			BatchSize:          *llamaNativeBatchSize,
+			Threads:            *llamaNativeThreads,
+			ImageMaxSide:       resolvedLlamaNativeImageMaxSide,
+			ImageMaxTokens:     resolvedLlamaNativeImageMaxTokens,
 			QueryInstruction:   *llamaCPPQueryInstruction,
 			PassageInstruction: *llamaCPPPassageInstruction,
 		})
