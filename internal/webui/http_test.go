@@ -35,6 +35,9 @@ func TestRootServesIndexPage(t *testing.T) {
 	if !strings.Contains(body, "id=\"image-lightbox\"") {
 		t.Fatalf("expected lightbox container in page")
 	}
+	if !strings.Contains(body, "id=\"live-connection\"") {
+		t.Fatalf("expected live connection indicator in page")
+	}
 }
 
 func TestAssetsAreServed(t *testing.T) {

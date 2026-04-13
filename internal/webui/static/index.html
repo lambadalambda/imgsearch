@@ -15,6 +15,10 @@
         <p class="lede">
           Upload images, watch indexing status, then run text and similar-image search from one page.
         </p>
+        <p id="live-connection" class="connection-badge" data-state="connecting" role="status" aria-live="polite">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="live-connection-label">Connecting live updates...</span>
+        </p>
       </header>
 
       <section class="panel" aria-labelledby="indexing-title">
@@ -90,5 +94,6 @@
         <figcaption id="lightbox-caption"></figcaption>
       </figure>
     </div>
+    <div id="live-announcer" class="sr-only" role="status" aria-live="polite"></div>
   </body>
 </html>

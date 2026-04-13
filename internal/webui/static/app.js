@@ -26,6 +26,9 @@ const lightbox = document.getElementById('image-lightbox');
 const lightboxImage = document.getElementById('lightbox-image');
 const lightboxCaption = document.getElementById('lightbox-caption');
 const lightboxCloseButton = document.getElementById('lightbox-close');
+const liveConnectionBadge = document.getElementById('live-connection');
+const liveConnectionLabel = document.getElementById('live-connection-label');
+const liveAnnouncer = document.getElementById('live-announcer');
 
 let lastFocusedElement = null;
 let liveSocket = null;
@@ -36,8 +39,48 @@ let liveReconnectDelayMs = 1500;
 const liveReconnectDelayMaxMs = 30000;
 
 function setStatus(target, message, kind) {
+  if (!target) {
+    return;
+  }
+  const nextKind = kind || '';
+  if (target.textContent === message && (target.dataset.kind || '') === nextKind) {
+    return;
+  }
   target.textContent = message;
-  target.dataset.kind = kind || '';
+  target.dataset.kind = nextKind;
+}
+
+function setLiveConnectionState(stateName, label) {
+  if (liveConnectionBadge) {
+    liveConnectionBadge.dataset.state = stateName;
+  }
+  if (liveConnectionLabel && label) {
+    liveConnectionLabel.textContent = label;
+  }
+}
+
+function setRefreshButtonsDeemphasized(enabled) {
+  const value = enabled ? 'true' : 'false';
+  if (refreshImagesButton) {
+    refreshImagesButton.dataset.deemphasized = value;
+  }
+  if (refreshStatsButton) {
+    refreshStatsButton.dataset.deemphasized = value;
+  }
+}
+
+function isLiveSocketActive() {
+  return Boolean(liveSocket && liveSocket.readyState === WebSocket.OPEN && receivedLiveSnapshot);
+}
+
+function announceLiveChange(message) {
+  if (!liveAnnouncer || !message) {
+    return;
+  }
+  if (liveAnnouncer.textContent === message) {
+    return;
+  }
+  liveAnnouncer.textContent = message;
 }
 
 function clearLiveReconnectTimer() {
@@ -232,20 +275,93 @@ async function loadStats() {
   renderStats();
 }
 
+function imagesDiffer(currentImages, nextImages) {
+  if (!Array.isArray(currentImages) || !Array.isArray(nextImages)) {
+    return true;
+  }
+  if (currentImages.length !== nextImages.length) {
+    return true;
+  }
+  for (let i = 0; i < currentImages.length; i += 1) {
+    const current = currentImages[i] || {};
+    const next = nextImages[i] || {};
+    if (Number(current.image_id || 0) !== Number(next.image_id || 0)) {
+      return true;
+    }
+    if ((current.index_state || '') !== (next.index_state || '')) {
+      return true;
+    }
+    if ((current.storage_path || '') !== (next.storage_path || '')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function failuresDiffer(currentFailures, nextFailures) {
+  const current = Array.isArray(currentFailures) ? currentFailures : [];
+  const next = Array.isArray(nextFailures) ? nextFailures : [];
+  if (current.length !== next.length) {
+    return true;
+  }
+  for (let i = 0; i < current.length; i += 1) {
+    const left = current[i] || {};
+    const right = next[i] || {};
+    if (Number(left.job_id || 0) !== Number(right.job_id || 0)) {
+      return true;
+    }
+    if (Number(left.attempts || 0) !== Number(right.attempts || 0)) {
+      return true;
+    }
+    if ((left.last_error || '') !== (right.last_error || '')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function statsDiffer(currentStats, nextStats) {
+  if (!currentStats || !nextStats) {
+    return true;
+  }
+  const currentQueue = currentStats.queue || {};
+  const nextQueue = nextStats.queue || {};
+  const queueKeys = ['total', 'tracked', 'missing', 'pending', 'leased', 'done', 'failed'];
+  for (const key of queueKeys) {
+    if (Number(currentQueue[key] || 0) !== Number(nextQueue[key] || 0)) {
+      return true;
+    }
+  }
+  if (Number(currentStats.images_total || 0) !== Number(nextStats.images_total || 0)) {
+    return true;
+  }
+  return failuresDiffer(currentStats.recent_failures, nextStats.recent_failures);
+}
+
 function applyLiveSnapshot(payload) {
   if (!payload || payload.type !== 'snapshot') {
     return false;
   }
 
+  let changed = false;
+
   if (payload.images) {
-    state.images = payload.images.images || [];
-    state.imagesTotal = Number(payload.images.total || state.images.length);
-    renderGallery();
+    const nextImages = payload.images.images || [];
+    const nextTotal = Number(payload.images.total ?? nextImages.length);
+    if (imagesDiffer(state.images, nextImages) || Number(state.imagesTotal || 0) !== nextTotal) {
+      state.images = nextImages;
+      state.imagesTotal = nextTotal;
+      renderGallery();
+      changed = true;
+    }
   }
 
   if (payload.stats) {
-    state.stats = payload.stats;
-    renderStats();
+    if (statsDiffer(state.stats, payload.stats)) {
+      state.stats = payload.stats;
+      renderStats();
+      changed = true;
+    }
   }
 
   if (!receivedLiveSnapshot) {
@@ -253,10 +369,18 @@ function applyLiveSnapshot(payload) {
     stopPollingFallback();
   }
   liveReconnectDelayMs = 1500;
+  setLiveConnectionState('live', 'Live updates active');
+  setRefreshButtonsDeemphasized(true);
+  if (changed) {
+    announceLiveChange('Indexing status updated.');
+  }
   return true;
 }
 
 function startPollingFallback() {
+  setLiveConnectionState('polling', 'Polling every 5s');
+  setRefreshButtonsDeemphasized(false);
+
   if (pollingTimer !== null) {
     return;
   }
@@ -282,6 +406,7 @@ function stopPollingFallback() {
 
 function connectLiveUpdates() {
   clearLiveReconnectTimer();
+  setLiveConnectionState('connecting', 'Connecting live updates...');
 
   if (typeof window.WebSocket !== 'function') {
     startPollingFallback();
@@ -294,10 +419,14 @@ function connectLiveUpdates() {
 
   socket.addEventListener('open', () => {
     liveReconnectDelayMs = 1500;
+    setLiveConnectionState('connecting', 'Connected, waiting for first snapshot...');
   });
 
   socket.addEventListener('message', (event) => {
     try {
+      if (typeof event.data !== 'string') {
+        return;
+      }
       const payload = JSON.parse(event.data);
       if (payload && payload.type === 'error') {
         setStatus(statsSummary, payload.error || 'Live update failed', 'error');
@@ -308,6 +437,7 @@ function connectLiveUpdates() {
   });
 
   socket.addEventListener('error', () => {
+    setLiveConnectionState('reconnecting', 'Live connection interrupted. Reconnecting...');
     socket.close();
   });
 
@@ -315,6 +445,8 @@ function connectLiveUpdates() {
     if (liveSocket === socket) {
       liveSocket = null;
     }
+    setLiveConnectionState('reconnecting', 'Live connection lost. Reconnecting...');
+    setRefreshButtonsDeemphasized(false);
     startPollingFallback();
     clearLiveReconnectTimer();
     const reconnectDelay = liveReconnectDelayMs;
@@ -443,6 +575,10 @@ uploadForm.addEventListener('submit', async (event) => {
     setStatus(uploadStatus, `${file.name} ${action}.`, 'success');
     uploadForm.reset();
 
+    if (isLiveSocketActive()) {
+      return;
+    }
+
     await loadImages();
     window.setTimeout(() => {
       loadImages().catch((err) => setStatus(uploadStatus, err.message, 'error'));
@@ -544,7 +680,7 @@ refreshStatsButton.addEventListener('click', () => {
 });
 
 retryFailedButton.addEventListener('click', async () => {
-    retryFailedButton.disabled = true;
+  retryFailedButton.disabled = true;
   setStatus(statsSummary, 'Retrying failed jobs...', 'info');
   try {
     const result = await retryFailedJobs();

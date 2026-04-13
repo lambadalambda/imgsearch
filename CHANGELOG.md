@@ -8,6 +8,7 @@ All notable changes to this project are tracked in this file.
 - perf: isolate sqlite-ai embedding in a dedicated in-memory SQLite runtime so long `llm_embed_generate` calls do not monopolize the main app DB connection.
 - feat: switch UI status/gallery refresh from 5s client polling to `/api/live` WebSocket snapshots, with automatic polling fallback on disconnect/unsupported clients.
 - fix: harden `/api/live` websocket handling with read limits, ping/pong timeouts, safer origin validation, reconnect backoff, and a lower 2s push cadence.
+- ux: add a live connection badge, reduce unnecessary rerenders/status spam, and de-emphasize manual refresh controls while live updates are healthy.
 
 ## 2026-04-13
 - test: restore webp and avif upload fixtures (`7563fa7`)
