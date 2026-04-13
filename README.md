@@ -1,5 +1,13 @@
 # imgsearch
 
+`imgsearch` is a local-first image organization and similarity search app.
+
+It runs as a small local web app that:
+- indexes images into a SQLite-backed library,
+- supports text-to-image and image-to-image search,
+- keeps data on your machine,
+- uses a built-in default multimodal embedding setup.
+
 ## Quick Start
 
 ### Use the Release
@@ -27,14 +35,6 @@ Or any other folder:
 ```
 
 The import script uploads supported images to the local app and indexing continues in the background.
-
-`imgsearch` is a local-first image organization and similarity search app.
-
-It runs as a small local web app that:
-- indexes images into a SQLite-backed library,
-- supports text-to-image and image-to-image search,
-- keeps data on your machine,
-- uses a built-in default multimodal embedding setup.
 
 ### Build From Source
 
