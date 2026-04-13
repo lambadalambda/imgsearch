@@ -68,6 +68,7 @@ The app defaults to `-embedder jina-mlx` with `-jina-mlx-url http://127.0.0.1:90
 Use `-embedder jina-torch` with `mise run jina-torch-serve` for higher retrieval quality.
 Use `-embedder qwen3-vl-embedding-8b` for Qwen3-VL-Embedding-8B sidecar (4096-dim embeddings).
 Use `-embedder sqlite-ai` to run multimodal embedding inside SQLite (requires `sqlite-ai` extension, GGUF model files, and `vips`).
+When using `-embedder sqlite-ai`, embedding runs on a dedicated in-memory SQLite runtime so app DB reads/writes are not blocked by long embedding calls.
 For sqlite-ai image indexing, images are preprocessed with `vips`: converted to JPEG and resized to max side `512` by default before embedding.
 For fallback local testing without model runtime, run with `-embedder deterministic`.
 Use `-embed-image-mode path|bytes|auto` for sidecar image transport:

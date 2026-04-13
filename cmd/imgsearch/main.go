@@ -88,11 +88,11 @@ func main() {
 		openWithVector = resolvedSQLiteVectorPath
 	}
 
-	sqlDB, err := openSQLiteDB(dsn, openWithVector, resolvedSQLiteAIPath)
+	sqlDB, err := openSQLiteDB(dsn, openWithVector, "")
 	if err != nil {
 		if *vectorBackend == vectorBackendAuto && openWithVector != "" {
 			autoValidationErr = err
-			sqlDB, err = openSQLiteDB(dsn, "", resolvedSQLiteAIPath)
+			sqlDB, err = openSQLiteDB(dsn, "", "")
 			if err != nil {
 				log.Fatalf("open sqlite database: %v", err)
 			}
@@ -112,7 +112,7 @@ func main() {
 	}
 	if resolvedVectorBackend == vectorBackendBruteForce && openWithVector != "" {
 		_ = sqlDB.Close()
-		sqlDB, err = openSQLiteDB(dsn, "", resolvedSQLiteAIPath)
+		sqlDB, err = openSQLiteDB(dsn, "", "")
 		if err != nil {
 			log.Fatalf("open sqlite database: %v", err)
 		}
@@ -189,7 +189,13 @@ func main() {
 
 	embedder := embedder.Embedder(nil)
 	if *embedderType == "sqlite-ai" {
-		embedder, err = newSQLiteAIEmbedder(sqlDB, sqliteAIEmbedderOptions{
+		sqliteAIEmbedDB, err := openSQLiteAIRuntimeDB(resolvedSQLiteAIPath)
+		if err != nil {
+			log.Fatalf("open sqlite-ai runtime db: %v", err)
+		}
+		defer func() { _ = sqliteAIEmbedDB.Close() }()
+
+		embedder, err = newSQLiteAIEmbedder(sqliteAIEmbedDB, sqliteAIEmbedderOptions{
 			ModelPath:          *sqliteAIModelPath,
 			ModelOptions:       *sqliteAIModelOptions,
 			VisionModelPath:    *sqliteAIVisionModelPath,
