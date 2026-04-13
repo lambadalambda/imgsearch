@@ -37,9 +37,9 @@ func main() {
 	llamaCPPModel := flag.String("llama-cpp-model", "", "optional model field passed to llama.cpp /v1/embeddings")
 	llamaCPPQueryInstruction := flag.String("llama-cpp-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp text query embeddings")
 	llamaCPPPassageInstruction := flag.String("llama-cpp-passage-instruction", "Represent this image or text for retrieval.", "instruction used for llama-cpp image/document embeddings")
-	llamaNativeModelPath := flag.String("llama-native-model-path", "", "path to llama.cpp GGUF embedding model for -embedder llama-cpp-native")
-	llamaNativeMMProjPath := flag.String("llama-native-mmproj-path", "", "path to llama.cpp GGUF mmproj model for -embedder llama-cpp-native")
-	llamaNativeDimensions := flag.Int("llama-native-dimensions", 2048, "embedding dimensions for llama-cpp-native model metadata")
+	llamaNativeModelPath := flag.String("llama-native-model-path", defaultLlamaNativeModelPath, "path to llama.cpp GGUF embedding model for -embedder llama-cpp-native")
+	llamaNativeMMProjPath := flag.String("llama-native-mmproj-path", defaultLlamaNativeMMProjPath, "path to llama.cpp GGUF mmproj model for -embedder llama-cpp-native")
+	llamaNativeDimensions := flag.Int("llama-native-dimensions", defaultLlamaNativeDimensions, "embedding dimensions for llama-cpp-native model metadata")
 	llamaNativeGPULayers := flag.Int("llama-native-gpu-layers", 99, "number of layers to offload for llama-cpp-native")
 	llamaNativeUseGPU := flag.Bool("llama-native-use-gpu", true, "whether llama-cpp-native should use GPU for mtmd/mmproj")
 	llamaNativeContextSize := flag.Int("llama-native-context-size", 8192, "context size for llama-cpp-native runtime")
@@ -123,6 +123,13 @@ func main() {
 
 	if err := app.Bootstrap(context.Background(), sqlDB, validateVectorBackend); err != nil {
 		log.Fatalf("bootstrap app: %v", err)
+	}
+
+	if *embedderType == "llama-cpp-native" {
+		*llamaNativeModelPath, *llamaNativeMMProjPath, err = ensureDefaultLlamaNativeAssets(context.Background(), *llamaNativeModelPath, *llamaNativeMMProjPath)
+		if err != nil {
+			log.Fatalf("resolve llama-cpp-native model assets: %v", err)
+		}
 	}
 
 	embedDimensions := 0

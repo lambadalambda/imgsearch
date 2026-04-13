@@ -46,19 +46,15 @@ It is designed as a simple Go application that:
    - `git submodule update --init --recursive deps/llama.cpp`
 3. Build llama.cpp runtime libraries:
    - `mise run llama-cpp-native-build`
-4. Download a model pair (example: Qwen3-VL-Embedding-2B):
-   - `python3 -m pip install --user "huggingface_hub[cli]"`
-   - `mkdir -p ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
-   - `huggingface-cli download VesNFF/Qwen3-VL-Embedding-2B-GGUF Qwen3-VL-Embedding-2B-Q6_K.gguf --local-dir ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
-   - `huggingface-cli download VesNFF/Qwen3-VL-Embedding-2B-GGUF mmproj-Qwen3-VL-Embedding-2B-f16.gguf --local-dir ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF`
-5. Start the app with native embedding + sqlite-vector:
-   - `go run -tags llamacpp_native ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -llama-native-model-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf -llama-native-mmproj-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -llama-native-dimensions 2048`
+4. Start the app with native embedding + sqlite-vector:
+   - `go run -tags llamacpp_native ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+5. On first run, if `./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf` or `./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf` are missing, imgsearch downloads them automatically from `lainsoykaf/Qwen3-VL-Embedding-8B-GGUF` on Hugging Face.
 6. Open the UI:
    - `http://127.0.0.1:8080/`
 
 One-command startup (native default path):
 - `mise run serve`
-- `mise run "serve:8b"` for the 8B model defaults
+- `mise run "serve:8b"`
 - Optional native tuning env vars for `mise run serve`: `LLAMA_NATIVE_IMAGE_MAX_SIDE` (default `512`), `LLAMA_NATIVE_IMAGE_MAX_TOKENS` (default `0` = model default).
 
 Reset local database files:
@@ -78,19 +74,19 @@ This repo includes two llama.cpp paths:
 2. Build llama.cpp runtime libraries:
    - `cmake -S ./deps/llama.cpp -B ./deps/llama.cpp/build`
    - `cmake --build ./deps/llama.cpp/build --target llama-server -j`
-3. Start imgsearch with direct llama.cpp native embedding (example with Qwen3-VL-Embedding-2B):
-   - `go run -tags llamacpp_native ./cmd/imgsearch -embedder llama-cpp-native -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector -llama-native-model-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf -llama-native-mmproj-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf -llama-native-dimensions 2048`
+3. Start imgsearch with direct llama.cpp native embedding (default 8B config):
+   - `go run -tags llamacpp_native ./cmd/imgsearch -embedder llama-cpp-native -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
 4. Convenience tasks:
    - `mise run llama-cpp-native-build`
    - `mise run serve-llama-cpp-native`
 5. (Legacy) Run via `llama-server` HTTP API:
-   - Start server: `./deps/llama.cpp/build/bin/llama-server --host 127.0.0.1 --port 8081 --model ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf --mmproj ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf --embeddings --pooling last --ctx-size 8192 --gpu-layers 99`
-   - Run app: `go run ./cmd/imgsearch -embedder llama-cpp -llama-cpp-url http://127.0.0.1:8081 -llama-cpp-dimensions 2048 -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+   - Start server: `./deps/llama.cpp/build/bin/llama-server --host 127.0.0.1 --port 8081 --model ./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf --mmproj ./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf --embeddings --pooling last --ctx-size 8192 --gpu-layers 99`
+   - Run app: `go run ./cmd/imgsearch -embedder llama-cpp -llama-cpp-url http://127.0.0.1:8081 -llama-cpp-dimensions 4096 -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
 
 Notes:
 - Use `-llama-cpp-dimensions 4096` for Qwen3-VL-Embedding-8B models.
 - You can pass `-llama-cpp-model` to set the optional `model` field in `/v1/embeddings` requests.
-- Use `-llama-native-dimensions 4096` for Qwen3-VL-Embedding-8B models when using `llama-cpp-native`.
+- Native defaults target `lainsoykaf/Qwen3-VL-Embedding-8B-GGUF` at 4096 dimensions.
 - Native path defaults to `-llama-native-image-max-side 512` to cap indexing latency on very large images.
 - Native image embedding preprocesses every image through libvips (via `github.com/cshum/vipsgen`) and writes a temporary JPEG before mtmd, which avoids WEBP/AVIF decode failures in llama.cpp input handling.
 - Native llama.cpp prompting uses Qwen chat-template style framing (`system` + `user` + assistant generation prompt) for text and image embeddings.
