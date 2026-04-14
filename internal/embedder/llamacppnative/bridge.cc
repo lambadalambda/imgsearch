@@ -9,6 +9,8 @@
 #include "mtmd-helper.h"
 #include "sampling.h"
 
+#include "../../../deps/llama.cpp/common/json-schema-to-grammar.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -20,6 +22,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "../../../deps/llama.cpp/vendor/nlohmann/json.hpp"
 
 struct imgsearch_llama_handle {
     llama_model * model = nullptr;
@@ -381,9 +385,6 @@ int32_t generate_image(
     inputs.use_jinja = true;
     inputs.add_generation_prompt = true;
     inputs.enable_thinking = false;
-    if (!json_schema.empty()) {
-        inputs.json_schema = json_schema;
-    }
 
     common_chat_params chat_params;
     try {
@@ -428,11 +429,22 @@ int32_t generate_image(
     sampling.top_k = 64;
     sampling.top_p = top_p > 0.0f ? top_p : 1.0f;
     sampling.temp = temperature;
-    if (!chat_params.grammar.empty()) {
-        sampling.grammar = {COMMON_GRAMMAR_TYPE_OUTPUT_FORMAT, chat_params.grammar};
-        sampling.grammar_lazy = chat_params.grammar_lazy;
-        sampling.grammar_triggers = chat_params.grammar_triggers;
-        sampling.generation_prompt = chat_params.generation_prompt;
+
+    std::string response_grammar = chat_params.grammar;
+    if (!json_schema.empty()) {
+        try {
+            response_grammar = json_schema_to_grammar(nlohmann::ordered_json::parse(json_schema));
+        } catch (const std::exception & e) {
+            return set_error(handle, std::string("failed to convert json schema to grammar: ") + e.what());
+        }
+    }
+
+    if (!response_grammar.empty()) {
+        const auto grammar_type = json_schema.empty() ? COMMON_GRAMMAR_TYPE_OUTPUT_FORMAT : COMMON_GRAMMAR_TYPE_USER;
+        sampling.grammar = {grammar_type, response_grammar};
+        sampling.grammar_lazy = json_schema.empty() ? chat_params.grammar_lazy : false;
+        sampling.grammar_triggers = json_schema.empty() ? chat_params.grammar_triggers : std::vector<common_grammar_trigger>{};
+        sampling.generation_prompt = json_schema.empty() ? chat_params.generation_prompt : std::string();
     }
 
     common_sampler_ptr sampler;

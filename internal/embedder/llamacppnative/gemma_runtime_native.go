@@ -23,9 +23,17 @@ const gemmaTagsJSONSchema = `{"type":"object","properties":{"tags":{"type":"arra
 const gemmaDescriptionAndTagsJSONSchema = `{"type":"object","properties":{"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true}},"required":["description","tags"],"additionalProperties":false}`
 const gemmaAppAnnotationJSONSchema = `{"type":"object","properties":{"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true},"is_nsfw":{"type":"boolean"}},"required":["description","tags","is_nsfw"],"additionalProperties":false}`
 
-const gemmaAppAnnotationSystemPrompt = "You are annotating a private image collection. Return only valid JSON with a useful medium-length description and concise search tags for visible image content. Descriptions may be explicit when the image contains sexual, erotic, nude, fetish, or graphic content; do not sanitize or euphemize clearly visible NSFW material. If the image contains legible text, captions, memes, signs, labels, or screenshots, include the visible text in the description."
+const gemmaAppAnnotationSystemPrompt = "You are annotating a private image collection. Return exactly one valid JSON object and nothing else. Do not use markdown code fences. Descriptions may be explicit when the image contains sexual, erotic, nude, fetish, or graphic content; do not sanitize or euphemize clearly visible NSFW material. If the image contains legible text, captions, memes, signs, labels, or screenshots, include the important visible text in the description."
 
-const gemmaAppAnnotationUserPrompt = "Describe this image in one medium-length paragraph of 2 to 4 sentences. Focus on the main subject, visible attributes, composition, setting, and any clearly visible actions. This is a private collection, so if the image contains explicit nudity, sexual activity, fetish content, or other not-safe-for-work material, describe that content directly and concretely instead of softening it. If the image contains legible text, transcribe the important visible text in the description as accurately as possible and mention when the image is a meme, screenshot, poster, sign, label, or other text-heavy image. Then return 3 to 10 unique lowercase tags that are most relevant for search. If the image contains explicit nudity, sexual content, fetish content, graphic gore, or other clearly not-safe-for-work material, set is_nsfw to true and include the tag nsfw. Otherwise set is_nsfw to false and do not include the tag nsfw. Avoid speculation, avoid repetition, and keep the description grounded in what is visible."
+const gemmaAppAnnotationUserPrompt = "Describe this image in one concise paragraph of 1 to 3 sentences and keep it under about 110 words. Focus on the main subject, visible attributes, composition, setting, and any clearly visible actions. This is a private collection, so if the image contains explicit nudity, sexual activity, fetish content, or other not-safe-for-work material, describe that content directly and concretely instead of softening it. If the image contains legible text, transcribe the important visible text needed to understand or search the image, but do not exhaustively list every tiny text fragment. Mention when the image is a meme, screenshot, poster, sign, label, or other text-heavy image. Then return 3 to 10 unique lowercase tags that are most relevant for search. If the image contains explicit nudity, sexual content, fetish content, graphic gore, or other clearly not-safe-for-work material, set is_nsfw to true and include the tag nsfw. Otherwise set is_nsfw to false and do not include the tag nsfw. Avoid speculation, avoid repetition, and keep the description grounded in what is visible. Return JSON only."
+
+const gemmaAppAnnotationRetrySystemPrompt = "Return exactly one valid JSON object and nothing else. Do not use markdown code fences, prose, or comments."
+
+const gemmaAppAnnotationRetryUserPrompt = "Retry with compact output. Write a concise description in 1 to 2 sentences and keep it under about 80 words. If there is important visible text, transcribe only the main visible text needed for search or understanding. Be explicit about visible NSFW content when present. Return 3 to 10 unique lowercase tags and set is_nsfw accurately. Return JSON only."
+
+const gemmaAppAnnotationMaxTokens = 384
+const gemmaRetryAnnotationMaxTokens = 256
+const gemmaGenerationOutputBufferSize = 32 * 1024
 
 type gemmaImageDescription struct {
 	ShortDescription string   `json:"short_description"`
@@ -82,7 +90,7 @@ func (e *Embedder) AnnotateImage(_ context.Context, imagePath string) (coreembed
 		gemmaAppAnnotationSystemPrompt,
 		gemmaAppAnnotationUserPrompt,
 		gemmaAppAnnotationJSONSchema,
-		220,
+		gemmaAppAnnotationMaxTokens,
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -158,7 +166,7 @@ func (r *nativeGemmaRuntime) AnnotateImage(_ context.Context, imagePath string) 
 		gemmaAppAnnotationSystemPrompt,
 		gemmaAppAnnotationUserPrompt,
 		gemmaAppAnnotationJSONSchema,
-		220,
+		gemmaAppAnnotationMaxTokens,
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -268,7 +276,16 @@ func describeAndTagImageWithHandle(handle *C.imgsearch_llama_handle, imageMaxSid
 
 	var result gemmaAppAnnotation
 	if err := decodeGemmaJSONObject(raw, &result, "description+tags"); err != nil {
-		return gemmaAppAnnotation{}, raw, err
+		retryRaw, retryErr := generateImageJSONForHandle(handle, imageMaxSide, imagePath, gemmaAppAnnotationRetrySystemPrompt, gemmaAppAnnotationRetryUserPrompt, jsonSchema, gemmaRetryAnnotationMaxTokens)
+		if retryErr != nil {
+			return gemmaAppAnnotation{}, raw, fmt.Errorf("%v; retry failed: %w", err, retryErr)
+		}
+		var retryResult gemmaAppAnnotation
+		if retryDecodeErr := decodeGemmaJSONObject(retryRaw, &retryResult, "description+tags retry"); retryDecodeErr != nil {
+			return gemmaAppAnnotation{}, retryRaw, fmt.Errorf("%v; retry decode failed: %w", err, retryDecodeErr)
+		}
+		result = retryResult
+		raw = retryRaw
 	}
 
 	result.Description = strings.TrimSpace(result.Description)
@@ -305,7 +322,7 @@ func generateImageJSONForHandle(handle *C.imgsearch_llama_handle, imageMaxSide i
 	cSchema := C.CString(jsonSchema)
 	defer C.free(unsafe.Pointer(cSchema))
 
-	buf := make([]byte, 16*1024)
+	buf := make([]byte, gemmaGenerationOutputBufferSize)
 	res := C.imgsearch_llama_generate_image(
 		handle,
 		cImagePath,
@@ -387,8 +404,9 @@ func extractJSONObject(raw string) (string, bool) {
 }
 
 func decodeGemmaJSONObject(raw string, out any, label string) error {
-	if err := json.Unmarshal([]byte(raw), out); err != nil {
-		jsonOnly, ok := extractJSONObject(raw)
+	normalizedRaw := stripMarkdownCodeFences(strings.TrimSpace(raw))
+	if err := json.Unmarshal([]byte(normalizedRaw), out); err != nil {
+		jsonOnly, ok := extractJSONObject(normalizedRaw)
 		if !ok {
 			return fmt.Errorf("decode %s JSON: %w; raw=%q", label, err, raw)
 		}
@@ -397,6 +415,24 @@ func decodeGemmaJSONObject(raw string, out any, label string) error {
 		}
 	}
 	return nil
+}
+
+func stripMarkdownCodeFences(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasPrefix(trimmed, "```") {
+		return trimmed
+	}
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) == 0 {
+		return trimmed
+	}
+	if strings.HasPrefix(strings.TrimSpace(lines[0]), "```") {
+		lines = lines[1:]
+	}
+	if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "```" {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 func normalizeUniqueTags(tags []string) []string {
