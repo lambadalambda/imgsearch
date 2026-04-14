@@ -29,6 +29,91 @@ delete_macos_rpath_if_present() {
   fi
 }
 
+is_linux_system_library() {
+  local path="$1"
+  case "$path" in
+    ""|linux-vdso.so.*|linux-gate.so.*)
+      return 0
+      ;;
+    /lib*/ld-linux*.so*|/lib*/libc.so.*|/lib*/libm.so.*|/lib*/libpthread.so.*|/lib*/libdl.so.*|/lib*/librt.so.*|/lib*/libresolv.so.*|/lib*/libutil.so.*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+linux_list_shared_deps() {
+  local file="$1"
+  ldd "$file" | awk '
+    /=>/ && $3 ~ /^\// { print $3 }
+    /^[[:space:]]*\/[^[:space:]]+/ { print $1 }
+  '
+}
+
+copy_linux_library_with_links() {
+  local source_path="$1"
+  local dest_dir="$2"
+  local real_path
+  local real_base
+  local dest_real
+  local source_base
+  local soname
+
+  real_path="$(readlink -f "$source_path")"
+  real_base="$(basename "$real_path")"
+  dest_real="${dest_dir}/${real_base}"
+  source_base="$(basename "$source_path")"
+
+  if [[ ! -e "$dest_real" ]]; then
+    cp -a "$real_path" "$dest_real"
+  fi
+
+  soname="$(patchelf --print-soname "$real_path" 2>/dev/null || true)"
+  if [[ -n "$soname" && "$soname" != "$real_base" && ! -e "${dest_dir}/${soname}" ]]; then
+    ln -s "$real_base" "${dest_dir}/${soname}"
+  fi
+
+  if [[ "$source_base" != "$real_base" && ! -e "${dest_dir}/${source_base}" ]]; then
+    ln -s "$real_base" "${dest_dir}/${source_base}"
+  fi
+
+  printf '%s\n' "$dest_real"
+}
+
+bundle_linux_runtime_deps() {
+  local seen_file="$1"
+  shift
+  local queue=("$@")
+
+  : > "$seen_file"
+
+  while [[ ${#queue[@]} -gt 0 ]]; do
+    local file="${queue[0]}"
+    queue=("${queue[@]:1}")
+
+    while IFS= read -r dep; do
+      [[ -z "$dep" ]] && continue
+      if is_linux_system_library "$dep"; then
+        continue
+      fi
+      if [[ ! -e "$dep" ]]; then
+        continue
+      fi
+
+      local real_dep
+      real_dep="$(readlink -f "$dep")"
+      if grep -Fqx "$real_dep" "$seen_file"; then
+        continue
+      fi
+      printf '%s\n' "$real_dep" >> "$seen_file"
+
+      local bundled_path
+      bundled_path="$(copy_linux_library_with_links "$dep" "${pkg_root}/lib")"
+      queue+=("$bundled_path")
+    done < <(linux_list_shared_deps "$file")
+  done
+}
+
 rm -rf "${pkg_root}"
 mkdir -p "${pkg_root}/lib" "${pkg_root}/models" "${pkg_root}/tools/sqlite-vector"
 
@@ -62,13 +147,14 @@ Contents:
 - models/         default model download location (auto-populated on first run)
 
 First run:
-1. Ensure libvips is installed on the system.
-2. Run ./imgsearch
-3. The default 8B Qwen GGUF files are downloaded automatically if missing.
+1. Run ./imgsearch
+2. The default 8B Qwen GGUF files are downloaded automatically if missing.
 
 Notes:
 - The app auto-discovers sqlite-vector from ./tools/sqlite-vector/vector.
 - Data is stored in ./data by default.
+- Linux release archives also bundle libvips and its non-glibc runtime dependencies.
+- macOS release archives still expect libvips to be installed on the system.
 EOF
 
 case "$(uname -s)" in
@@ -90,6 +176,8 @@ case "$(uname -s)" in
     done < <(find "${pkg_root}/lib" -type f -name '*.dylib')
     ;;
   Linux)
+    bundle_linux_runtime_deps "${pkg_root}/.linux-runtime-seen" "${pkg_root}/imgsearch" $(find "${pkg_root}/lib" -type f -name '*.so*' -print)
+    rm -f "${pkg_root}/.linux-runtime-seen"
     patchelf --set-rpath '$ORIGIN/lib' "${pkg_root}/imgsearch"
     while IFS= read -r sofile; do
       patchelf --set-rpath '$ORIGIN' "${sofile}"

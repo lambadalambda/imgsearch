@@ -109,5 +109,6 @@ jobs:
 
             Notes:
             - The archives bundle `imgsearch`, llama.cpp shared libraries, and `sqlite-vector`.
-            - `libvips` must still be installed on the target system.
+            - Linux archives also bundle `libvips` and its non-glibc shared-library dependencies.
+            - macOS archives still expect `libvips` to be installed on the target system.
             - On first run, the default 8B Qwen GGUF files download automatically if missing.
