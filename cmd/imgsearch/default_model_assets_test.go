@@ -90,6 +90,13 @@ func TestEnsureDefaultAssetPairDownloadsMissingDefaults(t *testing.T) {
 	}
 }
 
+func TestEnsureDefaultLlamaNativeAnnotatorAssetsForVariantRejectsUnknownVariant(t *testing.T) {
+	_, _, err := ensureDefaultLlamaNativeAnnotatorAssetsForVariant(context.Background(), "weird", "", "")
+	if err == nil {
+		t.Fatal("expected error for unknown annotator variant")
+	}
+}
+
 func TestEnsureDefaultModelAssetSkipsCustomPath(t *testing.T) {
 	tmp := t.TempDir()
 	customPath := filepath.Join(tmp, "custom.gguf")

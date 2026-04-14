@@ -50,6 +50,7 @@ func main() {
 	llamaNativeImageMaxTokens := flag.Int("llama-native-image-max-tokens", 0, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
 	llamaNativeAnnotatorModelPath := flag.String("llama-native-annotator-model-path", "", "optional path to a separate llama.cpp GGUF vision model used only for image descriptions/tags")
 	llamaNativeAnnotatorMMProjPath := flag.String("llama-native-annotator-mmproj-path", "", "optional path to a separate llama.cpp GGUF mmproj used only for image descriptions/tags")
+	llamaNativeAnnotatorVariant := flag.String("llama-native-annotator-variant", defaultLlamaNativeAnnotatorVariant, "default separate llama.cpp annotator model variant when explicit annotator paths are not set: e4b or 26b")
 	llamaNativeAnnotatorGPULayers := flag.Int("llama-native-annotator-gpu-layers", 99, "number of layers to offload for the separate llama-cpp-native annotator")
 	llamaNativeAnnotatorUseGPU := flag.Bool("llama-native-annotator-use-gpu", true, "whether the separate llama-cpp-native annotator should use GPU for mtmd/mmproj")
 	llamaNativeAnnotatorContextSize := flag.Int("llama-native-annotator-context-size", 8192, "context size for the separate llama-cpp-native annotator")
@@ -141,7 +142,7 @@ func main() {
 			log.Fatalf("resolve llama-cpp-native model assets: %v", err)
 		}
 		if strings.TrimSpace(*llamaNativeAnnotatorModelPath) == "" && strings.TrimSpace(*llamaNativeAnnotatorMMProjPath) == "" {
-			*llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath, err = ensureDefaultLlamaNativeAnnotatorAssets(context.Background(), *llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath)
+			*llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath, err = ensureDefaultLlamaNativeAnnotatorAssetsForVariant(context.Background(), *llamaNativeAnnotatorVariant, *llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath)
 			if err != nil {
 				log.Fatalf("resolve llama-cpp-native annotator model assets: %v", err)
 			}

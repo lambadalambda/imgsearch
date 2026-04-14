@@ -13,17 +13,23 @@ import (
 )
 
 const (
-	defaultLlamaNativeModelPath           = "./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
-	defaultLlamaNativeMMProjPath          = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
-	defaultLlamaNativeDimensions          = 4096
-	defaultLlamaNativeModelURL            = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
-	defaultLlamaNativeMMProjURL           = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
-	defaultLlamaNativeAnnotatorModelPath  = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
-	defaultLlamaNativeAnnotatorMMProjPath = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"
-	defaultLlamaNativeAnnotatorModelURL   = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
-	defaultLlamaNativeAnnotatorMMProjURL  = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"
-	defaultDownloadUserAgent              = "imgsearch/1.0"
-	defaultDownloadProgressPeriod         = 5 * time.Second
+	defaultLlamaNativeModelPath              = "./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
+	defaultLlamaNativeMMProjPath             = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
+	defaultLlamaNativeDimensions             = 4096
+	defaultLlamaNativeModelURL               = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
+	defaultLlamaNativeMMProjURL              = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
+	defaultLlamaNativeAnnotatorVariant       = "e4b"
+	llamaNativeAnnotatorVariant26B           = "26b"
+	defaultLlamaNativeAnnotatorModelPath     = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
+	defaultLlamaNativeAnnotatorMMProjPath    = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"
+	defaultLlamaNativeAnnotatorModelURL      = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
+	defaultLlamaNativeAnnotatorMMProjURL     = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"
+	defaultLlamaNativeAnnotator26BModelPath  = "./models/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/gemma-4-26b-a4b-it-heretic.q4_k_m.gguf"
+	defaultLlamaNativeAnnotator26BMMProjPath = "./models/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf"
+	defaultLlamaNativeAnnotator26BModelURL   = "https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26b-a4b-it-heretic.q4_k_m.gguf"
+	defaultLlamaNativeAnnotator26BMMProjURL  = "https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf"
+	defaultDownloadUserAgent                 = "imgsearch/1.0"
+	defaultDownloadProgressPeriod            = 5 * time.Second
 )
 
 func ensureDefaultLlamaNativeAssets(ctx context.Context, modelPath string, mmprojPath string) (string, string, error) {
@@ -50,6 +56,30 @@ func ensureDefaultLlamaNativeAnnotatorAssets(ctx context.Context, modelPath stri
 		defaultLlamaNativeAnnotatorMMProjPath,
 		defaultLlamaNativeAnnotatorMMProjURL,
 	)
+}
+
+func ensureDefaultLlamaNativeAnnotator26BAssets(ctx context.Context, modelPath string, mmprojPath string) (string, string, error) {
+	return ensureDefaultAssetPair(
+		ctx,
+		nil,
+		modelPath,
+		mmprojPath,
+		defaultLlamaNativeAnnotator26BModelPath,
+		defaultLlamaNativeAnnotator26BModelURL,
+		defaultLlamaNativeAnnotator26BMMProjPath,
+		defaultLlamaNativeAnnotator26BMMProjURL,
+	)
+}
+
+func ensureDefaultLlamaNativeAnnotatorAssetsForVariant(ctx context.Context, variant string, modelPath string, mmprojPath string) (string, string, error) {
+	switch strings.ToLower(strings.TrimSpace(variant)) {
+	case "", defaultLlamaNativeAnnotatorVariant:
+		return ensureDefaultLlamaNativeAnnotatorAssets(ctx, modelPath, mmprojPath)
+	case llamaNativeAnnotatorVariant26B:
+		return ensureDefaultLlamaNativeAnnotator26BAssets(ctx, modelPath, mmprojPath)
+	default:
+		return "", "", fmt.Errorf("unsupported llama-cpp-native annotator variant %q (expected %q or %q)", variant, defaultLlamaNativeAnnotatorVariant, llamaNativeAnnotatorVariant26B)
+	}
 }
 
 func ensureDefaultAssetPair(ctx context.Context, httpClient *http.Client, modelPath string, mmprojPath string, defaultModelPath string, defaultModelURL string, defaultMMProjPath string, defaultMMProjURL string) (string, string, error) {
