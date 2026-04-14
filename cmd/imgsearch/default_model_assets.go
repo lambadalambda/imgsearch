@@ -13,35 +13,64 @@ import (
 )
 
 const (
-	defaultLlamaNativeModelPath   = "./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
-	defaultLlamaNativeMMProjPath  = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
-	defaultLlamaNativeDimensions  = 4096
-	defaultLlamaNativeModelURL    = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
-	defaultLlamaNativeMMProjURL   = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
-	defaultDownloadUserAgent      = "imgsearch/1.0"
-	defaultDownloadProgressPeriod = 5 * time.Second
+	defaultLlamaNativeModelPath           = "./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
+	defaultLlamaNativeMMProjPath          = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
+	defaultLlamaNativeDimensions          = 4096
+	defaultLlamaNativeModelURL            = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
+	defaultLlamaNativeMMProjURL           = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
+	defaultLlamaNativeAnnotatorModelPath  = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
+	defaultLlamaNativeAnnotatorMMProjPath = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"
+	defaultLlamaNativeAnnotatorModelURL   = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
+	defaultLlamaNativeAnnotatorMMProjURL  = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"
+	defaultDownloadUserAgent              = "imgsearch/1.0"
+	defaultDownloadProgressPeriod         = 5 * time.Second
 )
 
 func ensureDefaultLlamaNativeAssets(ctx context.Context, modelPath string, mmprojPath string) (string, string, error) {
+	return ensureDefaultAssetPair(
+		ctx,
+		nil,
+		modelPath,
+		mmprojPath,
+		defaultLlamaNativeModelPath,
+		defaultLlamaNativeModelURL,
+		defaultLlamaNativeMMProjPath,
+		defaultLlamaNativeMMProjURL,
+	)
+}
+
+func ensureDefaultLlamaNativeAnnotatorAssets(ctx context.Context, modelPath string, mmprojPath string) (string, string, error) {
+	return ensureDefaultAssetPair(
+		ctx,
+		nil,
+		modelPath,
+		mmprojPath,
+		defaultLlamaNativeAnnotatorModelPath,
+		defaultLlamaNativeAnnotatorModelURL,
+		defaultLlamaNativeAnnotatorMMProjPath,
+		defaultLlamaNativeAnnotatorMMProjURL,
+	)
+}
+
+func ensureDefaultAssetPair(ctx context.Context, httpClient *http.Client, modelPath string, mmprojPath string, defaultModelPath string, defaultModelURL string, defaultMMProjPath string, defaultMMProjURL string) (string, string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	modelPath = strings.TrimSpace(modelPath)
 	if modelPath == "" {
-		modelPath = defaultLlamaNativeModelPath
+		modelPath = defaultModelPath
 	}
 	mmprojPath = strings.TrimSpace(mmprojPath)
 	if mmprojPath == "" {
-		mmprojPath = defaultLlamaNativeMMProjPath
+		mmprojPath = defaultMMProjPath
 	}
 
-	httpClient := &http.Client{}
-	resolvedModelPath, err := ensureDefaultModelAsset(ctx, httpClient, modelPath, defaultLlamaNativeModelPath, defaultLlamaNativeModelURL)
+	resolvedModelPath, err := ensureDefaultModelAsset(ctx, httpClient, modelPath, defaultModelPath, defaultModelURL)
 	if err != nil {
 		return "", "", err
 	}
-	resolvedMMProjPath, err := ensureDefaultModelAsset(ctx, httpClient, mmprojPath, defaultLlamaNativeMMProjPath, defaultLlamaNativeMMProjURL)
+	resolvedMMProjPath, err := ensureDefaultModelAsset(ctx, httpClient, mmprojPath, defaultMMProjPath, defaultMMProjURL)
 	if err != nil {
 		return "", "", err
 	}

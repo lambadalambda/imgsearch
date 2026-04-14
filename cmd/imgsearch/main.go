@@ -140,6 +140,12 @@ func main() {
 		if err != nil {
 			log.Fatalf("resolve llama-cpp-native model assets: %v", err)
 		}
+		if strings.TrimSpace(*llamaNativeAnnotatorModelPath) == "" && strings.TrimSpace(*llamaNativeAnnotatorMMProjPath) == "" {
+			*llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath, err = ensureDefaultLlamaNativeAnnotatorAssets(context.Background(), *llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath)
+			if err != nil {
+				log.Fatalf("resolve llama-cpp-native annotator model assets: %v", err)
+			}
+		}
 	}
 
 	embedDimensions := 0

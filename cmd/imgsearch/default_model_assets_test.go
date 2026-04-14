@@ -37,6 +37,59 @@ func TestEnsureDefaultModelAssetDownloadsMissingDefault(t *testing.T) {
 	}
 }
 
+func TestEnsureDefaultAssetPairDownloadsMissingDefaults(t *testing.T) {
+	tmp := t.TempDir()
+	modelPath := filepath.Join(tmp, "models", "Gemma", "model.gguf")
+	mmprojPath := filepath.Join(tmp, "models", "Gemma", "mmproj.gguf")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/model.gguf":
+			_, _ = w.Write([]byte("model-bytes"))
+		case "/mmproj.gguf":
+			_, _ = w.Write([]byte("mmproj-bytes"))
+		default:
+			t.Fatalf("unexpected request path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	resolvedModelPath, resolvedMMProjPath, err := ensureDefaultAssetPair(
+		context.Background(),
+		server.Client(),
+		"",
+		"",
+		modelPath,
+		server.URL+"/model.gguf",
+		mmprojPath,
+		server.URL+"/mmproj.gguf",
+	)
+	if err != nil {
+		t.Fatalf("ensure default asset pair: %v", err)
+	}
+	if resolvedModelPath != modelPath {
+		t.Fatalf("resolved model path: got=%q want=%q", resolvedModelPath, modelPath)
+	}
+	if resolvedMMProjPath != mmprojPath {
+		t.Fatalf("resolved mmproj path: got=%q want=%q", resolvedMMProjPath, mmprojPath)
+	}
+
+	modelContent, err := os.ReadFile(modelPath)
+	if err != nil {
+		t.Fatalf("read downloaded model asset: %v", err)
+	}
+	if string(modelContent) != "model-bytes" {
+		t.Fatalf("unexpected model asset content: %q", string(modelContent))
+	}
+
+	mmprojContent, err := os.ReadFile(mmprojPath)
+	if err != nil {
+		t.Fatalf("read downloaded mmproj asset: %v", err)
+	}
+	if string(mmprojContent) != "mmproj-bytes" {
+		t.Fatalf("unexpected mmproj asset content: %q", string(mmprojContent))
+	}
+}
+
 func TestEnsureDefaultModelAssetSkipsCustomPath(t *testing.T) {
 	tmp := t.TempDir()
 	customPath := filepath.Join(tmp, "custom.gguf")
