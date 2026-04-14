@@ -10,6 +10,7 @@
 #include "sampling.h"
 
 #include "../../../deps/llama.cpp/common/json-schema-to-grammar.h"
+#include "../../../deps/llama.cpp/ggml/include/ggml-backend.h"
 
 #include <algorithm>
 #include <cmath>
@@ -17,6 +18,7 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -24,6 +26,12 @@
 #include <vector>
 
 #include "../../../deps/llama.cpp/vendor/nlohmann/json.hpp"
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#elif !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 struct imgsearch_llama_handle {
     llama_model * model = nullptr;
@@ -37,6 +45,8 @@ struct imgsearch_llama_handle {
 };
 
 namespace {
+
+namespace fs = std::filesystem;
 
 constexpr int32_t kDefaultImageMaxSide = 512;
 
@@ -64,6 +74,57 @@ void native_log_callback(ggml_log_level level, const char * text, void *) {
         return;
     }
     fputs(text, stderr);
+}
+
+std::string executable_dir() {
+#ifdef _WIN32
+    return "";
+#elif defined(__APPLE__)
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    if (size == 0) {
+        return "";
+    }
+    std::vector<char> path(size + 1, '\0');
+    if (_NSGetExecutablePath(path.data(), &size) != 0) {
+        return "";
+    }
+    std::error_code ec;
+    fs::path resolved = fs::weakly_canonical(fs::path(path.data()), ec);
+    if (ec) {
+        resolved = fs::path(path.data());
+    }
+    return resolved.parent_path().string();
+#else
+    std::vector<char> path(4096, '\0');
+    const auto len = readlink("/proc/self/exe", path.data(), path.size() - 1);
+    if (len <= 0) {
+        return "";
+    }
+    path[static_cast<size_t>(len)] = '\0';
+    return fs::path(path.data()).parent_path().string();
+#endif
+}
+
+void load_backends() {
+    ggml_backend_load_all();
+
+    if (ggml_backend_reg_count() > 0) {
+        return;
+    }
+
+    const auto exe_dir = executable_dir();
+    if (exe_dir.empty()) {
+        return;
+    }
+
+    ggml_backend_load_all_from_path(exe_dir.c_str());
+    if (ggml_backend_reg_count() > 0) {
+        return;
+    }
+
+    const auto lib_dir = (fs::path(exe_dir) / "lib").string();
+    ggml_backend_load_all_from_path(lib_dir.c_str());
 }
 
 void set_global_error(const std::string & msg) {
@@ -519,6 +580,7 @@ imgsearch_llama_handle * imgsearch_llama_new(
     }
 
     std::call_once(g_backend_once, []() {
+        load_backends();
         llama_backend_init();
         llama_log_set(native_log_callback, nullptr);
         mtmd_helper_log_set(native_log_callback, nullptr);

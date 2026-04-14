@@ -147,14 +147,16 @@ Contents:
 - models/         default model download location (auto-populated on first run)
 
 First run:
-1. Run ./imgsearch
+1. On Linux, run ./run.sh (or the preset wrappers) so bundled shared libraries are used.
+2. On macOS, run ./imgsearch
 2. The default 8B Qwen GGUF files are downloaded automatically if missing.
 
 Notes:
-- The app auto-discovers sqlite-vector from ./tools/sqlite-vector/vector.
-- Data is stored in ./data by default.
-- Linux release archives also bundle libvips and its non-glibc runtime dependencies.
-- macOS release archives still expect libvips to be installed on the system.
+ - The app auto-discovers sqlite-vector from ./tools/sqlite-vector/vector.
+ - Linux bundles include wrapper scripts that set LD_LIBRARY_PATH for the packaged shared libraries.
+ - Data is stored in ./data by default.
+ - Linux release archives also bundle libvips and its non-glibc runtime dependencies.
+ - macOS release archives still expect libvips to be installed on the system.
 EOF
 
 case "$(uname -s)" in
@@ -182,6 +184,38 @@ case "$(uname -s)" in
     while IFS= read -r sofile; do
       patchelf --set-rpath '$ORIGIN' "${sofile}"
     done < <(find "${pkg_root}/lib" -type f -name '*.so*')
+
+    for backend in libggml-cpu.so libggml-cuda.so; do
+      if [[ -e "${pkg_root}/lib/${backend}" ]]; then
+        ln -sf "lib/${backend}" "${pkg_root}/${backend}"
+      fi
+    done
+
+    cat > "${pkg_root}/run.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$script_dir/imgsearch" "$@"
+EOF
+
+    cat > "${pkg_root}/run-8b.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$script_dir/imgsearch" -embedder llama-cpp-native -vector-backend sqlite-vector "$@"
+EOF
+
+    cat > "${pkg_root}/run-8b-annotator-26b.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$script_dir/imgsearch" -embedder llama-cpp-native -vector-backend sqlite-vector -llama-native-annotator-variant 26b "$@"
+EOF
+
+    chmod +x "${pkg_root}/run.sh" "${pkg_root}/run-8b.sh" "${pkg_root}/run-8b-annotator-26b.sh"
     ;;
 esac
 
