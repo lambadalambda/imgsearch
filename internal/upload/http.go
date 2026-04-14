@@ -15,6 +15,12 @@ type UploadResponse struct {
 	Duplicate bool   `json:"duplicate"`
 }
 
+type UploadBatchResponse struct {
+	Uploads    []UploadResponse `json:"uploads"`
+	Created    int              `json:"created"`
+	Duplicates int              `json:"duplicates"`
+}
+
 func NewHandler(svc *Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -24,34 +30,61 @@ func NewHandler(svc *Service) http.Handler {
 
 		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 
-		file, header, err := r.FormFile("file")
-		if err != nil {
+		if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid multipart upload")
+			return
+		}
+
+		files := r.MultipartForm.File["file"]
+		if len(files) == 0 {
 			writeJSONError(w, http.StatusBadRequest, "missing file")
 			return
 		}
-		defer func() { _ = file.Close() }()
 
-		out, err := svc.Store(r.Context(), filepath.Base(header.Filename), file)
-		if err != nil {
-			if errors.Is(err, ErrUnsupportedFormat) {
-				writeJSONError(w, http.StatusBadRequest, "unsupported image format")
+		uploads := make([]UploadResponse, 0, len(files))
+		created := 0
+		duplicates := 0
+		for _, header := range files {
+			file, err := header.Open()
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, "invalid file upload")
 				return
 			}
-			writeJSONError(w, http.StatusInternalServerError, "upload failed")
-			return
+
+			out, err := svc.Store(r.Context(), filepath.Base(header.Filename), file)
+			_ = file.Close()
+			if err != nil {
+				if errors.Is(err, ErrUnsupportedFormat) {
+					writeJSONError(w, http.StatusBadRequest, "unsupported image format")
+					return
+				}
+				writeJSONError(w, http.StatusInternalServerError, "upload failed")
+				return
+			}
+
+			if out.Duplicate {
+				duplicates++
+			} else {
+				created++
+			}
+			uploads = append(uploads, UploadResponse{
+				ImageID:   out.ImageID,
+				SHA256:    out.SHA256,
+				Duplicate: out.Duplicate,
+			})
 		}
 
 		status := http.StatusCreated
-		if out.Duplicate {
+		if created == 0 {
 			status = http.StatusOK
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(UploadResponse{
-			ImageID:   out.ImageID,
-			SHA256:    out.SHA256,
-			Duplicate: out.Duplicate,
+		_ = json.NewEncoder(w).Encode(UploadBatchResponse{
+			Uploads:    uploads,
+			Created:    created,
+			Duplicates: duplicates,
 		})
 	})
 }

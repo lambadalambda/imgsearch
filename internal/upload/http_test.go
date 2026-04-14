@@ -13,15 +13,28 @@ import (
 
 func multipartBody(t *testing.T, filename string, content []byte) (*bytes.Buffer, string) {
 	t.Helper()
+	return multipartBodyWithFiles(t, []struct {
+		filename string
+		content  []byte
+	}{{filename: filename, content: content}})
+}
+
+func multipartBodyWithFiles(t *testing.T, files []struct {
+	filename string
+	content  []byte
+}) (*bytes.Buffer, string) {
+	t.Helper()
 
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
-	fw, err := mw.CreateFormFile("file", filename)
-	if err != nil {
-		t.Fatalf("create form file: %v", err)
-	}
-	if _, err := fw.Write(content); err != nil {
-		t.Fatalf("write form file: %v", err)
+	for _, file := range files {
+		fw, err := mw.CreateFormFile("file", file.filename)
+		if err != nil {
+			t.Fatalf("create form file: %v", err)
+		}
+		if _, err := fw.Write(file.content); err != nil {
+			t.Fatalf("write form file: %v", err)
+		}
 	}
 	if err := mw.Close(); err != nil {
 		t.Fatalf("close multipart writer: %v", err)
@@ -44,12 +57,18 @@ func TestUploadHandlerReturnsCreatedForNewImage(t *testing.T) {
 		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusCreated, rr.Body.String())
 	}
 
-	var resp UploadResponse
+	var resp UploadBatchResponse
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.ImageID == 0 || resp.SHA256 == "" || resp.Duplicate {
+	if len(resp.Uploads) != 1 {
+		t.Fatalf("unexpected upload count: %+v", resp)
+	}
+	if resp.Uploads[0].ImageID == 0 || resp.Uploads[0].SHA256 == "" || resp.Uploads[0].Duplicate {
 		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if resp.Created != 1 || resp.Duplicates != 0 {
+		t.Fatalf("unexpected counters: %+v", resp)
 	}
 }
 
@@ -106,12 +125,42 @@ func TestUploadHandlerReturnsOKForDuplicateImage(t *testing.T) {
 		t.Fatalf("status: got=%d want=%d body=%s", secondRR.Code, http.StatusOK, secondRR.Body.String())
 	}
 
-	var resp UploadResponse
+	var resp UploadBatchResponse
 	if err := json.Unmarshal(secondRR.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if !resp.Duplicate {
+	if len(resp.Uploads) != 1 || !resp.Uploads[0].Duplicate {
 		t.Fatalf("expected duplicate response, got %+v", resp)
+	}
+}
+
+func TestUploadHandlerAcceptsMultipleFiles(t *testing.T) {
+	svc, _ := setupService(t)
+	h := NewHandler(svc)
+
+	body, contentType := multipartBodyWithFiles(t, []struct {
+		filename string
+		content  []byte
+	}{
+		{filename: "one.png", content: pngBytes(t)},
+		{filename: "two.webp", content: fixtureImageBytes(t, "cat_2.webp")},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusCreated, rr.Body.String())
+	}
+
+	var resp UploadBatchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Uploads) != 2 || resp.Created != 2 || resp.Duplicates != 0 {
+		t.Fatalf("unexpected batch response: %+v", resp)
 	}
 }
 

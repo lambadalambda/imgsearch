@@ -841,16 +841,19 @@ uploadModal.addEventListener('click', (event) => {
 
 uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const file = uploadFile.files && uploadFile.files[0];
-  if (!file) {
-    setStatus(uploadStatus, 'Choose a JPEG, PNG, WEBP, or AVIF file first.', 'error');
+  const files = uploadFile.files ? Array.from(uploadFile.files) : [];
+  if (files.length === 0) {
+    setStatus(uploadStatus, 'Choose one or more JPEG, PNG, WEBP, or AVIF files first.', 'error');
     return;
   }
 
   const data = new FormData();
-  data.set('file', file, file.name);
+  files.forEach((file) => {
+    data.append('file', file, file.name);
+  });
 
-  setStatus(uploadStatus, `Uploading ${file.name}...`, 'info');
+  const uploadLabel = files.length === 1 ? files[0].name : `${files.length} files`;
+  setStatus(uploadStatus, `Uploading ${uploadLabel}...`, 'info');
   try {
     const response = await fetch('/api/upload', { method: 'POST', body: data });
     const payload = await response.json();
@@ -858,8 +861,23 @@ uploadForm.addEventListener('submit', async (event) => {
       throw new Error(payload.error || 'Upload failed');
     }
 
-    const action = payload.duplicate ? 'already exists' : 'queued for indexing';
-    setStatus(uploadStatus, `${file.name} ${action}.`, 'success');
+    const created = Number(payload.created) || 0;
+    const duplicates = Number(payload.duplicates) || 0;
+    let message = '';
+    if (files.length === 1) {
+      message = duplicates > 0 && created === 0 ? `${files[0].name} already exists.` : `${files[0].name} queued for indexing.`;
+    } else {
+      const parts = [];
+      if (created > 0) {
+        parts.push(`${created} queued`);
+      }
+      if (duplicates > 0) {
+        parts.push(`${duplicates} already existed`);
+      }
+      message = parts.length > 0 ? `Upload complete: ${parts.join(', ')}.` : 'Upload complete.';
+    }
+
+    setStatus(uploadStatus, message, 'success');
     uploadForm.reset();
     state.galleryPage = 0;
     setActiveTab('gallery');
