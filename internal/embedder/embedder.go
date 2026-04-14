@@ -10,6 +10,15 @@ type ImageEmbedder interface {
 	EmbedImage(ctx context.Context, path string) ([]float32, error)
 }
 
+type ImageAnnotation struct {
+	Description string
+	Tags        []string
+}
+
+type ImageAnnotator interface {
+	AnnotateImage(ctx context.Context, path string) (ImageAnnotation, error)
+}
+
 type Embedder interface {
 	TextEmbedder
 	ImageEmbedder

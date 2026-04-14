@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -22,6 +23,7 @@ type Queue struct {
 	LeaseDuration  time.Duration
 	RetryBaseDelay time.Duration
 	Embedder       embedder.ImageEmbedder
+	Annotator      embedder.ImageAnnotator
 	Index          vectorindex.VectorIndex
 }
 
@@ -62,7 +64,7 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 	}
 	log.Printf("worker claimed job id=%d image_id=%d attempt=%d/%d", job.ID, job.ImageID, job.Attempts, job.MaxAttempts)
 
-	storagePath, err := q.loadImagePath(ctx, job.ImageID)
+	storagePath, needsAnnotations, err := q.loadImageTaskData(ctx, job.ImageID)
 	if err != nil {
 		_ = q.failOrRetry(ctx, job, err)
 		return true, err
@@ -86,7 +88,17 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 		return true, nil
 	}
 
-	if err := q.completeJob(ctx, job, vec); err != nil {
+	var annotation *embedder.ImageAnnotation
+	if q.Annotator != nil && needsAnnotations {
+		generated, err := q.Annotator.AnnotateImage(ctx, absPath)
+		if err != nil {
+			log.Printf("worker annotation skipped image_id=%d: %v", job.ImageID, err)
+		} else {
+			annotation = &generated
+		}
+	}
+
+	if err := q.completeJob(ctx, job, vec, annotation); err != nil {
 		_ = q.failOrRetry(ctx, job, err)
 		return true, err
 	}
@@ -175,17 +187,26 @@ WHERE id = ?
 	return job, true, nil
 }
 
-func (q *Queue) loadImagePath(ctx context.Context, imageID int64) (string, error) {
+func (q *Queue) loadImageTaskData(ctx context.Context, imageID int64) (string, bool, error) {
 	var storagePath string
+	var needsAnnotations int
 	if err := q.DB.QueryRowContext(ctx, `
-SELECT storage_path FROM images WHERE id = ?
-`, imageID).Scan(&storagePath); err != nil {
-		return "", fmt.Errorf("load image path: %w", err)
+SELECT storage_path,
+  CASE
+    WHEN trim(COALESCE(description, '')) = ''
+      OR COALESCE(tags_json, '') = ''
+      OR COALESCE(tags_json, '[]') = '[]'
+    THEN 1 ELSE 0
+  END
+FROM images
+WHERE id = ?
+`, imageID).Scan(&storagePath, &needsAnnotations); err != nil {
+		return "", false, fmt.Errorf("load image task data: %w", err)
 	}
-	return storagePath, nil
+	return storagePath, needsAnnotations == 1, nil
 }
 
-func (q *Queue) completeJob(ctx context.Context, job claimedJob, vec []float32) error {
+func (q *Queue) completeJob(ctx context.Context, job claimedJob, vec []float32, annotation *embedder.ImageAnnotation) error {
 	tx, err := q.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin complete tx: %w", err)
@@ -204,6 +225,22 @@ DO UPDATE SET
 	if err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("upsert image embedding: %w", err)
+	}
+
+	if annotation != nil {
+		tagsJSON, err := json.Marshal(annotation.Tags)
+		if err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("marshal image tags: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+UPDATE images
+SET description = ?, tags_json = ?
+WHERE id = ?
+`, annotation.Description, string(tagsJSON), job.ImageID); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("update image annotations: %w", err)
+		}
 	}
 
 	if _, err := tx.ExecContext(ctx, `

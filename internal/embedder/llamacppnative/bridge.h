@@ -38,6 +38,18 @@ int32_t imgsearch_llama_embed_image(
     float * out,
     int32_t out_len);
 
+int32_t imgsearch_llama_generate_image(
+    imgsearch_llama_handle * handle,
+    const char * image_path,
+    const char * system_prompt,
+    const char * user_prompt,
+    const char * json_schema,
+    int32_t max_tokens,
+    float temperature,
+    float top_p,
+    char * out,
+    int32_t out_len);
+
 const char * imgsearch_llama_last_error(const imgsearch_llama_handle * handle);
 const char * imgsearch_llama_global_error(void);
 

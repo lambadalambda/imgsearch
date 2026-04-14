@@ -26,10 +26,12 @@ type Handler struct {
 }
 
 type SearchResult struct {
-	ImageID      int64   `json:"image_id"`
-	Distance     float64 `json:"distance"`
-	OriginalName string  `json:"original_name"`
-	StoragePath  string  `json:"storage_path"`
+	ImageID      int64    `json:"image_id"`
+	Distance     float64  `json:"distance"`
+	OriginalName string   `json:"original_name"`
+	StoragePath  string   `json:"storage_path"`
+	Description  string   `json:"description,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
 }
 
 type SearchResponse struct {
@@ -198,20 +200,38 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]SearchResult, error) {
 	results := make([]SearchResult, 0, len(hits))
 	for _, hit := range hits {
-		var originalName, storagePath string
+		var originalName, storagePath, description, tagsJSON string
 		if err := h.DB.QueryRowContext(ctx, `
-SELECT original_name, storage_path FROM images WHERE id = ?
-`, hit.ImageID).Scan(&originalName, &storagePath); err != nil {
+		SELECT original_name, storage_path, COALESCE(description, ''), COALESCE(tags_json, '[]')
+		FROM images WHERE id = ?
+		`, hit.ImageID).Scan(&originalName, &storagePath, &description, &tagsJSON); err != nil {
 			return nil, fmt.Errorf("load image %d: %w", hit.ImageID, err)
+		}
+		tags, err := decodeTagsJSON(tagsJSON)
+		if err != nil {
+			return nil, fmt.Errorf("decode image %d tags: %w", hit.ImageID, err)
 		}
 		results = append(results, SearchResult{
 			ImageID:      hit.ImageID,
 			Distance:     hit.Distance,
 			OriginalName: originalName,
 			StoragePath:  filepath.ToSlash(storagePath),
+			Description:  description,
+			Tags:         tags,
 		})
 	}
 	return results, nil
+}
+
+func decodeTagsJSON(raw string) ([]string, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var tags []string
+	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
+		return nil, err
+	}
+	return tags, nil
 }
 
 func parseLimit(r *http.Request, fallback int) int {

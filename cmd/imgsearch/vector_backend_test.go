@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -89,6 +90,34 @@ func TestDiscoverSQLiteVectorPathUsesEnv(t *testing.T) {
 	}
 	if got != envPath {
 		t.Fatalf("path: got=%q want=%q", got, envPath)
+	}
+}
+
+func TestResolveExistingExtensionPathPrefersPlatformSpecificLibraryForBarePath(t *testing.T) {
+	tmp := t.TempDir()
+	base := filepath.Join(tmp, "vector")
+	if err := os.WriteFile(base, []byte("wrong"), 0o644); err != nil {
+		t.Fatalf("write bare extension file: %v", err)
+	}
+
+	ext := ".so"
+	switch runtime.GOOS {
+	case "darwin":
+		ext = ".dylib"
+	case "windows":
+		ext = ".dll"
+	}
+	platformPath := base + ext
+	if err := os.WriteFile(platformPath, []byte("right"), 0o644); err != nil {
+		t.Fatalf("write platform extension file: %v", err)
+	}
+
+	got, ok := resolveExistingExtensionPath(base)
+	if !ok {
+		t.Fatal("expected resolveExistingExtensionPath to find extension")
+	}
+	if got != platformPath {
+		t.Fatalf("path: got=%q want=%q", got, platformPath)
 	}
 }
 

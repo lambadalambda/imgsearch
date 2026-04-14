@@ -39,6 +39,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "${dest_dir}"
+rm -f "${dest_dir}/vector" "${dest_dir}/vector.dylib" "${dest_dir}/vector.so" "${dest_dir}/vector.dll"
 
 archive="${tmp_dir}/vector.tar.gz"
 curl -fL "${url}" -o "${archive}"
@@ -55,7 +56,12 @@ if [[ ! -f "${source_file}" ]]; then
 fi
 
 cp "${source_file}" "${dest_dir}/vector${ext}"
-cp "${source_file}" "${dest_dir}/vector"
+
+if [[ "${os}" == "darwin" ]]; then
+  codesign --force --sign - "${dest_dir}/vector${ext}"
+fi
+
+ln -sf "vector${ext}" "${dest_dir}/vector"
 
 echo "sqlite-vector installed at ${dest_dir}"
 echo "set SQLITE_VECTOR_PATH=${dest_dir}/vector"

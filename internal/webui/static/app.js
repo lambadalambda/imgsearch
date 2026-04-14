@@ -176,10 +176,21 @@ function setActiveTab(name) {
   clearResultsButton.disabled = state.results.length === 0;
 }
 
+function shouldShowDescriptionToggle(description) {
+  if (!description) {
+    return false;
+  }
+  return description.length > 160 || description.split(/\s+/).length > 28;
+}
+
 function cardMarkup(item, mode) {
   const safeName = escapeHTML(item.original_name);
   const safePath = escapeHTML(item.storage_path);
   const safeImageURL = escapeHTML(toMediaURL(item.storage_path));
+  const description = typeof item.description === 'string' ? item.description.trim() : '';
+  const tags = Array.isArray(item.tags) ? item.tags.filter((tag) => typeof tag === 'string' && tag.trim() !== '').slice(0, 10) : [];
+  const descriptionID = `description-${mode}-${Number(item.image_id) || 0}`;
+  const canExpandDescription = shouldShowDescriptionToggle(description);
   const status = item.index_state || 'done';
   const safeStatus = escapeHTML(status);
   const score = typeof item.distance === 'number' && !item.is_anchor ? `<p class="distance">distance ${item.distance.toFixed(4)}</p>` : '';
@@ -188,6 +199,15 @@ function cardMarkup(item, mode) {
   const disabled = canSearchSimilar ? '' : 'disabled';
   const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';
   const anchorBadge = item.is_anchor ? '<p class="state anchor">anchor</p>' : '';
+  const descriptionMarkup = description
+    ? `<div class="description-wrap" data-expanded="false">
+        <p id="${descriptionID}" class="description">${escapeHTML(description)}</p>
+        ${canExpandDescription ? `<button type="button" class="description-toggle" aria-expanded="false" aria-controls="${descriptionID}">Show more</button>` : ''}
+      </div>`
+    : '';
+  const tagsMarkup = tags.length > 0
+    ? `<ul class="tag-list">${tags.map((tag) => `<li class="tag-chip${tag.trim().toLowerCase() === 'nsfw' ? ' tag-chip-nsfw' : ''}">${escapeHTML(tag)}</li>`).join('')}</ul>`
+    : '';
 
   return `
     <article class="card">
@@ -203,6 +223,8 @@ function cardMarkup(item, mode) {
       <div class="meta">
         <h3>${safeName}</h3>
         <p class="path">${safePath}</p>
+        ${descriptionMarkup}
+        ${tagsMarkup}
         <p class="${stateClass(status)}">${safeStatus}</p>
         ${anchorBadge}
         ${score}
@@ -762,6 +784,25 @@ function attachLightboxHandler(target) {
   });
 }
 
+function attachDescriptionToggleHandler(target) {
+  target.addEventListener('click', (event) => {
+    const button = event.target.closest('.description-toggle');
+    if (!button || !target.contains(button)) {
+      return;
+    }
+
+    const wrap = button.closest('.description-wrap');
+    if (!wrap) {
+      return;
+    }
+
+    const expanded = wrap.dataset.expanded === 'true';
+    wrap.dataset.expanded = expanded ? 'false' : 'true';
+    button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    button.textContent = expanded ? 'Show more' : 'Show less';
+  });
+}
+
 galleryTabButton.addEventListener('click', () => setActiveTab('gallery'));
 resultsTabButton.addEventListener('click', () => setActiveTab('results'));
 
@@ -899,6 +940,8 @@ attachSimilarHandler(galleryGrid);
 attachSimilarHandler(resultsGrid);
 attachLightboxHandler(galleryGrid);
 attachLightboxHandler(resultsGrid);
+attachDescriptionToggleHandler(galleryGrid);
+attachDescriptionToggleHandler(resultsGrid);
 
 if (lightboxCloseButton) {
   lightboxCloseButton.addEventListener('click', closeLightbox);

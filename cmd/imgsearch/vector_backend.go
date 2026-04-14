@@ -98,11 +98,11 @@ func sqliteVectorPathCandidates() []string {
 	exts := []string{""}
 	switch runtime.GOOS {
 	case "darwin":
-		exts = append(exts, ".dylib")
+		exts = []string{".dylib", ""}
 	case "windows":
-		exts = append(exts, ".dll")
+		exts = []string{".dll", ""}
 	default:
-		exts = append(exts, ".so")
+		exts = []string{".so", ""}
 	}
 
 	out := make([]string, 0, len(baseNames)*len(exts))
@@ -122,11 +122,11 @@ func resolveExistingExtensionPath(candidate string) (string, bool) {
 	if filepath.Ext(candidate) == "" {
 		switch runtime.GOOS {
 		case "darwin":
-			paths = append(paths, candidate+".dylib")
+			paths = []string{candidate + ".dylib", candidate}
 		case "windows":
-			paths = append(paths, candidate+".dll")
+			paths = []string{candidate + ".dll", candidate}
 		default:
-			paths = append(paths, candidate+".so")
+			paths = []string{candidate + ".so", candidate}
 		}
 	}
 

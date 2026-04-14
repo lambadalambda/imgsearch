@@ -78,6 +78,13 @@ CREATE INDEX IF NOT EXISTS idx_index_jobs_state_run_after
 ON index_jobs(state, run_after);
 `,
 	},
+	{
+		version: 2,
+		sql: `
+ALTER TABLE images ADD COLUMN description TEXT NOT NULL DEFAULT '';
+ALTER TABLE images ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+`,
+	},
 }
 
 func LatestVersion() int {

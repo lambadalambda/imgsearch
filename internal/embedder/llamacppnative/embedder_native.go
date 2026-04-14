@@ -4,10 +4,13 @@ package llamacppnative
 
 /*
 #cgo CXXFLAGS: -std=c++17 -DIMGSEARCH_LLAMA_NATIVE_ENABLED
+#cgo CPPFLAGS: -I${SRCDIR}/../../../deps/llama.cpp/common
+#cgo CPPFLAGS: -I${SRCDIR}/../../../deps/llama.cpp/vendor
 #cgo CPPFLAGS: -I${SRCDIR}/../../../deps/llama.cpp/include
 #cgo CPPFLAGS: -I${SRCDIR}/../../../deps/llama.cpp/ggml/include
 #cgo CPPFLAGS: -I${SRCDIR}/../../../deps/llama.cpp/tools/mtmd
-#cgo LDFLAGS: -L${SRCDIR}/../../../deps/llama.cpp/build/bin -lllama -lmtmd
+#cgo LDFLAGS: -L${SRCDIR}/../../../deps/llama.cpp/build/bin -lllama -lmtmd -lggml-base
+#cgo LDFLAGS: ${SRCDIR}/../../../deps/llama.cpp/build/common/libcommon.a
 #cgo LDFLAGS: -Wl,-rpath,${SRCDIR}/../../../deps/llama.cpp/build/bin
 #include <stdlib.h>
 #include "bridge.h"

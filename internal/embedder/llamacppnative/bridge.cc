@@ -2,18 +2,23 @@
 
 #ifdef IMGSEARCH_LLAMA_NATIVE_ENABLED
 
+#include "chat.h"
+#include "common.h"
 #include "llama.h"
 #include "mtmd.h"
 #include "mtmd-helper.h"
+#include "sampling.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct imgsearch_llama_handle {
@@ -24,6 +29,7 @@ struct imgsearch_llama_handle {
     int32_t n_batch = 512;
     int32_t image_max_side = 512;
     std::string last_error;
+    common_chat_templates_ptr tmpls;
 };
 
 namespace {
@@ -250,6 +256,7 @@ int32_t eval_prompt(
         return set_error(handle, "llama.cpp handle is not initialized");
     }
 
+    llama_set_embeddings(handle->lctx, true);
     mtmd_input_chunks * chunks = mtmd_input_chunks_init();
     if (chunks == nullptr) {
         return set_error(handle, "failed to allocate mtmd chunks");
@@ -286,6 +293,194 @@ int32_t eval_prompt(
     }
 
     return copy_embedding(handle, out, out_len);
+}
+
+bool ensure_chat_templates(imgsearch_llama_handle * handle) {
+    if (handle == nullptr || handle->model == nullptr) {
+        set_error(handle, "llama.cpp handle is not initialized");
+        return false;
+    }
+    if (handle->tmpls) {
+        return true;
+    }
+    if (!llama_model_chat_template(handle->model, nullptr)) {
+        set_error(handle, "model does not provide a chat template required for generation");
+        return false;
+    }
+
+    try {
+        handle->tmpls = common_chat_templates_init(handle->model, "");
+    } catch (const std::exception & e) {
+        set_error(handle, std::string("failed to initialize chat template: ") + e.what());
+        return false;
+    }
+
+    if (!handle->tmpls) {
+        set_error(handle, "failed to initialize chat template");
+        return false;
+    }
+
+    return true;
+}
+
+int32_t generate_image(
+    imgsearch_llama_handle * handle,
+    const std::string & image,
+    const std::string & system_prompt,
+    const std::string & user_prompt,
+    const std::string & json_schema,
+    int32_t max_tokens,
+    float temperature,
+    float top_p,
+    char * out,
+    int32_t out_len) {
+    if (handle == nullptr || handle->mctx == nullptr || handle->lctx == nullptr) {
+        return set_error(handle, "llama.cpp handle is not initialized");
+    }
+    if (image.empty()) {
+        return set_error(handle, "image_path is required");
+    }
+    if (out == nullptr || out_len <= 1) {
+        return set_error(handle, "generation output buffer is invalid");
+    }
+    if (max_tokens <= 0) {
+        return set_error(handle, "max_tokens must be positive");
+    }
+    if (!ensure_chat_templates(handle)) {
+        return -1;
+    }
+
+    mtmd_bitmap * bitmap = mtmd_helper_bitmap_init_from_file(handle->mctx, image.c_str());
+    if (bitmap == nullptr) {
+        return set_error(handle, "failed to decode image for mtmd input");
+    }
+
+    bitmap = maybe_resize_bitmap(handle, bitmap);
+    if (bitmap == nullptr) {
+        return -1;
+    }
+
+    common_chat_msg user_msg;
+    user_msg.role = "user";
+    if (!user_prompt.empty()) {
+        user_msg.content_parts.push_back({"text", user_prompt});
+    }
+    user_msg.content_parts.push_back({"media_marker", mtmd_default_marker()});
+
+    std::vector<common_chat_msg> messages;
+    if (!system_prompt.empty()) {
+        common_chat_msg system_msg;
+        system_msg.role = "system";
+        system_msg.content = system_prompt;
+        messages.push_back(std::move(system_msg));
+    }
+    messages.push_back(std::move(user_msg));
+
+    common_chat_templates_inputs inputs;
+    inputs.messages = std::move(messages);
+    inputs.use_jinja = true;
+    inputs.add_generation_prompt = true;
+    inputs.enable_thinking = false;
+    if (!json_schema.empty()) {
+        inputs.json_schema = json_schema;
+    }
+
+    common_chat_params chat_params;
+    try {
+        chat_params = common_chat_templates_apply(handle->tmpls.get(), inputs);
+    } catch (const std::exception & e) {
+        mtmd_bitmap_free(bitmap);
+        return set_error(handle, std::string("failed to apply chat template: ") + e.what());
+    }
+
+    mtmd_input_text text{};
+    text.text = chat_params.prompt.c_str();
+    text.add_special = true;
+    text.parse_special = true;
+
+    mtmd_input_chunks * chunks = mtmd_input_chunks_init();
+    if (chunks == nullptr) {
+        mtmd_bitmap_free(bitmap);
+        return set_error(handle, "failed to allocate mtmd chunks");
+    }
+
+    const mtmd_bitmap * bitmaps[] = {bitmap};
+    if (mtmd_tokenize(handle->mctx, chunks, &text, bitmaps, 1) != 0) {
+        mtmd_input_chunks_free(chunks);
+        mtmd_bitmap_free(bitmap);
+        return set_error(handle, "mtmd tokenization failed");
+    }
+
+    llama_set_embeddings(handle->lctx, false);
+    llama_memory_clear(llama_get_memory(handle->lctx), true);
+
+    llama_pos n_past = 0;
+    if (mtmd_helper_eval_chunks(handle->mctx, handle->lctx, chunks, 0, 0, handle->n_batch, true, &n_past) != 0) {
+        mtmd_input_chunks_free(chunks);
+        mtmd_bitmap_free(bitmap);
+        return set_error(handle, "mtmd evaluation failed");
+    }
+
+    mtmd_input_chunks_free(chunks);
+    mtmd_bitmap_free(bitmap);
+
+    common_params_sampling sampling;
+    sampling.top_k = 64;
+    sampling.top_p = top_p > 0.0f ? top_p : 1.0f;
+    sampling.temp = temperature;
+    if (!chat_params.grammar.empty()) {
+        sampling.grammar = {COMMON_GRAMMAR_TYPE_OUTPUT_FORMAT, chat_params.grammar};
+        sampling.grammar_lazy = chat_params.grammar_lazy;
+        sampling.grammar_triggers = chat_params.grammar_triggers;
+        sampling.generation_prompt = chat_params.generation_prompt;
+    }
+
+    common_sampler_ptr sampler;
+    try {
+        sampler.reset(common_sampler_init(handle->model, sampling));
+    } catch (const std::exception & e) {
+        return set_error(handle, std::string("failed to initialize sampler: ") + e.what());
+    }
+
+    llama_batch batch = llama_batch_init(1, 0, 1);
+    std::vector<llama_token> generated_tokens;
+    generated_tokens.reserve(static_cast<size_t>(max_tokens));
+
+    for (int32_t i = 0; i < max_tokens; i++) {
+        const llama_token token_id = common_sampler_sample(sampler.get(), handle->lctx, -1);
+        generated_tokens.push_back(token_id);
+        common_sampler_accept(sampler.get(), token_id, true);
+
+        if (llama_vocab_is_eog(llama_model_get_vocab(handle->model), token_id)) {
+            break;
+        }
+
+        common_batch_clear(batch);
+        common_batch_add(batch, token_id, n_past++, {0}, true);
+        if (llama_decode(handle->lctx, batch) != 0) {
+            llama_batch_free(batch);
+            return set_error(handle, "failed to decode generated token");
+        }
+    }
+
+    llama_batch_free(batch);
+
+    std::string generated = common_detokenize(handle->lctx, generated_tokens, true);
+    const auto nul_pos = generated.find('\0');
+    if (nul_pos != std::string::npos) {
+        generated.resize(nul_pos);
+    }
+    while (!generated.empty() && (generated.back() == '\n' || generated.back() == '\r' || generated.back() == ' ' || generated.back() == '\t')) {
+        generated.pop_back();
+    }
+
+    if (static_cast<int32_t>(generated.size()) >= out_len) {
+        return set_error(handle, "generation output exceeded buffer");
+    }
+
+    std::memcpy(out, generated.data(), generated.size());
+    out[generated.size()] = '\0';
+    return 0;
 }
 
 } // namespace
@@ -460,6 +655,30 @@ int32_t imgsearch_llama_embed_image(
     return res;
 }
 
+int32_t imgsearch_llama_generate_image(
+    imgsearch_llama_handle * handle,
+    const char * image_path,
+    const char * system_prompt,
+    const char * user_prompt,
+    const char * json_schema,
+    int32_t max_tokens,
+    float temperature,
+    float top_p,
+    char * out,
+    int32_t out_len) {
+    return generate_image(
+        handle,
+        trim(image_path),
+        trim(system_prompt),
+        trim(user_prompt),
+        trim(json_schema),
+        max_tokens,
+        temperature,
+        top_p,
+        out,
+        out_len);
+}
+
 const char * imgsearch_llama_last_error(const imgsearch_llama_handle * handle) {
     if (handle == nullptr) {
         return "";
@@ -513,6 +732,20 @@ int32_t imgsearch_llama_embed_image(
     const char *,
     const char *,
     float *,
+    int32_t) {
+    return -1;
+}
+
+int32_t imgsearch_llama_generate_image(
+    imgsearch_llama_handle *,
+    const char *,
+    const char *,
+    const char *,
+    const char *,
+    int32_t,
+    float,
+    float,
+    char *,
     int32_t) {
     return -1;
 }

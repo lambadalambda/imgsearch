@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"imgsearch/internal/app"
@@ -47,6 +48,15 @@ func main() {
 	llamaNativeThreads := flag.Int("llama-native-threads", 0, "thread count for llama-cpp-native runtime (0 uses backend default)")
 	llamaNativeImageMaxSide := flag.Int("llama-native-image-max-side", 512, "maximum image side length used before llama-cpp-native embedding")
 	llamaNativeImageMaxTokens := flag.Int("llama-native-image-max-tokens", 0, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
+	llamaNativeAnnotatorModelPath := flag.String("llama-native-annotator-model-path", "", "optional path to a separate llama.cpp GGUF vision model used only for image descriptions/tags")
+	llamaNativeAnnotatorMMProjPath := flag.String("llama-native-annotator-mmproj-path", "", "optional path to a separate llama.cpp GGUF mmproj used only for image descriptions/tags")
+	llamaNativeAnnotatorGPULayers := flag.Int("llama-native-annotator-gpu-layers", 99, "number of layers to offload for the separate llama-cpp-native annotator")
+	llamaNativeAnnotatorUseGPU := flag.Bool("llama-native-annotator-use-gpu", true, "whether the separate llama-cpp-native annotator should use GPU for mtmd/mmproj")
+	llamaNativeAnnotatorContextSize := flag.Int("llama-native-annotator-context-size", 8192, "context size for the separate llama-cpp-native annotator")
+	llamaNativeAnnotatorBatchSize := flag.Int("llama-native-annotator-batch-size", 512, "batch size for the separate llama-cpp-native annotator")
+	llamaNativeAnnotatorThreads := flag.Int("llama-native-annotator-threads", 0, "thread count for the separate llama-cpp-native annotator (0 uses backend default)")
+	llamaNativeAnnotatorImageMaxSide := flag.Int("llama-native-annotator-image-max-side", 1024, "maximum image side length used before separate llama-cpp-native annotation generation")
+	llamaNativeAnnotatorImageMaxTokens := flag.Int("llama-native-annotator-image-max-tokens", 0, "optional maximum image tokens override for the separate llama-cpp-native annotator (0 uses model default)")
 	vectorBackend := flag.String("vector-backend", vectorBackendAuto, "vector backend: auto, sqlite-vector, bruteforce")
 	sqliteVectorPath := flag.String("sqlite-vector-path", "", "path to sqlite-vector extension binary (optional: defaults to SQLITE_VECTOR_PATH or tools/sqlite-vector/vector)")
 	flag.Parse()
@@ -189,9 +199,9 @@ func main() {
 		log.Printf("enqueued %d missing index jobs for model_id=%d", enqueuedMissing, modelID)
 	}
 
-	embedder := embedder.Embedder(nil)
+	activeEmbedder := embedder.Embedder(nil)
 	if *embedderType == "llama-cpp" {
-		embedder, err = newLlamaCPPEmbedder(llamaCPPEmbedderOptions{
+		activeEmbedder, err = newLlamaCPPEmbedder(llamaCPPEmbedderOptions{
 			URL:                *llamaCPPURL,
 			Dimensions:         modelSpec.Dimensions,
 			Model:              *llamaCPPModel,
@@ -199,7 +209,7 @@ func main() {
 			PassageInstruction: *llamaCPPPassageInstruction,
 		})
 	} else if *embedderType == "llama-cpp-native" {
-		embedder, err = newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
+		activeEmbedder, err = newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
 			ModelPath:          *llamaNativeModelPath,
 			VisionModelPath:    *llamaNativeMMProjPath,
 			Dimensions:         modelSpec.Dimensions,
@@ -214,11 +224,45 @@ func main() {
 			PassageInstruction: *llamaCPPPassageInstruction,
 		})
 	} else {
-		embedder, err = newEmbedder(*embedderType, *jinaURL, modelSpec.Dimensions, *embedImageMode)
+		activeEmbedder, err = newEmbedder(*embedderType, *jinaURL, modelSpec.Dimensions, *embedImageMode)
 	}
 	if err != nil {
 		log.Fatalf("configure embedder: %v", err)
 	}
+	if closer, ok := activeEmbedder.(interface{ Close() error }); ok {
+		defer func() { _ = closer.Close() }()
+	}
+
+	imageAnnotator, canAnnotateImages := activeEmbedder.(embedder.ImageAnnotator)
+	annotatorModelPath := strings.TrimSpace(*llamaNativeAnnotatorModelPath)
+	annotatorVisionPath := strings.TrimSpace(*llamaNativeAnnotatorMMProjPath)
+	if annotatorModelPath != "" || annotatorVisionPath != "" {
+		if annotatorModelPath == "" || annotatorVisionPath == "" {
+			log.Fatalf("configure annotator: both -llama-native-annotator-model-path and -llama-native-annotator-mmproj-path must be set together")
+		}
+		imageAnnotator, err = newLlamaCPPNativeAnnotator(llamaCPPNativeAnnotatorOptions{
+			ModelPath:       annotatorModelPath,
+			VisionModelPath: annotatorVisionPath,
+			GPULayers:       *llamaNativeAnnotatorGPULayers,
+			UseGPU:          *llamaNativeAnnotatorUseGPU,
+			ContextSize:     *llamaNativeAnnotatorContextSize,
+			BatchSize:       *llamaNativeAnnotatorBatchSize,
+			Threads:         *llamaNativeAnnotatorThreads,
+			ImageMaxSide:    *llamaNativeAnnotatorImageMaxSide,
+			ImageMaxTokens:  *llamaNativeAnnotatorImageMaxTokens,
+		})
+		if err != nil {
+			log.Fatalf("configure annotator: %v", err)
+		}
+		if closer, ok := imageAnnotator.(interface{ Close() error }); ok {
+			defer func() { _ = closer.Close() }()
+		}
+		canAnnotateImages = true
+		log.Printf("image annotations enabled via separate native annotator model %s", annotatorModelPath)
+	} else if canAnnotateImages {
+		log.Printf("image annotations enabled via active embedder model")
+	}
+
 	uploadSvc := &upload.Service{
 		DB:      sqlDB,
 		DataDir: *dataDir,
@@ -230,12 +274,13 @@ func main() {
 		DataDir:        *dataDir,
 		LeaseDuration:  30 * time.Second,
 		RetryBaseDelay: 5 * time.Second,
-		Embedder:       embedder,
+		Embedder:       activeEmbedder,
+		Annotator:      imageAnnotator,
 		Index:          index,
 	}
 	go worker.RunLoop(context.Background(), queue, "main-worker", 500*time.Millisecond)
 
-	mux := newServerMux(sqlDB, *dataDir, modelID, embedder, index, uploadSvc)
+	mux := newServerMux(sqlDB, *dataDir, modelID, activeEmbedder, index, uploadSvc)
 
 	log.Printf("imgsearch initialized with database %s", dbPath)
 	log.Printf("using vector backend %s", resolvedVectorBackend)

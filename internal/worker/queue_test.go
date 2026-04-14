@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"imgsearch/internal/db"
+	"imgsearch/internal/embedder"
 	"imgsearch/internal/vectorindex"
 )
 
@@ -32,6 +34,18 @@ func (f *fakeEmbedder) EmbedImage(_ context.Context, _ string) ([]float32, error
 type fakeIndex struct {
 	upserts []vectorindex.SearchHit
 	err     error
+}
+
+type fakeAnnotator struct {
+	annotation embedder.ImageAnnotation
+	err        error
+}
+
+func (f *fakeAnnotator) AnnotateImage(context.Context, string) (embedder.ImageAnnotation, error) {
+	if f.err != nil {
+		return embedder.ImageAnnotation{}, f.err
+	}
+	return f.annotation, nil
 }
 
 func (f *fakeIndex) Upsert(_ context.Context, imageID int64, modelID int64, _ []float32) error {
@@ -136,6 +150,64 @@ func TestProcessOneSuccessStoresEmbeddingAndMarksDone(t *testing.T) {
 	}
 	if dim != 4 {
 		t.Fatalf("expected dim 4, got %d", dim)
+	}
+}
+
+func TestProcessOneStoresGeneratedAnnotationsWhenAvailable(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	q.Annotator = &fakeAnnotator{annotation: embedder.ImageAnnotation{
+		Description: "A calm test image.",
+		Tags:        []string{"test", "sample", "nsfw"},
+	}}
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+
+	var description string
+	var tagsJSON string
+	if err := sqlDB.QueryRow(`SELECT description, tags_json FROM images WHERE id = 1`).Scan(&description, &tagsJSON); err != nil {
+		t.Fatalf("load stored annotations: %v", err)
+	}
+	if description != "A calm test image." {
+		t.Fatalf("unexpected description: %q", description)
+	}
+	var tags []string
+	if err := json.Unmarshal([]byte(tagsJSON), &tags); err != nil {
+		t.Fatalf("decode stored tags: %v", err)
+	}
+	if len(tags) != 3 || tags[2] != "nsfw" {
+		t.Fatalf("unexpected tags: %v", tags)
+	}
+}
+
+func TestProcessOneStillCompletesWhenAnnotationGenerationFails(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	q.Annotator = &fakeAnnotator{err: errors.New("annotate failed")}
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+
+	var state string
+	var description string
+	var tagsJSON string
+	if err := sqlDB.QueryRow(`SELECT j.state, i.description, i.tags_json FROM index_jobs j JOIN images i ON i.id = j.image_id WHERE j.id = 1`).Scan(&state, &description, &tagsJSON); err != nil {
+		t.Fatalf("load final state: %v", err)
+	}
+	if state != "done" {
+		t.Fatalf("expected job state done, got %s", state)
+	}
+	if description != "" || tagsJSON != "[]" {
+		t.Fatalf("expected annotations to remain empty, got description=%q tags_json=%q", description, tagsJSON)
 	}
 }
 

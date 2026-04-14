@@ -19,6 +19,44 @@ func openTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
+func TestRunMigrationsAddsImageAnnotationColumns(t *testing.T) {
+	db := openTestDB(t)
+
+	if err := RunMigrations(context.Background(), db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
+	columns := []string{"description", "tags_json"}
+	for _, column := range columns {
+		rows, err := db.Query(`PRAGMA table_info(images)`)
+		if err != nil {
+			t.Fatalf("pragma table_info(images): %v", err)
+		}
+		var count int
+		for rows.Next() {
+			var (
+				cid        int
+				name       string
+				columnType string
+				notNull    int
+				defaultVal any
+				pk         int
+			)
+			if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &pk); err != nil {
+				_ = rows.Close()
+				t.Fatalf("scan pragma row: %v", err)
+			}
+			if name == column {
+				count++
+			}
+		}
+		_ = rows.Close()
+		if count != 1 {
+			t.Fatalf("expected images.%s column to exist exactly once, got %d", column, count)
+		}
+	}
+}
+
 func TestRunMigrationsIdempotent(t *testing.T) {
 	db := openTestDB(t)
 	ctx := context.Background()

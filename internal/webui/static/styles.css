@@ -404,6 +404,71 @@ input:focus-visible {
   font-size: 0.82rem;
 }
 
+.description {
+	margin: 0;
+	color: var(--ink);
+	font-size: 0.88rem;
+	line-height: 1.45;
+	display: -webkit-box;
+	-webkit-line-clamp: 4;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.description-wrap {
+	display: grid;
+	gap: 6px;
+}
+
+.description-wrap[data-expanded="true"] .description {
+	display: block;
+	-webkit-line-clamp: unset;
+	-webkit-box-orient: initial;
+	overflow: visible;
+}
+
+.description-toggle {
+	justify-self: start;
+	padding: 0;
+	border-radius: 0;
+	background: transparent;
+	color: var(--accent-strong);
+	font-size: 0.8rem;
+	font-weight: 600;
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.description-toggle:hover {
+	color: var(--accent);
+}
+
+.tag-list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.tag-chip {
+	display: inline-flex;
+	align-items: center;
+	padding: 4px 8px;
+	border-radius: 999px;
+	background: #f0eadf;
+	color: var(--muted-strong);
+	font-size: 0.76rem;
+	line-height: 1;
+	text-transform: lowercase;
+}
+
+.tag-chip-nsfw {
+	background: #fae5e4;
+	color: var(--bad);
+}
+
 .path {
   word-break: break-all;
 }

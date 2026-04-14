@@ -99,6 +99,13 @@ VALUES
 
 func TestTextSearchReturnsRankedResults(t *testing.T) {
 	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images
+SET description = 'Friendly dog in the library.', tags_json = '["dog","library"]'
+WHERE id = 2
+`); err != nil {
+		t.Fatalf("seed annotations: %v", err)
+	}
 	h := NewHandler(&Handler{
 		DB:       dbConn,
 		ModelID:  1,
@@ -127,6 +134,12 @@ func TestTextSearchReturnsRankedResults(t *testing.T) {
 	}
 	if resp.Results[0].ImageID != 2 || resp.Results[1].ImageID != 1 {
 		t.Fatalf("unexpected ordering: %+v", resp.Results)
+	}
+	if resp.Results[0].Description != "Friendly dog in the library." {
+		t.Fatalf("unexpected description: %q", resp.Results[0].Description)
+	}
+	if len(resp.Results[0].Tags) != 2 || resp.Results[0].Tags[0] != "dog" {
+		t.Fatalf("unexpected tags: %v", resp.Results[0].Tags)
 	}
 }
 

@@ -53,6 +53,13 @@ VALUES
 
 func TestListImagesReturnsResults(t *testing.T) {
 	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images
+SET description = 'A stored gallery description.', tags_json = '["gallery","sample"]'
+WHERE id = 3
+`); err != nil {
+		t.Fatalf("seed annotations: %v", err)
+	}
 	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/images?limit=2&offset=0", nil)
@@ -81,6 +88,12 @@ func TestListImagesReturnsResults(t *testing.T) {
 	}
 	if resp.Images[1].IndexState != "pending" {
 		t.Fatalf("expected pending state, got %s", resp.Images[1].IndexState)
+	}
+	if resp.Images[0].Description != "A stored gallery description." {
+		t.Fatalf("unexpected description: %q", resp.Images[0].Description)
+	}
+	if len(resp.Images[0].Tags) != 2 || resp.Images[0].Tags[0] != "gallery" {
+		t.Fatalf("unexpected tags: %v", resp.Images[0].Tags)
 	}
 }
 
