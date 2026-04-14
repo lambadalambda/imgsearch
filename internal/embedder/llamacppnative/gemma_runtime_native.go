@@ -23,6 +23,10 @@ const gemmaTagsJSONSchema = `{"type":"object","properties":{"tags":{"type":"arra
 const gemmaDescriptionAndTagsJSONSchema = `{"type":"object","properties":{"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true}},"required":["description","tags"],"additionalProperties":false}`
 const gemmaAppAnnotationJSONSchema = `{"type":"object","properties":{"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true},"is_nsfw":{"type":"boolean"}},"required":["description","tags","is_nsfw"],"additionalProperties":false}`
 
+const gemmaAppAnnotationSystemPrompt = "You are annotating a private image collection. Return only valid JSON with a useful medium-length description and concise search tags for visible image content. Descriptions may be explicit when the image contains sexual, erotic, nude, fetish, or graphic content; do not sanitize or euphemize clearly visible NSFW material. If the image contains legible text, captions, memes, signs, labels, or screenshots, include the visible text in the description."
+
+const gemmaAppAnnotationUserPrompt = "Describe this image in one medium-length paragraph of 2 to 4 sentences. Focus on the main subject, visible attributes, composition, setting, and any clearly visible actions. This is a private collection, so if the image contains explicit nudity, sexual activity, fetish content, or other not-safe-for-work material, describe that content directly and concretely instead of softening it. If the image contains legible text, transcribe the important visible text in the description as accurately as possible and mention when the image is a meme, screenshot, poster, sign, label, or other text-heavy image. Then return 3 to 10 unique lowercase tags that are most relevant for search. If the image contains explicit nudity, sexual content, fetish content, graphic gore, or other clearly not-safe-for-work material, set is_nsfw to true and include the tag nsfw. Otherwise set is_nsfw to false and do not include the tag nsfw. Avoid speculation, avoid repetition, and keep the description grounded in what is visible."
+
 type gemmaImageDescription struct {
 	ShortDescription string   `json:"short_description"`
 	Labels           []string `json:"labels"`
@@ -75,8 +79,8 @@ func (e *Embedder) AnnotateImage(_ context.Context, imagePath string) (coreembed
 		e.handle,
 		e.imageMaxSide,
 		imagePath,
-		"You are a precise vision model. Return only valid JSON with a useful medium-length description and concise tags for visible image content.",
-		"Describe this image in one medium-length paragraph of 2 to 4 sentences. Focus on the main subject, visible attributes, composition, and setting. Then return 3 to 10 unique lowercase tags that are most relevant for search. If the image contains explicit nudity, sexual content, fetish content, graphic gore, or other clearly not-safe-for-work material, set is_nsfw to true and include the tag nsfw. Otherwise set is_nsfw to false and do not include the tag nsfw. Avoid speculation, avoid repetition, and keep the description grounded in what is visible.",
+		gemmaAppAnnotationSystemPrompt,
+		gemmaAppAnnotationUserPrompt,
 		gemmaAppAnnotationJSONSchema,
 		220,
 	)
@@ -151,8 +155,8 @@ func (r *nativeGemmaRuntime) AnnotateImage(_ context.Context, imagePath string) 
 		r.handle,
 		r.imageMaxSide,
 		imagePath,
-		"You are a precise vision model. Return only valid JSON with a useful medium-length description and concise tags for visible image content.",
-		"Describe this image in one medium-length paragraph of 2 to 4 sentences. Focus on the main subject, visible attributes, composition, and setting. Then return 3 to 10 unique lowercase tags that are most relevant for search. If the image contains explicit nudity, sexual content, fetish content, graphic gore, or other clearly not-safe-for-work material, set is_nsfw to true and include the tag nsfw. Otherwise set is_nsfw to false and do not include the tag nsfw. Avoid speculation, avoid repetition, and keep the description grounded in what is visible.",
+		gemmaAppAnnotationSystemPrompt,
+		gemmaAppAnnotationUserPrompt,
 		gemmaAppAnnotationJSONSchema,
 		220,
 	)
