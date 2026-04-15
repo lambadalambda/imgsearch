@@ -62,7 +62,7 @@ DO UPDATE SET
   dim = excluded.dim,
   vector_blob = excluded.vector_blob,
   updated_at = datetime('now')
-`, imageID, modelID, len(vec), floatsToBlob(vec)); err != nil {
+`, imageID, modelID, len(vec), vectorindex.FloatsToBlob(vec)); err != nil {
 			return err
 		}
 	}

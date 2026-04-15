@@ -11,7 +11,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P1 Enable SQLite foreign key enforcement: `docs/issues/005-enable-sqlite-foreign-keys.md`
 - [x] P2 Harden native runtime concurrency and cancellation behavior: `docs/issues/006-native-runtime-safety.md`
 - [x] P2 Clean up the search hot path before performance tuning: `docs/issues/007-search-hot-path-cleanup.md`
-- [ ] P2 Extract shared helpers and repeated rules: `docs/issues/008-shared-helper-dedup.md`
+- [x] P2 Extract shared helpers and repeated rules: `docs/issues/008-shared-helper-dedup.md`
 - [x] P2 Harden default model downloads and startup network behavior: `docs/issues/009-default-model-download-hardening.md`
 - [x] P3 Refresh architecture and decision docs after the native-only cutover: `docs/issues/010-doc-drift-after-native-only.md`
 

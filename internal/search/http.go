@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/httputil"
 	"imgsearch/internal/vectorindex"
 )
 
@@ -50,44 +51,44 @@ func NewHandler(h *Handler) http.Handler {
 
 func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
-		writeJSONError(w, http.StatusBadRequest, "missing query")
+		httputil.WriteJSONError(w, http.StatusBadRequest, "missing query")
 		return
 	}
 	neg := strings.TrimSpace(r.URL.Query().Get("neg"))
 	if len(neg) > maxNegativePromptChars {
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("negative prompt too long (max %d characters)", maxNegativePromptChars))
+		httputil.WriteJSONError(w, http.StatusBadRequest, fmt.Sprintf("negative prompt too long (max %d characters)", maxNegativePromptChars))
 		return
 	}
 
 	vec, err := h.embedQueryVector(r.Context(), q, neg)
 	if err != nil {
 		if errors.Is(err, errNegativeEmbedding) {
-			writeJSONError(w, http.StatusInternalServerError, "negative embedding failed")
+			httputil.WriteJSONError(w, http.StatusInternalServerError, "negative embedding failed")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "embedding failed")
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "embedding failed")
 		return
 	}
 
 	limit := parseLimit(r, 20)
 	hits, err := h.Index.Search(r.Context(), h.ModelID, vec, limit)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "search failed")
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "search failed")
 		return
 	}
 
 	results, err := h.enrich(r.Context(), hits)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "result enrich failed")
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "result enrich failed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, SearchResponse{Results: results})
+	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results})
 }
 
 var errNegativeEmbedding = errors.New("negative embedding failed")
@@ -147,17 +148,17 @@ func combineQueryWithNegative(query []float32, negative []float32) ([]float32, e
 
 func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	imageIDStr := r.URL.Query().Get("image_id")
 	if imageIDStr == "" {
-		writeJSONError(w, http.StatusBadRequest, "missing image_id")
+		httputil.WriteJSONError(w, http.StatusBadRequest, "missing image_id")
 		return
 	}
 	imageID, err := strconv.ParseInt(imageIDStr, 10, 64)
 	if err != nil || imageID <= 0 {
-		writeJSONError(w, http.StatusBadRequest, "invalid image_id")
+		httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image_id")
 		return
 	}
 
@@ -165,20 +166,20 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 	hits, err := h.Index.SearchByImageID(r.Context(), h.ModelID, imageID, limit)
 	if err != nil {
 		if errors.Is(err, vectorindex.ErrNotFound) {
-			writeJSONError(w, http.StatusNotFound, "image not indexed")
+			httputil.WriteJSONError(w, http.StatusNotFound, "image not indexed")
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "search failed")
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "search failed")
 		return
 	}
 
 	results, err := h.enrich(r.Context(), hits)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "result enrich failed")
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "result enrich failed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, SearchResponse{Results: results})
+	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results})
 }
 
 func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]SearchResult, error) {
@@ -277,14 +278,4 @@ func parseLimit(r *http.Request, fallback int) int {
 		return fallback
 	}
 	return n
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeJSONError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
 }

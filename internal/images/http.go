@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+
+	"imgsearch/internal/httputil"
 )
 
 type Handler struct {
@@ -118,7 +120,7 @@ func decodeTagsJSON(raw string) ([]string, error) {
 func NewHandler(h *Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 
@@ -127,11 +129,11 @@ func NewHandler(h *Handler) http.Handler {
 
 		resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "query failed")
+			httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
 			return
 		}
 
-		writeJSON(w, http.StatusOK, resp)
+		httputil.WriteJSON(w, http.StatusOK, resp)
 	})
 }
 
@@ -157,16 +159,6 @@ func parseOffset(r *http.Request) int {
 		return 0
 	}
 	return n
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeJSONError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
 }
 
 func (h *Handler) String() string {

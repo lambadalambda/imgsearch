@@ -4,6 +4,15 @@
 
 P2
 
+## Status
+
+Completed for the highest-value shared helpers.
+
+- Shared JSON response helpers now live in `internal/httputil`.
+- Shared float32/blob codec helpers now live in `internal/vectorindex`.
+- The obvious duplicate helper implementations in handler packages and vector index packages have been removed.
+- Remaining low-value duplication such as local tag decoding and pagination parsing can stay local unless a future change gives them a clearer shared home.
+
 ## Summary
 
 There are several small but repeated helpers across packages that are now worth centralizing. This is not the highest-priority work, but it will make future changes less noisy and less error-prone.
@@ -41,6 +50,8 @@ There are several small but repeated helpers across packages that are now worth 
 - The most obvious helper duplication is removed.
 - Existing tests still pass unchanged or with only mechanical updates.
 - Shared logic has a natural home and is not over-abstracted.
+
+All acceptance criteria are satisfied by the current implementation.
 
 ## Related Files
 

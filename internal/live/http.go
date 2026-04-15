@@ -3,7 +3,6 @@ package live
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"net"
 	"net/http"
 	"net/url"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"imgsearch/internal/httputil"
 	"imgsearch/internal/images"
 	"imgsearch/internal/stats"
 )
@@ -70,11 +70,11 @@ var upgrader = websocket.Upgrader{
 func NewHandler(h *Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h == nil || h.DB == nil {
-			writeJSONError(w, http.StatusInternalServerError, "live updates unavailable")
+			httputil.WriteJSONError(w, http.StatusInternalServerError, "live updates unavailable")
 			return
 		}
 		if r.Method != http.MethodGet {
-			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 
@@ -217,10 +217,4 @@ func defaultPortForScheme(scheme string) string {
 	default:
 		return "80"
 	}
-}
-
-func writeJSONError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

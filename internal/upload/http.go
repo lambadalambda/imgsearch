@@ -1,10 +1,11 @@
 package upload
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"path/filepath"
+
+	"imgsearch/internal/httputil"
 )
 
 const maxUploadBytes = 20 << 20
@@ -24,20 +25,20 @@ type UploadBatchResponse struct {
 func NewHandler(svc *Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 
 		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 
 		if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid multipart upload")
+			httputil.WriteJSONError(w, http.StatusBadRequest, "invalid multipart upload")
 			return
 		}
 
 		files := r.MultipartForm.File["file"]
 		if len(files) == 0 {
-			writeJSONError(w, http.StatusBadRequest, "missing file")
+			httputil.WriteJSONError(w, http.StatusBadRequest, "missing file")
 			return
 		}
 
@@ -47,7 +48,7 @@ func NewHandler(svc *Service) http.Handler {
 		for _, header := range files {
 			file, err := header.Open()
 			if err != nil {
-				writeJSONError(w, http.StatusBadRequest, "invalid file upload")
+				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid file upload")
 				return
 			}
 
@@ -55,10 +56,10 @@ func NewHandler(svc *Service) http.Handler {
 			_ = file.Close()
 			if err != nil {
 				if errors.Is(err, ErrUnsupportedFormat) {
-					writeJSONError(w, http.StatusBadRequest, "unsupported image format")
+					httputil.WriteJSONError(w, http.StatusBadRequest, "unsupported image format")
 					return
 				}
-				writeJSONError(w, http.StatusInternalServerError, "upload failed")
+				httputil.WriteJSONError(w, http.StatusInternalServerError, "upload failed")
 				return
 			}
 
@@ -79,18 +80,10 @@ func NewHandler(svc *Service) http.Handler {
 			status = http.StatusOK
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(UploadBatchResponse{
+		httputil.WriteJSON(w, status, UploadBatchResponse{
 			Uploads:    uploads,
 			Created:    created,
 			Duplicates: duplicates,
 		})
 	})
-}
-
-func writeJSONError(w http.ResponseWriter, status int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

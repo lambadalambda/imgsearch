@@ -3,7 +3,6 @@ package bruteforce
 import (
 	"context"
 	"database/sql"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -36,7 +35,7 @@ DO UPDATE SET
   dim = excluded.dim,
   vector_blob = excluded.vector_blob,
   updated_at = datetime('now')
-`, imageID, modelID, len(vec), floatsToBlob(vec))
+`, imageID, modelID, len(vec), vectorindex.FloatsToBlob(vec))
 	if err != nil {
 		return fmt.Errorf("upsert embedding vector: %w", err)
 	}
@@ -84,7 +83,7 @@ WHERE model_id = ?
 			return nil, fmt.Errorf("scan embedding vector: %w", err)
 		}
 
-		vec := blobToFloats(blob)
+		vec := vectorindex.BlobToFloats(blob)
 		if len(vec) == 0 {
 			return nil, fmt.Errorf("decode embedding vector for image %d", imageID)
 		}
@@ -130,7 +129,7 @@ WHERE image_id = ? AND model_id = ?
 		return nil, fmt.Errorf("load query image vector: %w", err)
 	}
 
-	query := blobToFloats(blob)
+	query := vectorindex.BlobToFloats(blob)
 	if len(query) == 0 {
 		return nil, fmt.Errorf("decode query image vector")
 	}
@@ -176,23 +175,4 @@ func cosine(a, b []float32) float64 {
 		return 0
 	}
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
-}
-
-func floatsToBlob(values []float32) []byte {
-	blob := make([]byte, len(values)*4)
-	for i, v := range values {
-		binary.LittleEndian.PutUint32(blob[i*4:], math.Float32bits(v))
-	}
-	return blob
-}
-
-func blobToFloats(blob []byte) []float32 {
-	if len(blob)%4 != 0 {
-		return nil
-	}
-	out := make([]float32, len(blob)/4)
-	for i := range out {
-		out[i] = math.Float32frombits(binary.LittleEndian.Uint32(blob[i*4:]))
-	}
-	return out
 }

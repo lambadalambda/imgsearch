@@ -3,9 +3,10 @@ package stats
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"imgsearch/internal/httputil"
 )
 
 type Handler struct {
@@ -207,31 +208,21 @@ ORDER BY kind
 func NewHandler(h *Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h == nil || h.DB == nil {
-			writeJSONError(w, http.StatusInternalServerError, "stats backend unavailable")
+			httputil.WriteJSONError(w, http.StatusInternalServerError, "stats backend unavailable")
 			return
 		}
 
 		if r.Method != http.MethodGet {
-			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 
 		resp, err := Collect(r.Context(), h.DB, h.ModelID)
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "query failed")
+			httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
 			return
 		}
 
-		writeJSON(w, http.StatusOK, resp)
+		httputil.WriteJSON(w, http.StatusOK, resp)
 	})
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func writeJSONError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
 }

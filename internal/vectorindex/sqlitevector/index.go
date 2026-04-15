@@ -3,10 +3,8 @@ package sqlitevector
 import (
 	"context"
 	"database/sql"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"math"
 	"sync"
 
 	"imgsearch/internal/vectorindex"
@@ -35,7 +33,7 @@ DO UPDATE SET
   vector_blob = excluded.vector_blob,
   dim = excluded.dim,
   updated_at = datetime('now')
-`, imageID, modelID, len(vec), floatsToBlob(vec))
+`, imageID, modelID, len(vec), vectorindex.FloatsToBlob(vec))
 	if err != nil {
 		return fmt.Errorf("update embedding vector for index: %w", err)
 	}
@@ -76,7 +74,7 @@ JOIN vector_full_scan('image_embeddings', 'vector_blob', ?, ?) AS v
 WHERE ie.model_id = ?
 ORDER BY v.distance ASC
 LIMIT ?
-`, floatsToBlob(query), scanK, modelID, limit)
+`, vectorindex.FloatsToBlob(query), scanK, modelID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("vector search query: %w", err)
 	}
@@ -116,7 +114,7 @@ SELECT vector_blob FROM image_embeddings WHERE image_id = ? AND model_id = ?
 		return nil, fmt.Errorf("load image query vector: %w", err)
 	}
 
-	vec := blobToFloats(blob)
+	vec := vectorindex.BlobToFloats(blob)
 	hits, err := i.Search(ctx, modelID, vec, limit+1)
 	if err != nil {
 		return nil, err
@@ -154,23 +152,4 @@ SELECT vector_init('image_embeddings', 'vector_blob', ?)
 	}
 	i.initialized[modelID] = true
 	return nil
-}
-
-func floatsToBlob(values []float32) []byte {
-	blob := make([]byte, len(values)*4)
-	for i, v := range values {
-		binary.LittleEndian.PutUint32(blob[i*4:], math.Float32bits(v))
-	}
-	return blob
-}
-
-func blobToFloats(blob []byte) []float32 {
-	if len(blob)%4 != 0 {
-		return nil
-	}
-	out := make([]float32, len(blob)/4)
-	for i := range out {
-		out[i] = math.Float32frombits(binary.LittleEndian.Uint32(blob[i*4:]))
-	}
-	return out
 }

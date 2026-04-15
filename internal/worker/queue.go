@@ -3,11 +3,9 @@ package worker
 import (
 	"context"
 	"database/sql"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -328,15 +326,6 @@ WHERE id = ?
 	log.Printf("worker job id=%d image_id=%d state=%s err=%v", job.ID, job.ImageID, nextState, procErr)
 	return nil
 }
-
-func floatsToBlob(values []float32) []byte {
-	blob := make([]byte, len(values)*4)
-	for i, v := range values {
-		binary.LittleEndian.PutUint32(blob[i*4:], math.Float32bits(v))
-	}
-	return blob
-}
-
 func isSQLiteLockError(err error) bool {
 	if err == nil {
 		return false
