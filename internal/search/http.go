@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/vectorindex"
@@ -98,27 +97,12 @@ func (h *Handler) embedQueryVector(ctx context.Context, query string, negative s
 		return h.Embedder.EmbedText(ctx, query)
 	}
 
-	var queryVec []float32
-	var negativeVec []float32
-	var queryErr error
-	var negativeErr error
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		queryVec, queryErr = h.Embedder.EmbedText(ctx, query)
-	}()
-	go func() {
-		defer wg.Done()
-		negativeVec, negativeErr = h.Embedder.EmbedText(ctx, negative)
-	}()
-	wg.Wait()
-
-	if queryErr != nil {
-		return nil, queryErr
+	queryVec, err := h.Embedder.EmbedText(ctx, query)
+	if err != nil {
+		return nil, err
 	}
-	if negativeErr != nil {
+	negativeVec, err := h.Embedder.EmbedText(ctx, negative)
+	if err != nil {
 		return nil, errNegativeEmbedding
 	}
 
@@ -198,26 +182,75 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]SearchResult, error) {
-	results := make([]SearchResult, 0, len(hits))
+	if len(hits) == 0 {
+		return []SearchResult{}, nil
+	}
+
+	ids := make([]int64, 0, len(hits))
+	seen := make(map[int64]struct{}, len(hits))
 	for _, hit := range hits {
-		var originalName, storagePath, description, tagsJSON string
-		if err := h.DB.QueryRowContext(ctx, `
-		SELECT original_name, storage_path, COALESCE(description, ''), COALESCE(tags_json, '[]')
-		FROM images WHERE id = ?
-		`, hit.ImageID).Scan(&originalName, &storagePath, &description, &tagsJSON); err != nil {
-			return nil, fmt.Errorf("load image %d: %w", hit.ImageID, err)
+		if _, ok := seen[hit.ImageID]; ok {
+			continue
+		}
+		seen[hit.ImageID] = struct{}{}
+		ids = append(ids, hit.ImageID)
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]any, 0, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+
+	rows, err := h.DB.QueryContext(ctx, fmt.Sprintf(`
+	SELECT id, original_name, storage_path, COALESCE(description, ''), COALESCE(tags_json, '[]')
+	FROM images
+	WHERE id IN (%s)
+	`, strings.Join(placeholders, ",")), args...)
+	if err != nil {
+		return nil, fmt.Errorf("load images for enrich: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	type imageRow struct {
+		originalName string
+		storagePath  string
+		description  string
+		tags         []string
+	}
+	byID := make(map[int64]imageRow, len(ids))
+	for rows.Next() {
+		var imageID int64
+		var row imageRow
+		var tagsJSON string
+		if err := rows.Scan(&imageID, &row.originalName, &row.storagePath, &row.description, &tagsJSON); err != nil {
+			return nil, fmt.Errorf("scan enriched image row: %w", err)
 		}
 		tags, err := decodeTagsJSON(tagsJSON)
 		if err != nil {
-			return nil, fmt.Errorf("decode image %d tags: %w", hit.ImageID, err)
+			return nil, fmt.Errorf("decode image %d tags: %w", imageID, err)
+		}
+		row.tags = tags
+		byID[imageID] = row
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate enriched image rows: %w", err)
+	}
+
+	results := make([]SearchResult, 0, len(hits))
+	for _, hit := range hits {
+		row, ok := byID[hit.ImageID]
+		if !ok {
+			return nil, fmt.Errorf("load image %d: %w", hit.ImageID, sql.ErrNoRows)
 		}
 		results = append(results, SearchResult{
 			ImageID:      hit.ImageID,
 			Distance:     hit.Distance,
-			OriginalName: originalName,
-			StoragePath:  filepath.ToSlash(storagePath),
-			Description:  description,
-			Tags:         tags,
+			OriginalName: row.originalName,
+			StoragePath:  filepath.ToSlash(row.storagePath),
+			Description:  row.description,
+			Tags:         row.tags,
 		})
 	}
 	return results, nil

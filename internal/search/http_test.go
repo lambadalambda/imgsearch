@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 
@@ -25,6 +26,35 @@ type fakeEmbedder struct {
 	textErrByPrompt  map[string]error
 	textPromptInputs []string
 	mu               sync.Mutex
+}
+
+type concurrencyCheckingEmbedder struct {
+	textByPrompt map[string][]float32
+	mu           sync.Mutex
+	active       int
+	sawOverlap   bool
+}
+
+func (f *concurrencyCheckingEmbedder) EmbedText(_ context.Context, prompt string) ([]float32, error) {
+	f.mu.Lock()
+	f.active++
+	if f.active > 1 {
+		f.sawOverlap = true
+	}
+	f.mu.Unlock()
+	time.Sleep(20 * time.Millisecond)
+	f.mu.Lock()
+	f.active--
+	sawOverlap := f.sawOverlap
+	f.mu.Unlock()
+	if sawOverlap {
+		return nil, fmt.Errorf("concurrent EmbedText call")
+	}
+	return f.textByPrompt[prompt], nil
+}
+
+func (f *concurrencyCheckingEmbedder) EmbedImage(context.Context, string) ([]float32, error) {
+	return nil, nil
 }
 
 func (f *fakeEmbedder) EmbedText(_ context.Context, prompt string) ([]float32, error) {
@@ -288,6 +318,67 @@ func TestTextSearchReturnsErrorWhenNegativeEmbeddingFails(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "negative embedding failed") {
 		t.Fatalf("expected negative embedding error message, got %s", rr.Body.String())
+	}
+}
+
+func TestTextSearchWithNegativePromptAvoidsConcurrentEmbedCalls(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	embed := &concurrencyCheckingEmbedder{textByPrompt: map[string][]float32{
+		"dog": {1, 0},
+		"cat": {0, 1},
+	}}
+	h := NewHandler(&Handler{
+		DB:       dbConn,
+		ModelID:  1,
+		DataDir:  "/tmp",
+		Embedder: embed,
+		Index:    &fakeIndex{hits: []vectorindex.SearchHit{{ImageID: 2, ModelID: 1, Distance: 0.1}}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/text?q=dog&neg=cat", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+}
+
+func TestEnrichPreservesHitOrderAndDuplicates(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	h := &Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp"}
+
+	hits := []vectorindex.SearchHit{
+		{ImageID: 2, ModelID: 1, Distance: 0.1},
+		{ImageID: 1, ModelID: 1, Distance: 0.2},
+		{ImageID: 2, ModelID: 1, Distance: 0.3},
+	}
+
+	results, err := h.enrich(context.Background(), hits)
+	if err != nil {
+		t.Fatalf("enrich: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("results length: got=%d want=3", len(results))
+	}
+	if results[0].ImageID != 2 || results[1].ImageID != 1 || results[2].ImageID != 2 {
+		t.Fatalf("unexpected result order: %+v", results)
+	}
+	if results[0].Distance != 0.1 || results[2].Distance != 0.3 {
+		t.Fatalf("expected distances to stay aligned with hit order, got %+v", results)
+	}
+}
+
+func TestEnrichReturnsEmptyForNoHits(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	h := &Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp"}
+
+	results, err := h.enrich(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("enrich: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected empty results, got %d", len(results))
 	}
 }
 

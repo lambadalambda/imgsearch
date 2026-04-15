@@ -4,6 +4,15 @@
 
 P2
 
+## Status
+
+Completed.
+
+- Negative-prompt embedding now runs sequentially instead of using fake concurrency around a mutex-serialized embedder.
+- Search result enrichment now batch-loads image metadata with one `IN (...)` query.
+- Result order, duplicate hits, and hit distances are preserved after the batch load.
+- Tests cover the no-concurrency expectation, duplicate/order preservation, and the zero-hit enrich case.
+
 ## Summary
 
 The search handler has a couple of non-essential inefficiencies that are worth simplifying before deeper profiling work: unnecessary concurrent negative/query embedding and N+1 image metadata loading.
@@ -37,6 +46,8 @@ The search handler has a couple of non-essential inefficiencies that are worth s
 - Search code is simpler and easier to profile.
 - Hit enrichment no longer performs one query per result row.
 - Tests still cover both text search and similar-image search behavior.
+
+All acceptance criteria are satisfied by the current implementation.
 
 ## Related Files
 
