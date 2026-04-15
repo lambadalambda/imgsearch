@@ -21,6 +21,9 @@ func Bootstrap(ctx context.Context, sqlDB *sql.DB, validateVector ValidateVector
 	if _, err := sqlDB.ExecContext(ctx, `PRAGMA journal_mode = WAL`); err != nil {
 		return fmt.Errorf("enable wal mode: %w", err)
 	}
+	if _, err := sqlDB.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		return fmt.Errorf("enable foreign keys: %w", err)
+	}
 
 	if err := db.RunMigrations(ctx, sqlDB); err != nil {
 		return fmt.Errorf("run migrations: %w", err)

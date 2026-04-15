@@ -139,10 +139,6 @@ func resolveExistingExtensionPath(candidate string) (string, bool) {
 }
 
 func openSQLiteDB(dsn string, sqliteVectorPath string) (*sql.DB, error) {
-	if sqliteVectorPath == "" {
-		return sql.Open("sqlite3", dsn)
-	}
-
 	driverName, err := registerSQLiteExtensionDriver(sqliteVectorPath)
 	if err != nil {
 		return nil, err
@@ -175,6 +171,9 @@ func registerSQLiteExtensionDriver(sqliteVectorPath string) (string, error) {
 
 	sql.Register(driverName, &sqlite3.SQLiteDriver{
 		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+			if _, err := conn.Exec("PRAGMA foreign_keys = ON", nil); err != nil {
+				return fmt.Errorf("enable sqlite foreign keys: %w", err)
+			}
 			if vectorLoadTarget != "" {
 				if err := conn.LoadExtension(vectorLoadTarget, sqliteVectorEntryPoint); err != nil {
 					return fmt.Errorf("load sqlite-vector extension from %q: %w", vectorLoadTarget, err)

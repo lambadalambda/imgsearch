@@ -4,6 +4,14 @@
 
 P1
 
+## Status
+
+Completed.
+
+- App connections now enable `PRAGMA foreign_keys = ON` during bootstrap.
+- The SQLite connection hook also enables foreign keys on each opened connection, including the path that loads `sqlite-vector`.
+- Tests cover both bootstrap-time enforcement and the normal `openSQLiteDB(..., "")` path.
+
 ## Summary
 
 The schema declares foreign keys, but SQLite does not enforce them unless foreign key support is enabled. Right now the app enables WAL but not foreign key enforcement.
@@ -37,6 +45,8 @@ The schema declares foreign keys, but SQLite does not enforce them unless foreig
 - App connections run with foreign key enforcement enabled.
 - A test proves that an invalid FK write is rejected or the expected cascade behavior occurs.
 - No existing tests rely on FK enforcement being off.
+
+All acceptance criteria are satisfied by the current implementation.
 
 ## Related Files
 

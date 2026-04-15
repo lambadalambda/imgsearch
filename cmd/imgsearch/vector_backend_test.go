@@ -144,3 +144,29 @@ func TestDiscoverSQLiteVectorPathReturnsEmptyWhenNothingFound(t *testing.T) {
 		t.Fatalf("expected empty path, got %q", got)
 	}
 }
+
+func TestOpenSQLiteDBEnablesForeignKeysWithoutVectorExtension(t *testing.T) {
+	dbConn, err := openSQLiteDB(":memory:", "")
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	t.Cleanup(func() { _ = dbConn.Close() })
+
+	var enabled int
+	if err := dbConn.QueryRow(`PRAGMA foreign_keys`).Scan(&enabled); err != nil {
+		t.Fatalf("read foreign_keys pragma: %v", err)
+	}
+	if enabled != 1 {
+		t.Fatalf("foreign_keys pragma: got=%d want=1", enabled)
+	}
+
+	if _, err := dbConn.Exec(`CREATE TABLE parent(id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create parent table: %v", err)
+	}
+	if _, err := dbConn.Exec(`CREATE TABLE child(parent_id INTEGER NOT NULL, FOREIGN KEY(parent_id) REFERENCES parent(id))`); err != nil {
+		t.Fatalf("create child table: %v", err)
+	}
+	if _, err := dbConn.Exec(`INSERT INTO child(parent_id) VALUES(1)`); err == nil {
+		t.Fatal("expected foreign key violation for missing parent row")
+	}
+}
