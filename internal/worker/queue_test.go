@@ -32,6 +32,7 @@ func (f *fakeEmbedder) EmbedImage(_ context.Context, _ string) ([]float32, error
 }
 
 type fakeIndex struct {
+	db      *sql.DB
 	upserts []vectorindex.SearchHit
 	err     error
 }
@@ -48,9 +49,22 @@ func (f *fakeAnnotator) AnnotateImage(context.Context, string) (embedder.ImageAn
 	return f.annotation, nil
 }
 
-func (f *fakeIndex) Upsert(_ context.Context, imageID int64, modelID int64, _ []float32) error {
+func (f *fakeIndex) Upsert(_ context.Context, imageID int64, modelID int64, vec []float32) error {
 	if f.err != nil {
 		return f.err
+	}
+	if f.db != nil {
+		if _, err := f.db.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(image_id, model_id)
+DO UPDATE SET
+  dim = excluded.dim,
+  vector_blob = excluded.vector_blob,
+  updated_at = datetime('now')
+`, imageID, modelID, len(vec), floatsToBlob(vec)); err != nil {
+			return err
+		}
 	}
 	f.upserts = append(f.upserts, vectorindex.SearchHit{ImageID: imageID, ModelID: modelID})
 	return nil
@@ -100,7 +114,7 @@ func setupQueueTest(t *testing.T) (*Queue, *sql.DB) {
 		DataDir:       dataDir,
 		LeaseDuration: 30 * time.Second,
 		Embedder:      &fakeEmbedder{vec: []float32{1, 2, 3, 4}},
-		Index:         &fakeIndex{},
+		Index:         &fakeIndex{db: sqlDB},
 	}
 
 	// Ensure at least one fixture image and job helper data exist.
@@ -150,6 +164,35 @@ func TestProcessOneSuccessStoresEmbeddingAndMarksDone(t *testing.T) {
 	}
 	if dim != 4 {
 		t.Fatalf("expected dim 4, got %d", dim)
+	}
+}
+
+func TestProcessOneDoesNotPersistEmbeddingWhenIndexUpsertFails(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	q.Index = &fakeIndex{db: sqlDB, err: errors.New("index unavailable")}
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err == nil {
+		t.Fatal("expected process error")
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+
+	var state string
+	if err := sqlDB.QueryRow(`SELECT state FROM index_jobs WHERE id = 1`).Scan(&state); err != nil {
+		t.Fatalf("select job state: %v", err)
+	}
+	if state != "pending" {
+		t.Fatalf("expected pending state after index failure, got %s", state)
+	}
+
+	var count int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM image_embeddings WHERE image_id = 1`).Scan(&count); err != nil {
+		t.Fatalf("count embeddings: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no persisted embedding after index failure, got %d rows", count)
 	}
 }
 

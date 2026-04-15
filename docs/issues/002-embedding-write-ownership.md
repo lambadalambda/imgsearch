@@ -4,6 +4,15 @@
 
 P1
 
+## Status
+
+Completed.
+
+- `Index.Upsert()` is now the sole owner of `image_embeddings` persistence.
+- The worker now calls `Index.Upsert()` before `completeJob()`.
+- `completeJob()` now only updates annotations and marks the job done.
+- Tests cover the core regression case where index upsert fails and no embedding row should be persisted.
+
 ## Summary
 
 Embedding persistence is currently owned by two places. The worker transaction writes `image_embeddings`, and the vector index `Upsert()` call writes `image_embeddings` again. This duplicates work and creates an awkward failure window.
@@ -53,6 +62,8 @@ Embedding persistence is currently owned by two places. The worker transaction w
 - A vector-index failure does not force needless recomputation if the embedding already exists.
 - Worker timing logs show meaningful `db` and `index` phases.
 - The chosen ownership model is documented in code or docs.
+
+The acceptance criteria are satisfied by the current implementation. A dedicated test for the `Upsert succeeds, completeJob fails` retry path can still be added later as extra coverage, but the current behavior is already safe and idempotent.
 
 ## Related Files
 

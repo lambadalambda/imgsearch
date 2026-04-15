@@ -121,20 +121,20 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 	}
 
 	stageStartedAt = time.Now()
-	if err := q.completeJob(ctx, job, vec, annotation); err != nil {
-		completeDuration = time.Since(stageStartedAt)
-		_ = q.failOrRetry(ctx, job, err)
-		return true, err
-	}
-	completeDuration = time.Since(stageStartedAt)
-
-	stageStartedAt = time.Now()
 	if err := q.Index.Upsert(ctx, job.ImageID, job.ModelID, vec); err != nil {
 		indexDuration = time.Since(stageStartedAt)
 		_ = q.failOrRetry(ctx, job, err)
 		return true, err
 	}
 	indexDuration = time.Since(stageStartedAt)
+
+	stageStartedAt = time.Now()
+	if err := q.completeJob(ctx, job, annotation); err != nil {
+		completeDuration = time.Since(stageStartedAt)
+		_ = q.failOrRetry(ctx, job, err)
+		return true, err
+	}
+	completeDuration = time.Since(stageStartedAt)
 
 	annotationErrSuffix := ""
 	if annotationErrText != "" {
@@ -254,25 +254,10 @@ WHERE id = ?
 	return storagePath, needsAnnotations == 1, nil
 }
 
-func (q *Queue) completeJob(ctx context.Context, job claimedJob, vec []float32, annotation *embedder.ImageAnnotation) error {
+func (q *Queue) completeJob(ctx context.Context, job claimedJob, annotation *embedder.ImageAnnotation) error {
 	tx, err := q.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin complete tx: %w", err)
-	}
-
-	blob := floatsToBlob(vec)
-	_, err = tx.ExecContext(ctx, `
-INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
-VALUES (?, ?, ?, ?)
-ON CONFLICT(image_id, model_id)
-DO UPDATE SET
-  dim = excluded.dim,
-  vector_blob = excluded.vector_blob,
-  updated_at = datetime('now')
-`, job.ImageID, job.ModelID, len(vec), blob)
-	if err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("upsert image embedding: %w", err)
 	}
 
 	if annotation != nil {
