@@ -9,7 +9,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [ ] P1 Decide and enforce the sqlite-vector multi-model strategy: `docs/issues/003-sqlite-vector-model-strategy.md`
 - [ ] P1 Add explicit runtime modes for embed-only and annotation-capable processes: `docs/issues/004-runtime-modes-and-process-shape.md`
 - [x] P1 Enable SQLite foreign key enforcement: `docs/issues/005-enable-sqlite-foreign-keys.md`
-- [ ] P2 Harden native runtime concurrency and cancellation behavior: `docs/issues/006-native-runtime-safety.md`
+- [x] P2 Harden native runtime concurrency and cancellation behavior: `docs/issues/006-native-runtime-safety.md`
 - [ ] P2 Clean up the search hot path before performance tuning: `docs/issues/007-search-hot-path-cleanup.md`
 - [ ] P2 Extract shared helpers and repeated rules: `docs/issues/008-shared-helper-dedup.md`
 - [ ] P2 Harden default model downloads and startup network behavior: `docs/issues/009-default-model-download-hardening.md`

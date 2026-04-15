@@ -4,6 +4,15 @@
 
 P2
 
+## Status
+
+Completed.
+
+- `nativeGemmaRuntime` now protects its handle with a mutex, matching the main native embedder's safety model.
+- Request and worker paths no longer replace caller contexts with `context.Background()` in the standalone Gemma runtime.
+- Native entry points now honor cancellation at the Go boundary before preprocessing or native generation begins.
+- Tests cover both canceled-context short-circuiting and active-context closed-runtime behavior.
+
 ## Summary
 
 The native runtime layer has a few safety gaps that are not always visible today because the app currently uses a single worker goroutine. These include annotator handle synchronization and incomplete use of `context.Context`.
@@ -39,6 +48,8 @@ The native runtime layer has a few safety gaps that are not always visible today
 - The annotator runtime has consistent handle-safety semantics.
 - No obvious `context.Background()` overrides remain in request/worker-driven paths.
 - Tests or comments make the remaining cancellation limitations explicit.
+
+All acceptance criteria are satisfied by the current implementation.
 
 ## Related Files
 

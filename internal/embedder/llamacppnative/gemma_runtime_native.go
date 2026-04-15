@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"unsafe"
 
 	coreembedder "imgsearch/internal/embedder"
@@ -70,13 +71,18 @@ type nativeGemmaRuntimeConfig struct {
 type AnnotatorConfig = nativeGemmaRuntimeConfig
 
 type nativeGemmaRuntime struct {
+	mu           sync.Mutex
 	handle       *C.imgsearch_llama_handle
 	imageMaxSide int
 }
 
 type Annotator = nativeGemmaRuntime
 
-func (e *Embedder) AnnotateImage(_ context.Context, imagePath string) (coreembedder.ImageAnnotation, error) {
+func (e *Embedder) AnnotateImage(ctx context.Context, imagePath string) (coreembedder.ImageAnnotation, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return coreembedder.ImageAnnotation{}, err
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.handle == nil {
@@ -84,6 +90,7 @@ func (e *Embedder) AnnotateImage(_ context.Context, imagePath string) (coreembed
 	}
 
 	annotation, _, err := describeAndTagImageWithHandle(
+		ctx,
 		e.handle,
 		e.imageMaxSide,
 		imagePath,
@@ -146,20 +153,38 @@ func newGemmaNativeRuntime(cfg nativeGemmaRuntimeConfig) (*nativeGemmaRuntime, e
 }
 
 func (r *nativeGemmaRuntime) Close() error {
-	if r == nil || r.handle == nil {
+	if r == nil {
 		return nil
 	}
-	C.imgsearch_llama_free(r.handle)
+
+	r.mu.Lock()
+	handle := r.handle
 	r.handle = nil
+	r.mu.Unlock()
+
+	if handle == nil {
+		return nil
+	}
+	C.imgsearch_llama_free(handle)
 	return nil
 }
 
-func (r *nativeGemmaRuntime) AnnotateImage(_ context.Context, imagePath string) (coreembedder.ImageAnnotation, error) {
-	if r == nil || r.handle == nil {
+func (r *nativeGemmaRuntime) AnnotateImage(ctx context.Context, imagePath string) (coreembedder.ImageAnnotation, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return coreembedder.ImageAnnotation{}, err
+	}
+	if r == nil {
+		return coreembedder.ImageAnnotation{}, fmt.Errorf("native Gemma runtime is closed")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.handle == nil {
 		return coreembedder.ImageAnnotation{}, fmt.Errorf("native Gemma runtime is closed")
 	}
 
 	annotation, _, err := describeAndTagImageWithHandle(
+		ctx,
 		r.handle,
 		r.imageMaxSide,
 		imagePath,
@@ -175,14 +200,10 @@ func (r *nativeGemmaRuntime) AnnotateImage(_ context.Context, imagePath string) 
 	return coreembedder.ImageAnnotation{Description: annotation.Description, Tags: annotation.Tags}, nil
 }
 
-func (r *nativeGemmaRuntime) DescribeImage(_ context.Context, imagePath string) (gemmaImageDescription, string, error) {
-	if r == nil || r.handle == nil {
-		return gemmaImageDescription{}, "", fmt.Errorf("native Gemma runtime is closed")
-	}
-
+func (r *nativeGemmaRuntime) DescribeImage(ctx context.Context, imagePath string) (gemmaImageDescription, string, error) {
 	systemPrompt := "You are a precise vision model. Return only valid JSON that describes visible image content."
 	userPrompt := "Describe this image in concrete visual terms. Return JSON with short_description as one sentence and labels as 3-8 lowercase tags. Mention the main subject and setting when obvious. Avoid speculation."
-	raw, err := r.generateImageJSON(context.Background(), imagePath, systemPrompt, userPrompt, gemmaDescriptionJSONSchema, 160)
+	raw, err := r.generateImageJSON(ctx, imagePath, systemPrompt, userPrompt, gemmaDescriptionJSONSchema, 160)
 	if err != nil {
 		return gemmaImageDescription{}, "", err
 	}
@@ -206,14 +227,10 @@ func (r *nativeGemmaRuntime) DescribeImage(_ context.Context, imagePath string) 
 	return description, raw, nil
 }
 
-func (r *nativeGemmaRuntime) AutoTagImage(_ context.Context, imagePath string) (gemmaImageTags, string, error) {
-	if r == nil || r.handle == nil {
-		return gemmaImageTags{}, "", fmt.Errorf("native Gemma runtime is closed")
-	}
-
+func (r *nativeGemmaRuntime) AutoTagImage(ctx context.Context, imagePath string) (gemmaImageTags, string, error) {
 	systemPrompt := "You are a precise image autotagger. Return only valid JSON with concise tags for visible content."
 	userPrompt := "Generate the most relevant autotags for this image. Return JSON with tags as an array of 3 to 10 unique lowercase tags. Prioritize the main subject, obvious attributes, and the setting. Use short search-friendly tags only. Avoid speculation, full sentences, and duplicate or overly generic tags unless they are clearly useful."
-	raw, err := r.generateImageJSON(context.Background(), imagePath, systemPrompt, userPrompt, gemmaTagsJSONSchema, 120)
+	raw, err := r.generateImageJSON(ctx, imagePath, systemPrompt, userPrompt, gemmaTagsJSONSchema, 120)
 	if err != nil {
 		return gemmaImageTags{}, "", err
 	}
@@ -236,14 +253,10 @@ func (r *nativeGemmaRuntime) AutoTagImage(_ context.Context, imagePath string) (
 	return tags, raw, nil
 }
 
-func (r *nativeGemmaRuntime) DescribeAndTagImage(_ context.Context, imagePath string) (gemmaImageDescriptionAndTags, string, error) {
-	if r == nil || r.handle == nil {
-		return gemmaImageDescriptionAndTags{}, "", fmt.Errorf("native Gemma runtime is closed")
-	}
-
+func (r *nativeGemmaRuntime) DescribeAndTagImage(ctx context.Context, imagePath string) (gemmaImageDescriptionAndTags, string, error) {
 	systemPrompt := "You are a precise vision model. Return only valid JSON with a useful medium-length description and concise tags for visible image content."
 	userPrompt := "Describe this image in one medium-length paragraph of 2 to 4 sentences. Focus on the main subject, visible attributes, composition, and setting. Then return 3 to 10 unique lowercase tags that are most relevant for search. Avoid speculation, avoid repetition, and keep the description grounded in what is visible."
-	raw, err := r.generateImageJSON(context.Background(), imagePath, systemPrompt, userPrompt, gemmaDescriptionAndTagsJSONSchema, 220)
+	raw, err := r.generateImageJSON(ctx, imagePath, systemPrompt, userPrompt, gemmaDescriptionAndTagsJSONSchema, 220)
 	if err != nil {
 		return gemmaImageDescriptionAndTags{}, "", err
 	}
@@ -268,15 +281,15 @@ func (r *nativeGemmaRuntime) DescribeAndTagImage(_ context.Context, imagePath st
 	return result, raw, nil
 }
 
-func describeAndTagImageWithHandle(handle *C.imgsearch_llama_handle, imageMaxSide int, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (gemmaAppAnnotation, string, error) {
-	raw, err := generateImageJSONForHandle(handle, imageMaxSide, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
+func describeAndTagImageWithHandle(ctx context.Context, handle *C.imgsearch_llama_handle, imageMaxSide int, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (gemmaAppAnnotation, string, error) {
+	raw, err := generateImageJSONForHandle(ctx, handle, imageMaxSide, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
 	if err != nil {
 		return gemmaAppAnnotation{}, "", err
 	}
 
 	var result gemmaAppAnnotation
 	if err := decodeGemmaJSONObject(raw, &result, "description+tags"); err != nil {
-		retryRaw, retryErr := generateImageJSONForHandle(handle, imageMaxSide, imagePath, gemmaAppAnnotationRetrySystemPrompt, gemmaAppAnnotationRetryUserPrompt, jsonSchema, gemmaRetryAnnotationMaxTokens)
+		retryRaw, retryErr := generateImageJSONForHandle(ctx, handle, imageMaxSide, imagePath, gemmaAppAnnotationRetrySystemPrompt, gemmaAppAnnotationRetryUserPrompt, jsonSchema, gemmaRetryAnnotationMaxTokens)
 		if retryErr != nil {
 			return gemmaAppAnnotation{}, raw, fmt.Errorf("%v; retry failed: %w", err, retryErr)
 		}
@@ -295,14 +308,26 @@ func describeAndTagImageWithHandle(handle *C.imgsearch_llama_handle, imageMaxSid
 	return result, raw, nil
 }
 
-func (r *nativeGemmaRuntime) generateImageJSON(_ context.Context, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (string, error) {
-	if r == nil || r.handle == nil {
+func (r *nativeGemmaRuntime) generateImageJSON(ctx context.Context, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (string, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return "", err
+	}
+	if r == nil {
 		return "", fmt.Errorf("native Gemma runtime is closed")
 	}
-	return generateImageJSONForHandle(r.handle, r.imageMaxSide, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.handle == nil {
+		return "", fmt.Errorf("native Gemma runtime is closed")
+	}
+	return generateImageJSONForHandle(ctx, r.handle, r.imageMaxSide, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
 }
 
-func generateImageJSONForHandle(handle *C.imgsearch_llama_handle, imageMaxSide int, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (string, error) {
+func generateImageJSONForHandle(ctx context.Context, handle *C.imgsearch_llama_handle, imageMaxSide int, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (string, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return "", err
+	}
 	if handle == nil {
 		return "", fmt.Errorf("native Gemma runtime is closed")
 	}
@@ -312,6 +337,9 @@ func generateImageJSONForHandle(handle *C.imgsearch_llama_handle, imageMaxSide i
 		return "", err
 	}
 	defer cleanup()
+	if err := ensureContextActive(ctx); err != nil {
+		return "", err
+	}
 
 	cImagePath := C.CString(preprocessedPath)
 	defer C.free(unsafe.Pointer(cImagePath))

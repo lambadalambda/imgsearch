@@ -146,7 +146,11 @@ func (e *Embedder) Close() error {
 	return nil
 }
 
-func (e *Embedder) EmbedText(_ context.Context, text string) ([]float32, error) {
+func (e *Embedder) EmbedText(ctx context.Context, text string) ([]float32, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return nil, err
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -176,12 +180,19 @@ func (e *Embedder) EmbedText(_ context.Context, text string) ([]float32, error) 
 	return out, nil
 }
 
-func (e *Embedder) EmbedImage(_ context.Context, path string) ([]float32, error) {
+func (e *Embedder) EmbedImage(ctx context.Context, path string) ([]float32, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return nil, err
+	}
+
 	preprocessedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(path, e.imageMaxSide)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
+	if err := ensureContextActive(ctx); err != nil {
+		return nil, err
+	}
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -232,4 +243,11 @@ func (e *Embedder) lastErrorLocked() error {
 		msg = "llama-cpp-native operation failed"
 	}
 	return fmt.Errorf("%s", msg)
+}
+
+func ensureContextActive(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Err()
 }
