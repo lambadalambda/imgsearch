@@ -12,3 +12,4 @@ tools/sqlite-vector/
 __pycache__/
 models/**
 !models/.gitkeep
+/imgsearch
