@@ -175,6 +175,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("ensure embedding model: %v", err)
 	}
+	purgedEmbeddings, err := db.PurgeOtherModelEmbeddings(context.Background(), sqlDB, modelID)
+	if err != nil {
+		log.Fatalf("purge old embeddings: %v", err)
+	}
+	if purgedEmbeddings > 0 {
+		log.Printf("purged %d embeddings for inactive model versions", purgedEmbeddings)
+	}
+	purgedJobs, err := db.PurgeOtherModelIndexJobs(context.Background(), sqlDB, modelID)
+	if err != nil {
+		log.Fatalf("purge old index jobs: %v", err)
+	}
+	if purgedJobs > 0 {
+		log.Printf("purged %d index jobs for inactive model versions", purgedJobs)
+	}
 
 	enqueuedMissing, err := db.EnsureIndexJobsForModel(context.Background(), sqlDB, modelID)
 	if err != nil {

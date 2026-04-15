@@ -115,3 +115,40 @@ VALUES
 		t.Fatalf("expected 2 pending jobs after requeue, got %d", pendingCount)
 	}
 }
+
+func TestPurgeOtherModelIndexJobsKeepsOnlyActiveModel(t *testing.T) {
+	dbConn := openIndexJobsDB(t)
+
+	if _, err := dbConn.Exec(`
+INSERT INTO index_jobs(kind, image_id, model_id, state)
+VALUES
+	('embed_image', 2, 2, 'pending'),
+	('embed_image', 3, 1, 'pending')
+`); err != nil {
+		t.Fatalf("seed extra jobs: %v", err)
+	}
+
+	purged, err := PurgeOtherModelIndexJobs(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("purge index jobs: %v", err)
+	}
+	if purged != 1 {
+		t.Fatalf("purged rows: got=%d want=1", purged)
+	}
+
+	var activeCount int
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE model_id = 1`).Scan(&activeCount); err != nil {
+		t.Fatalf("count active jobs: %v", err)
+	}
+	if activeCount != 2 {
+		t.Fatalf("active job count: got=%d want=2", activeCount)
+	}
+
+	var otherCount int
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE model_id = 2`).Scan(&otherCount); err != nil {
+		t.Fatalf("count other-model jobs: %v", err)
+	}
+	if otherCount != 0 {
+		t.Fatalf("expected other-model jobs to be purged, got %d", otherCount)
+	}
+}

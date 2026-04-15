@@ -4,6 +4,15 @@
 
 P1
 
+## Status
+
+Completed.
+
+- The chosen policy is to purge old `image_embeddings` rows when the active embedding model/version changes.
+- Startup now purges inactive-model `image_embeddings` rows and inactive-model `index_jobs` rows before enqueuing current-model work.
+- `sqlite-vector` now counts only active-model rows when sizing the search scan.
+- Tests cover both the purge policy and model-scoped counting behavior.
+
 ## Summary
 
 The sqlite-vector backend currently scans all stored embeddings and filters by `model_id` afterward. That creates unnecessary work and makes mixed model histories risky, especially if dimensions differ between model versions.
@@ -24,11 +33,7 @@ The sqlite-vector backend currently scans all stored embeddings and filters by `
 
 ## Open Design Question
 
-What do we want to support?
-
-- One active embedding model at a time, with old rows purged.
-- Multiple retained model versions, but isolated safely per model.
-- Multiple retained model versions only when dimensions stay identical.
+Resolved: keep one active embedding model at a time and purge old embedding/index state on startup when the active model/version changes.
 
 ## Desired Outcome
 
@@ -49,6 +54,8 @@ What do we want to support?
 - Search cost scales with the active model's rows, not all historical rows.
 - Tests cover at least one multi-model scenario.
 - There is no ambiguous mixed-dimension behavior left in sqlite-vector.
+
+All acceptance criteria are satisfied by the current implementation.
 
 ## Related Files
 

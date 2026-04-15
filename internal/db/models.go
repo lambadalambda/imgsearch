@@ -65,3 +65,22 @@ WHERE name = ? AND version = ?
 
 	return id, nil
 }
+
+func PurgeOtherModelEmbeddings(ctx context.Context, db *sql.DB, activeModelID int64) (int64, error) {
+	if db == nil {
+		return 0, fmt.Errorf("db is nil")
+	}
+	if activeModelID <= 0 {
+		return 0, fmt.Errorf("invalid active model id")
+	}
+
+	res, err := db.ExecContext(ctx, `DELETE FROM image_embeddings WHERE model_id <> ?`, activeModelID)
+	if err != nil {
+		return 0, fmt.Errorf("purge embeddings for other models: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected while purging embeddings: %w", err)
+	}
+	return rows, nil
+}

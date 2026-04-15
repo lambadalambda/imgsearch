@@ -60,7 +60,7 @@ func (i *Index) Search(ctx context.Context, modelID int64, query []float32, limi
 		return nil, err
 	}
 
-	scanK, err := i.countEmbeddings(ctx)
+	scanK, err := i.countEmbeddings(ctx, modelID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,9 +97,9 @@ LIMIT ?
 	return hits, nil
 }
 
-func (i *Index) countEmbeddings(ctx context.Context) (int64, error) {
+func (i *Index) countEmbeddings(ctx context.Context, modelID int64) (int64, error) {
 	var total int64
-	if err := i.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM image_embeddings`).Scan(&total); err != nil {
+	if err := i.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM image_embeddings WHERE model_id = ?`, modelID).Scan(&total); err != nil {
 		return 0, fmt.Errorf("count embeddings: %w", err)
 	}
 	return total, nil
