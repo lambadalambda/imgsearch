@@ -60,6 +60,7 @@ Cross-platform note:
 - Supported formats: JPEG, PNG, WEBP, and AVIF.
 - Embedding uses the in-process `llama-cpp-native` runtime with the Qwen3-VL-Embedding-8B GGUF pair.
 - The default model files are downloaded automatically on first run when missing.
+- Add `-enable-annotations=false` if you want to run the API without loading the Gemma annotation model.
 - Data is stored in `./data` by default.
 - The UI includes uploads, indexing status, gallery browsing, text search, and similar-image search.
 

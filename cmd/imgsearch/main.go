@@ -42,6 +42,7 @@ func main() {
 	llamaNativeImageMaxTokens := flag.Int("llama-native-image-max-tokens", 0, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
 	llamaNativeQueryInstruction := flag.String("llama-native-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp-native text query embeddings")
 	llamaNativePassageInstruction := flag.String("llama-native-passage-instruction", "Represent this image or text for retrieval.", "instruction used for llama-cpp-native image/document embeddings")
+	enableAnnotations := flag.Bool("enable-annotations", true, "whether to load and run image annotation models")
 	llamaNativeAnnotatorModelPath := flag.String("llama-native-annotator-model-path", "", "optional path to a separate llama.cpp GGUF vision model used only for image descriptions/tags")
 	llamaNativeAnnotatorMMProjPath := flag.String("llama-native-annotator-mmproj-path", "", "optional path to a separate llama.cpp GGUF mmproj used only for image descriptions/tags")
 	llamaNativeAnnotatorVariant := flag.String("llama-native-annotator-variant", defaultLlamaNativeAnnotatorVariant, "default separate llama.cpp annotator model variant when explicit annotator paths are not set: e4b or 26b")
@@ -134,11 +135,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("resolve llama-cpp-native model assets: %v", err)
 	}
-	if strings.TrimSpace(*llamaNativeAnnotatorModelPath) == "" && strings.TrimSpace(*llamaNativeAnnotatorMMProjPath) == "" {
-		*llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath, err = ensureDefaultLlamaNativeAnnotatorAssetsForVariant(context.Background(), *llamaNativeAnnotatorVariant, *llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath)
-		if err != nil {
-			log.Fatalf("resolve llama-cpp-native annotator model assets: %v", err)
-		}
+	*llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath, err = resolveAnnotatorAssetPaths(
+		context.Background(),
+		*enableAnnotations,
+		*llamaNativeAnnotatorVariant,
+		*llamaNativeAnnotatorModelPath,
+		*llamaNativeAnnotatorMMProjPath,
+		ensureDefaultLlamaNativeAnnotatorAssetsForVariant,
+	)
+	if err != nil {
+		log.Fatalf("resolve llama-cpp-native annotator model assets: %v", err)
 	}
 
 	embedDimensions := *llamaNativeDimensions
@@ -199,10 +205,14 @@ func main() {
 		defer func() { _ = closer.Close() }()
 	}
 
-	imageAnnotator, canAnnotateImages := activeEmbedder.(embedder.ImageAnnotator)
+	var imageAnnotator embedder.ImageAnnotator
+	canAnnotateImages := false
 	annotatorModelPath := strings.TrimSpace(*llamaNativeAnnotatorModelPath)
 	annotatorVisionPath := strings.TrimSpace(*llamaNativeAnnotatorMMProjPath)
-	if annotatorModelPath != "" || annotatorVisionPath != "" {
+	if *enableAnnotations {
+		imageAnnotator, canAnnotateImages = activeEmbedder.(embedder.ImageAnnotator)
+	}
+	if *enableAnnotations && (annotatorModelPath != "" || annotatorVisionPath != "") {
 		if annotatorModelPath == "" || annotatorVisionPath == "" {
 			log.Fatalf("configure annotator: both -llama-native-annotator-model-path and -llama-native-annotator-mmproj-path must be set together")
 		}
@@ -225,8 +235,10 @@ func main() {
 		}
 		canAnnotateImages = true
 		log.Printf("image annotations enabled via separate native annotator model %s", annotatorModelPath)
-	} else if canAnnotateImages {
+	} else if *enableAnnotations && canAnnotateImages {
 		log.Printf("image annotations enabled via active embedder model")
+	} else {
+		log.Printf("image annotations disabled")
 	}
 
 	uploadSvc := &upload.Service{

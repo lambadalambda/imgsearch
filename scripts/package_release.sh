@@ -156,6 +156,7 @@ First run:
 1. On Linux, run ./run.sh (or the preset wrappers) so bundled shared libraries are used.
 2. On macOS, run ./imgsearch
 2. The default 8B Qwen GGUF files are downloaded automatically if missing.
+3. Add --enable-annotations=false if you want to skip loading the Gemma annotator.
 
 Notes:
  - The app auto-discovers sqlite-vector from ./tools/sqlite-vector/vector.

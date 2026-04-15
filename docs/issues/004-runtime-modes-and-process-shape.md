@@ -4,6 +4,14 @@
 
 P1
 
+## Status
+
+Partially completed.
+
+- The app now supports `-enable-annotations=false`, which skips Gemma asset resolution/loading and runs the API in an embed-only mode.
+- Docs and packaged README text now mention the embed-only flag.
+- Dedicated embedding-worker / annotation-worker modes are still future work.
+
 ## Summary
 
 The app currently auto-resolves and loads both the embedder and annotator in a single process by default. That makes it hard to run an embed-only API process or an annotation-only worker, even though that is likely the right shape for 24 GB GPUs and for the planned pipeline split.

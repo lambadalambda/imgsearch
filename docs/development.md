@@ -16,6 +16,9 @@
 6. Open the UI:
    - `http://127.0.0.1:8080/`
 
+Embed-only mode:
+- Add `-enable-annotations=false` to skip Gemma resolution/loading and run the API with search-only embedding.
+
 One-command startup:
 - `mise run serve`
 - `mise run "serve:8b"`
@@ -57,6 +60,7 @@ Notes:
 - Native prompting uses Qwen chat-template style framing (`system` + `user` + assistant generation prompt) for text and image embeddings.
 - Optional: set `-llama-native-image-max-tokens` to override mtmd image token cap (`0` keeps model defaults).
 - Optional: use `-llama-native-query-instruction` and `-llama-native-passage-instruction` to tune retrieval framing.
+- Optional: use `-enable-annotations=false` to keep the embedder loaded for search without loading any separate annotation model.
 - Native embedding model metadata includes model/mmproj filenames, image cap settings, and retrieval instruction settings; changing them creates a new model version and queues missing index jobs for re-embedding.
 
 ## Bulk Import
