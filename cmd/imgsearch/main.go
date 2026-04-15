@@ -208,6 +208,13 @@ func main() {
 	if enqueuedMissing > 0 {
 		log.Printf("enqueued %d missing index jobs for model_id=%d", enqueuedMissing, modelID)
 	}
+	enqueuedAnnotationJobs, err := db.EnsureAnnotationJobsForModel(context.Background(), sqlDB, modelID)
+	if err != nil {
+		log.Fatalf("ensure annotation jobs: %v", err)
+	}
+	if enqueuedAnnotationJobs > 0 {
+		log.Printf("enqueued %d annotation jobs for model_id=%d", enqueuedAnnotationJobs, modelID)
+	}
 
 	activeEmbedder, err := newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
 		ModelPath:          *llamaNativeModelPath,

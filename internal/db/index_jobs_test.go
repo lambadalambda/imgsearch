@@ -55,7 +55,7 @@ func TestEnsureIndexJobsForModelEnqueuesMissingRows(t *testing.T) {
 	}
 
 	var count int64
-	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE model_id = 1`).Scan(&count); err != nil {
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'embed_image' AND model_id = 1`).Scan(&count); err != nil {
 		t.Fatalf("count jobs: %v", err)
 	}
 	if count != 3 {
@@ -65,6 +65,42 @@ func TestEnsureIndexJobsForModelEnqueuesMissingRows(t *testing.T) {
 	insertedAgain, err := EnsureIndexJobsForModel(context.Background(), dbConn, 1)
 	if err != nil {
 		t.Fatalf("ensure jobs second run: %v", err)
+	}
+	if insertedAgain != 0 {
+		t.Fatalf("inserted second run: got=%d want=0", insertedAgain)
+	}
+}
+
+func TestEnsureAnnotationJobsForModelEnqueuesMissingAnnotationRows(t *testing.T) {
+	dbConn := openIndexJobsDB(t)
+
+	if _, err := dbConn.Exec(`
+UPDATE images
+SET description = 'already annotated', tags_json = '["done"]'
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed annotations: %v", err)
+	}
+
+	inserted, err := EnsureAnnotationJobsForModel(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("ensure annotation jobs: %v", err)
+	}
+	if inserted != 2 {
+		t.Fatalf("inserted: got=%d want=2", inserted)
+	}
+
+	var count int64
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_image' AND model_id = 1`).Scan(&count); err != nil {
+		t.Fatalf("count annotation jobs: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("annotation job count: got=%d want=2", count)
+	}
+
+	insertedAgain, err := EnsureAnnotationJobsForModel(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("ensure annotation jobs second run: %v", err)
 	}
 	if insertedAgain != 0 {
 		t.Fatalf("inserted second run: got=%d want=0", insertedAgain)
@@ -85,8 +121,9 @@ WHERE id = 1
 	if _, err := dbConn.Exec(`
 INSERT INTO index_jobs(kind, image_id, model_id, state)
 VALUES
-	('embed_image', 2, 1, 'done'),
-	('embed_image', 3, 1, 'done')
+	('annotate_image', 1, 1, 'done'),
+	('annotate_image', 2, 1, 'done'),
+	('annotate_image', 3, 1, 'done')
 `); err != nil {
 		t.Fatalf("seed extra jobs: %v", err)
 	}
@@ -100,7 +137,7 @@ VALUES
 	}
 
 	var state1 string
-	if err := dbConn.QueryRow(`SELECT state FROM index_jobs WHERE image_id = 1 AND model_id = 1`).Scan(&state1); err != nil {
+	if err := dbConn.QueryRow(`SELECT state FROM index_jobs WHERE kind = 'annotate_image' AND image_id = 1 AND model_id = 1`).Scan(&state1); err != nil {
 		t.Fatalf("load annotated job state: %v", err)
 	}
 	if state1 != "done" {
@@ -108,7 +145,7 @@ VALUES
 	}
 
 	var pendingCount int
-	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE model_id = 1 AND state = 'pending'`).Scan(&pendingCount); err != nil {
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_image' AND model_id = 1 AND state = 'pending'`).Scan(&pendingCount); err != nil {
 		t.Fatalf("count pending jobs: %v", err)
 	}
 	if pendingCount != 2 {
@@ -123,6 +160,7 @@ func TestPurgeOtherModelIndexJobsKeepsOnlyActiveModel(t *testing.T) {
 INSERT INTO index_jobs(kind, image_id, model_id, state)
 VALUES
 	('embed_image', 2, 2, 'pending'),
+	('annotate_image', 2, 2, 'pending'),
 	('embed_image', 3, 1, 'pending')
 `); err != nil {
 		t.Fatalf("seed extra jobs: %v", err)
@@ -132,8 +170,8 @@ VALUES
 	if err != nil {
 		t.Fatalf("purge index jobs: %v", err)
 	}
-	if purged != 1 {
-		t.Fatalf("purged rows: got=%d want=1", purged)
+	if purged != 2 {
+		t.Fatalf("purged rows: got=%d want=2", purged)
 	}
 
 	var activeCount int

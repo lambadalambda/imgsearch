@@ -27,6 +27,7 @@ type Queue struct {
 
 type claimedJob struct {
 	ID          int64
+	Kind        string
 	ImageID     int64
 	ModelID     int64
 	Attempts    int
@@ -60,7 +61,7 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	log.Printf("worker claimed job id=%d image_id=%d attempt=%d/%d", job.ID, job.ImageID, job.Attempts, job.MaxAttempts)
+	log.Printf("worker claimed job id=%d kind=%s image_id=%d attempt=%d/%d", job.ID, job.Kind, job.ImageID, job.Attempts, job.MaxAttempts)
 	jobStartedAt := time.Now()
 	var loadTaskDataDuration time.Duration
 	var statDuration time.Duration
@@ -86,45 +87,57 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 	}
 	statDuration = time.Since(stageStartedAt)
 
-	stageStartedAt = time.Now()
-	vec, err := q.Embedder.EmbedImage(ctx, absPath)
-	embedDuration = time.Since(stageStartedAt)
-	if err != nil {
-		_ = q.failOrRetry(ctx, job, err)
-		return true, nil
-	}
-
-	if len(vec) == 0 {
-		err := fmt.Errorf("empty embedding vector")
-		_ = q.failOrRetry(ctx, job, err)
-		return true, nil
-	}
-
 	var annotation *embedder.ImageAnnotation
 	annotationAttempted := false
 	annotationStored := false
 	annotationErrText := ""
-	if q.Annotator != nil && needsAnnotations {
+
+	switch job.Kind {
+	case "embed_image":
+		stageStartedAt = time.Now()
+		vec, err := q.Embedder.EmbedImage(ctx, absPath)
+		embedDuration = time.Since(stageStartedAt)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return true, nil
+		}
+
+		if len(vec) == 0 {
+			err := fmt.Errorf("empty embedding vector")
+			_ = q.failOrRetry(ctx, job, err)
+			return true, nil
+		}
+
+		stageStartedAt = time.Now()
+		if err := q.Index.Upsert(ctx, job.ImageID, job.ModelID, vec); err != nil {
+			indexDuration = time.Since(stageStartedAt)
+			_ = q.failOrRetry(ctx, job, err)
+			return true, err
+		}
+		indexDuration = time.Since(stageStartedAt)
+	case "annotate_image":
+		if !needsAnnotations {
+			break
+		}
+		if q.Annotator == nil {
+			return false, nil
+		}
 		annotationAttempted = true
 		stageStartedAt = time.Now()
 		generated, err := q.Annotator.AnnotateImage(ctx, absPath)
 		annotateDuration = time.Since(stageStartedAt)
 		if err != nil {
 			annotationErrText = err.Error()
-			log.Printf("worker annotation skipped image_id=%d: %v", job.ImageID, err)
-		} else {
-			annotation = &generated
-			annotationStored = true
+			_ = q.failOrRetry(ctx, job, err)
+			return true, nil
 		}
-	}
-
-	stageStartedAt = time.Now()
-	if err := q.Index.Upsert(ctx, job.ImageID, job.ModelID, vec); err != nil {
-		indexDuration = time.Since(stageStartedAt)
+		annotation = &generated
+		annotationStored = true
+	default:
+		err := fmt.Errorf("unsupported job kind %q", job.Kind)
 		_ = q.failOrRetry(ctx, job, err)
 		return true, err
 	}
-	indexDuration = time.Since(stageStartedAt)
 
 	stageStartedAt = time.Now()
 	if err := q.completeJob(ctx, job, annotation); err != nil {
@@ -139,8 +152,9 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 		annotationErrSuffix = fmt.Sprintf(" annotation_error=%q", annotationErrText)
 	}
 	log.Printf(
-		"worker completed job id=%d image_id=%d total=%s load=%s stat=%s embed=%s annotate=%s db=%s index=%s annotations_needed=%t annotation_attempted=%t annotation_stored=%t%s",
+		"worker completed job id=%d kind=%s image_id=%d total=%s load=%s stat=%s embed=%s annotate=%s db=%s index=%s annotations_needed=%t annotation_attempted=%t annotation_stored=%t%s",
 		job.ID,
+		job.Kind,
 		job.ImageID,
 		time.Since(jobStartedAt).Round(time.Millisecond),
 		loadTaskDataDuration.Round(time.Millisecond),
@@ -164,19 +178,26 @@ func (q *Queue) claimNext(ctx context.Context, owner string) (claimedJob, bool, 
 		return claimedJob{}, false, fmt.Errorf("begin claim tx: %w", err)
 	}
 
+	kindFilter := "kind = 'embed_image'"
+	orderBy := "created_at ASC"
+	if q.Annotator != nil {
+		kindFilter = "kind IN ('embed_image', 'annotate_image')"
+		orderBy = "CASE kind WHEN 'embed_image' THEN 0 ELSE 1 END ASC, created_at ASC"
+	}
+
 	var job claimedJob
-	err = tx.QueryRowContext(ctx, `
-SELECT id, image_id, model_id, attempts, max_attempts
+	err = tx.QueryRowContext(ctx, fmt.Sprintf(`
+SELECT id, kind, image_id, model_id, attempts, max_attempts
 FROM index_jobs
-WHERE kind = 'embed_image'
+WHERE %s
   AND (run_after IS NULL OR run_after <= datetime('now'))
   AND (
     state = 'pending'
     OR (state = 'leased' AND leased_until IS NOT NULL AND leased_until <= datetime('now'))
   )
-ORDER BY created_at ASC
+ORDER BY %s
 LIMIT 1
-`).Scan(&job.ID, &job.ImageID, &job.ModelID, &job.Attempts, &job.MaxAttempts)
+`, kindFilter, orderBy)).Scan(&job.ID, &job.Kind, &job.ImageID, &job.ModelID, &job.Attempts, &job.MaxAttempts)
 	if err == sql.ErrNoRows {
 		_ = tx.Rollback()
 		return claimedJob{}, false, nil

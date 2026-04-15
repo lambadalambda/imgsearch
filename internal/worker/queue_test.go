@@ -196,8 +196,64 @@ func TestProcessOneDoesNotPersistEmbeddingWhenIndexUpsertFails(t *testing.T) {
 	}
 }
 
-func TestProcessOneStoresGeneratedAnnotationsWhenAvailable(t *testing.T) {
+func TestProcessOneEmbedJobLeavesAnnotationsUntouched(t *testing.T) {
 	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, model_id, state)
+VALUES (2, 'annotate_image', 1, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate job: %v", err)
+	}
+	q.Annotator = &fakeAnnotator{annotation: embedder.ImageAnnotation{
+		Description: "A calm test image.",
+		Tags:        []string{"test", "sample", "nsfw"},
+	}}
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+
+	var description string
+	var tagsJSON string
+	if err := sqlDB.QueryRow(`SELECT description, tags_json FROM images WHERE id = 1`).Scan(&description, &tagsJSON); err != nil {
+		t.Fatalf("load stored annotations: %v", err)
+	}
+	if description != "" || tagsJSON != "[]" {
+		t.Fatalf("expected embed job to leave annotations untouched, got description=%q tags_json=%q", description, tagsJSON)
+	}
+
+	var embedState string
+	if err := sqlDB.QueryRow(`SELECT state FROM index_jobs WHERE id = 1`).Scan(&embedState); err != nil {
+		t.Fatalf("load embed job state: %v", err)
+	}
+	if embedState != "done" {
+		t.Fatalf("expected embed job done, got %s", embedState)
+	}
+
+	var annotateState string
+	if err := sqlDB.QueryRow(`SELECT state FROM index_jobs WHERE id = 2`).Scan(&annotateState); err != nil {
+		t.Fatalf("load annotate job state: %v", err)
+	}
+	if annotateState != "pending" {
+		t.Fatalf("expected annotate job to remain pending, got %s", annotateState)
+	}
+}
+
+func TestProcessOneProcessesAnnotateJobAndStoresGeneratedAnnotationsWhenAvailable(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE id = 1`); err != nil {
+		t.Fatalf("mark embed job done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, model_id, state)
+VALUES (2, 'annotate_image', 1, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate job: %v", err)
+	}
 	q.Annotator = &fakeAnnotator{annotation: embedder.ImageAnnotation{
 		Description: "A calm test image.",
 		Tags:        []string{"test", "sample", "nsfw"},
@@ -226,10 +282,27 @@ func TestProcessOneStoresGeneratedAnnotationsWhenAvailable(t *testing.T) {
 	if len(tags) != 3 || tags[2] != "nsfw" {
 		t.Fatalf("unexpected tags: %v", tags)
 	}
+
+	var annotateState string
+	if err := sqlDB.QueryRow(`SELECT state FROM index_jobs WHERE id = 2`).Scan(&annotateState); err != nil {
+		t.Fatalf("load annotate job state: %v", err)
+	}
+	if annotateState != "done" {
+		t.Fatalf("expected annotate job done, got %s", annotateState)
+	}
 }
 
-func TestProcessOneStillCompletesWhenAnnotationGenerationFails(t *testing.T) {
+func TestProcessOneRetriesAnnotateJobOnFailure(t *testing.T) {
 	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE id = 1`); err != nil {
+		t.Fatalf("mark embed job done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, model_id, state)
+VALUES (2, 'annotate_image', 1, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate job: %v", err)
+	}
 	q.Annotator = &fakeAnnotator{err: errors.New("annotate failed")}
 
 	processed, err := q.ProcessOne(context.Background(), "worker-1")
@@ -243,14 +316,35 @@ func TestProcessOneStillCompletesWhenAnnotationGenerationFails(t *testing.T) {
 	var state string
 	var description string
 	var tagsJSON string
-	if err := sqlDB.QueryRow(`SELECT j.state, i.description, i.tags_json FROM index_jobs j JOIN images i ON i.id = j.image_id WHERE j.id = 1`).Scan(&state, &description, &tagsJSON); err != nil {
+	if err := sqlDB.QueryRow(`SELECT j.state, i.description, i.tags_json FROM index_jobs j JOIN images i ON i.id = j.image_id WHERE j.id = 2`).Scan(&state, &description, &tagsJSON); err != nil {
 		t.Fatalf("load final state: %v", err)
 	}
-	if state != "done" {
-		t.Fatalf("expected job state done, got %s", state)
+	if state != "pending" {
+		t.Fatalf("expected annotate job state pending for retry, got %s", state)
 	}
 	if description != "" || tagsJSON != "[]" {
 		t.Fatalf("expected annotations to remain empty, got description=%q tags_json=%q", description, tagsJSON)
+	}
+}
+
+func TestProcessOneSkipsAnnotateJobsWhenNoAnnotatorAvailable(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE id = 1`); err != nil {
+		t.Fatalf("mark embed job done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, model_id, state)
+VALUES (2, 'annotate_image', 1, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate job: %v", err)
+	}
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if processed {
+		t.Fatal("expected processed=false when only annotate jobs remain and annotator is unavailable")
 	}
 }
 

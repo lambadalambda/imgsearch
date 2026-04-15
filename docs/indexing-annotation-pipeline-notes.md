@@ -4,10 +4,15 @@
 
 These notes capture the current bottlenecks and the likely direction for making indexing searchable sooner while keeping GPU utilization high.
 
+Status update:
+- The pipeline now uses separate `embed_image` and `annotate_image` jobs.
+- Searchability is driven by the `embed_image` job reaching `done`.
+- Annotation runs as follow-up work and can be processed later by a worker with an annotator available.
+
 Relevant code today:
-- `internal/worker/queue.go`: one `embed_image` job does embedding, optional annotation, DB writes, and vector index upsert in one serial flow.
-- `internal/db/index_jobs.go`: only `embed_image` is used as a real job kind today, even when requeueing missing annotations.
-- `internal/upload/service.go`: uploads enqueue `embed_image` jobs.
+- `internal/worker/queue.go`: `embed_image` handles embedding/indexing and `annotate_image` handles descriptions/tags.
+- `internal/db/index_jobs.go`: `embed_image` and `annotate_image` are now distinct queue kinds.
+- `internal/upload/service.go`: uploads enqueue both job kinds when annotations are still missing.
 - `internal/search/http.go`: text search needs the embedder at request time via `EmbedText`, so the embedder cannot disappear from the API process without affecting search.
 - `internal/images/http.go`: gallery state is derived from `embed_image` job state and currently requeues the same job when annotations are missing.
 - `cmd/imgsearch/main.go`: the app initializes both the embedder and the annotator at startup and keeps them resident for the process lifetime.

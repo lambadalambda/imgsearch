@@ -38,8 +38,7 @@ SET state = 'pending',
     lease_owner = NULL,
     last_error = NULL,
     updated_at = datetime('now')
-WHERE kind = 'embed_image'
-  AND model_id = ?
+WHERE model_id = ?
   AND state = 'failed'
 		`, h.ModelID)
 		if err != nil {
@@ -64,7 +63,12 @@ WHERE kind = 'embed_image'
 			httputil.WriteJSONError(w, http.StatusInternalServerError, "retry failed")
 			return
 		}
+		annotationJobs, err := db.EnsureAnnotationJobsForModel(r.Context(), h.DB, h.ModelID)
+		if err != nil {
+			httputil.WriteJSONError(w, http.StatusInternalServerError, "retry failed")
+			return
+		}
 
-		httputil.WriteJSON(w, http.StatusOK, RetryFailedResponse{Retried: rows, Enqueued: requeuedAnnotations + enqueued})
+		httputil.WriteJSON(w, http.StatusOK, RetryFailedResponse{Retried: rows, Enqueued: requeuedAnnotations + enqueued + annotationJobs})
 	})
 }

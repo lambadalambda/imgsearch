@@ -43,7 +43,8 @@ INSERT INTO index_jobs(id, kind, image_id, model_id, state, attempts, max_attemp
 VALUES
 	(11, 'embed_image', 1, 1, 'failed', 3, 3, 'oom'),
 	(12, 'embed_image', 2, 1, 'failed', 2, 3, 'timeout'),
-	(13, 'embed_image', 3, 1, 'done', 1, 3, NULL),
+	(13, 'annotate_image', 3, 1, 'done', 1, 3, NULL),
+	(15, 'annotate_image', 2, 1, 'failed', 2, 3, 'annotator oom'),
 	(14, 'embed_image', 1, 2, 'failed', 3, 3, 'other model')
 `)
 	if err != nil {
@@ -69,17 +70,17 @@ func TestRetryFailedHandlerResetsFailedJobsForModel(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.Retried != 2 {
-		t.Fatalf("retried: got=%d want=2", resp.Retried)
+	if resp.Retried != 3 {
+		t.Fatalf("retried: got=%d want=3", resp.Retried)
 	}
-	if resp.Enqueued != 2 {
-		t.Fatalf("enqueued_missing: got=%d want=2", resp.Enqueued)
+	if resp.Enqueued != 5 {
+		t.Fatalf("enqueued_missing: got=%d want=5", resp.Enqueued)
 	}
 
 	rows, err := dbConn.Query(`
 SELECT state, attempts, COALESCE(last_error, ''), COALESCE(run_after, '')
 FROM index_jobs
-WHERE id IN (11, 12)
+WHERE id IN (11, 12, 15)
 ORDER BY id ASC
 `)
 	if err != nil {
@@ -131,6 +132,14 @@ ORDER BY id ASC
 	}
 	if annotationRepairState != "pending" {
 		t.Fatalf("expected done image missing annotations to be requeued, got %s", annotationRepairState)
+	}
+
+	var missingAnnotateState string
+	if err := dbConn.QueryRow(`SELECT state FROM index_jobs WHERE kind='annotate_image' AND model_id = 1 AND image_id = 4`).Scan(&missingAnnotateState); err != nil {
+		t.Fatalf("query missing annotate job after retry: %v", err)
+	}
+	if missingAnnotateState != "pending" {
+		t.Fatalf("expected missing annotate job to be queued as pending, got %s", missingAnnotateState)
 	}
 }
 

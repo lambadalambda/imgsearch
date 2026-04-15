@@ -102,8 +102,16 @@ func TestStoreCreatesImageAndQueueJob(t *testing.T) {
 	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs`).Scan(&jobCount); err != nil {
 		t.Fatalf("count jobs: %v", err)
 	}
-	if jobCount != 1 {
-		t.Fatalf("expected 1 job, got %d", jobCount)
+	if jobCount != 2 {
+		t.Fatalf("expected 2 jobs, got %d", jobCount)
+	}
+
+	var annotateJobs int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_image'`).Scan(&annotateJobs); err != nil {
+		t.Fatalf("count annotate jobs: %v", err)
+	}
+	if annotateJobs != 1 {
+		t.Fatalf("expected 1 annotate job, got %d", annotateJobs)
 	}
 
 	abs := filepath.Join(svc.DataDir, out.StoragePath)
@@ -144,8 +152,8 @@ func TestStoreIsIdempotentByContentHash(t *testing.T) {
 	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs`).Scan(&jobCount); err != nil {
 		t.Fatalf("count jobs: %v", err)
 	}
-	if jobCount != 1 {
-		t.Fatalf("expected 1 job after duplicate upload, got %d", jobCount)
+	if jobCount != 2 {
+		t.Fatalf("expected 2 jobs after duplicate upload, got %d", jobCount)
 	}
 }
 

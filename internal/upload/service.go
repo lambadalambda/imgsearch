@@ -202,6 +202,21 @@ ON CONFLICT(kind, image_id, model_id) DO NOTHING
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert index job: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO index_jobs(kind, image_id, model_id, state)
+SELECT 'annotate_image', i.id, ?, 'pending'
+FROM images i
+WHERE i.id = ?
+  AND (
+    trim(COALESCE(i.description, '')) = ''
+    OR COALESCE(i.tags_json, '') = ''
+    OR COALESCE(i.tags_json, '[]') = '[]'
+  )
+ON CONFLICT(kind, image_id, model_id) DO NOTHING
+`, s.ModelID, out.ImageID); err != nil {
+		_ = tx.Rollback()
+		return StoreResult{}, fmt.Errorf("insert annotation job: %w", err)
+	}
 
 	if !out.Duplicate {
 		if err := os.Rename(tmpPath, storageAbs); err != nil {
