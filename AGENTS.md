@@ -13,6 +13,7 @@
 - Add or update tests for every behavior change.
 - Keep dependencies minimal and justify each new dependency.
 - Document architectural decisions and trade-offs in `docs/`.
+- When reviews or investigations uncover actionable follow-up work, track it in `docs/issues.md` as a checklist and keep one dedicated note per issue under `docs/issues/` with context, risks, and acceptance criteria.
 - Keep `CHANGELOG.md` up to date for user-visible changes and notable internal behavior changes.
 - Use `mise` to manage developer tool versions in `mise.toml`.
 - Use `mise run <task>` as the standard task runner for common workflows.
