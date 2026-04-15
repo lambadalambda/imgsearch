@@ -16,7 +16,7 @@
 - Keep `CHANGELOG.md` up to date for user-visible changes and notable internal behavior changes.
 - Use `mise` to manage developer tool versions in `mise.toml`.
 - Use `mise run <task>` as the standard task runner for common workflows.
-- Run formatting and tests before every commit.
+- Run formatting and all tests before every commit.
 
 ## Collaboration
 - Preserve user data and avoid destructive operations by default.
