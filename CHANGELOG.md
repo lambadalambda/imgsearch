@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- perf: reduce default embedder context size from 8192 to 512, freeing ~1 GiB of KV cache memory (1152 MiB → 72 MiB) with no quality regression or latency change on the 100-image benchmark.
+- feat: add `-llama-native-flash-attn`, `-llama-native-cache-type-k`, `-llama-native-cache-type-v` CLI flags for llama.cpp attention and KV cache tuning. Same flags available for the annotator with `-llama-native-annotator-*` prefix. Default is auto (-1) for all three, preserving existing behavior.
 - perf: lower the default embedding image cap from 512 to 384, cutting representative `~/old` embedding benchmark time by about 42% while keeping fixture retrieval quality green.
 - test: allow native embedding benchmarks to run against a real image directory via `LLAMA_NATIVE_BENCH_IMAGE_DIR` and `LLAMA_NATIVE_BENCH_IMAGE_LIMIT`.
 - fix: make local `mise run serve:8b` self-heal sqlite-vector platform mismatches and add a startup smoke task.

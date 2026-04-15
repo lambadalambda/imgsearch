@@ -36,9 +36,12 @@ func main() {
 	llamaNativeDimensions := flag.Int("llama-native-dimensions", defaultLlamaNativeDimensions, "embedding dimensions for llama-cpp-native model metadata")
 	llamaNativeGPULayers := flag.Int("llama-native-gpu-layers", 99, "number of layers to offload for llama-cpp-native")
 	llamaNativeUseGPU := flag.Bool("llama-native-use-gpu", true, "whether llama-cpp-native should use GPU for mtmd/mmproj")
-	llamaNativeContextSize := flag.Int("llama-native-context-size", 8192, "context size for llama-cpp-native runtime")
+	llamaNativeContextSize := flag.Int("llama-native-context-size", defaultLlamaNativeEmbedderContextSize, "context size for llama-cpp-native runtime")
 	llamaNativeBatchSize := flag.Int("llama-native-batch-size", 512, "batch size for llama-cpp-native runtime")
 	llamaNativeThreads := flag.Int("llama-native-threads", 0, "thread count for llama-cpp-native runtime (0 uses backend default)")
+	llamaNativeFlashAttnType := flag.Int("llama-native-flash-attn", defaultLlamaNativeFlashAttnType, "flash attention type for llama-cpp-native (-1=auto, 0=off, 1=on)")
+	llamaNativeCacheTypeK := flag.Int("llama-native-cache-type-k", defaultLlamaNativeCacheTypeK, "K cache type for llama-cpp-native (-1=default, 0=f32, 1=f16, 8=q8_0)")
+	llamaNativeCacheTypeV := flag.Int("llama-native-cache-type-v", defaultLlamaNativeCacheTypeV, "V cache type for llama-cpp-native (-1=default, 0=f32, 1=f16, 8=q8_0)")
 	llamaNativeImageMaxSide := flag.Int("llama-native-image-max-side", 384, "maximum image side length used before llama-cpp-native embedding")
 	llamaNativeImageMaxTokens := flag.Int("llama-native-image-max-tokens", 0, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
 	llamaNativeQueryInstruction := flag.String("llama-native-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp-native text query embeddings")
@@ -52,6 +55,9 @@ func main() {
 	llamaNativeAnnotatorContextSize := flag.Int("llama-native-annotator-context-size", 8192, "context size for the separate llama-cpp-native annotator")
 	llamaNativeAnnotatorBatchSize := flag.Int("llama-native-annotator-batch-size", 512, "batch size for the separate llama-cpp-native annotator")
 	llamaNativeAnnotatorThreads := flag.Int("llama-native-annotator-threads", 0, "thread count for the separate llama-cpp-native annotator (0 uses backend default)")
+	llamaNativeAnnotatorFlashAttnType := flag.Int("llama-native-annotator-flash-attn", defaultLlamaNativeFlashAttnType, "flash attention type for the separate annotator (-1=auto, 0=off, 1=on)")
+	llamaNativeAnnotatorCacheTypeK := flag.Int("llama-native-annotator-cache-type-k", defaultLlamaNativeCacheTypeK, "K cache type for the separate annotator (-1=default, 0=f32, 1=f16, 8=q8_0)")
+	llamaNativeAnnotatorCacheTypeV := flag.Int("llama-native-annotator-cache-type-v", defaultLlamaNativeCacheTypeV, "V cache type for the separate annotator (-1=default, 0=f32, 1=f16, 8=q8_0)")
 	llamaNativeAnnotatorImageMaxSide := flag.Int("llama-native-annotator-image-max-side", 1024, "maximum image side length used before separate llama-cpp-native annotation generation")
 	llamaNativeAnnotatorImageMaxTokens := flag.Int("llama-native-annotator-image-max-tokens", 0, "optional maximum image tokens override for the separate llama-cpp-native annotator (0 uses model default)")
 	vectorBackend := flag.String("vector-backend", vectorBackendAuto, "vector backend: auto, sqlite-vector, bruteforce")
@@ -229,6 +235,9 @@ func main() {
 		ImageMaxTokens:     resolvedLlamaNativeImageMaxTokens,
 		QueryInstruction:   *llamaNativeQueryInstruction,
 		PassageInstruction: *llamaNativePassageInstruction,
+		FlashAttnType:      *llamaNativeFlashAttnType,
+		CacheTypeK:         *llamaNativeCacheTypeK,
+		CacheTypeV:         *llamaNativeCacheTypeV,
 	})
 	if err != nil {
 		log.Fatalf("configure embedder: %v", err)
@@ -258,6 +267,9 @@ func main() {
 			Threads:         *llamaNativeAnnotatorThreads,
 			ImageMaxSide:    *llamaNativeAnnotatorImageMaxSide,
 			ImageMaxTokens:  *llamaNativeAnnotatorImageMaxTokens,
+			FlashAttnType:   *llamaNativeAnnotatorFlashAttnType,
+			CacheTypeK:      *llamaNativeAnnotatorCacheTypeK,
+			CacheTypeV:      *llamaNativeAnnotatorCacheTypeV,
 		})
 		if err != nil {
 			log.Fatalf("configure annotator: %v", err)

@@ -132,7 +132,7 @@ func newNativeEmbedderForBenchmark(b *testing.B) *Embedder {
 		Dimensions:         envIntOrDefaultBenchmark("LLAMA_NATIVE_DIMS", 2048),
 		GPULayers:          envIntOrDefaultBenchmark("LLAMA_NATIVE_GPU_LAYERS", 99),
 		UseGPU:             envBoolOrDefault("LLAMA_NATIVE_USE_GPU", true),
-		ContextSize:        envIntOrDefaultBenchmark("LLAMA_NATIVE_CONTEXT_SIZE", 8192),
+		ContextSize:        envIntOrDefaultBenchmark("LLAMA_NATIVE_CONTEXT_SIZE", 512),
 		BatchSize:          envIntOrDefaultBenchmark("LLAMA_NATIVE_BATCH_SIZE", 512),
 		Threads:            envIntOrDefaultBenchmark("LLAMA_NATIVE_THREADS", 0),
 		ImageMaxSide:       envIntOrDefaultBenchmark("LLAMA_NATIVE_IMAGE_MAX_SIDE", 384),

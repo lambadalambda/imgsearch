@@ -16,6 +16,10 @@ const (
 	defaultLlamaNativeModelPath              = "./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
 	defaultLlamaNativeMMProjPath             = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
 	defaultLlamaNativeDimensions             = 4096
+	defaultLlamaNativeEmbedderContextSize    = 512
+	defaultLlamaNativeFlashAttnType          = -1
+	defaultLlamaNativeCacheTypeK             = -1
+	defaultLlamaNativeCacheTypeV             = -1
 	defaultLlamaNativeModelURL               = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
 	defaultLlamaNativeMMProjURL              = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
 	defaultLlamaNativeAnnotatorVariant       = "e4b"

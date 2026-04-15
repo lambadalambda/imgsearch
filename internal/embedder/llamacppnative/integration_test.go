@@ -206,7 +206,7 @@ func newNativeEmbedderForIntegration(t *testing.T) *Embedder {
 		Dimensions:         envIntOrDefault(t, "LLAMA_NATIVE_DIMS", 2048),
 		GPULayers:          envIntOrDefault(t, "LLAMA_NATIVE_GPU_LAYERS", 99),
 		UseGPU:             envBoolOrDefault("LLAMA_NATIVE_USE_GPU", true),
-		ContextSize:        envIntOrDefault(t, "LLAMA_NATIVE_CONTEXT_SIZE", 8192),
+		ContextSize:        envIntOrDefault(t, "LLAMA_NATIVE_CONTEXT_SIZE", 512),
 		BatchSize:          envIntOrDefault(t, "LLAMA_NATIVE_BATCH_SIZE", 512),
 		Threads:            envIntOrDefault(t, "LLAMA_NATIVE_THREADS", 0),
 		ImageMaxSide:       envIntOrDefault(t, "LLAMA_NATIVE_IMAGE_MAX_SIDE", 384),

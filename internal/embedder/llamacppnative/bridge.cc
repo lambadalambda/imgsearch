@@ -567,7 +567,10 @@ imgsearch_llama_handle * imgsearch_llama_new(
     int32_t n_threads,
     int32_t use_gpu,
     int32_t image_max_side,
-    int32_t image_max_tokens) {
+    int32_t image_max_tokens,
+    int32_t flash_attn_type,
+    int32_t cache_type_k,
+    int32_t cache_type_v) {
     const std::string model = trim(model_path);
     const std::string mmproj = trim(mmproj_path);
     if (model.empty()) {
@@ -610,6 +613,15 @@ imgsearch_llama_handle * imgsearch_llama_new(
         cparams.n_threads = n_threads;
         cparams.n_threads_batch = n_threads;
     }
+    if (flash_attn_type >= 0) {
+        cparams.flash_attn_type = static_cast<llama_flash_attn_type>(flash_attn_type);
+    }
+    if (cache_type_k >= 0) {
+        cparams.type_k = static_cast<ggml_type>(cache_type_k);
+    }
+    if (cache_type_v >= 0) {
+        cparams.type_v = static_cast<ggml_type>(cache_type_v);
+    }
 
     handle->lctx = llama_init_from_model(handle->model, cparams);
     if (handle->lctx == nullptr) {
@@ -627,6 +639,9 @@ imgsearch_llama_handle * imgsearch_llama_new(
     vparams.warmup = true;
     if (image_max_tokens > 0) {
         vparams.image_max_tokens = image_max_tokens;
+    }
+    if (flash_attn_type >= 0) {
+        vparams.flash_attn_type = static_cast<llama_flash_attn_type>(flash_attn_type);
     }
 
     handle->mctx = mtmd_init_from_file(mmproj.c_str(), handle->model, vparams);
@@ -776,6 +791,9 @@ std::string g_last_error = "llama-cpp-native requires build tag 'llamacpp_native
 imgsearch_llama_handle * imgsearch_llama_new(
     const char *,
     const char *,
+    int32_t,
+    int32_t,
+    int32_t,
     int32_t,
     int32_t,
     int32_t,

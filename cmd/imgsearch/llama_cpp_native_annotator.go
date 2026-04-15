@@ -18,6 +18,9 @@ type llamaCPPNativeAnnotatorOptions struct {
 	Threads         int
 	ImageMaxSide    int
 	ImageMaxTokens  int
+	FlashAttnType   int
+	CacheTypeK      int
+	CacheTypeV      int
 }
 
 func newLlamaCPPNativeAnnotator(opts llamaCPPNativeAnnotatorOptions) (embedder.ImageAnnotator, error) {
@@ -59,5 +62,8 @@ func newLlamaCPPNativeAnnotator(opts llamaCPPNativeAnnotatorOptions) (embedder.I
 		Threads:         opts.Threads,
 		ImageMaxSide:    imageMaxSide,
 		ImageMaxTokens:  imageMaxTokens,
+		FlashAttnType:   opts.FlashAttnType,
+		CacheTypeK:      opts.CacheTypeK,
+		CacheTypeV:      opts.CacheTypeV,
 	})
 }

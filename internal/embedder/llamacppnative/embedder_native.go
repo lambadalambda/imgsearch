@@ -29,6 +29,8 @@ const (
 	defaultQueryInstruction   = "Retrieve images or text relevant to the user's query."
 	defaultPassageInstruction = "Represent this image or text for retrieval."
 	defaultImageMaxSide       = 384
+	defaultFlashAttnType      = -1
+	defaultCacheType          = -1
 )
 
 type Config struct {
@@ -44,6 +46,9 @@ type Config struct {
 	ImageMaxTokens     int
 	QueryInstruction   string
 	PassageInstruction string
+	FlashAttnType      int
+	CacheTypeK         int
+	CacheTypeV         int
 }
 
 type Embedder struct {
@@ -98,6 +103,19 @@ func New(cfg Config) (*Embedder, error) {
 		useGPU = 1
 	}
 
+	flashAttnType := cfg.FlashAttnType
+	if flashAttnType == 0 {
+		flashAttnType = defaultFlashAttnType
+	}
+	cacheTypeK := cfg.CacheTypeK
+	if cacheTypeK == 0 {
+		cacheTypeK = defaultCacheType
+	}
+	cacheTypeV := cfg.CacheTypeV
+	if cacheTypeV == 0 {
+		cacheTypeV = defaultCacheType
+	}
+
 	h := C.imgsearch_llama_new(
 		cModelPath,
 		cVisionPath,
@@ -108,6 +126,9 @@ func New(cfg Config) (*Embedder, error) {
 		C.int32_t(useGPU),
 		C.int32_t(imageMaxSide),
 		C.int32_t(cfg.ImageMaxTokens),
+		C.int32_t(flashAttnType),
+		C.int32_t(cacheTypeK),
+		C.int32_t(cacheTypeV),
 	)
 	if h == nil {
 		msg := strings.TrimSpace(C.GoString(C.imgsearch_llama_global_error()))

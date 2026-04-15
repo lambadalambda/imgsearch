@@ -18,7 +18,10 @@ imgsearch_llama_handle * imgsearch_llama_new(
     int32_t n_threads,
     int32_t use_gpu,
     int32_t image_max_side,
-    int32_t image_max_tokens);
+    int32_t image_max_tokens,
+    int32_t flash_attn_type,
+    int32_t cache_type_k,
+    int32_t cache_type_v);
 
 void imgsearch_llama_free(imgsearch_llama_handle * handle);
 

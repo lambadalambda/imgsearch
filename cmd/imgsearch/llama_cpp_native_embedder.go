@@ -22,6 +22,9 @@ type llamaCPPNativeEmbedderOptions struct {
 	ImageMaxTokens     int
 	QueryInstruction   string
 	PassageInstruction string
+	FlashAttnType      int
+	CacheTypeK         int
+	CacheTypeV         int
 }
 
 const defaultLlamaNativeImageMaxSide = 384
@@ -88,6 +91,9 @@ func newLlamaCPPNativeEmbedder(opts llamaCPPNativeEmbedderOptions) (embedder.Emb
 		ImageMaxTokens:     imageMaxTokens,
 		QueryInstruction:   strings.TrimSpace(opts.QueryInstruction),
 		PassageInstruction: strings.TrimSpace(opts.PassageInstruction),
+		FlashAttnType:      opts.FlashAttnType,
+		CacheTypeK:         opts.CacheTypeK,
+		CacheTypeV:         opts.CacheTypeV,
 	})
 }
 

@@ -66,6 +66,9 @@ type nativeGemmaRuntimeConfig struct {
 	Threads         int
 	ImageMaxSide    int
 	ImageMaxTokens  int
+	FlashAttnType   int
+	CacheTypeK      int
+	CacheTypeV      int
 }
 
 type AnnotatorConfig = nativeGemmaRuntimeConfig
@@ -130,6 +133,19 @@ func newGemmaNativeRuntime(cfg nativeGemmaRuntimeConfig) (*nativeGemmaRuntime, e
 	cVisionPath := C.CString(visionPath)
 	defer C.free(unsafe.Pointer(cVisionPath))
 
+	flashAttnType := cfg.FlashAttnType
+	if flashAttnType == 0 {
+		flashAttnType = -1
+	}
+	cacheTypeK := cfg.CacheTypeK
+	if cacheTypeK == 0 {
+		cacheTypeK = -1
+	}
+	cacheTypeV := cfg.CacheTypeV
+	if cacheTypeV == 0 {
+		cacheTypeV = -1
+	}
+
 	h := C.imgsearch_llama_new(
 		cModelPath,
 		cVisionPath,
@@ -140,6 +156,9 @@ func newGemmaNativeRuntime(cfg nativeGemmaRuntimeConfig) (*nativeGemmaRuntime, e
 		boolToCInt32(cfg.UseGPU),
 		C.int32_t(imageMaxSide),
 		C.int32_t(cfg.ImageMaxTokens),
+		C.int32_t(flashAttnType),
+		C.int32_t(cacheTypeK),
+		C.int32_t(cacheTypeV),
 	)
 	if h == nil {
 		msg := strings.TrimSpace(C.GoString(C.imgsearch_llama_global_error()))
