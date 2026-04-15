@@ -10,6 +10,7 @@ func TestResolveAnnotatorAssetPathsSkipsResolutionWhenDisabled(t *testing.T) {
 	modelPath, mmprojPath, err := resolveAnnotatorAssetPaths(
 		context.Background(),
 		false,
+		false,
 		defaultLlamaNativeAnnotatorVariant,
 		"",
 		"",
@@ -33,6 +34,7 @@ func TestResolveAnnotatorAssetPathsRejectsExplicitPathsWhenDisabled(t *testing.T
 	_, _, err := resolveAnnotatorAssetPaths(
 		context.Background(),
 		false,
+		false,
 		defaultLlamaNativeAnnotatorVariant,
 		"/models/custom.gguf",
 		"/models/custom-mmproj.gguf",
@@ -49,6 +51,7 @@ func TestResolveAnnotatorAssetPathsResolvesDefaultsWhenEnabled(t *testing.T) {
 	called := false
 	modelPath, mmprojPath, err := resolveAnnotatorAssetPaths(
 		context.Background(),
+		true,
 		true,
 		defaultLlamaNativeAnnotatorVariant,
 		"",
@@ -74,6 +77,7 @@ func TestResolveAnnotatorAssetPathsKeepsExplicitPathsWhenEnabled(t *testing.T) {
 	modelPath, mmprojPath, err := resolveAnnotatorAssetPaths(
 		context.Background(),
 		true,
+		true,
 		defaultLlamaNativeAnnotatorVariant,
 		" /models/custom.gguf ",
 		" /models/custom-mmproj.gguf ",
@@ -90,5 +94,30 @@ func TestResolveAnnotatorAssetPathsKeepsExplicitPathsWhenEnabled(t *testing.T) {
 	}
 	if modelPath != "/models/custom.gguf" || mmprojPath != "/models/custom-mmproj.gguf" {
 		t.Fatalf("unexpected explicit annotator paths: %q %q", modelPath, mmprojPath)
+	}
+}
+
+func TestResolveAnnotatorAssetPathsSkipsLoadWhenAnnotationsNotUsedInMode(t *testing.T) {
+	called := false
+	modelPath, mmprojPath, err := resolveAnnotatorAssetPaths(
+		context.Background(),
+		true,
+		false,
+		defaultLlamaNativeAnnotatorVariant,
+		"/models/custom.gguf",
+		"/models/custom-mmproj.gguf",
+		func(context.Context, string, string, string) (string, string, error) {
+			called = true
+			return "model.gguf", "mmproj.gguf", nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("resolve annotator assets: %v", err)
+	}
+	if called {
+		t.Fatal("expected annotator asset resolver to be skipped when mode will not load annotator")
+	}
+	if modelPath != "" || mmprojPath != "" {
+		t.Fatalf("expected empty annotator paths when mode skips annotator load, got %q %q", modelPath, mmprojPath)
 	}
 }

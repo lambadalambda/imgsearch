@@ -158,6 +158,11 @@ First run:
 3. The default 8B Qwen GGUF files and default Gemma annotator files are downloaded automatically if missing.
 4. Add --enable-annotations=false if you want to skip loading the Gemma annotator.
 
+Modes:
+ - ./run.sh           start the HTTP server and background worker in one process.
+ - ./run-api.sh       start the HTTP server only, with annotations disabled.
+ - ./run-worker.sh    start the background worker only.
+
 Notes:
  - The app auto-discovers sqlite-vector from ./tools/sqlite-vector/vector.
  - Linux bundles include wrapper scripts that set LD_LIBRARY_PATH for the packaged shared libraries.
@@ -215,6 +220,24 @@ export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
 exec "$script_dir/imgsearch" -vector-backend sqlite-vector "$@"
 EOF
 
+    cat > "${pkg_root}/run-api.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
+exec "$script_dir/imgsearch" -mode api -enable-annotations=false -vector-backend sqlite-vector "$@"
+EOF
+
+    cat > "${pkg_root}/run-worker.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
+exec "$script_dir/imgsearch" -mode worker -vector-backend sqlite-vector "$@"
+EOF
+
     cat > "${pkg_root}/run-8b-annotator-26b.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -224,7 +247,7 @@ export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
 exec "$script_dir/imgsearch" -vector-backend sqlite-vector -llama-native-annotator-variant 26b "$@"
 EOF
 
-    chmod +x "${pkg_root}/run.sh" "${pkg_root}/run-8b.sh" "${pkg_root}/run-8b-annotator-26b.sh"
+    chmod +x "${pkg_root}/run.sh" "${pkg_root}/run-8b.sh" "${pkg_root}/run-api.sh" "${pkg_root}/run-worker.sh" "${pkg_root}/run-8b-annotator-26b.sh"
     ;;
 esac
 

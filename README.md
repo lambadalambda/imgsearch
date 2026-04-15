@@ -61,6 +61,7 @@ Cross-platform note:
 - Embedding uses the in-process `llama-cpp-native` runtime with the Qwen3-VL-Embedding-8B GGUF pair.
 - The default Qwen embedding files and the default Gemma annotator files are downloaded automatically on first run when missing.
 - Add `-enable-annotations=false` if you want to run the API without loading the Gemma annotation model.
+- Add `-mode=api` or `-mode=worker` if you want to split the HTTP server and background worker into separate processes.
 - Data is stored in `./data` by default.
 - The UI includes uploads, indexing status, gallery browsing, text search, and similar-image search.
 

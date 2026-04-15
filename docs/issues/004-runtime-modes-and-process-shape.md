@@ -6,11 +6,14 @@ P1
 
 ## Status
 
-Partially completed.
+Completed for the current runtime/process-shape scope.
 
-- The app now supports `-enable-annotations=false`, which skips Gemma asset resolution/loading and runs the API in an embed-only mode.
-- Docs and packaged README text now mention the embed-only flag.
-- Dedicated embedding-worker / annotation-worker modes are still future work.
+- The app supports `-enable-annotations=false`, which skips Gemma asset resolution/loading and runs the API in an embed-only mode.
+- The app now supports `-mode=all|api|worker`.
+- `-mode=api -enable-annotations=false` runs the HTTP server without loading Gemma.
+- `-mode=worker` runs the background worker without starting the HTTP server.
+- Package wrappers and docs now describe the split-process API/worker setup.
+- Dedicated embedding-worker / annotation-worker sub-modes are intentionally deferred until the pipeline moves to separate `embed_image` and `annotate_image` job kinds.
 
 ## Summary
 
@@ -51,6 +54,8 @@ The app currently auto-resolves and loads both the embedder and annotator in a s
 - It is possible to run annotation separately from query-time search.
 - Package wrappers and docs make the modes clear.
 - Default behavior remains simple for local single-process use.
+
+All acceptance criteria are satisfied by the current implementation.
 
 ## Related Files
 

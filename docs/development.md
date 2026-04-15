@@ -19,6 +19,13 @@
 Embed-only mode:
 - Add `-enable-annotations=false` to skip Gemma resolution/loading and run the API with search-only embedding.
 
+Process modes:
+- `-mode=all` runs the HTTP server and worker loop in one process.
+- `-mode=api` runs the HTTP server only.
+- `-mode=worker` runs the worker loop only.
+- `-mode=api -enable-annotations=false` is the recommended split-process API configuration.
+- `-mode=worker` is the matching split-process worker configuration.
+
 One-command startup:
 - `mise run serve`
 - `mise run "serve:8b"`
@@ -61,6 +68,7 @@ Notes:
 - Optional: set `-llama-native-image-max-tokens` to override mtmd image token cap (`0` keeps model defaults).
 - Optional: use `-llama-native-query-instruction` and `-llama-native-passage-instruction` to tune retrieval framing.
 - Optional: use `-enable-annotations=false` to keep the embedder loaded for search without loading any separate annotation model.
+- Optional: use `-mode=api` or `-mode=worker` to split the HTTP server and background worker into separate processes.
 - Native embedding model metadata includes model/mmproj filenames, image cap settings, and retrieval instruction settings; changing them creates a new model version and queues missing index jobs for re-embedding.
 
 ## Bulk Import

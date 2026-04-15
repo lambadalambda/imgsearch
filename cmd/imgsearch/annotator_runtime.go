@@ -9,6 +9,7 @@ import (
 func resolveAnnotatorAssetPaths(
 	ctx context.Context,
 	enabled bool,
+	shouldLoad bool,
 	variant string,
 	modelPath string,
 	mmprojPath string,
@@ -20,6 +21,9 @@ func resolveAnnotatorAssetPaths(
 		if trimmedModelPath != "" || trimmedMMProjPath != "" {
 			return "", "", fmt.Errorf("conflicting annotator flags: -enable-annotations=false but explicit annotator paths were provided")
 		}
+		return "", "", nil
+	}
+	if !shouldLoad {
 		return "", "", nil
 	}
 	if trimmedModelPath != "" || trimmedMMProjPath != "" {

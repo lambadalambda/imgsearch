@@ -30,6 +30,7 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
+	modeFlag := flag.String("mode", string(runtimeModeAll), "process mode: all, api, or worker")
 	llamaNativeModelPath := flag.String("llama-native-model-path", defaultLlamaNativeModelPath, "path to the llama.cpp GGUF embedding model")
 	llamaNativeMMProjPath := flag.String("llama-native-mmproj-path", defaultLlamaNativeMMProjPath, "path to the llama.cpp GGUF mmproj model")
 	llamaNativeDimensions := flag.Int("llama-native-dimensions", defaultLlamaNativeDimensions, "embedding dimensions for llama-cpp-native model metadata")
@@ -56,6 +57,14 @@ func main() {
 	vectorBackend := flag.String("vector-backend", vectorBackendAuto, "vector backend: auto, sqlite-vector, bruteforce")
 	sqliteVectorPath := flag.String("sqlite-vector-path", "", "path to sqlite-vector extension binary (optional: defaults to SQLITE_VECTOR_PATH or tools/sqlite-vector/vector)")
 	flag.Parse()
+
+	mode, err := resolveRuntimeMode(*modeFlag)
+	if err != nil {
+		log.Fatalf("configure mode: %v", err)
+	}
+	if warning := annotationModeWarning(mode, *enableAnnotations, *llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath); warning != "" {
+		log.Printf("%s", warning)
+	}
 
 	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
 		log.Fatalf("create data directory: %v", err)
@@ -135,9 +144,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("resolve llama-cpp-native model assets: %v", err)
 	}
+	loadAnnotator := shouldLoadAnnotator(mode, *enableAnnotations)
 	*llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath, err = resolveAnnotatorAssetPaths(
 		context.Background(),
 		*enableAnnotations,
+		loadAnnotator,
 		*llamaNativeAnnotatorVariant,
 		*llamaNativeAnnotatorModelPath,
 		*llamaNativeAnnotatorMMProjPath,
@@ -223,10 +234,10 @@ func main() {
 	canAnnotateImages := false
 	annotatorModelPath := strings.TrimSpace(*llamaNativeAnnotatorModelPath)
 	annotatorVisionPath := strings.TrimSpace(*llamaNativeAnnotatorMMProjPath)
-	if *enableAnnotations {
+	if loadAnnotator {
 		imageAnnotator, canAnnotateImages = activeEmbedder.(embedder.ImageAnnotator)
 	}
-	if *enableAnnotations && (annotatorModelPath != "" || annotatorVisionPath != "") {
+	if loadAnnotator && (annotatorModelPath != "" || annotatorVisionPath != "") {
 		if annotatorModelPath == "" || annotatorVisionPath == "" {
 			log.Fatalf("configure annotator: both -llama-native-annotator-model-path and -llama-native-annotator-mmproj-path must be set together")
 		}
@@ -249,7 +260,7 @@ func main() {
 		}
 		canAnnotateImages = true
 		log.Printf("image annotations enabled via separate native annotator model %s", annotatorModelPath)
-	} else if *enableAnnotations && canAnnotateImages {
+	} else if loadAnnotator && canAnnotateImages {
 		log.Printf("image annotations enabled via active embedder model")
 	} else {
 		log.Printf("image annotations disabled")
@@ -270,15 +281,25 @@ func main() {
 		Annotator:      imageAnnotator,
 		Index:          index,
 	}
-	go worker.RunLoop(context.Background(), queue, "main-worker", 500*time.Millisecond)
-
-	mux := newServerMux(sqlDB, *dataDir, modelID, activeEmbedder, index, uploadSvc)
-
 	log.Printf("imgsearch initialized with database %s", dbPath)
 	log.Printf("using vector backend %s", resolvedVectorBackend)
-	log.Printf("listening on http://%s", *addr)
-	if err := http.ListenAndServe(*addr, mux); err != nil {
-		log.Fatalf("serve http: %v", err)
+	log.Printf("running in %s mode", mode)
+
+	if mode.startsWorker() {
+		if mode.startsHTTP() {
+			go worker.RunLoop(context.Background(), queue, "main-worker", 500*time.Millisecond)
+		} else {
+			worker.RunLoop(context.Background(), queue, "main-worker", 500*time.Millisecond)
+			return
+		}
+	}
+
+	if mode.startsHTTP() {
+		mux := newServerMux(sqlDB, *dataDir, modelID, activeEmbedder, index, uploadSvc)
+		log.Printf("listening on http://%s", *addr)
+		if err := http.ListenAndServe(*addr, mux); err != nil {
+			log.Fatalf("serve http: %v", err)
+		}
 	}
 }
 

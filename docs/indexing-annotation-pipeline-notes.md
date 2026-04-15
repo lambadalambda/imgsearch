@@ -167,5 +167,5 @@ If we split job kinds, these places need attention:
 2. Split `embed_image` and `annotate_image`.
 3. Make search results available immediately after embedding commits.
 4. Update UI and backfill logic so annotation no longer requeues embedding.
-5. Decide whether the 26B annotator should run in a separate worker mode or separate process.
+5. Use the shipped `-mode=all|api|worker` process split as the base for later dedicated embed-vs-annotate worker routing.
 6. Revisit throughput with batching, preprocessing overlap, and cached preprocessed artifacts.

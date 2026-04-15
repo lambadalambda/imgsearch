@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat: add `-mode=all|api|worker` so the HTTP server and background worker can run in separate processes.
 - ci: run the Go test suite on GitHub Actions for pull requests and main/master pushes.
 - refactor: drop legacy sidecar and HTTP embedder variants so imgsearch uses `llama-cpp-native` only, removing the old `-embedder` switch and sidecar/server flags.
 - feat: switch UI status/gallery refresh from 5s client polling to `/api/live` WebSocket snapshots, with automatic polling fallback on disconnect/unsupported clients.
