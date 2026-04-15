@@ -29,6 +29,7 @@ const (
 	defaultLlamaNativeAnnotator26BModelURL   = "https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26b-a4b-it-heretic.q4_k_m.gguf"
 	defaultLlamaNativeAnnotator26BMMProjURL  = "https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf"
 	defaultDownloadUserAgent                 = "imgsearch/1.0"
+	defaultDownloadTimeout                   = 30 * time.Minute
 	defaultDownloadProgressPeriod            = 5 * time.Second
 )
 
@@ -129,9 +130,7 @@ func ensureDefaultModelAsset(ctx context.Context, httpClient *http.Client, path 
 }
 
 func downloadFile(ctx context.Context, httpClient *http.Client, url string, destPath string) error {
-	if httpClient == nil {
-		httpClient = &http.Client{}
-	}
+	httpClient = resolveDownloadHTTPClient(httpClient)
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return fmt.Errorf("create model directory: %w", err)
 	}
@@ -157,26 +156,46 @@ func downloadFile(ctx context.Context, httpClient *http.Client, url string, dest
 		return fmt.Errorf("create temporary download file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
+	tmpClosed := false
 	defer func() {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
+		if !tmpClosed {
+			_ = tmpFile.Close()
+		}
+		if tmpPath != "" {
+			_ = os.Remove(tmpPath)
+		}
 	}()
 
 	log.Printf("downloading default model asset %s", filepath.Base(destPath))
-	if err := copyWithProgress(tmpFile, resp.Body, filepath.Base(destPath), resp.ContentLength); err != nil {
+	written, err := copyWithProgress(tmpFile, resp.Body, filepath.Base(destPath), resp.ContentLength)
+	if err != nil {
 		return fmt.Errorf("write %s: %w", filepath.Base(destPath), err)
+	}
+	// For known default assets we currently trust HTTPS plus an exact body length
+	// match when the server advertises Content-Length.
+	if resp.ContentLength >= 0 && written != resp.ContentLength {
+		return fmt.Errorf("write %s: content length mismatch: wrote %d bytes, expected %d", filepath.Base(destPath), written, resp.ContentLength)
 	}
 	if err := tmpFile.Close(); err != nil {
 		return fmt.Errorf("close temporary download file: %w", err)
 	}
+	tmpClosed = true
 	if err := os.Rename(tmpPath, destPath); err != nil {
 		return fmt.Errorf("move downloaded file into place: %w", err)
 	}
+	tmpPath = ""
 	log.Printf("downloaded default model asset %s", filepath.Base(destPath))
 	return nil
 }
 
-func copyWithProgress(dst io.Writer, src io.Reader, name string, total int64) error {
+func resolveDownloadHTTPClient(httpClient *http.Client) *http.Client {
+	if httpClient != nil {
+		return httpClient
+	}
+	return &http.Client{Timeout: defaultDownloadTimeout}
+}
+
+func copyWithProgress(dst io.Writer, src io.Reader, name string, total int64) (int64, error) {
 	buf := make([]byte, 1024*1024)
 	var written int64
 	nextLog := time.Now().Add(defaultDownloadProgressPeriod)
@@ -185,7 +204,7 @@ func copyWithProgress(dst io.Writer, src io.Reader, name string, total int64) er
 		n, err := src.Read(buf)
 		if n > 0 {
 			if _, writeErr := dst.Write(buf[:n]); writeErr != nil {
-				return writeErr
+				return written, writeErr
 			}
 			written += int64(n)
 			if time.Now().After(nextLog) {
@@ -198,10 +217,10 @@ func copyWithProgress(dst io.Writer, src io.Reader, name string, total int64) er
 			}
 		}
 		if err == io.EOF {
-			return nil
+			return written, nil
 		}
 		if err != nil {
-			return err
+			return written, err
 		}
 	}
 }

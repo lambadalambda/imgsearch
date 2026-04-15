@@ -4,6 +4,15 @@
 
 P2
 
+## Status
+
+Completed.
+
+- Default asset downloads now use a default HTTP timeout when no client is supplied.
+- The downloader now rejects advertised `Content-Length` mismatches and keeps partial files out of the final destination path.
+- The current integrity expectation is documented in code as HTTPS plus exact body-length match when the server provides `Content-Length`.
+- Tests cover both the default timeout helper and mismatch cleanup behavior.
+
 ## Summary
 
 Default model downloads currently use a bare `http.Client` and do not verify integrity. That makes first-run startup behavior more fragile than it should be.
@@ -40,6 +49,8 @@ Default model downloads currently use a bare `http.Client` and do not verify int
 - Network stalls no longer hang startup indefinitely.
 - Failed downloads leave no partial final files behind.
 - Default asset integrity expectations are documented in code.
+
+All acceptance criteria are satisfied by the current implementation.
 
 ## Related Files
 

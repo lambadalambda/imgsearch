@@ -2,12 +2,21 @@ package main
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestEnsureDefaultModelAssetDownloadsMissingDefault(t *testing.T) {
 	tmp := t.TempDir()
@@ -120,5 +129,46 @@ func TestFormatByteCount(t *testing.T) {
 	}
 	if got := formatByteCount(1536); got != "1.5 KiB" {
 		t.Fatalf("unexpected kib format: %q", got)
+	}
+}
+
+func TestResolveDownloadHTTPClientAppliesDefaultTimeout(t *testing.T) {
+	client := resolveDownloadHTTPClient(nil)
+	if client == nil {
+		t.Fatal("expected default download client")
+	}
+	if client.Timeout != defaultDownloadTimeout {
+		t.Fatalf("client timeout: got=%s want=%s", client.Timeout, defaultDownloadTimeout)
+	}
+
+	existing := &http.Client{Timeout: time.Second}
+	if got := resolveDownloadHTTPClient(existing); got != existing {
+		t.Fatal("expected existing client to be preserved")
+	}
+}
+
+func TestDownloadFileRejectsContentLengthMismatch(t *testing.T) {
+	tmp := t.TempDir()
+	destPath := filepath.Join(tmp, "models", "bad.gguf")
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			Status:        "200 OK",
+			Body:          io.NopCloser(strings.NewReader("abc")),
+			ContentLength: 10,
+			Header:        make(http.Header),
+			Request:       req,
+		}, nil
+	})}
+
+	err := downloadFile(context.Background(), client, "https://example.invalid/bad.gguf", destPath)
+	if err == nil {
+		t.Fatal("expected content-length mismatch error")
+	}
+	if !strings.Contains(err.Error(), "content length") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no final file on failure, stat err=%v", statErr)
 	}
 }
