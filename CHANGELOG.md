@@ -5,9 +5,6 @@ All notable changes to this project are tracked in this file.
 ## Unreleased
 - ci: run the Go test suite on GitHub Actions for pull requests and main/master pushes.
 - refactor: drop legacy sidecar and HTTP embedder variants so imgsearch uses `llama-cpp-native` only, removing the old `-embedder` switch and sidecar/server flags.
-- perf: speed up sqlite-ai image preprocessing by using a persistent vips helper process created before model load, avoiding expensive per-image fork/exec overhead.
-- test: add sqlite-ai helper and integration benchmarks covering preprocess and `EmbedImage` throughput.
-- perf: isolate sqlite-ai embedding in a dedicated in-memory SQLite runtime so long `llm_embed_generate` calls do not monopolize the main app DB connection.
 - feat: switch UI status/gallery refresh from 5s client polling to `/api/live` WebSocket snapshots, with automatic polling fallback on disconnect/unsupported clients.
 - fix: harden `/api/live` websocket handling with read limits, ping/pong timeouts, safer origin validation, reconnect backoff, and a lower 2s push cadence.
 - ux: add a live connection badge, reduce unnecessary rerenders/status spam, and de-emphasize manual refresh controls while live updates are healthy.

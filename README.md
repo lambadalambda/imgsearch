@@ -18,7 +18,7 @@ It runs as a small local web app that:
 4. Run `./imgsearch`.
 5. Open `http://127.0.0.1:8080/`.
 
-On first run, `imgsearch` downloads the default 8B model into `./models/Qwen/` if it is missing.
+On first run, `imgsearch` downloads the default 8B embedding model into `./models/Qwen/` if it is missing, and also downloads the default Gemma annotator files when annotations are enabled.
 
 ### Import Images
 
@@ -59,7 +59,7 @@ Cross-platform note:
 - The app binds to `127.0.0.1:8080` by default.
 - Supported formats: JPEG, PNG, WEBP, and AVIF.
 - Embedding uses the in-process `llama-cpp-native` runtime with the Qwen3-VL-Embedding-8B GGUF pair.
-- The default model files are downloaded automatically on first run when missing.
+- The default Qwen embedding files and the default Gemma annotator files are downloaded automatically on first run when missing.
 - Add `-enable-annotations=false` if you want to run the API without loading the Gemma annotation model.
 - Data is stored in `./data` by default.
 - The UI includes uploads, indexing status, gallery browsing, text search, and similar-image search.

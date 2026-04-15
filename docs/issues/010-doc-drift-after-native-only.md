@@ -4,6 +4,15 @@
 
 P3
 
+## Status
+
+Completed.
+
+- Architecture and decision docs now describe the in-process `llama-cpp-native` runtime rather than an endpoint-oriented embedding path.
+- The architecture doc no longer references the nonexistent `vector_index_entries` table.
+- The `Unreleased` changelog no longer carries stale sqlite-ai entries.
+- Release-facing docs now mention both the default Qwen embedder download and the default Gemma annotator download behavior.
+
 ## Summary
 
 Some design and release notes still describe older runtime shapes even though the repo is now native-only for embedding. This is not a runtime bug, but it is worth cleaning up so future performance work is guided by the current system rather than historical designs.
@@ -35,6 +44,8 @@ Some design and release notes still describe older runtime shapes even though th
 - Architecture and decisions docs match the current embedding/runtime model.
 - Changelog entries describe real current work.
 - Release-facing docs mention both default embedder and default annotator behavior accurately.
+
+All acceptance criteria are satisfied by the current implementation.
 
 ## Related Files
 

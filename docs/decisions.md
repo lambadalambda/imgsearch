@@ -7,8 +7,8 @@
 
 ## ADR-002: Embedding Integration for MVP
 - Context: Different local model runtimes have different packaging constraints.
-- Decision: Use a pluggable embedding adapter and start with a local runtime endpoint for text/image embedding.
-- Consequences: Faster development and easier model iteration; true single-binary model packaging is deferred.
+- Decision: Standardize on the in-process `llama-cpp-native` runtime for text and image embedding, while keeping Go-side interfaces for search and worker code.
+- Consequences: Packaging and local development are simpler, query-time search keeps direct access to the embedder, and future worker/process splits can happen above the runtime boundary instead of through a sidecar protocol.
 
 ## ADR-003: Queue Reliability Model
 - Context: Background indexing must survive process crashes and restarts.

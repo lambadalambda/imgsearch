@@ -35,13 +35,11 @@ MVP design priorities:
 - Enables app restart recovery from persisted queue state.
 - Uses schema migrations with forward-only versions.
 
-### 4) Embedding Adapter
-- Pluggable interface for embedding provider.
-- Methods:
-  - `EmbedText(query string) ([]float32, error)`
-  - `EmbedImage(path string) ([]float32, error)`
-- Keeps model-specific logic isolated from app logic.
-- MVP default is an adapter to a local model runtime endpoint.
+### 4) Native Embedding Runtime
+- Embedding uses the in-process `llama-cpp-native` runtime.
+- Query-time text embedding stays in the serving process so search remains available while background indexing runs.
+- A separate optional native Gemma annotator can be loaded for descriptions and tags.
+- Runtime configuration still lives behind Go interfaces so handlers and worker code stay decoupled from model details.
 
 ### 5) Search Layer
 - Text search: embed query text then cosine-similarity against indexed image vectors.
@@ -61,8 +59,8 @@ Proposed interface:
 
 ### 7) Vector Search Strategy (MVP)
 - Store vectors as float32 blobs in SQLite (`image_embeddings`) as source-of-truth.
-- Mirror vectors into `sqlite-vector` index tables for nearest-neighbor queries.
-- Query path uses `sqlite-vector` for top-k candidates.
+- `VectorIndex.Upsert` owns persistence of the active embedding row.
+- `sqlite-vector` reads from `image_embeddings` for nearest-neighbor queries.
 - Keep search backend behind `VectorIndex` so migration to another ANN library stays low-risk.
 
 ### 8) File Storage
@@ -112,14 +110,6 @@ Proposed interface:
 - `updated_at`
 
 Primary key: (`image_id`, `model_id`)
-
-### `vector_index_entries` (optional metadata table)
-- `image_id` (FK)
-- `model_id` (FK)
-- `indexed_at`
-- `index_backend` (e.g. `sqlite-vector`)
-
-Primary key: (`image_id`, `model_id`, `index_backend`)
 
 ### `index_jobs`
 - `id` (PK)
