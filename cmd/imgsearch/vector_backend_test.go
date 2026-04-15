@@ -121,6 +121,26 @@ func TestResolveExistingExtensionPathPrefersPlatformSpecificLibraryForBarePath(t
 	}
 }
 
+func TestResolveExistingExtensionPathRejectsBarePathWhenSymlinkTargetsForeignLibrary(t *testing.T) {
+	tmp := t.TempDir()
+	base := filepath.Join(tmp, "vector")
+	foreignExt := ".so"
+	if runtime.GOOS == "linux" {
+		foreignExt = ".dylib"
+	}
+	foreignPath := base + foreignExt
+	if err := os.WriteFile(foreignPath, []byte("foreign"), 0o644); err != nil {
+		t.Fatalf("write foreign extension file: %v", err)
+	}
+	if err := os.Symlink(filepath.Base(foreignPath), base); err != nil {
+		t.Fatalf("create bare symlink: %v", err)
+	}
+
+	if got, ok := resolveExistingExtensionPath(base); ok {
+		t.Fatalf("expected foreign-library bare path to be rejected, got %q", got)
+	}
+}
+
 func TestDiscoverSQLiteVectorPathReturnsEmptyWhenNothingFound(t *testing.T) {
 	t.Setenv("SQLITE_VECTOR_PATH", "")
 

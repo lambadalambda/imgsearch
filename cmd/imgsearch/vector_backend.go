@@ -131,11 +131,41 @@ func resolveExistingExtensionPath(candidate string) (string, bool) {
 	}
 
 	for _, path := range paths {
+		if path == candidate && filepath.Ext(candidate) == "" && !isUsableBareExtensionPath(path) {
+			continue
+		}
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			return path, true
 		}
 	}
 	return "", false
+}
+
+func isUsableBareExtensionPath(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return true
+	}
+
+	target, err := os.Readlink(path)
+	if err != nil {
+		return false
+	}
+	targetExt := strings.ToLower(filepath.Ext(target))
+	if targetExt == "" {
+		return true
+	}
+	expectedExt := ".so"
+	switch runtime.GOOS {
+	case "darwin":
+		expectedExt = ".dylib"
+	case "windows":
+		expectedExt = ".dll"
+	}
+	return targetExt == expectedExt
 }
 
 func openSQLiteDB(dsn string, sqliteVectorPath string) (*sql.DB, error) {

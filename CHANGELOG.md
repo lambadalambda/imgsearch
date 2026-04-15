@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix: make local `mise run serve:8b` self-heal sqlite-vector platform mismatches and add a startup smoke task.
 - feat: split indexing into `embed_image` and `annotate_image` jobs so images become searchable before annotation completes.
 - feat: add `-mode=all|api|worker` so the HTTP server and background worker can run in separate processes.
 - ci: run the Go test suite on GitHub Actions for pull requests and main/master pushes.

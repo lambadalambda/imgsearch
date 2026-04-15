@@ -29,6 +29,7 @@ Process modes:
 One-command startup:
 - `mise run serve`
 - `mise run "serve:8b"`
+- `mise run "serve:smoke"` for a local startup smoke check that waits for `/healthz`
 
 Optional native tuning env vars for `mise run serve`:
 - `LLAMA_NATIVE_IMAGE_MAX_SIDE` default `512`
