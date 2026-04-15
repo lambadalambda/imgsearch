@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ci: run the Go test suite on GitHub Actions for pull requests and main/master pushes.
 - refactor: drop legacy sidecar and HTTP embedder variants so imgsearch uses `llama-cpp-native` only, removing the old `-embedder` switch and sidecar/server flags.
 - perf: speed up sqlite-ai image preprocessing by using a persistent vips helper process created before model load, avoiding expensive per-image fork/exec overhead.
 - test: add sqlite-ai helper and integration benchmarks covering preprocess and `EmbedImage` throughput.
