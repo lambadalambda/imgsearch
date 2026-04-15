@@ -165,3 +165,60 @@ VALUES (99, 'z', 'nojob.jpg', 'images/z', 'image/jpeg', 9, 9)
 		t.Fatalf("expected pending state fallback, got %s", resp.Images[0].IndexState)
 	}
 }
+
+func TestListImagesDoesNotRequeueDoneJobsMissingAnnotations(t *testing.T) {
+	dbConn := setupImagesDB(t)
+
+	if _, err := dbConn.Exec(`
+UPDATE index_jobs
+SET attempts = 2,
+    max_attempts = 3,
+    last_error = 'annotation timeout'
+WHERE kind = 'embed_image' AND model_id = 1 AND image_id = 1
+`); err != nil {
+		t.Fatalf("seed job retry metadata: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+	req := httptest.NewRequest(http.MethodGet, "/api/images?limit=3&offset=0", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp ListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Images) != 3 {
+		t.Fatalf("expected 3 images, got %d", len(resp.Images))
+	}
+	if resp.Images[2].ImageID != 1 {
+		t.Fatalf("expected image 1 in third slot, got id=%d", resp.Images[2].ImageID)
+	}
+	if resp.Images[2].IndexState != "done" {
+		t.Fatalf("expected done state to remain visible, got %s", resp.Images[2].IndexState)
+	}
+
+	var state string
+	var attempts int
+	var lastError string
+	if err := dbConn.QueryRow(`
+SELECT state, attempts, COALESCE(last_error, '')
+FROM index_jobs
+WHERE kind = 'embed_image' AND model_id = 1 AND image_id = 1
+`).Scan(&state, &attempts, &lastError); err != nil {
+		t.Fatalf("load job after list: %v", err)
+	}
+	if state != "done" {
+		t.Fatalf("expected job state to remain done, got %s", state)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected attempts to remain 2, got %d", attempts)
+	}
+	if lastError != "annotation timeout" {
+		t.Fatalf("expected last_error to remain unchanged, got %q", lastError)
+	}
+}

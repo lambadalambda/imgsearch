@@ -72,8 +72,8 @@ func TestRetryFailedHandlerResetsFailedJobsForModel(t *testing.T) {
 	if resp.Retried != 2 {
 		t.Fatalf("retried: got=%d want=2", resp.Retried)
 	}
-	if resp.Enqueued != 1 {
-		t.Fatalf("enqueued_missing: got=%d want=1", resp.Enqueued)
+	if resp.Enqueued != 2 {
+		t.Fatalf("enqueued_missing: got=%d want=2", resp.Enqueued)
 	}
 
 	rows, err := dbConn.Query(`
@@ -123,6 +123,14 @@ ORDER BY id ASC
 	}
 	if missingState != "pending" {
 		t.Fatalf("expected missing image to be queued as pending, got %s", missingState)
+	}
+
+	var annotationRepairState string
+	if err := dbConn.QueryRow(`SELECT state FROM index_jobs WHERE id = 13`).Scan(&annotationRepairState); err != nil {
+		t.Fatalf("query annotation repair state: %v", err)
+	}
+	if annotationRepairState != "pending" {
+		t.Fatalf("expected done image missing annotations to be requeued, got %s", annotationRepairState)
 	}
 }
 

@@ -86,6 +86,9 @@ func TestStatsHandlerReturnsQueueCountsAndFailures(t *testing.T) {
 	if resp.Queue.Total != 5 {
 		t.Fatalf("queue.total: got=%d want=5", resp.Queue.Total)
 	}
+	if resp.Queue.AnnotationsMissing != 1 {
+		t.Fatalf("queue.annotations_missing: got=%d want=1", resp.Queue.AnnotationsMissing)
+	}
 	if resp.Queue.Runnable != 2 {
 		t.Fatalf("queue.runnable: got=%d want=2", resp.Queue.Runnable)
 	}

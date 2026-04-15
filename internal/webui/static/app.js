@@ -278,6 +278,7 @@ function renderStats() {
   const done = Number(queue.done || 0);
   const failed = Number(queue.failed || 0);
   const missing = Number(queue.missing || 0);
+  const annotationsMissing = Number(queue.annotations_missing || 0);
   const pending = Number(queue.pending || 0);
   const leased = Number(queue.leased || 0);
   const completed = done + failed;
@@ -286,13 +287,13 @@ function renderStats() {
   statsProgress.style.width = `${pct}%`;
   setStatus(
     statsSummary,
-    `Indexed ${done} of ${total}. Failed ${failed}. Missing ${missing}.`,
-    failed > 0 ? 'error' : missing > 0 ? 'info' : 'success',
+    `Indexed ${done} of ${total}. Failed ${failed}. Missing ${missing}. Annotation gaps ${annotationsMissing}.`,
+    failed > 0 ? 'error' : (missing > 0 || annotationsMissing > 0) ? 'info' : 'success',
   );
 
   const imagesTotal = Number(payload.images_total || state.imagesTotal || 0);
   statsDetail.textContent = `Library ${imagesTotal} images. Pending ${pending}. In progress ${leased}.`;
-  retryFailedButton.disabled = failed === 0 && missing === 0;
+  retryFailedButton.disabled = failed === 0 && missing === 0 && annotationsMissing === 0;
 
   const failures = payload.recent_failures || [];
   if (failures.length === 0) {
@@ -599,7 +600,7 @@ function statsDiffer(currentStats, nextStats) {
   }
   const currentQueue = currentStats.queue || {};
   const nextQueue = nextStats.queue || {};
-  const queueKeys = ['total', 'tracked', 'missing', 'pending', 'leased', 'done', 'failed'];
+  const queueKeys = ['total', 'tracked', 'missing', 'annotations_missing', 'pending', 'leased', 'done', 'failed'];
   for (const key of queueKeys) {
     if (Number(currentQueue[key] || 0) !== Number(nextQueue[key] || 0)) {
       return true;
@@ -927,7 +928,7 @@ refreshStatsButton.addEventListener('click', () => {
 
 retryFailedButton.addEventListener('click', async () => {
   retryFailedButton.disabled = true;
-  setStatus(statsSummary, 'Retrying failed jobs...', 'info');
+  setStatus(statsSummary, 'Retrying failed jobs and queueing missing work...', 'info');
   try {
     const result = await retryFailedJobs();
     await loadStats();
@@ -935,7 +936,7 @@ retryFailedButton.addEventListener('click', async () => {
     const hadWork = result.retried > 0 || result.enqueuedMissing > 0;
     setStatus(
       statsSummary,
-      `Requeued ${result.retried} failed job(s), enqueued ${result.enqueuedMissing} missing job(s).`,
+      `Requeued ${result.retried} failed job(s), queued ${result.enqueuedMissing} missing job(s).`,
       hadWork ? 'success' : 'info',
     );
   } catch (err) {
@@ -943,7 +944,8 @@ retryFailedButton.addEventListener('click', async () => {
   } finally {
     const failed = state.stats && state.stats.queue ? Number(state.stats.queue.failed || 0) : 0;
     const missing = state.stats && state.stats.queue ? Number(state.stats.queue.missing || 0) : 0;
-    retryFailedButton.disabled = failed === 0 && missing === 0;
+    const annotationsMissing = state.stats && state.stats.queue ? Number(state.stats.queue.annotations_missing || 0) : 0;
+    retryFailedButton.disabled = failed === 0 && missing === 0 && annotationsMissing === 0;
   }
 });
 

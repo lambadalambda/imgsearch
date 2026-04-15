@@ -17,6 +17,7 @@ type QueueStats struct {
 	Total                    int64 `json:"total"`
 	Tracked                  int64 `json:"tracked"`
 	Missing                  int64 `json:"missing"`
+	AnnotationsMissing       int64 `json:"annotations_missing"`
 	Runnable                 int64 `json:"runnable"`
 	Pending                  int64 `json:"pending"`
 	Leased                   int64 `json:"leased"`
@@ -82,6 +83,10 @@ func Collect(ctx context.Context, db *sql.DB, modelID int64) (Response, error) {
 	if resp.Queue.Missing < 0 {
 		resp.Queue.Missing = 0
 	}
+	resp.Queue.AnnotationsMissing, err = countDoneJobsMissingAnnotations(ctx, db, modelID)
+	if err != nil {
+		return Response{}, err
+	}
 	resp.Queue.Total = resp.Queue.Tracked + resp.Queue.Missing
 
 	rows, err := db.QueryContext(ctx, `
@@ -111,6 +116,26 @@ LIMIT 10
 	}
 
 	return resp, nil
+}
+
+func countDoneJobsMissingAnnotations(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
+	var total int64
+	if err := db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM index_jobs j
+JOIN images i ON i.id = j.image_id
+WHERE j.kind = 'embed_image'
+  AND j.model_id = ?
+  AND j.state = 'done'
+  AND (
+    trim(COALESCE(i.description, '')) = ''
+    OR COALESCE(i.tags_json, '') = ''
+    OR COALESCE(i.tags_json, '[]') = '[]'
+  )
+`, modelID).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count done jobs missing annotations: %w", err)
+	}
+	return total, nil
 }
 
 func collectJobKindStats(ctx context.Context, db *sql.DB, modelID int64) (map[string]JobKindStats, error) {

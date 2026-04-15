@@ -53,13 +53,19 @@ WHERE kind = 'embed_image'
 			return
 		}
 
+		requeuedAnnotations, err := db.RequeueDoneJobsMissingAnnotations(r.Context(), h.DB, h.ModelID)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "retry failed")
+			return
+		}
+
 		enqueued, err := db.EnsureIndexJobsForModel(r.Context(), h.DB, h.ModelID)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "retry failed")
 			return
 		}
 
-		writeJSON(w, http.StatusOK, RetryFailedResponse{Retried: rows, Enqueued: enqueued})
+		writeJSON(w, http.StatusOK, RetryFailedResponse{Retried: rows, Enqueued: requeuedAnnotations + enqueued})
 	})
 }
 

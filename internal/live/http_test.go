@@ -86,8 +86,19 @@ func TestLiveHandlerStreamsSnapshot(t *testing.T) {
 	if snapshot.Stats.ImagesTotal != 2 {
 		t.Fatalf("stats images total: got=%d want=2", snapshot.Stats.ImagesTotal)
 	}
-	if snapshot.Stats.Queue.Done != 0 || snapshot.Stats.Queue.Pending != 2 || snapshot.Stats.Queue.Runnable != 2 {
+	if snapshot.Stats.Queue.Done != 1 || snapshot.Stats.Queue.Pending != 1 || snapshot.Stats.Queue.Runnable != 1 {
 		t.Fatalf("unexpected queue stats: %+v", snapshot.Stats.Queue)
+	}
+	if snapshot.Stats.Queue.AnnotationsMissing != 1 {
+		t.Fatalf("annotations missing: got=%d want=1", snapshot.Stats.Queue.AnnotationsMissing)
+	}
+
+	var state string
+	if err := dbConn.QueryRow(`SELECT state FROM index_jobs WHERE kind = 'embed_image' AND model_id = 1 AND image_id = 1`).Scan(&state); err != nil {
+		t.Fatalf("load job after snapshot: %v", err)
+	}
+	if state != "done" {
+		t.Fatalf("expected live snapshot to avoid requeueing done job, got %s", state)
 	}
 
 	var next Snapshot

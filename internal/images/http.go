@@ -7,9 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
-
-	imgdb "imgsearch/internal/db"
 )
 
 type Handler struct {
@@ -71,11 +68,6 @@ LIMIT ? OFFSET ?
 	defer func() { _ = rows.Close() }()
 
 	items := make([]ImageItem, 0, limit)
-	type requeueCandidate struct {
-		index   int
-		imageID int64
-	}
-	requeueCandidates := make([]requeueCandidate, 0)
 	for rows.Next() {
 		var item ImageItem
 		var thumb sql.NullString
@@ -103,22 +95,10 @@ LIMIT ? OFFSET ?
 		if thumb.Valid {
 			item.ThumbnailPath = thumb.String
 		}
-		if item.IndexState == "done" && annotationMissing(item.Description, item.Tags) {
-			requeueCandidates = append(requeueCandidates, requeueCandidate{index: len(items), imageID: item.ImageID})
-		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return ListResponse{}, fmt.Errorf("iterate image rows: %w", err)
-	}
-	for _, candidate := range requeueCandidates {
-		requeued, err := imgdb.RequeueDoneJob(ctx, db, modelID, candidate.imageID)
-		if err != nil {
-			return ListResponse{}, fmt.Errorf("requeue image %d for annotations: %w", candidate.imageID, err)
-		}
-		if requeued {
-			items[candidate.index].IndexState = "pending"
-		}
 	}
 
 	return ListResponse{Images: items, Total: total}, nil
@@ -133,10 +113,6 @@ func decodeTagsJSON(raw string) ([]string, error) {
 		return nil, err
 	}
 	return tags, nil
-}
-
-func annotationMissing(description string, tags []string) bool {
-	return strings.TrimSpace(description) == "" || len(tags) == 0
 }
 
 func NewHandler(h *Handler) http.Handler {

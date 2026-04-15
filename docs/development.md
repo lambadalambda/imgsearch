@@ -76,7 +76,7 @@ Optional arguments and behavior:
 
 - App health endpoint: `GET /healthz`
 - API status endpoint: `GET /api/stats`
-- API action endpoint: `POST /api/jobs/retry-failed`
+- API action endpoint: `POST /api/jobs/retry-failed` retries failed jobs and queues missing index/annotation work
 
 From the UI, use the **Retry Failed / Queue Missing** button in the Indexing Status panel.
 

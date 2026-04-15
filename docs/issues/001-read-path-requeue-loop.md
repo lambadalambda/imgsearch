@@ -4,6 +4,13 @@
 
 P0
 
+## Status
+
+Completed via the short-term stopgap:
+- `GET /api/images` and `/api/live` no longer requeue jobs.
+- Missing annotation repair now happens through the explicit `POST /api/jobs/retry-failed` action.
+- Searchability is no longer revoked by merely browsing the UI.
+
 ## Summary
 
 Read paths are currently mutating indexing state when annotations are missing. Simply browsing the gallery or leaving the live view open can requeue completed jobs, reset retry state, and trigger unnecessary re-embedding work.
@@ -57,6 +64,8 @@ Read paths are currently mutating indexing state when annotations are missing. S
 - Annotation failures do not automatically reset attempts to zero from read paths.
 - Search results remain available for images whose annotations are still missing.
 - Queue metrics remain stable while the UI is open.
+
+All of the above are satisfied by the current short-term fix. The longer-term `annotate_image` split is still tracked separately in `docs/indexing-annotation-pipeline-notes.md` and the remaining follow-up issues.
 
 ## Related Files
 
