@@ -28,7 +28,7 @@ import (
 const (
 	defaultQueryInstruction   = "Retrieve images or text relevant to the user's query."
 	defaultPassageInstruction = "Represent this image or text for retrieval."
-	defaultImageMaxSide       = 512
+	defaultImageMaxSide       = 384
 )
 
 type Config struct {
@@ -227,7 +227,6 @@ func (e *Embedder) embedImagePathLocked(path string, out []float32) error {
 
 	return nil
 }
-
 func (e *Embedder) lastErrorLocked() error {
 	if e == nil {
 		return fmt.Errorf("llama-cpp-native operation failed")

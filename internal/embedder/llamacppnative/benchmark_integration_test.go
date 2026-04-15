@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -19,17 +21,17 @@ func BenchmarkNativeEmbedImage(b *testing.B) {
 	embedder := newNativeEmbedderForBenchmark(b)
 
 	root := findRepoRootFromBenchmark(b)
-	imagePath := filepath.Join(root, "fixtures", "images", "cat_1.jpg")
+	imagePaths := benchmarkImagePaths(b, root)
 
 	ctx := context.Background()
-	if _, err := embedder.EmbedImage(ctx, imagePath); err != nil {
+	if _, err := embedder.EmbedImage(ctx, imagePaths[0]); err != nil {
 		b.Fatalf("warm embed: %v", err)
 	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		vec, err := embedder.EmbedImage(ctx, imagePath)
+		vec, err := embedder.EmbedImage(ctx, imagePaths[i%len(imagePaths)])
 		if err != nil {
 			b.Fatalf("embed image: %v", err)
 		}
@@ -37,6 +39,47 @@ func BenchmarkNativeEmbedImage(b *testing.B) {
 			b.Fatal("empty embedding")
 		}
 	}
+}
+
+func benchmarkImagePaths(b *testing.B, repoRoot string) []string {
+	b.Helper()
+	if explicit := strings.TrimSpace(os.Getenv("LLAMA_NATIVE_BENCH_IMAGE_PATH")); explicit != "" {
+		return []string{explicit}
+	}
+	if dir := strings.TrimSpace(os.Getenv("LLAMA_NATIVE_BENCH_IMAGE_DIR")); dir != "" {
+		paths, err := benchmarkImagePathsFromDir(dir, envIntOrDefaultBenchmark("LLAMA_NATIVE_BENCH_IMAGE_LIMIT", 32))
+		if err != nil {
+			b.Fatalf("load benchmark image dir: %v", err)
+		}
+		if len(paths) == 0 {
+			b.Fatalf("no benchmark images found in %s", dir)
+		}
+		return paths
+	}
+	return []string{filepath.Join(repoRoot, "fixtures", "images", "cat_1.jpg")}
+}
+
+func benchmarkImagePathsFromDir(dir string, limit int) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		switch ext {
+		case ".jpg", ".jpeg", ".png", ".webp", ".avif":
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	sort.Strings(paths)
+	if limit > 0 && len(paths) > limit {
+		paths = paths[:limit]
+	}
+	return paths, nil
 }
 
 func BenchmarkNativeAnnotateImage(b *testing.B) {
@@ -92,7 +135,7 @@ func newNativeEmbedderForBenchmark(b *testing.B) *Embedder {
 		ContextSize:        envIntOrDefaultBenchmark("LLAMA_NATIVE_CONTEXT_SIZE", 8192),
 		BatchSize:          envIntOrDefaultBenchmark("LLAMA_NATIVE_BATCH_SIZE", 512),
 		Threads:            envIntOrDefaultBenchmark("LLAMA_NATIVE_THREADS", 0),
-		ImageMaxSide:       envIntOrDefaultBenchmark("LLAMA_NATIVE_IMAGE_MAX_SIDE", 512),
+		ImageMaxSide:       envIntOrDefaultBenchmark("LLAMA_NATIVE_IMAGE_MAX_SIDE", 384),
 		ImageMaxTokens:     envIntOrDefaultBenchmark("LLAMA_NATIVE_IMAGE_MAX_TOKENS", 0),
 		QueryInstruction:   envOr("LLAMA_NATIVE_QUERY_INSTRUCTION", defaultQueryInstruction),
 		PassageInstruction: envOr("LLAMA_NATIVE_PASSAGE_INSTRUCTION", defaultPassageInstruction),

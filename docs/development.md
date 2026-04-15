@@ -63,7 +63,7 @@ Convenience tasks:
 Notes:
 
 - Native defaults target `lainsoykaf/Qwen3-VL-Embedding-8B-GGUF` at `4096` dimensions.
-- Native path defaults to `-llama-native-image-max-side 512` to cap indexing latency on very large images.
+- Native path defaults to `-llama-native-image-max-side 384` to reduce normal indexing latency while keeping fixture retrieval quality green.
 - Native image embedding preprocesses every image through libvips (via `github.com/cshum/vipsgen`) and writes a temporary JPEG before mtmd, which avoids WEBP/AVIF decode failures in llama.cpp input handling.
 - Native prompting uses Qwen chat-template style framing (`system` + `user` + assistant generation prompt) for text and image embeddings.
 - Optional: set `-llama-native-image-max-tokens` to override mtmd image token cap (`0` keeps model defaults).

@@ -209,7 +209,7 @@ func newNativeEmbedderForIntegration(t *testing.T) *Embedder {
 		ContextSize:        envIntOrDefault(t, "LLAMA_NATIVE_CONTEXT_SIZE", 8192),
 		BatchSize:          envIntOrDefault(t, "LLAMA_NATIVE_BATCH_SIZE", 512),
 		Threads:            envIntOrDefault(t, "LLAMA_NATIVE_THREADS", 0),
-		ImageMaxSide:       envIntOrDefault(t, "LLAMA_NATIVE_IMAGE_MAX_SIDE", 512),
+		ImageMaxSide:       envIntOrDefault(t, "LLAMA_NATIVE_IMAGE_MAX_SIDE", 384),
 		ImageMaxTokens:     envIntOrDefault(t, "LLAMA_NATIVE_IMAGE_MAX_TOKENS", 0),
 		QueryInstruction:   envOr("LLAMA_NATIVE_QUERY_INSTRUCTION", defaultQueryInstruction),
 		PassageInstruction: envOr("LLAMA_NATIVE_PASSAGE_INSTRUCTION", defaultPassageInstruction),

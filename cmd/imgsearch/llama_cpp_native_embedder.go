@@ -24,7 +24,7 @@ type llamaCPPNativeEmbedderOptions struct {
 	PassageInstruction string
 }
 
-const defaultLlamaNativeImageMaxSide = 512
+const defaultLlamaNativeImageMaxSide = 384
 
 func resolveLlamaCPPNativeImageLimits(imageMaxSide int, imageMaxTokens int) (int, int, error) {
 	resolvedImageMaxSide := imageMaxSide

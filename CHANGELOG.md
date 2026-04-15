@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- perf: lower the default embedding image cap from 512 to 384, cutting representative `~/old` embedding benchmark time by about 42% while keeping fixture retrieval quality green.
+- test: allow native embedding benchmarks to run against a real image directory via `LLAMA_NATIVE_BENCH_IMAGE_DIR` and `LLAMA_NATIVE_BENCH_IMAGE_LIMIT`.
 - fix: make local `mise run serve:8b` self-heal sqlite-vector platform mismatches and add a startup smoke task.
 - feat: split indexing into `embed_image` and `annotate_image` jobs so images become searchable before annotation completes.
 - feat: add `-mode=all|api|worker` so the HTTP server and background worker can run in separate processes.
