@@ -12,8 +12,14 @@ dist_dir="${2:-dist}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pkg_name="imgsearch-${target_label}"
 pkg_root="${repo_root}/${dist_dir}/${pkg_name}"
-llama_lib_dir="${repo_root}/deps/llama.cpp/build/bin"
+llama_lib_dir="${IMGSEARCH_LLAMA_LIB_DIR:-${repo_root}/deps/llama.cpp/build/bin}"
 sqlite_vector_dir="${repo_root}/tools/sqlite-vector"
+
+if [[ ! -d "${llama_lib_dir}" ]]; then
+  echo "llama.cpp library directory not found: ${llama_lib_dir}" >&2
+  echo "set IMGSEARCH_LLAMA_LIB_DIR when packaging from explicit cross-built artifacts" >&2
+  exit 1
+fi
 
 has_macos_rpath() {
   local file="$1"

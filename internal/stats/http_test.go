@@ -40,13 +40,15 @@ VALUES
 	}
 
 	_, err = dbConn.Exec(`
-INSERT INTO index_jobs(id, kind, image_id, model_id, state, attempts, max_attempts, last_error)
+INSERT INTO index_jobs(id, kind, image_id, model_id, state, leased_until, attempts, max_attempts, last_error)
 VALUES
-	(11, 'embed_image', 1, 1, 'done', 1, 3, NULL),
-	(12, 'embed_image', 2, 1, 'pending', 1, 3, NULL),
-	(13, 'embed_image', 3, 1, 'leased', 2, 3, NULL),
-	(14, 'embed_image', 4, 1, 'failed', 3, 3, 'oom crash'),
-	(15, 'embed_image', 1, 2, 'failed', 3, 3, 'other model')
+	(11, 'embed_image', 1, 1, 'done', NULL, 1, 3, NULL),
+	(12, 'embed_image', 2, 1, 'pending', NULL, 1, 3, NULL),
+	(13, 'embed_image', 3, 1, 'leased', datetime('now', '-5 minutes'), 2, 3, NULL),
+	(14, 'embed_image', 4, 1, 'failed', NULL, 3, 3, 'oom crash'),
+	(16, 'annotate_image', 2, 1, 'pending', NULL, 0, 3, NULL),
+	(17, 'annotate_image', 3, 1, 'failed', NULL, 2, 3, 'annotator timeout'),
+	(15, 'embed_image', 1, 2, 'failed', NULL, 3, 3, 'other model')
 `)
 	if err != nil {
 		t.Fatalf("seed jobs: %v", err)
@@ -84,17 +86,45 @@ func TestStatsHandlerReturnsQueueCountsAndFailures(t *testing.T) {
 	if resp.Queue.Total != 5 {
 		t.Fatalf("queue.total: got=%d want=5", resp.Queue.Total)
 	}
+	if resp.Queue.Runnable != 2 {
+		t.Fatalf("queue.runnable: got=%d want=2", resp.Queue.Runnable)
+	}
+	if resp.Queue.OldestRunnableAgeSeconds < 240 {
+		t.Fatalf("queue.oldest_runnable_age_seconds: got=%d want>=240", resp.Queue.OldestRunnableAgeSeconds)
+	}
 	if resp.Queue.Done != 1 || resp.Queue.Pending != 1 || resp.Queue.Leased != 1 || resp.Queue.Failed != 1 {
 		t.Fatalf("unexpected queue counts: %+v", resp.Queue)
 	}
-	if len(resp.RecentFailures) != 1 {
-		t.Fatalf("recent_failures length: got=%d want=1", len(resp.RecentFailures))
+	if len(resp.JobKinds) != 2 {
+		t.Fatalf("job_kinds length: got=%d want=2", len(resp.JobKinds))
 	}
-	if resp.RecentFailures[0].JobID != 14 {
-		t.Fatalf("failure job id: got=%d want=14", resp.RecentFailures[0].JobID)
+	if got := resp.JobKinds["embed_image"]; got.Tracked != 4 || got.Runnable != 2 || got.Failed != 1 || got.OldestRunnableAgeSeconds < 240 {
+		t.Fatalf("unexpected embed_image stats: %+v", got)
 	}
-	if resp.RecentFailures[0].OriginalName != "four.jpg" {
-		t.Fatalf("failure original name: got=%q", resp.RecentFailures[0].OriginalName)
+	if got := resp.JobKinds["annotate_image"]; got.Tracked != 2 || got.Runnable != 1 || got.Failed != 1 {
+		t.Fatalf("unexpected annotate_image stats: %+v", got)
+	}
+	if len(resp.RecentFailures) != 2 {
+		t.Fatalf("recent_failures length: got=%d want=2", len(resp.RecentFailures))
+	}
+	failuresByID := map[int64]FailureItem{}
+	for _, item := range resp.RecentFailures {
+		failuresByID[item.JobID] = item
+	}
+	if got, ok := failuresByID[14]; !ok {
+		t.Fatalf("expected embed_image failure for job 14, got=%v", resp.RecentFailures)
+	} else {
+		if got.Kind != "embed_image" {
+			t.Fatalf("failure job kind: got=%q want=embed_image", got.Kind)
+		}
+		if got.OriginalName != "four.jpg" {
+			t.Fatalf("failure original name: got=%q", got.OriginalName)
+		}
+	}
+	if got, ok := failuresByID[17]; !ok {
+		t.Fatalf("expected annotate_image failure for job 17, got=%v", resp.RecentFailures)
+	} else if got.Kind != "annotate_image" {
+		t.Fatalf("annotate failure job kind: got=%q want=annotate_image", got.Kind)
 	}
 }
 

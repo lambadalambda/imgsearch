@@ -27,6 +27,7 @@ MVP design priorities:
 - Idempotent indexing by content hash to avoid duplicate work.
 - Lease-based claiming with expiry (`leased_until`) so crash-recovery can requeue stale jobs.
 - Single worker goroutine in MVP to minimize SQLite write contention.
+- See `docs/indexing-annotation-pipeline-notes.md` for planned follow-up work to split embedding and annotation into separate pipeline stages.
 
 ### 3) Storage (SQLite)
 - Stores image metadata, queue jobs, and vector representations.

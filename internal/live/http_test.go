@@ -86,7 +86,7 @@ func TestLiveHandlerStreamsSnapshot(t *testing.T) {
 	if snapshot.Stats.ImagesTotal != 2 {
 		t.Fatalf("stats images total: got=%d want=2", snapshot.Stats.ImagesTotal)
 	}
-	if snapshot.Stats.Queue.Done != 1 || snapshot.Stats.Queue.Pending != 1 {
+	if snapshot.Stats.Queue.Done != 0 || snapshot.Stats.Queue.Pending != 2 || snapshot.Stats.Queue.Runnable != 2 {
 		t.Fatalf("unexpected queue stats: %+v", snapshot.Stats.Queue)
 	}
 

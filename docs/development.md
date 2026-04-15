@@ -29,6 +29,12 @@ Reset local database files:
 
 Note: native embedding is the default build path when CGO is enabled. In source checkouts, the llama.cpp runtime libraries still need to be built first.
 
+Build artifact note:
+- `mise run llama-cpp-native-build` uses `scripts/ensure_llama_cpp_native_build.sh`, which treats `./deps/llama.cpp/build` as the host-native build directory and deletes foreign shared libraries before rebuilding.
+- Do not copy Linux Docker build outputs into `./deps/llama.cpp/build` on macOS.
+- Keep cross-built artifacts in an explicit separate directory such as `./build-artifacts/llama.cpp/linux-cuda13/`.
+- When packaging from explicit cross-built Linux libs, set `IMGSEARCH_LLAMA_LIB_DIR=/absolute/path/to/build-artifacts/llama.cpp/linux-cuda13/bin` before running `scripts/package_release.sh`.
+
 ## llama.cpp Paths
 
 This repo includes two llama.cpp paths:
@@ -83,6 +89,49 @@ Optional arguments and behavior:
 - API action endpoint: `POST /api/jobs/retry-failed`
 
 From the UI, use the **Retry Failed / Queue Missing** button in the Indexing Status panel.
+
+`/api/stats` is the main queue snapshot for before/after comparisons when changing indexing behavior.
+
+Useful fields:
+- `queue.runnable`: number of `embed_image` jobs ready to run now
+- `queue.oldest_runnable_age_seconds`: age of the oldest runnable `embed_image` job
+- `job_kinds`: per-job-kind counts, intended to stay useful if indexing is later split into `embed_image` and `annotate_image`
+
+Successful worker runs also log a timing summary line with per-stage durations:
+- `total`
+- `load`
+- `stat`
+- `embed`
+- `annotate`
+- `db`
+- `index`
+
+Example workflow before a pipeline change:
+1. Run a representative import.
+2. Capture `/api/stats` during the run and when the queue drains.
+3. Save the worker timing logs.
+4. Run the relevant benchmark commands below.
+5. Repeat after the change and compare the same data.
+
+## Profiling And Benchmarking
+
+Embedding benchmark:
+- `mise run llama-cpp-native-bench-qwen8b`
+
+Annotation benchmark:
+- `mise run llama-cpp-native-bench-gemma`
+
+Useful benchmark knobs:
+- `BENCH_TIME=5x`
+- `BENCH_COUNT=5`
+
+Useful annotation overrides:
+- `LLAMA_NATIVE_GEMMA_MODEL_PATH=/path/to/model.gguf`
+- `LLAMA_NATIVE_GEMMA_MMPROJ_PATH=/path/to/mmproj.gguf`
+- `LLAMA_NATIVE_GEMMA_IMAGE_MAX_SIDE=768`
+- `LLAMA_NATIVE_GEMMA_IMAGE_MAX_TOKENS=0`
+
+If you want to benchmark the 26B annotator instead of the default smaller Gemma model, override the Gemma model and mmproj paths when running `mise run llama-cpp-native-bench-gemma`.
 
 ## Integration Tests
 

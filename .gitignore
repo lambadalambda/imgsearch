@@ -5,6 +5,9 @@ data/
 .tmp/
 dist/
 dist-test/
+dist-docker/
+dist-local-*/
+build-artifacts/
 tools/sqlite-vector/
 __pycache__/
 models/**

@@ -62,8 +62,7 @@ jobs:
 
       - name: Build llama.cpp runtime libraries
         run: |
-          cmake -S ./deps/llama.cpp -B ./deps/llama.cpp/build -DCMAKE_BUILD_TYPE=Release
-          cmake --build ./deps/llama.cpp/build --target llama-server -j
+          scripts/ensure_llama_cpp_native_build.sh
 
       - name: Download sqlite-vector
         run: scripts/setup_sqlite_vector.sh

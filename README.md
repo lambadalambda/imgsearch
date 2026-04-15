@@ -44,12 +44,15 @@ If there is no release for your system:
 2. Initialize the llama.cpp submodule:
    - `git submodule update --init --recursive deps/llama.cpp`
 3. Build llama.cpp runtime libraries:
-   - `cmake -S ./deps/llama.cpp -B ./deps/llama.cpp/build -DCMAKE_BUILD_TYPE=Release`
-   - `cmake --build ./deps/llama.cpp/build --target llama-server -j`
+   - `./scripts/ensure_llama_cpp_native_build.sh`
 4. Install sqlite-vector:
    - `./scripts/setup_sqlite_vector.sh`
 5. Run the app:
    - `go run ./cmd/imgsearch`
+
+Cross-platform note:
+- Keep host-native llama.cpp artifacts in `./deps/llama.cpp/build` only.
+- If you build Linux artifacts from Docker on macOS, write them to an explicit separate directory such as `./build-artifacts/llama.cpp/linux-cuda13/` and pass `IMGSEARCH_LLAMA_LIB_DIR=/absolute/path/to/.../bin` when packaging.
 
 ## Notes
 

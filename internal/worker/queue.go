@@ -63,20 +63,34 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 		return false, nil
 	}
 	log.Printf("worker claimed job id=%d image_id=%d attempt=%d/%d", job.ID, job.ImageID, job.Attempts, job.MaxAttempts)
+	jobStartedAt := time.Now()
+	var loadTaskDataDuration time.Duration
+	var statDuration time.Duration
+	var embedDuration time.Duration
+	var annotateDuration time.Duration
+	var completeDuration time.Duration
+	var indexDuration time.Duration
 
+	stageStartedAt := time.Now()
 	storagePath, needsAnnotations, err := q.loadImageTaskData(ctx, job.ImageID)
+	loadTaskDataDuration = time.Since(stageStartedAt)
 	if err != nil {
 		_ = q.failOrRetry(ctx, job, err)
 		return true, err
 	}
 
 	absPath := filepath.Join(q.DataDir, filepath.FromSlash(storagePath))
+	stageStartedAt = time.Now()
 	if _, err := os.Stat(absPath); err != nil {
+		statDuration = time.Since(stageStartedAt)
 		_ = q.failOrRetry(ctx, job, fmt.Errorf("stat image file: %w", err))
 		return true, err
 	}
+	statDuration = time.Since(stageStartedAt)
 
+	stageStartedAt = time.Now()
 	vec, err := q.Embedder.EmbedImage(ctx, absPath)
+	embedDuration = time.Since(stageStartedAt)
 	if err != nil {
 		_ = q.failOrRetry(ctx, job, err)
 		return true, nil
@@ -89,25 +103,59 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 	}
 
 	var annotation *embedder.ImageAnnotation
+	annotationAttempted := false
+	annotationStored := false
+	annotationErrText := ""
 	if q.Annotator != nil && needsAnnotations {
+		annotationAttempted = true
+		stageStartedAt = time.Now()
 		generated, err := q.Annotator.AnnotateImage(ctx, absPath)
+		annotateDuration = time.Since(stageStartedAt)
 		if err != nil {
+			annotationErrText = err.Error()
 			log.Printf("worker annotation skipped image_id=%d: %v", job.ImageID, err)
 		} else {
 			annotation = &generated
+			annotationStored = true
 		}
 	}
 
+	stageStartedAt = time.Now()
 	if err := q.completeJob(ctx, job, vec, annotation); err != nil {
+		completeDuration = time.Since(stageStartedAt)
 		_ = q.failOrRetry(ctx, job, err)
 		return true, err
 	}
+	completeDuration = time.Since(stageStartedAt)
 
+	stageStartedAt = time.Now()
 	if err := q.Index.Upsert(ctx, job.ImageID, job.ModelID, vec); err != nil {
+		indexDuration = time.Since(stageStartedAt)
 		_ = q.failOrRetry(ctx, job, err)
 		return true, err
 	}
-	log.Printf("worker completed job id=%d image_id=%d", job.ID, job.ImageID)
+	indexDuration = time.Since(stageStartedAt)
+
+	annotationErrSuffix := ""
+	if annotationErrText != "" {
+		annotationErrSuffix = fmt.Sprintf(" annotation_error=%q", annotationErrText)
+	}
+	log.Printf(
+		"worker completed job id=%d image_id=%d total=%s load=%s stat=%s embed=%s annotate=%s db=%s index=%s annotations_needed=%t annotation_attempted=%t annotation_stored=%t%s",
+		job.ID,
+		job.ImageID,
+		time.Since(jobStartedAt).Round(time.Millisecond),
+		loadTaskDataDuration.Round(time.Millisecond),
+		statDuration.Round(time.Millisecond),
+		embedDuration.Round(time.Millisecond),
+		annotateDuration.Round(time.Millisecond),
+		completeDuration.Round(time.Millisecond),
+		indexDuration.Round(time.Millisecond),
+		needsAnnotations,
+		annotationAttempted,
+		annotationStored,
+		annotationErrSuffix,
+	)
 
 	return true, nil
 }

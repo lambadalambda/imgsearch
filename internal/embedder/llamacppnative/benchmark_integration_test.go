@@ -39,6 +39,38 @@ func BenchmarkNativeEmbedImage(b *testing.B) {
 	}
 }
 
+func BenchmarkNativeAnnotateImage(b *testing.B) {
+	if os.Getenv("RUN_LLAMACPP_NATIVE_GEMMA_BENCH") != "1" {
+		b.Skip("set RUN_LLAMACPP_NATIVE_GEMMA_BENCH=1 with LLAMA_NATIVE_GEMMA_MODEL_PATH and LLAMA_NATIVE_GEMMA_MMPROJ_PATH")
+	}
+
+	runtime := newNativeAnnotatorForBenchmark(b)
+
+	root := findRepoRootFromBenchmark(b)
+	imagePath := filepath.Join(root, "fixtures", "images", "woman_office.jpg")
+
+	ctx := context.Background()
+	annotation, err := runtime.AnnotateImage(ctx, imagePath)
+	if err != nil {
+		b.Fatalf("warm annotate: %v", err)
+	}
+	if annotation.Description == "" || len(annotation.Tags) == 0 {
+		b.Fatalf("warm annotate returned incomplete result: %+v", annotation)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		annotation, err := runtime.AnnotateImage(ctx, imagePath)
+		if err != nil {
+			b.Fatalf("annotate image: %v", err)
+		}
+		if annotation.Description == "" || len(annotation.Tags) == 0 {
+			b.Fatalf("empty annotation result: %+v", annotation)
+		}
+	}
+}
+
 func newNativeEmbedderForBenchmark(b *testing.B) *Embedder {
 	b.Helper()
 
@@ -70,6 +102,36 @@ func newNativeEmbedderForBenchmark(b *testing.B) *Embedder {
 	}
 	b.Cleanup(func() { _ = e.Close() })
 	return e
+}
+
+func newNativeAnnotatorForBenchmark(b *testing.B) *nativeGemmaRuntime {
+	b.Helper()
+
+	modelPath := envOr("LLAMA_NATIVE_GEMMA_MODEL_PATH", "")
+	if modelPath == "" {
+		b.Skip("set LLAMA_NATIVE_GEMMA_MODEL_PATH to the Gemma GGUF model path")
+	}
+	visionPath := envOr("LLAMA_NATIVE_GEMMA_MMPROJ_PATH", "")
+	if visionPath == "" {
+		b.Skip("set LLAMA_NATIVE_GEMMA_MMPROJ_PATH to the Gemma mmproj GGUF path")
+	}
+
+	runtime, err := newGemmaNativeRuntime(nativeGemmaRuntimeConfig{
+		ModelPath:       modelPath,
+		VisionModelPath: visionPath,
+		GPULayers:       envIntOrDefaultBenchmark("LLAMA_NATIVE_GEMMA_GPU_LAYERS", 99),
+		UseGPU:          envBoolOrDefault("LLAMA_NATIVE_GEMMA_USE_GPU", true),
+		ContextSize:     envIntOrDefaultBenchmark("LLAMA_NATIVE_GEMMA_CONTEXT_SIZE", 8192),
+		BatchSize:       envIntOrDefaultBenchmark("LLAMA_NATIVE_GEMMA_BATCH_SIZE", 512),
+		Threads:         envIntOrDefaultBenchmark("LLAMA_NATIVE_GEMMA_THREADS", 0),
+		ImageMaxSide:    envIntOrDefaultBenchmark("LLAMA_NATIVE_GEMMA_IMAGE_MAX_SIDE", 1024),
+		ImageMaxTokens:  envIntOrDefaultBenchmark("LLAMA_NATIVE_GEMMA_IMAGE_MAX_TOKENS", 0),
+	})
+	if err != nil {
+		b.Fatalf("new native Gemma runtime: %v", err)
+	}
+	b.Cleanup(func() { _ = runtime.Close() })
+	return runtime
 }
 
 func envIntOrDefaultBenchmark(key string, fallback int) int {
