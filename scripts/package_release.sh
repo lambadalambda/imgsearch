@@ -210,7 +210,8 @@ EOF
 set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-exec "$script_dir/imgsearch" -embedder llama-cpp-native -vector-backend sqlite-vector "$@"
+export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
+exec "$script_dir/imgsearch" -vector-backend sqlite-vector "$@"
 EOF
 
     cat > "${pkg_root}/run-8b-annotator-26b.sh" <<'EOF'
@@ -218,7 +219,8 @@ EOF
 set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-exec "$script_dir/imgsearch" -embedder llama-cpp-native -vector-backend sqlite-vector -llama-native-annotator-variant 26b "$@"
+export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
+exec "$script_dir/imgsearch" -vector-backend sqlite-vector -llama-native-annotator-variant 26b "$@"
 EOF
 
     chmod +x "${pkg_root}/run.sh" "${pkg_root}/run-8b.sh" "${pkg_root}/run-8b-annotator-26b.sh"

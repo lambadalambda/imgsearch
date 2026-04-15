@@ -30,7 +30,7 @@ func TestSQLiteVectorSearchEndToEnd(t *testing.T) {
 
 	_, err := dbConn.Exec(`
 INSERT INTO embedding_models(id, name, version, dimensions, metric, normalized)
-VALUES (1, 'jina-embeddings-v4', 'mlx-8bit', 2, 'cosine', 1)
+VALUES (1, 'fixture-native-model', 'v1', 2, 'cosine', 1)
 `)
 	if err != nil {
 		t.Fatalf("insert model: %v", err)
@@ -100,8 +100,8 @@ func TestSQLiteVectorSearchKeepsModelIsolation(t *testing.T) {
 	_, err := dbConn.Exec(`
 INSERT INTO embedding_models(id, name, version, dimensions, metric, normalized)
 VALUES
-	(1, 'jina-embeddings-v4', 'mlx-8bit', 2, 'cosine', 1),
-	(2, 'deterministic-sha256', 'v1', 2, 'cosine', 1)
+	(1, 'fixture-native-a', 'v1', 2, 'cosine', 1),
+	(2, 'fixture-native-b', 'v1', 2, 'cosine', 1)
 `)
 	if err != nil {
 		t.Fatalf("insert models: %v", err)

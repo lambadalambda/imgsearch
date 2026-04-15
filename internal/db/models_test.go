@@ -29,9 +29,9 @@ func TestEnsureEmbeddingModelCreatesThenReturnsExisting(t *testing.T) {
 	ctx := context.Background()
 
 	firstID, err := EnsureEmbeddingModel(ctx, db, EmbeddingModelSpec{
-		Name:       "jina-embeddings-v4",
-		Version:    "mlx-8bit",
-		Dimensions: 2048,
+		Name:       "llama.cpp-embedding",
+		Version:    "native-test-v1",
+		Dimensions: 4096,
 		Metric:     "cosine",
 		Normalized: true,
 	})
@@ -40,9 +40,9 @@ func TestEnsureEmbeddingModelCreatesThenReturnsExisting(t *testing.T) {
 	}
 
 	secondID, err := EnsureEmbeddingModel(ctx, db, EmbeddingModelSpec{
-		Name:       "jina-embeddings-v4",
-		Version:    "mlx-8bit",
-		Dimensions: 2048,
+		Name:       "llama.cpp-embedding",
+		Version:    "native-test-v1",
+		Dimensions: 4096,
 		Metric:     "cosine",
 		Normalized: true,
 	})

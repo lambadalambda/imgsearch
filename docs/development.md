@@ -27,7 +27,7 @@ Optional native tuning env vars for `mise run serve`:
 Reset local database files:
 - `mise run reset-db`
 
-Note: native embedding is the default build path when CGO is enabled. In source checkouts, the llama.cpp runtime libraries still need to be built first.
+Note: imgsearch now depends on the native llama.cpp path. In source checkouts, the llama.cpp runtime libraries still need to be built first, and non-CGO builds fall back to the stub implementation.
 
 Build artifact note:
 - `mise run llama-cpp-native-build` uses `scripts/ensure_llama_cpp_native_build.sh`, which treats `./deps/llama.cpp/build` as the host-native build directory and deletes foreign shared libraries before rebuilding.
@@ -35,39 +35,29 @@ Build artifact note:
 - Keep cross-built artifacts in an explicit separate directory such as `./build-artifacts/llama.cpp/linux-cuda13/`.
 - When packaging from explicit cross-built Linux libs, set `IMGSEARCH_LLAMA_LIB_DIR=/absolute/path/to/build-artifacts/llama.cpp/linux-cuda13/bin` before running `scripts/package_release.sh`.
 
-## llama.cpp Paths
+## llama.cpp Native Runtime
 
-This repo includes two llama.cpp paths:
+`imgsearch` now uses the in-process `llama-cpp-native` path only.
 
-- `llama-cpp-native`: direct in-process llama.cpp/mtmd calls via cgo (default)
-- `llama-cpp`: HTTP calls to `llama-server` (legacy)
+Run explicitly:
 
-Run native explicitly:
-
-- `go run ./cmd/imgsearch -embedder llama-cpp-native -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
+- `go run ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
 
 Convenience tasks:
 
 - `mise run llama-cpp-native-build`
+- `mise run serve`
 - `mise run serve-llama-cpp-native`
-
-Legacy `llama-server` HTTP path:
-
-1. Start server:
-   - `./deps/llama.cpp/build/bin/llama-server --host 127.0.0.1 --port 8081 --model ./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf --mmproj ./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf --embeddings --pooling last --ctx-size 8192 --gpu-layers 99`
-2. Run app:
-   - `go run ./cmd/imgsearch -embedder llama-cpp -llama-cpp-url http://127.0.0.1:8081 -llama-cpp-dimensions 4096 -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
 
 Notes:
 
-- Use `-llama-cpp-dimensions 4096` for Qwen3-VL-Embedding-8B models.
-- You can pass `-llama-cpp-model` to set the optional `model` field in `/v1/embeddings` requests.
 - Native defaults target `lainsoykaf/Qwen3-VL-Embedding-8B-GGUF` at `4096` dimensions.
 - Native path defaults to `-llama-native-image-max-side 512` to cap indexing latency on very large images.
 - Native image embedding preprocesses every image through libvips (via `github.com/cshum/vipsgen`) and writes a temporary JPEG before mtmd, which avoids WEBP/AVIF decode failures in llama.cpp input handling.
-- Native llama.cpp prompting uses Qwen chat-template style framing (`system` + `user` + assistant generation prompt) for text and image embeddings.
+- Native prompting uses Qwen chat-template style framing (`system` + `user` + assistant generation prompt) for text and image embeddings.
 - Optional: set `-llama-native-image-max-tokens` to override mtmd image token cap (`0` keeps model defaults).
-- Native embedding model metadata includes model/mmproj filenames plus image cap settings; changing them creates a new model version and queues missing index jobs for re-embedding.
+- Optional: use `-llama-native-query-instruction` and `-llama-native-passage-instruction` to tune retrieval framing.
+- Native embedding model metadata includes model/mmproj filenames, image cap settings, and retrieval instruction settings; changing them creates a new model version and queues missing index jobs for re-embedding.
 
 ## Bulk Import
 
@@ -139,8 +129,6 @@ Run integration suites:
 
 - `mise run llama-cpp-native-test`
 - `mise run llama-cpp-native-test-fixtures`
-- `mise run llama-cpp-test`
-- `mise run llama-cpp-test-fixtures`
 - `mise run sqlite-vector-test`
 - `mise run llama-cpp-native-bench-qwen8b`
 

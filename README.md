@@ -58,7 +58,7 @@ Cross-platform note:
 
 - The app binds to `127.0.0.1:8080` by default.
 - Supported formats: JPEG, PNG, WEBP, and AVIF.
-- The default embedder is `llama-cpp-native` with the Qwen3-VL-Embedding-8B GGUF pair.
+- Embedding uses the in-process `llama-cpp-native` runtime with the Qwen3-VL-Embedding-8B GGUF pair.
 - The default model files are downloaded automatically on first run when missing.
 - Data is stored in `./data` by default.
 - The UI includes uploads, indexing status, gallery browsing, text search, and similar-image search.

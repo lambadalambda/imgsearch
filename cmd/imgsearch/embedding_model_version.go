@@ -1,32 +1,34 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"strings"
 )
 
-func llamaCPPModelVersion(model string, dimensions int) string {
-	modelToken := sanitizeModelVersionToken(strings.TrimSpace(model))
-	if modelToken == "unknown" {
-		modelToken = "default"
-	}
-
-	return fmt.Sprintf("server-v2-%s-d%d", modelToken, dimensions)
-}
-
-func llamaNativeModelVersion(modelPath string, visionModelPath string, dimensions int, imageMaxSide int, imageMaxTokens int) string {
+func llamaNativeModelVersion(modelPath string, visionModelPath string, dimensions int, imageMaxSide int, imageMaxTokens int, queryInstruction string, passageInstruction string) string {
 	modelToken := sanitizeModelVersionToken(filepath.Base(strings.TrimSpace(modelPath)))
 	visionToken := sanitizeModelVersionToken(filepath.Base(strings.TrimSpace(visionModelPath)))
+	queryToken := instructionVersionToken(queryInstruction)
+	passageToken := instructionVersionToken(passageInstruction)
 
 	return fmt.Sprintf(
-		"native-v4-chatml-vipsjpeg-%s-%s-d%d-s%d-t%d",
+		"native-v5-chatml-vipsjpeg-%s-%s-d%d-s%d-t%d-q%s-p%s",
 		modelToken,
 		visionToken,
 		dimensions,
 		imageMaxSide,
 		imageMaxTokens,
+		queryToken,
+		passageToken,
 	)
+}
+
+func instructionVersionToken(value string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(value)))
+	return hex.EncodeToString(sum[:6])
 }
 
 func sanitizeModelVersionToken(value string) string {

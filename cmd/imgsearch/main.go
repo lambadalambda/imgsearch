@@ -30,16 +30,8 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
-	embedderType := flag.String("embedder", "llama-cpp-native", "embedder backend (default): llama-cpp-native; alternatives: llama-cpp, jina-mlx, jina-torch, qwen3-vl-embedding-8b, deterministic")
-	jinaURL := flag.String("jina-mlx-url", "http://127.0.0.1:9009", "embedding sidecar URL (jina-mlx, jina-torch, or qwen3-vl-embedding-8b)")
-	embedImageMode := flag.String("embed-image-mode", "auto", "image transport mode for sidecar embedders: path, bytes, or auto")
-	llamaCPPURL := flag.String("llama-cpp-url", "http://127.0.0.1:8081", "llama.cpp server URL for -embedder llama-cpp")
-	llamaCPPDimensions := flag.Int("llama-cpp-dimensions", 2048, "embedding dimensions for llama-cpp model metadata")
-	llamaCPPModel := flag.String("llama-cpp-model", "", "optional model field passed to llama.cpp /v1/embeddings")
-	llamaCPPQueryInstruction := flag.String("llama-cpp-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp text query embeddings")
-	llamaCPPPassageInstruction := flag.String("llama-cpp-passage-instruction", "Represent this image or text for retrieval.", "instruction used for llama-cpp image/document embeddings")
-	llamaNativeModelPath := flag.String("llama-native-model-path", defaultLlamaNativeModelPath, "path to llama.cpp GGUF embedding model for -embedder llama-cpp-native")
-	llamaNativeMMProjPath := flag.String("llama-native-mmproj-path", defaultLlamaNativeMMProjPath, "path to llama.cpp GGUF mmproj model for -embedder llama-cpp-native")
+	llamaNativeModelPath := flag.String("llama-native-model-path", defaultLlamaNativeModelPath, "path to the llama.cpp GGUF embedding model")
+	llamaNativeMMProjPath := flag.String("llama-native-mmproj-path", defaultLlamaNativeMMProjPath, "path to the llama.cpp GGUF mmproj model")
 	llamaNativeDimensions := flag.Int("llama-native-dimensions", defaultLlamaNativeDimensions, "embedding dimensions for llama-cpp-native model metadata")
 	llamaNativeGPULayers := flag.Int("llama-native-gpu-layers", 99, "number of layers to offload for llama-cpp-native")
 	llamaNativeUseGPU := flag.Bool("llama-native-use-gpu", true, "whether llama-cpp-native should use GPU for mtmd/mmproj")
@@ -48,6 +40,8 @@ func main() {
 	llamaNativeThreads := flag.Int("llama-native-threads", 0, "thread count for llama-cpp-native runtime (0 uses backend default)")
 	llamaNativeImageMaxSide := flag.Int("llama-native-image-max-side", 512, "maximum image side length used before llama-cpp-native embedding")
 	llamaNativeImageMaxTokens := flag.Int("llama-native-image-max-tokens", 0, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
+	llamaNativeQueryInstruction := flag.String("llama-native-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp-native text query embeddings")
+	llamaNativePassageInstruction := flag.String("llama-native-passage-instruction", "Represent this image or text for retrieval.", "instruction used for llama-cpp-native image/document embeddings")
 	llamaNativeAnnotatorModelPath := flag.String("llama-native-annotator-model-path", "", "optional path to a separate llama.cpp GGUF vision model used only for image descriptions/tags")
 	llamaNativeAnnotatorMMProjPath := flag.String("llama-native-annotator-mmproj-path", "", "optional path to a separate llama.cpp GGUF mmproj used only for image descriptions/tags")
 	llamaNativeAnnotatorVariant := flag.String("llama-native-annotator-variant", defaultLlamaNativeAnnotatorVariant, "default separate llama.cpp annotator model variant when explicit annotator paths are not set: e4b or 26b")
@@ -136,62 +130,40 @@ func main() {
 		log.Fatalf("bootstrap app: %v", err)
 	}
 
-	if *embedderType == "llama-cpp-native" {
-		*llamaNativeModelPath, *llamaNativeMMProjPath, err = ensureDefaultLlamaNativeAssets(context.Background(), *llamaNativeModelPath, *llamaNativeMMProjPath)
+	*llamaNativeModelPath, *llamaNativeMMProjPath, err = ensureDefaultLlamaNativeAssets(context.Background(), *llamaNativeModelPath, *llamaNativeMMProjPath)
+	if err != nil {
+		log.Fatalf("resolve llama-cpp-native model assets: %v", err)
+	}
+	if strings.TrimSpace(*llamaNativeAnnotatorModelPath) == "" && strings.TrimSpace(*llamaNativeAnnotatorMMProjPath) == "" {
+		*llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath, err = ensureDefaultLlamaNativeAnnotatorAssetsForVariant(context.Background(), *llamaNativeAnnotatorVariant, *llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath)
 		if err != nil {
-			log.Fatalf("resolve llama-cpp-native model assets: %v", err)
-		}
-		if strings.TrimSpace(*llamaNativeAnnotatorModelPath) == "" && strings.TrimSpace(*llamaNativeAnnotatorMMProjPath) == "" {
-			*llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath, err = ensureDefaultLlamaNativeAnnotatorAssetsForVariant(context.Background(), *llamaNativeAnnotatorVariant, *llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath)
-			if err != nil {
-				log.Fatalf("resolve llama-cpp-native annotator model assets: %v", err)
-			}
+			log.Fatalf("resolve llama-cpp-native annotator model assets: %v", err)
 		}
 	}
 
-	embedDimensions := 0
-	if *embedderType == "llama-cpp" {
-		embedDimensions = *llamaCPPDimensions
-		if embedDimensions <= 0 {
-			log.Fatalf("configure embedder dimensions: llama-cpp dimensions must be positive")
-		}
-	} else if *embedderType == "llama-cpp-native" {
-		embedDimensions = *llamaNativeDimensions
-		if embedDimensions <= 0 {
-			log.Fatalf("configure embedder dimensions: llama-cpp-native dimensions must be positive")
-		}
-	} else {
-		embedDimensions, err = embedderDimensionsForType(*embedderType)
-		if err != nil {
-			log.Fatalf("configure embedder dimensions: %v", err)
-		}
+	embedDimensions := *llamaNativeDimensions
+	if embedDimensions <= 0 {
+		log.Fatalf("configure embedder dimensions: llama-cpp-native dimensions must be positive")
 	}
 
-	resolvedLlamaNativeImageMaxSide := *llamaNativeImageMaxSide
-	resolvedLlamaNativeImageMaxTokens := *llamaNativeImageMaxTokens
-	if *embedderType == "llama-cpp-native" {
-		resolvedLlamaNativeImageMaxSide, resolvedLlamaNativeImageMaxTokens, err = resolveLlamaCPPNativeImageLimits(*llamaNativeImageMaxSide, *llamaNativeImageMaxTokens)
-		if err != nil {
-			log.Fatalf("configure llama-cpp-native options: %v", err)
-		}
+	resolvedLlamaNativeImageMaxSide, resolvedLlamaNativeImageMaxTokens, err := resolveLlamaCPPNativeImageLimits(*llamaNativeImageMaxSide, *llamaNativeImageMaxTokens)
+	if err != nil {
+		log.Fatalf("configure llama-cpp-native options: %v", err)
 	}
 
-	modelSpec, err := embeddingModelSpec(*embedderType, embedDimensions)
+	modelSpec, err := llamaNativeEmbeddingModelSpec(embedDimensions)
 	if err != nil {
 		log.Fatalf("configure model spec: %v", err)
 	}
-	if *embedderType == "llama-cpp" {
-		modelSpec.Version = llamaCPPModelVersion(*llamaCPPModel, modelSpec.Dimensions)
-	}
-	if *embedderType == "llama-cpp-native" {
-		modelSpec.Version = llamaNativeModelVersion(
-			*llamaNativeModelPath,
-			*llamaNativeMMProjPath,
-			modelSpec.Dimensions,
-			resolvedLlamaNativeImageMaxSide,
-			resolvedLlamaNativeImageMaxTokens,
-		)
-	}
+	modelSpec.Version = llamaNativeModelVersion(
+		*llamaNativeModelPath,
+		*llamaNativeMMProjPath,
+		modelSpec.Dimensions,
+		resolvedLlamaNativeImageMaxSide,
+		resolvedLlamaNativeImageMaxTokens,
+		*llamaNativeQueryInstruction,
+		*llamaNativePassageInstruction,
+	)
 
 	modelID, err := db.EnsureEmbeddingModel(context.Background(), sqlDB, modelSpec)
 	if err != nil {
@@ -206,33 +178,20 @@ func main() {
 		log.Printf("enqueued %d missing index jobs for model_id=%d", enqueuedMissing, modelID)
 	}
 
-	activeEmbedder := embedder.Embedder(nil)
-	if *embedderType == "llama-cpp" {
-		activeEmbedder, err = newLlamaCPPEmbedder(llamaCPPEmbedderOptions{
-			URL:                *llamaCPPURL,
-			Dimensions:         modelSpec.Dimensions,
-			Model:              *llamaCPPModel,
-			QueryInstruction:   *llamaCPPQueryInstruction,
-			PassageInstruction: *llamaCPPPassageInstruction,
-		})
-	} else if *embedderType == "llama-cpp-native" {
-		activeEmbedder, err = newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
-			ModelPath:          *llamaNativeModelPath,
-			VisionModelPath:    *llamaNativeMMProjPath,
-			Dimensions:         modelSpec.Dimensions,
-			GPULayers:          *llamaNativeGPULayers,
-			UseGPU:             *llamaNativeUseGPU,
-			ContextSize:        *llamaNativeContextSize,
-			BatchSize:          *llamaNativeBatchSize,
-			Threads:            *llamaNativeThreads,
-			ImageMaxSide:       resolvedLlamaNativeImageMaxSide,
-			ImageMaxTokens:     resolvedLlamaNativeImageMaxTokens,
-			QueryInstruction:   *llamaCPPQueryInstruction,
-			PassageInstruction: *llamaCPPPassageInstruction,
-		})
-	} else {
-		activeEmbedder, err = newEmbedder(*embedderType, *jinaURL, modelSpec.Dimensions, *embedImageMode)
-	}
+	activeEmbedder, err := newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
+		ModelPath:          *llamaNativeModelPath,
+		VisionModelPath:    *llamaNativeMMProjPath,
+		Dimensions:         modelSpec.Dimensions,
+		GPULayers:          *llamaNativeGPULayers,
+		UseGPU:             *llamaNativeUseGPU,
+		ContextSize:        *llamaNativeContextSize,
+		BatchSize:          *llamaNativeBatchSize,
+		Threads:            *llamaNativeThreads,
+		ImageMaxSide:       resolvedLlamaNativeImageMaxSide,
+		ImageMaxTokens:     resolvedLlamaNativeImageMaxTokens,
+		QueryInstruction:   *llamaNativeQueryInstruction,
+		PassageInstruction: *llamaNativePassageInstruction,
+	})
 	if err != nil {
 		log.Fatalf("configure embedder: %v", err)
 	}

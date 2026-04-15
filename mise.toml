@@ -5,10 +5,6 @@ go = "latest"
 description = "Run Go tests"
 run = "go test ./..."
 
-[tasks.jina-setup]
-description = "Create venv and install sidecar deps"
-run = "python3 -m venv .venv && .venv/bin/pip install mlx mlx-lm numpy huggingface_hub 'transformers==4.52.0' pillow requests torch peft torchvision"
-
 [tasks.sqlite-vector-setup]
 description = "Download sqlite-vector extension for local platform"
 run = "scripts/setup_sqlite_vector.sh"
@@ -18,36 +14,24 @@ description = "Run sqlite-vector integration tests"
 run = "RUN_SQLITE_VECTOR_INTEGRATION=1 SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" go test ./internal/vectorindex/sqlitevector -run SQLiteVector -v"
 
 [tasks.serve]
-description = "Run imgsearch with default native embedder"
+description = "Run imgsearch with the native llama.cpp embedder"
 run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; scripts/ensure_llama_cpp_native_build.sh; bin=\"${TMPDIR:-/tmp}/imgsearch-mise-serve\"; go build -o \"$bin\" ./cmd/imgsearch && SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" \"$bin\" -vector-backend sqlite-vector -llama-native-model-path \"${LLAMA_NATIVE_MODEL_PATH:-$(pwd)/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" -llama-native-mmproj-path \"${LLAMA_NATIVE_MMPROJ_PATH:-$(pwd)/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" -llama-native-dimensions \"${LLAMA_NATIVE_DIMS:-4096}\" -llama-native-gpu-layers \"${LLAMA_NATIVE_GPU_LAYERS:-99}\" -llama-native-use-gpu=${LLAMA_NATIVE_USE_GPU:-true} -llama-native-context-size \"${LLAMA_NATIVE_CONTEXT_SIZE:-8192}\" -llama-native-batch-size \"${LLAMA_NATIVE_BATCH_SIZE:-512}\" -llama-native-threads \"${LLAMA_NATIVE_THREADS:-0}\" -llama-native-image-max-side \"${LLAMA_NATIVE_IMAGE_MAX_SIDE:-512}\" -llama-native-image-max-tokens \"${LLAMA_NATIVE_IMAGE_MAX_TOKENS:-0}\""
 
 [tasks."serve:8b"]
-description = "Run imgsearch with 8B native embedder"
-run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; scripts/ensure_llama_cpp_native_build.sh; bin=\"${TMPDIR:-/tmp}/imgsearch-mise-serve-8b\"; go build -o \"$bin\" ./cmd/imgsearch && SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" \"$bin\" -vector-backend sqlite-vector -llama-native-model-path \"${LLAMA_NATIVE_MODEL_PATH:-$(pwd)/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" -llama-native-mmproj-path \"${LLAMA_NATIVE_MMPROJ_PATH:-$(pwd)/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" -llama-native-dimensions \"${LLAMA_NATIVE_DIMS:-4096}\" -llama-native-gpu-layers \"${LLAMA_NATIVE_GPU_LAYERS:-99}\" -llama-native-use-gpu=${LLAMA_NATIVE_USE_GPU:-true} -llama-native-context-size \"${LLAMA_NATIVE_CONTEXT_SIZE:-8192}\" -llama-native-batch-size \"${LLAMA_NATIVE_BATCH_SIZE:-512}\" -llama-native-threads \"${LLAMA_NATIVE_THREADS:-0}\" -llama-native-image-max-side \"${LLAMA_NATIVE_IMAGE_MAX_SIDE:-512}\" -llama-native-image-max-tokens \"${LLAMA_NATIVE_IMAGE_MAX_TOKENS:-0}\""
+description = "Run imgsearch with the 8B native embedder"
+run = "mise run serve"
 
 [tasks."serve:8b:annotator-26b"]
-description = "Run imgsearch with 8B native embedder and 26B Gemma annotator"
+description = "Run imgsearch with the 8B native embedder and 26B Gemma annotator"
 run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; scripts/ensure_llama_cpp_native_build.sh; bin=\"${TMPDIR:-/tmp}/imgsearch-mise-serve-8b-annotator-26b\"; go build -o \"$bin\" ./cmd/imgsearch && SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" \"$bin\" -vector-backend sqlite-vector -llama-native-model-path \"${LLAMA_NATIVE_MODEL_PATH:-$(pwd)/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" -llama-native-mmproj-path \"${LLAMA_NATIVE_MMPROJ_PATH:-$(pwd)/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" -llama-native-dimensions \"${LLAMA_NATIVE_DIMS:-4096}\" -llama-native-gpu-layers \"${LLAMA_NATIVE_GPU_LAYERS:-99}\" -llama-native-use-gpu=${LLAMA_NATIVE_USE_GPU:-true} -llama-native-context-size \"${LLAMA_NATIVE_CONTEXT_SIZE:-8192}\" -llama-native-batch-size \"${LLAMA_NATIVE_BATCH_SIZE:-512}\" -llama-native-threads \"${LLAMA_NATIVE_THREADS:-0}\" -llama-native-image-max-side \"${LLAMA_NATIVE_IMAGE_MAX_SIDE:-512}\" -llama-native-image-max-tokens \"${LLAMA_NATIVE_IMAGE_MAX_TOKENS:-0}\" -llama-native-annotator-variant 26b"
-
-[tasks.serve-torch]
-description = "Ensure sqlite-vector exists and run imgsearch with jina-torch"
-run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" go run ./cmd/imgsearch -embedder jina-torch -vector-backend sqlite-vector"
-
-[tasks.llama-cpp-test]
-description = "Run llama.cpp semantic integration test"
-run = "RUN_LLAMACPP_INTEGRATION=1 LLAMA_CPP_URL=\"${LLAMA_CPP_URL:-http://127.0.0.1:8081}\" LLAMA_CPP_DIMS=\"${LLAMA_CPP_DIMS:-2048}\" LLAMA_CPP_MODEL=\"${LLAMA_CPP_MODEL:-}\" LLAMA_CPP_QUERY_INSTRUCTION=\"${LLAMA_CPP_QUERY_INSTRUCTION:-Retrieve images or text relevant to the user's query.}\" LLAMA_CPP_PASSAGE_INSTRUCTION=\"${LLAMA_CPP_PASSAGE_INSTRUCTION:-Represent this image or text for retrieval.}\" go test ./internal/embedder/llamacpp -run LlamaCPPEmbeddingsAreSemanticallyReasonable -v"
-
-[tasks.llama-cpp-test-fixtures]
-description = "Evaluate fixture retrieval quality for llama.cpp"
-run = "RUN_LLAMACPP_INTEGRATION=1 LLAMA_CPP_URL=\"${LLAMA_CPP_URL:-http://127.0.0.1:8081}\" LLAMA_CPP_DIMS=\"${LLAMA_CPP_DIMS:-2048}\" LLAMA_CPP_MODEL=\"${LLAMA_CPP_MODEL:-}\" LLAMA_CPP_QUERY_INSTRUCTION=\"${LLAMA_CPP_QUERY_INSTRUCTION:-Retrieve images or text relevant to the user's query.}\" LLAMA_CPP_PASSAGE_INSTRUCTION=\"${LLAMA_CPP_PASSAGE_INSTRUCTION:-Represent this image or text for retrieval.}\" go test ./internal/embedder/llamacpp -run LlamaCPPFixtureRetrievalQuality -v"
 
 [tasks.llama-cpp-native-build]
 description = "Build llama.cpp libs for native embedder"
 run = "scripts/ensure_llama_cpp_native_build.sh"
 
 [tasks.serve-llama-cpp-native]
-description = "Run imgsearch with direct llama.cpp native embedder"
-run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; scripts/ensure_llama_cpp_native_build.sh; bin=\"${TMPDIR:-/tmp}/imgsearch-mise-serve-native\"; go build -o \"$bin\" ./cmd/imgsearch && SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" \"$bin\" -embedder llama-cpp-native -vector-backend sqlite-vector -llama-native-model-path \"${LLAMA_NATIVE_MODEL_PATH:-$(pwd)/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf}\" -llama-native-mmproj-path \"${LLAMA_NATIVE_MMPROJ_PATH:-$(pwd)/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf}\" -llama-native-dimensions \"${LLAMA_NATIVE_DIMS:-4096}\" -llama-native-gpu-layers \"${LLAMA_NATIVE_GPU_LAYERS:-99}\" -llama-native-use-gpu=${LLAMA_NATIVE_USE_GPU:-true} -llama-native-context-size \"${LLAMA_NATIVE_CONTEXT_SIZE:-8192}\" -llama-native-batch-size \"${LLAMA_NATIVE_BATCH_SIZE:-512}\" -llama-native-threads \"${LLAMA_NATIVE_THREADS:-0}\" -llama-native-image-max-side \"${LLAMA_NATIVE_IMAGE_MAX_SIDE:-512}\" -llama-native-image-max-tokens \"${LLAMA_NATIVE_IMAGE_MAX_TOKENS:-0}\""
+description = "Run imgsearch with explicit native llama.cpp setup"
+run = "mise run serve"
 
 [tasks.llama-cpp-native-test]
 description = "Run llama.cpp native semantic integration test"
@@ -76,51 +60,3 @@ run = "scripts/import_images.sh"
 [tasks.reset-db]
 description = "Delete local SQLite database files"
 run = "mkdir -p ./data && rm -f ./data/imgsearch.sqlite ./data/imgsearch.sqlite-journal ./data/imgsearch.sqlite-wal ./data/imgsearch.sqlite-shm"
-
-[tasks.jina-serve]
-description = "Run local Jina MLX embedding server"
-run = "sh -c '.venv/bin/python scripts/jina_mlx_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images --max-image-pixels \"${JINA_MLX_MAX_IMAGE_PIXELS:-3145728}\"; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
-
-[tasks.jina-torch-serve]
-description = "Run local Jina Torch embedding server"
-run = "sh -c '.venv/bin/python scripts/jina_torch_server.py --host 127.0.0.1 --port 9009 --allow-dir ./data/images --device \"${JINA_TORCH_DEVICE:-auto}\" --max-image-pixels \"${JINA_TORCH_MAX_IMAGE_PIXELS:-602112}\"; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
-
-[tasks.qwen3-setup]
-description = "Create venv and install Qwen3 sidecar deps"
-run = "sh -c 'python3 -m venv .venv-qwen3 && .venv-qwen3/bin/pip install --upgrade pip && if [ \"$(uname -s)\" = \"Linux\" ] && command -v nvidia-smi >/dev/null 2>&1; then .venv-qwen3/bin/pip install --extra-index-url https://download.pytorch.org/whl/cu128 \"torch>=2.9,<3\" torchvision; else .venv-qwen3/bin/pip install \"torch>=2.9,<3\" torchvision; fi && .venv-qwen3/bin/pip install accelerate numpy qwen-vl-utils pillow requests \"transformers>=4.57.3,<5\"'"
-
-[tasks.qwen3-serve]
-description = "Run local Qwen3-VL-Embedding-8B sidecar"
-run = "sh -c 'repo=\"${QWEN3_VL_REPO_PATH:-}\"; if [ -z \"$repo\" ]; then for candidate in \"$HOME/repos/Qwen3-VL-Embedding\" \"$HOME/repos/Qwen3-VL-Embedding-8B\" \"$HOME/repos/qwen3\"; do if [ -f \"$candidate/src/models/qwen3_vl_embedding.py\" ] || [ -f \"$candidate/scripts/qwen3_vl_embedding.py\" ]; then repo=\"$candidate\"; break; fi; done; fi; if [ -z \"$repo\" ]; then echo \"set QWEN3_VL_REPO_PATH to a checkout containing src/models/qwen3_vl_embedding.py or scripts/qwen3_vl_embedding.py\" >&2; exit 1; fi; model_id=\"${QWEN3_VL_MODEL_ID:-}\"; if [ -z \"$model_id\" ]; then if [ -f \"$repo/config.json\" ]; then model_id=\"$repo\"; else model_id=\"Qwen/Qwen3-VL-Embedding-8B\"; fi; fi; .venv-qwen3/bin/python scripts/qwen3_vl_server.py --host 127.0.0.1 --port 9010 --repo-path \"$repo\" --allow-dir ./data/images --model-id \"$model_id\" --attn-implementation \"${QWEN3_VL_ATTN_IMPL:-sdpa}\" --torch-dtype \"${QWEN3_VL_TORCH_DTYPE:-auto}\" --max-image-pixels \"${QWEN3_VL_MAX_IMAGE_PIXELS:-1843200}\"; code=$?; if [ \"$code\" -eq 130 ] || [ \"$code\" -eq 143 ]; then exit 0; fi; exit \"$code\"'"
-
-[tasks.serve-qwen-remote]
-description = "Run imgsearch against remote Qwen3 sidecar"
-run = "if [ ! -f ./tools/sqlite-vector/vector ]; then scripts/setup_sqlite_vector.sh; fi; SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" go run ./cmd/imgsearch -embedder qwen3-vl-embedding-8b -jina-mlx-url \"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" -embed-image-mode auto -vector-backend sqlite-vector"
-
-[tasks.qwen3-test]
-description = "Run sidecar semantic integration test against Qwen3"
-run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" go test ./internal/embedder/jinamlx -run SidecarEmbeddingsAreSemanticallyReasonable -v"
-
-[tasks.qwen3-test-api]
-description = "Run API sidecar integration test against Qwen3"
-run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" JINA_MLX_MODEL_NAME=Qwen3-VL-Embedding-8B JINA_MLX_MODEL_VERSION=transformers JINA_MLX_MODEL_DIMS=4096 go test ./internal/integration -run APIEndToEndWithJinaSidecar -v"
-
-[tasks.qwen3-test-all]
-description = "Run all integration tests against Qwen3 sidecar"
-run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" go test ./internal/embedder/jinamlx -run Sidecar -v && RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=\"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" JINA_MLX_MODEL_NAME=Qwen3-VL-Embedding-8B JINA_MLX_MODEL_VERSION=transformers JINA_MLX_MODEL_DIMS=4096 go test ./internal/integration -run APIEndToEndWithJinaSidecar -v"
-
-[tasks.qwen3-eval-fixtures]
-description = "Evaluate fixture retrieval quality against Qwen3 sidecar"
-run = "python3 scripts/qwen3_fixture_eval.py --base-url \"${QWEN3_VL_URL:-http://127.0.0.1:9010}\" --images-dir ./fixtures/images --expected ./fixtures/images/expected.txt"
-
-[tasks.jina-test]
-description = "Run embedder sidecar similarity integration test"
-run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=http://127.0.0.1:9009 go test ./internal/embedder/jinamlx -run Sidecar -v"
-
-[tasks.jina-test-api]
-description = "Run API end-to-end sidecar integration test"
-run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=http://127.0.0.1:9009 go test ./internal/integration -run APIEndToEndWithJinaSidecar -v"
-
-[tasks.jina-test-all]
-description = "Run all Jina sidecar integration tests"
-run = "RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=http://127.0.0.1:9009 go test ./internal/embedder/jinamlx -run Sidecar -v && RUN_JINA_MLX_INTEGRATION=1 JINA_MLX_URL=http://127.0.0.1:9009 go test ./internal/integration -run APIEndToEndWithJinaSidecar -v"

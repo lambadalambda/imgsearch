@@ -5,47 +5,45 @@ import (
 	"testing"
 )
 
-func TestLlamaCPPModelVersion(t *testing.T) {
-	if got := llamaCPPModelVersion("", 2048); got != "server-v2-default-d2048" {
-		t.Fatalf("unexpected default llama-cpp model version: %q", got)
-	}
-
-	if got := llamaCPPModelVersion("Qwen 3/VL", 4096); got != "server-v2-Qwen_3_VL-d4096" {
-		t.Fatalf("unexpected sanitized llama-cpp model version: %q", got)
-	}
-}
-
 func TestLlamaNativeModelVersionChangesWithConfig(t *testing.T) {
-	base := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 512, 0)
+	base := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 512, 0, "query", "passage")
 	if base == "" {
 		t.Fatal("expected non-empty native model version")
 	}
-	if !strings.HasPrefix(base, "native-v4-chatml-vipsjpeg-") {
+	if !strings.HasPrefix(base, "native-v5-chatml-vipsjpeg-") {
 		t.Fatalf("expected native version prefix to include chatml-vipsjpeg, got %q", base)
 	}
 
-	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 512, 0); got != base {
+	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 512, 0, "query", "passage"); got != base {
 		t.Fatalf("expected stable native model version, got %q want %q", got, base)
 	}
 
-	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 768, 0); got == base {
+	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 768, 0, "query", "passage"); got == base {
 		t.Fatal("expected image max side to affect native model version")
 	}
 
-	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 512, 256); got == base {
+	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 512, 256, "query", "passage"); got == base {
 		t.Fatal("expected image max tokens to affect native model version")
 	}
 
-	if got := llamaNativeModelVersion("/models/other.gguf", "/models/mmproj.gguf", 2048, 512, 0); got == base {
+	if got := llamaNativeModelVersion("/models/other.gguf", "/models/mmproj.gguf", 2048, 512, 0, "query", "passage"); got == base {
 		t.Fatal("expected model filename to affect native model version")
 	}
 
-	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/other-mmproj.gguf", 2048, 512, 0); got == base {
+	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/other-mmproj.gguf", 2048, 512, 0, "query", "passage"); got == base {
 		t.Fatal("expected mmproj filename to affect native model version")
 	}
 
-	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 4096, 512, 0); got == base {
+	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 4096, 512, 0, "query", "passage"); got == base {
 		t.Fatal("expected dimensions to affect native model version")
+	}
+
+	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 512, 0, "other query", "passage"); got == base {
+		t.Fatal("expected query instruction to affect native model version")
+	}
+
+	if got := llamaNativeModelVersion("/models/qwen.gguf", "/models/mmproj.gguf", 2048, 512, 0, "query", "other passage"); got == base {
+		t.Fatal("expected passage instruction to affect native model version")
 	}
 }
 
