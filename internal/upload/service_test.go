@@ -79,6 +79,54 @@ func fixtureImageBytes(t *testing.T, name string) []byte {
 	return content
 }
 
+func mp4Bytes() []byte {
+	return []byte{
+		0x00, 0x00, 0x00, 0x18,
+		'f', 't', 'y', 'p',
+		'i', 's', 'o', 'm',
+		0x00, 0x00, 0x02, 0x00,
+		'i', 's', 'o', 'm',
+		'm', 'p', '4', '2',
+	}
+}
+
+type fakeVideoSampler struct {
+	durationMS int64
+	width      int
+	height     int
+	frames     int
+}
+
+func (f *fakeVideoSampler) Sample(ctx context.Context, videoPath string, frameCount int, tmpDir string) (VideoSample, error) {
+	_ = ctx
+	_ = videoPath
+	out := VideoSample{DurationMS: f.durationMS, Width: f.width, Height: f.height}
+	for i := 0; i < f.frames && i < frameCount; i++ {
+		framePath := filepath.Join(tmpDir, "frame-"+string(rune('a'+i))+".png")
+		if err := os.WriteFile(framePath, pngBytesForFrame(i), 0o644); err != nil {
+			return VideoSample{}, err
+		}
+		out.Frames = append(out.Frames, SampledFrame{
+			Path:        framePath,
+			TimestampMS: int64(i+1) * 1000,
+			FrameIndex:  i,
+		})
+	}
+	return out, nil
+}
+
+func pngBytesForFrame(seed int) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			img.Set(x, y, color.RGBA{R: uint8(100 + seed*20), G: uint8(10*y + seed), B: uint8(10*x + seed), A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	_ = png.Encode(&buf, img)
+	return buf.Bytes()
+}
+
 func TestStoreCreatesImageAndQueueJob(t *testing.T) {
 	svc, sqlDB := setupService(t)
 
@@ -254,5 +302,94 @@ func TestStoreRejectsFakeAVIFByExtension(t *testing.T) {
 	}
 	if imageCount != 0 {
 		t.Fatalf("expected no images written, got %d", imageCount)
+	}
+}
+
+func TestStoreCreatesVideoFramesAndEmbedJobs(t *testing.T) {
+	svc, sqlDB := setupService(t)
+	svc.VideoSampler = &fakeVideoSampler{durationMS: 12_000, width: 1920, height: 1080, frames: 3}
+	svc.VideoFrameCount = 3
+
+	out, err := svc.Store(context.Background(), "clip.mp4", bytes.NewReader(mp4Bytes()))
+	if err != nil {
+		t.Fatalf("store video: %v", err)
+	}
+	if out.Duplicate {
+		t.Fatal("expected new video, got duplicate")
+	}
+	if out.MediaType != "video" {
+		t.Fatalf("expected video media type, got %q", out.MediaType)
+	}
+	if out.VideoID == 0 {
+		t.Fatal("expected non-zero video id")
+	}
+
+	var videoCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM videos`).Scan(&videoCount); err != nil {
+		t.Fatalf("count videos: %v", err)
+	}
+	if videoCount != 1 {
+		t.Fatalf("expected 1 video, got %d", videoCount)
+	}
+
+	var frameCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM video_frames WHERE video_id = ?`, out.VideoID).Scan(&frameCount); err != nil {
+		t.Fatalf("count video frames: %v", err)
+	}
+	if frameCount != 3 {
+		t.Fatalf("expected 3 video frames, got %d", frameCount)
+	}
+
+	var imageCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM images`).Scan(&imageCount); err != nil {
+		t.Fatalf("count images: %v", err)
+	}
+	if imageCount != 3 {
+		t.Fatalf("expected 3 frame images, got %d", imageCount)
+	}
+
+	var jobCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'embed_image'`).Scan(&jobCount); err != nil {
+		t.Fatalf("count embed jobs: %v", err)
+	}
+	if jobCount != 3 {
+		t.Fatalf("expected 3 embed jobs, got %d", jobCount)
+	}
+
+	var annotateCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_image'`).Scan(&annotateCount); err != nil {
+		t.Fatalf("count annotate jobs: %v", err)
+	}
+	if annotateCount != 0 {
+		t.Fatalf("expected 0 annotate jobs for video frames, got %d", annotateCount)
+	}
+
+	abs := filepath.Join(svc.DataDir, out.StoragePath)
+	if _, err := os.Stat(abs); err != nil {
+		t.Fatalf("expected stored video at %s: %v", abs, err)
+	}
+
+	rows, err := sqlDB.Query(`
+SELECT i.storage_path
+FROM images i
+JOIN video_frames vf ON vf.image_id = i.id
+WHERE vf.video_id = ?
+ORDER BY vf.frame_index ASC
+`, out.VideoID)
+	if err != nil {
+		t.Fatalf("load frame storage paths: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var framePath string
+		if err := rows.Scan(&framePath); err != nil {
+			t.Fatalf("scan frame path: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(svc.DataDir, framePath)); err != nil {
+			t.Fatalf("expected frame file %s: %v", framePath, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate frame paths: %v", err)
 	}
 }

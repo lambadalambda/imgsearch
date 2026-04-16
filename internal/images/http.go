@@ -47,7 +47,15 @@ func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int)
 	}
 
 	var total int64
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM images`).Scan(&total); err != nil {
+	if err := db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM images i
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM video_frames vf
+  WHERE vf.image_id = i.id
+)
+`).Scan(&total); err != nil {
 		return ListResponse{}, fmt.Errorf("count images: %w", err)
 	}
 
@@ -61,6 +69,11 @@ LEFT JOIN index_jobs j
 	ON j.image_id = i.id
 	AND j.model_id = ?
 	AND j.kind = 'embed_image'
+WHERE NOT EXISTS (
+	SELECT 1
+	FROM video_frames vf
+	WHERE vf.image_id = i.id
+)
 ORDER BY i.id DESC
 LIMIT ? OFFSET ?
 `, modelID, limit, offset)

@@ -23,6 +23,10 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [ ] P2 Batched embedding inference via multi-sequence llama.cpp: `docs/issues/014-batched-embedding-inference.md` (partial groundwork landed: `EmbedImages` API + worker wiring, but no stable native throughput win yet)
 - [ ] P3 Pipeline CPU preprocessing with GPU inference: `docs/issues/015-pipeline-cpu-gpu-overlap.md`
 
+## Features
+
+- [x] P2 Add MVP video search via sampled representative frames: `docs/issues/016-video-search-via-sampled-frames.md`
+
 ## Notes
 
 - The most important pre-performance fixes are the read-path requeue loop, the split ownership of embedding persistence, and the sqlite-vector multi-model story.

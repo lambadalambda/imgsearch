@@ -31,7 +31,7 @@ func TestServerMuxServesUIAndMedia(t *testing.T) {
 		t.Fatalf("expected title in root html")
 	}
 
-	mediaReq := httptest.NewRequest(http.MethodGet, "/media/probe.txt", nil)
+	mediaReq := httptest.NewRequest(http.MethodGet, "/media/images/probe.txt", nil)
 	mediaRR := httptest.NewRecorder()
 	mux.ServeHTTP(mediaRR, mediaReq)
 	if mediaRR.Code != http.StatusOK {

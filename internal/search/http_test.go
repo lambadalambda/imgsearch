@@ -173,6 +173,72 @@ WHERE id = 2
 	}
 }
 
+func TestTextSearchGroupsVideoFrameHitsIntoSingleVideoResult(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES
+  (10, 'vf1', 'frame-1.jpg', 'images/vf1', 'image/jpeg', 100, 100),
+  (11, 'vf2', 'frame-2.jpg', 'images/vf2', 'image/jpeg', 100, 100)
+`); err != nil {
+		t.Fatalf("seed frame images: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (7, 'vid', 'clip.mp4', 'videos/vid', 'video/mp4', 12000, 1920, 1080, 2)
+`); err != nil {
+		t.Fatalf("seed video: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES
+  (7, 10, 0, 1000),
+  (7, 11, 1, 7000)
+`); err != nil {
+		t.Fatalf("seed video frames: %v", err)
+	}
+
+	h := NewHandler(&Handler{
+		DB:       dbConn,
+		ModelID:  1,
+		DataDir:  "/tmp",
+		Embedder: &fakeEmbedder{textVec: []float32{1, 0}},
+		Index: &fakeIndex{hits: []vectorindex.SearchHit{
+			{ImageID: 11, ModelID: 1, Distance: 0.05},
+			{ImageID: 10, ModelID: 1, Distance: 0.06},
+			{ImageID: 2, ModelID: 1, Distance: 0.20},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/text?q=clip", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("expected 2 grouped results, got %d: %+v", len(resp.Results), resp.Results)
+	}
+	if resp.Results[0].MediaType != "video" || resp.Results[0].VideoID != 7 {
+		t.Fatalf("expected first result to be video 7, got %+v", resp.Results[0])
+	}
+	if resp.Results[0].OriginalName != "clip.mp4" || resp.Results[0].StoragePath != "videos/vid" {
+		t.Fatalf("unexpected video metadata: %+v", resp.Results[0])
+	}
+	if resp.Results[0].PreviewPath != "images/vf2" || resp.Results[0].MatchTimestampMS != 7000 {
+		t.Fatalf("unexpected video preview/timestamp: %+v", resp.Results[0])
+	}
+	if resp.Results[1].MediaType != "image" || resp.Results[1].ImageID != 2 {
+		t.Fatalf("expected second result to stay as image 2, got %+v", resp.Results[1])
+	}
+}
+
 func TestSimilarSearchReturnsResults(t *testing.T) {
 	dbConn := setupSearchDB(t)
 	h := NewHandler(&Handler{

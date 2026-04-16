@@ -85,6 +85,36 @@ ALTER TABLE images ADD COLUMN description TEXT NOT NULL DEFAULT '';
 ALTER TABLE images ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
 `,
 	},
+	{
+		version: 3,
+		sql: `
+CREATE TABLE IF NOT EXISTS videos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sha256 TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  frame_count INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS video_frames (
+  video_id INTEGER NOT NULL,
+  image_id INTEGER NOT NULL,
+  frame_index INTEGER NOT NULL,
+  timestamp_ms INTEGER NOT NULL,
+  PRIMARY KEY (video_id, frame_index),
+  FOREIGN KEY (video_id) REFERENCES videos(id),
+  FOREIGN KEY (image_id) REFERENCES images(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_frames_image_id
+ON video_frames(image_id);
+`,
+	},
 }
 
 func LatestVersion() int {

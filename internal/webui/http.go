@@ -4,7 +4,6 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
-	"path/filepath"
 )
 
 //go:embed static/*
@@ -25,7 +24,7 @@ func NewHandler(dataDir string) http.Handler {
 		panic("webui index unavailable: " + err.Error())
 	}
 
-	mediaRoot := filepath.Join(dataDir, "images")
+	mediaRoot := dataDir
 
 	mux := http.NewServeMux()
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assets))))

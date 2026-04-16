@@ -62,9 +62,12 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "params.set('neg'") {
 		t.Fatalf("expected negative prompt query parameter in javascript")
 	}
+	if !strings.Contains(rr.Body.String(), "match_timestamp_ms") || !strings.Contains(rr.Body.String(), "preview_path") {
+		t.Fatalf("expected video-result rendering fields in javascript")
+	}
 }
 
-func TestMediaServesFilesFromDataImagesDir(t *testing.T) {
+func TestMediaServesFilesFromDataDir(t *testing.T) {
 	dataDir := t.TempDir()
 	imagesDir := filepath.Join(dataDir, "images")
 	if err := os.MkdirAll(imagesDir, 0o755); err != nil {
@@ -75,7 +78,7 @@ func TestMediaServesFilesFromDataImagesDir(t *testing.T) {
 	}
 
 	h := NewHandler(dataDir)
-	req := httptest.NewRequest(http.MethodGet, "/media/sample.bin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/media/images/sample.bin", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 

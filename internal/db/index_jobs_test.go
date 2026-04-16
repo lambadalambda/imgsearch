@@ -190,3 +190,36 @@ VALUES
 		t.Fatalf("expected other-model jobs to be purged, got %d", otherCount)
 	}
 }
+
+func TestEnsureAnnotationJobsForModelSkipsVideoFrames(t *testing.T) {
+	dbConn := openIndexJobsDB(t)
+
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (5, 'vid', 'clip.mp4', 'videos/vid', 'video/mp4', 12000, 1920, 1080, 1)
+`); err != nil {
+		t.Fatalf("seed video: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (5, 2, 0, 500)
+`); err != nil {
+		t.Fatalf("seed video frame: %v", err)
+	}
+
+	inserted, err := EnsureAnnotationJobsForModel(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("ensure annotation jobs: %v", err)
+	}
+	if inserted != 2 {
+		t.Fatalf("inserted: got=%d want=2", inserted)
+	}
+
+	var count int
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_image' AND image_id = 2 AND model_id = 1`).Scan(&count); err != nil {
+		t.Fatalf("count annotation jobs for frame image: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no annotation job for video frame, got %d", count)
+	}
+}

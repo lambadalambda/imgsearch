@@ -42,9 +42,16 @@ func EnsureAnnotationJobsForModel(ctx context.Context, db *sql.DB, modelID int64
 INSERT OR IGNORE INTO index_jobs(kind, image_id, model_id, state)
 SELECT 'annotate_image', i.id, ?, 'pending'
 FROM images i
-WHERE trim(COALESCE(i.description, '')) = ''
-   OR COALESCE(i.tags_json, '') = ''
-   OR COALESCE(i.tags_json, '[]') = '[]'
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM video_frames vf
+  WHERE vf.image_id = i.id
+)
+  AND (
+    trim(COALESCE(i.description, '')) = ''
+    OR COALESCE(i.tags_json, '') = ''
+    OR COALESCE(i.tags_json, '[]') = '[]'
+  )
 `, modelID)
 	if err != nil {
 		return 0, fmt.Errorf("ensure annotation jobs for model %d: %w", modelID, err)
@@ -86,6 +93,11 @@ WHERE kind = 'annotate_image'
         OR COALESCE(i.tags_json, '') = ''
         OR COALESCE(i.tags_json, '[]') = '[]'
       )
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM video_frames vf
+    WHERE vf.image_id = index_jobs.image_id
   )
 `, modelID)
 	if err != nil {

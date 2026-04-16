@@ -8,10 +8,12 @@ import (
 	"imgsearch/internal/httputil"
 )
 
-const maxUploadBytes = 20 << 20
+const maxUploadBytes = 500 << 20
 
 type UploadResponse struct {
+	MediaType string `json:"media_type,omitempty"`
 	ImageID   int64  `json:"image_id"`
+	VideoID   int64  `json:"video_id,omitempty"`
 	SHA256    string `json:"sha256"`
 	Duplicate bool   `json:"duplicate"`
 }
@@ -56,7 +58,7 @@ func NewHandler(svc *Service) http.Handler {
 			_ = file.Close()
 			if err != nil {
 				if errors.Is(err, ErrUnsupportedFormat) {
-					httputil.WriteJSONError(w, http.StatusBadRequest, "unsupported image format")
+					httputil.WriteJSONError(w, http.StatusBadRequest, "unsupported media format")
 					return
 				}
 				httputil.WriteJSONError(w, http.StatusInternalServerError, "upload failed")
@@ -69,7 +71,9 @@ func NewHandler(svc *Service) http.Handler {
 				created++
 			}
 			uploads = append(uploads, UploadResponse{
+				MediaType: out.MediaType,
 				ImageID:   out.ImageID,
+				VideoID:   out.VideoID,
 				SHA256:    out.SHA256,
 				Duplicate: out.Duplicate,
 			})

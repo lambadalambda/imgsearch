@@ -371,6 +371,7 @@ input:focus-visible {
   background: transparent;
   padding: 0;
   cursor: zoom-in;
+  position: relative;
 }
 
 .thumb-button:focus-visible {
@@ -383,6 +384,20 @@ input:focus-visible {
   height: 100%;
   object-fit: cover;
   background: linear-gradient(135deg, #ede7da 0%, #e4ddcf 100%);
+}
+
+.thumb-video-badge {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(35, 32, 28, 0.82);
+  color: #fffdf9;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .meta {
@@ -398,10 +413,27 @@ input:focus-visible {
 }
 
 .path,
-.distance {
+.distance,
+.timestamp,
+.media-link {
   margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.video-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.media-link {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.media-link:hover {
+  color: var(--accent);
 }
 
 .description {
@@ -500,6 +532,11 @@ input:focus-visible {
 .state.leased {
   background: #e3eff4;
   color: var(--leased);
+}
+
+.state.media {
+  background: #efe8da;
+  color: var(--muted-strong);
 }
 
 .state.anchor {

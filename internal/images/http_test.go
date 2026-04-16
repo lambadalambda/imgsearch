@@ -222,3 +222,41 @@ WHERE kind = 'embed_image' AND model_id = 1 AND image_id = 1
 		t.Fatalf("expected last_error to remain unchanged, got %q", lastError)
 	}
 }
+
+func TestListImagesExcludesDerivedVideoFrames(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (9, 'vid', 'clip.mp4', 'videos/vid', 'video/mp4', 12000, 1920, 1080, 1)
+`); err != nil {
+		t.Fatalf("seed video: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (9, 3, 0, 500)
+`); err != nil {
+		t.Fatalf("seed video frame: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+	req := httptest.NewRequest(http.MethodGet, "/api/images?limit=10&offset=0", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp ListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Total != 2 {
+		t.Fatalf("expected total=2 after excluding video frames, got %d", resp.Total)
+	}
+	for _, item := range resp.Images {
+		if item.ImageID == 3 {
+			t.Fatalf("expected derived frame image 3 to be excluded, got %+v", resp.Images)
+		}
+	}
+}

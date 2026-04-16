@@ -26,12 +26,16 @@ type Handler struct {
 }
 
 type SearchResult struct {
-	ImageID      int64    `json:"image_id"`
-	Distance     float64  `json:"distance"`
-	OriginalName string   `json:"original_name"`
-	StoragePath  string   `json:"storage_path"`
-	Description  string   `json:"description,omitempty"`
-	Tags         []string `json:"tags,omitempty"`
+	ImageID          int64    `json:"image_id"`
+	MediaType        string   `json:"media_type,omitempty"`
+	VideoID          int64    `json:"video_id,omitempty"`
+	PreviewPath      string   `json:"preview_path,omitempty"`
+	MatchTimestampMS int64    `json:"match_timestamp_ms,omitempty"`
+	Distance         float64  `json:"distance"`
+	OriginalName     string   `json:"original_name"`
+	StoragePath      string   `json:"storage_path"`
+	Description      string   `json:"description,omitempty"`
+	Tags             []string `json:"tags,omitempty"`
 }
 
 type SearchResponse struct {
@@ -205,54 +209,90 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]S
 	}
 
 	rows, err := h.DB.QueryContext(ctx, fmt.Sprintf(`
-	SELECT id, original_name, storage_path, COALESCE(description, ''), COALESCE(tags_json, '[]')
-	FROM images
-	WHERE id IN (%s)
+	SELECT i.id,
+	       i.original_name,
+	       i.storage_path,
+	       COALESCE(i.description, ''),
+	       COALESCE(i.tags_json, '[]'),
+	       vf.video_id,
+	       v.original_name,
+	       v.storage_path,
+	       vf.timestamp_ms
+	FROM images i
+	LEFT JOIN video_frames vf ON vf.image_id = i.id
+	LEFT JOIN videos v ON v.id = vf.video_id
+	WHERE i.id IN (%s)
 	`, strings.Join(placeholders, ",")), args...)
 	if err != nil {
 		return nil, fmt.Errorf("load images for enrich: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	type imageRow struct {
-		originalName string
-		storagePath  string
-		description  string
-		tags         []string
+	type mediaRow struct {
+		imageID           int64
+		originalName      string
+		storagePath       string
+		description       string
+		tags              []string
+		videoID           sql.NullInt64
+		videoOriginalName sql.NullString
+		videoStoragePath  sql.NullString
+		timestampMS       sql.NullInt64
 	}
-	byID := make(map[int64]imageRow, len(ids))
+	byID := make(map[int64][]mediaRow, len(ids))
 	for rows.Next() {
-		var imageID int64
-		var row imageRow
+		var row mediaRow
 		var tagsJSON string
-		if err := rows.Scan(&imageID, &row.originalName, &row.storagePath, &row.description, &tagsJSON); err != nil {
+		if err := rows.Scan(&row.imageID, &row.originalName, &row.storagePath, &row.description, &tagsJSON, &row.videoID, &row.videoOriginalName, &row.videoStoragePath, &row.timestampMS); err != nil {
 			return nil, fmt.Errorf("scan enriched image row: %w", err)
 		}
 		tags, err := decodeTagsJSON(tagsJSON)
 		if err != nil {
-			return nil, fmt.Errorf("decode image %d tags: %w", imageID, err)
+			return nil, fmt.Errorf("decode image %d tags: %w", row.imageID, err)
 		}
 		row.tags = tags
-		byID[imageID] = row
+		byID[row.imageID] = append(byID[row.imageID], row)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate enriched image rows: %w", err)
 	}
 
+	seenVideos := make(map[int64]struct{}, len(hits))
 	results := make([]SearchResult, 0, len(hits))
 	for _, hit := range hits {
-		row, ok := byID[hit.ImageID]
-		if !ok {
+		rowsForImage, ok := byID[hit.ImageID]
+		if !ok || len(rowsForImage) == 0 {
 			return nil, fmt.Errorf("load image %d: %w", hit.ImageID, sql.ErrNoRows)
 		}
-		results = append(results, SearchResult{
-			ImageID:      hit.ImageID,
-			Distance:     hit.Distance,
-			OriginalName: row.originalName,
-			StoragePath:  filepath.ToSlash(row.storagePath),
-			Description:  row.description,
-			Tags:         row.tags,
-		})
+		for _, row := range rowsForImage {
+			if row.videoID.Valid {
+				if _, seen := seenVideos[row.videoID.Int64]; seen {
+					continue
+				}
+				seenVideos[row.videoID.Int64] = struct{}{}
+			}
+			result := SearchResult{
+				ImageID:      hit.ImageID,
+				MediaType:    "image",
+				Distance:     hit.Distance,
+				OriginalName: row.originalName,
+				StoragePath:  filepath.ToSlash(row.storagePath),
+				Description:  row.description,
+				Tags:         row.tags,
+			}
+			if row.videoID.Valid {
+				result.MediaType = "video"
+				result.VideoID = row.videoID.Int64
+				result.OriginalName = row.videoOriginalName.String
+				result.StoragePath = filepath.ToSlash(row.videoStoragePath.String)
+				result.PreviewPath = filepath.ToSlash(row.storagePath)
+				result.MatchTimestampMS = row.timestampMS.Int64
+			}
+			results = append(results, result)
+			if !row.videoID.Valid {
+				continue
+			}
+		}
 	}
 	return results, nil
 }

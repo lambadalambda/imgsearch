@@ -72,6 +72,35 @@ func TestUploadHandlerReturnsCreatedForNewImage(t *testing.T) {
 	}
 }
 
+func TestUploadHandlerReturnsCreatedForNewVideo(t *testing.T) {
+	svc, _ := setupService(t)
+	svc.VideoSampler = &fakeVideoSampler{durationMS: 12_000, width: 1920, height: 1080, frames: 2}
+	svc.VideoFrameCount = 2
+	h := NewHandler(svc)
+
+	body, contentType := multipartBody(t, "clip.mp4", mp4Bytes())
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusCreated, rr.Body.String())
+	}
+
+	var resp UploadBatchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Uploads) != 1 {
+		t.Fatalf("unexpected upload count: %+v", resp)
+	}
+	if resp.Uploads[0].MediaType != "video" || resp.Uploads[0].VideoID == 0 || resp.Uploads[0].Duplicate {
+		t.Fatalf("unexpected video response: %+v", resp)
+	}
+}
+
 func TestUploadHandlerAcceptsWEBPAndAVIF(t *testing.T) {
 	tests := []struct {
 		name     string

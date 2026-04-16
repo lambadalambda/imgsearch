@@ -121,16 +121,24 @@ function toMediaURL(storagePath) {
   if (!storagePath) {
     return '';
   }
-  let normalized = storagePath.replace(/^\/+/, '');
-  if (normalized.startsWith('images/')) {
-    normalized = normalized.slice('images/'.length);
-  }
+  const normalized = storagePath.replace(/^\/+/, '');
   const encoded = normalized
     .split('/')
     .filter((segment) => segment.length > 0)
     .map((segment) => encodeURIComponent(segment))
     .join('/');
   return `/media/${encoded}`;
+}
+
+function formatTimestamp(timestampMs) {
+  const totalSeconds = Math.max(0, Math.floor(Number(timestampMs || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${String(hours)}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+  return `${String(minutes)}:${String(seconds).padStart(2, '0')}`;
 }
 
 function stateClass(indexState) {
@@ -186,7 +194,10 @@ function shouldShowDescriptionToggle(description) {
 function cardMarkup(item, mode) {
   const safeName = escapeHTML(item.original_name);
   const safePath = escapeHTML(item.storage_path);
-  const safeImageURL = escapeHTML(toMediaURL(item.storage_path));
+  const mediaType = item.media_type || 'image';
+  const thumbPath = mediaType === 'video' && item.preview_path ? item.preview_path : item.storage_path;
+  const thumbURL = escapeHTML(toMediaURL(thumbPath));
+  const mediaURL = escapeHTML(toMediaURL(item.storage_path));
   const description = typeof item.description === 'string' ? item.description.trim() : '';
   const tags = Array.isArray(item.tags) ? item.tags.filter((tag) => typeof tag === 'string' && tag.trim() !== '').slice(0, 10) : [];
   const descriptionID = `description-${mode}-${Number(item.image_id) || 0}`;
@@ -194,11 +205,18 @@ function cardMarkup(item, mode) {
   const status = item.index_state || 'done';
   const safeStatus = escapeHTML(status);
   const score = typeof item.distance === 'number' && !item.is_anchor ? `<p class="distance">distance ${item.distance.toFixed(4)}</p>` : '';
-  const canSearchSimilar = status === 'done';
-  const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : 'Use as anchor') : 'Find similar';
+  const canSearchSimilar = status === 'done' && Number(item.image_id) > 0;
+  const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use preview frame' : 'Use as anchor') : 'Find similar';
   const disabled = canSearchSimilar ? '' : 'disabled';
   const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';
   const anchorBadge = item.is_anchor ? '<p class="state anchor">anchor</p>' : '';
+  const mediaBadge = mediaType === 'video' ? '<p class="state media">video</p>' : '<p class="state media">image</p>';
+  const videoMeta = mediaType === 'video'
+    ? `<div class="video-meta">
+        <p class="timestamp">best match at ${escapeHTML(formatTimestamp(item.match_timestamp_ms))}</p>
+        <a class="media-link" href="${mediaURL}" target="_blank" rel="noopener">Open video</a>
+      </div>`
+    : '';
   const descriptionMarkup = description
     ? `<div class="description-wrap" data-expanded="false">
         <p id="${descriptionID}" class="description">${escapeHTML(description)}</p>
@@ -214,18 +232,21 @@ function cardMarkup(item, mode) {
       <button
         type="button"
         class="thumb-button"
-        data-lightbox-src="${safeImageURL}"
-        data-lightbox-caption="${safeName}"
-        aria-label="Open full image for ${safeName}"
+        data-lightbox-src="${thumbURL}"
+        data-lightbox-caption="${safeName}${mediaType === 'video' ? ' preview frame' : ''}"
+        aria-label="Open full ${mediaType === 'video' ? 'preview frame' : 'image'} for ${safeName}"
       >
-        <img src="${safeImageURL}" alt="${safeName}" loading="lazy" />
+        <img src="${thumbURL}" alt="${safeName}" loading="lazy" />
+        ${mediaType === 'video' ? '<span class="thumb-video-badge">video</span>' : ''}
       </button>
       <div class="meta">
         <h3>${safeName}</h3>
         <p class="path">${safePath}</p>
         ${descriptionMarkup}
         ${tagsMarkup}
+        ${videoMeta}
         <p class="${stateClass(status)}">${safeStatus}</p>
+        ${mediaBadge}
         ${anchorBadge}
         ${score}
         <button class="ghost similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
@@ -255,7 +276,7 @@ function renderResults() {
   clearResultsButton.disabled = state.results.length === 0;
 
   if (state.results.length === 0) {
-    resultsGrid.innerHTML = '<p class="empty">Run a text search or similar-image search to populate this view.</p>';
+    resultsGrid.innerHTML = '<p class="empty">Run a text search or similar-image search to populate this view with image or video matches.</p>';
     return;
   }
 
@@ -844,7 +865,7 @@ uploadForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const files = uploadFile.files ? Array.from(uploadFile.files) : [];
   if (files.length === 0) {
-    setStatus(uploadStatus, 'Choose one or more JPEG, PNG, WEBP, or AVIF files first.', 'error');
+    setStatus(uploadStatus, 'Choose one or more supported image or video files first.', 'error');
     return;
   }
 

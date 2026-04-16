@@ -88,6 +88,8 @@ func TestRunMigrationsCreatesCoreTables(t *testing.T) {
 	tables := []string{
 		"schema_migrations",
 		"images",
+		"videos",
+		"video_frames",
 		"embedding_models",
 		"image_embeddings",
 		"index_jobs",
