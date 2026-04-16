@@ -159,6 +159,30 @@ function formatTimestamp(timestampMs) {
   return `${String(minutes)}:${String(seconds).padStart(2, '0')}`;
 }
 
+function videoMetaMarkup(item, mode, mediaURL) {
+  if ((item.media_type || 'image') !== 'video') {
+    return '';
+  }
+
+  if (mode === 'result' && Number(item.match_timestamp_ms) > 0) {
+    return `<div class="video-meta"><p class="timestamp">best match at ${escapeHTML(formatTimestamp(item.match_timestamp_ms))}</p></div>`;
+  }
+
+  const details = [];
+  if (Number(item.duration_ms) > 0) {
+    details.push(`duration ${escapeHTML(formatTimestamp(item.duration_ms))}`);
+  }
+  if (Number(item.frame_count) > 0) {
+    const frameCount = Number(item.frame_count);
+    details.push(`${frameCount} sampled frame${frameCount === 1 ? '' : 's'}`);
+  }
+  if (details.length === 0) {
+    return '';
+  }
+
+  return `<div class="video-meta"><p class="timestamp">${details.join(' • ')}</p></div>`;
+}
+
 function stateClass(indexState) {
   if (indexState === 'done') {
     return 'state done';
@@ -245,12 +269,7 @@ function cardMarkup(item, mode) {
   const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';
   const anchorBadge = item.is_anchor ? '<p class="state anchor">anchor</p>' : '';
   const mediaBadge = mediaType === 'video' ? '<p class="state media">video</p>' : '<p class="state media">image</p>';
-  const videoMeta = mediaType === 'video'
-    ? `<div class="video-meta">
-        <p class="timestamp">best match at ${escapeHTML(formatTimestamp(item.match_timestamp_ms))}</p>
-        <a class="media-link" href="${mediaURL}" target="_blank" rel="noopener">Open video</a>
-      </div>`
-    : '';
+  const videoMeta = videoMetaMarkup(item, mode, mediaURL);
   const descriptionMarkup = description
     ? `<div class="description-wrap" data-expanded="false">
         <p id="${descriptionID}" class="description">${escapeHTML(description)}</p>
