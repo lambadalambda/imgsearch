@@ -13,7 +13,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 type fixtureExpectation struct {
@@ -234,8 +236,167 @@ func TestNativeBatchEmbeddingsMatchSequential(t *testing.T) {
 	}
 }
 
+func TestNativeImageEmbeddingContextBudgetReport(t *testing.T) {
+	if os.Getenv("RUN_LLAMACPP_NATIVE_INTEGRATION") != "1" {
+		t.Skip("set RUN_LLAMACPP_NATIVE_INTEGRATION=1 with LLAMA_NATIVE_MODEL_PATH and LLAMA_NATIVE_MMPROJ_PATH")
+	}
+
+	embedder := newNativeEmbedderForIntegrationWithMaxSequences(t, 1)
+	paths := integrationContextBudgetPaths(t)
+	projectedSeqCtx := projectedCtxSeq(512, 4)
+
+	maxPositions := 0
+	maxTokens := 0
+	tightCount := 0
+	overCount := 0
+
+	for _, path := range paths {
+		inspect, err := embedder.InspectImageEmbedding(context.Background(), path)
+		if err != nil {
+			t.Fatalf("inspect image %s: %v", filepath.Base(path), err)
+		}
+		if inspect.ImageChunks <= 0 || inspect.ImageTokens <= 0 || inspect.TotalTokens <= 0 || inspect.TotalPositions <= 0 {
+			t.Fatalf("invalid inspect stats for %s: %+v", filepath.Base(path), inspect)
+		}
+		if inspect.NCtxSeq <= 0 || inspect.NSeqMax <= 0 {
+			t.Fatalf("invalid context stats for %s: %+v", filepath.Base(path), inspect)
+		}
+		if inspect.TotalTokens > maxTokens {
+			maxTokens = inspect.TotalTokens
+		}
+		if inspect.TotalPositions > maxPositions {
+			maxPositions = inspect.TotalPositions
+		}
+		if inspect.TotalPositions >= projectedSeqCtx-32 {
+			tightCount++
+		}
+		if inspect.TotalPositions > projectedSeqCtx {
+			overCount++
+		}
+		if testing.Verbose() {
+			t.Logf("%s tokens=%d positions=%d image_tokens=%d max_image_grid=%dx%d ctx_seq=%d", filepath.Base(path), inspect.TotalTokens, inspect.TotalPositions, inspect.ImageTokens, inspect.MaxImageNX, inspect.MaxImageNY, inspect.NCtxSeq)
+		}
+	}
+
+	t.Logf("context budget summary: samples=%d max_tokens=%d max_positions=%d projected_ctx_seq_512x4=%d tight=%d over=%d", len(paths), maxTokens, maxPositions, projectedSeqCtx, tightCount, overCount)
+}
+
+func TestNativeDualContextParallelSpike(t *testing.T) {
+	if os.Getenv("RUN_LLAMACPP_NATIVE_INTEGRATION") != "1" {
+		t.Skip("set RUN_LLAMACPP_NATIVE_INTEGRATION=1 with LLAMA_NATIVE_MODEL_PATH and LLAMA_NATIVE_MMPROJ_PATH")
+	}
+	if os.Getenv("RUN_LLAMACPP_NATIVE_PARALLEL_SPIKE") != "1" {
+		t.Skip("set RUN_LLAMACPP_NATIVE_PARALLEL_SPIKE=1 to run the dual-context throughput spike")
+	}
+
+	paths := integrationContextBudgetPaths(t)
+	if len(paths) < 2 {
+		t.Fatal("need at least two images for parallel spike")
+	}
+
+	ctx := context.Background()
+	baseline := newNativeEmbedderForIntegrationWithMaxSequences(t, 1)
+	parallelA := newNativeEmbedderForIntegrationWithMaxSequences(t, 1)
+	parallelB := newNativeEmbedderForIntegrationWithMaxSequences(t, 1)
+
+	if _, err := baseline.EmbedImage(ctx, paths[0]); err != nil {
+		t.Fatalf("warm baseline image 0: %v", err)
+	}
+	if _, err := baseline.EmbedImage(ctx, paths[1]); err != nil {
+		t.Fatalf("warm baseline image 1: %v", err)
+	}
+	if _, err := parallelA.EmbedImage(ctx, paths[0]); err != nil {
+		t.Fatalf("warm parallel image 0: %v", err)
+	}
+	if _, err := parallelB.EmbedImage(ctx, paths[1]); err != nil {
+		t.Fatalf("warm parallel image 1: %v", err)
+	}
+
+	sequentialDurations := make([]time.Duration, 0, 3)
+	parallelDurations := make([]time.Duration, 0, 3)
+	for range 3 {
+		started := time.Now()
+		if _, err := baseline.EmbedImage(ctx, paths[0]); err != nil {
+			t.Fatalf("baseline embed image 0: %v", err)
+		}
+		if _, err := baseline.EmbedImage(ctx, paths[1]); err != nil {
+			t.Fatalf("baseline embed image 1: %v", err)
+		}
+		sequentialDurations = append(sequentialDurations, time.Since(started))
+
+		started = time.Now()
+		var wg sync.WaitGroup
+		wg.Add(2)
+		var errA error
+		var errB error
+		go func() {
+			defer wg.Done()
+			_, errA = parallelA.EmbedImage(ctx, paths[0])
+		}()
+		go func() {
+			defer wg.Done()
+			_, errB = parallelB.EmbedImage(ctx, paths[1])
+		}()
+		wg.Wait()
+		if errA != nil {
+			t.Fatalf("parallel embed image 0: %v", errA)
+		}
+		if errB != nil {
+			t.Fatalf("parallel embed image 1: %v", errB)
+		}
+		parallelDurations = append(parallelDurations, time.Since(started))
+	}
+
+	t.Logf("dual-context spike: sequential=%v parallel=%v", sequentialDurations, parallelDurations)
+}
+
 func newNativeEmbedderForIntegration(t *testing.T) *Embedder {
 	return newNativeEmbedderForIntegrationWithMaxSequences(t, envIntOrDefault(t, "LLAMA_NATIVE_MAX_SEQUENCES", defaultMaxSequences))
+}
+
+func integrationContextBudgetPaths(t *testing.T) []string {
+	t.Helper()
+	if dir := strings.TrimSpace(os.Getenv("LLAMA_NATIVE_BENCH_IMAGE_DIR")); dir != "" {
+		entries, err := os.ReadDir(dir)
+		if err == nil {
+			paths := make([]string, 0, len(entries))
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				paths = append(paths, filepath.Join(dir, entry.Name()))
+				if len(paths) >= 16 {
+					break
+				}
+			}
+			if len(paths) > 0 {
+				return paths
+			}
+		}
+	}
+
+	repoRoot := findRepoRoot(t)
+	return []string{
+		filepath.Join(repoRoot, "fixtures", "images", "cat_1.jpg"),
+		filepath.Join(repoRoot, "fixtures", "images", "dog_1.jpg"),
+		filepath.Join(repoRoot, "fixtures", "images", "woman_2.jpg"),
+		filepath.Join(repoRoot, "fixtures", "images", "woman_office.jpg"),
+	}
+}
+
+func projectedCtxSeq(nCtx int, nSeqMax int) int {
+	if nCtx <= 0 || nSeqMax <= 0 {
+		return 0
+	}
+	paddedCtx := padTo(nCtx, 256)
+	return padTo(paddedCtx/nSeqMax, 256)
+}
+
+func padTo(v int, multiple int) int {
+	if v <= 0 || multiple <= 0 {
+		return 0
+	}
+	return ((v + multiple - 1) / multiple) * multiple
 }
 
 func newNativeEmbedderForIntegrationWithMaxSequences(t *testing.T, maxSequences int) *Embedder {

@@ -63,11 +63,47 @@ Because `batch-2` and `batch-4` still route through the safe single-image native
 
 - `TestNativeBatchEmbeddingsMatchSequential` passes with cosine similarity `>= 0.999` between `EmbedImage` and `EmbedImages` outputs.
 
+## Viability Spike Findings
+
+Two follow-up spike tests were added to clarify whether the native batching failure was mostly a context-budget problem or a deeper `mtmd` / M-RoPE limitation.
+
+### 1. Context budget inspection
+
+`TestNativeImageEmbeddingContextBudgetReport` tokenizes representative images through the real native path and records:
+
+- total prompt tokens
+- total prompt positions (`n_pos`)
+- image token count and image grid size
+- actual `n_ctx_seq` reported by llama.cpp
+
+Results on 16 sampled images from the 100-image benchmark dataset:
+
+- `max_tokens = 168`
+- `max_positions = 36`
+- projected `n_ctx_seq` for `n_ctx=512, n_seq_max=4` = `256`
+- `tight = 0`
+- `over = 0`
+
+Conclusion: on the sampled 384px workload, per-sequence context starvation does not appear to be the primary blocker. The images fit comfortably inside a hypothetical `n_ctx_seq=256` budget.
+
+### 2. Dual-context parallel spike
+
+`TestNativeDualContextParallelSpike` runs two ordinary native embedders in parallel, each with its own llama context, to check whether simple extra concurrency on Metal improves throughput without any multi-sequence bridge changes.
+
+Results:
+
+- sequential pair timings: about `1.45s`, `1.66s`, `1.64s`
+- parallel pair timings: about `1.68s`, `1.60s`, `1.57s`
+
+Conclusion: two independent contexts in parallel were flat to slightly worse than sequential execution. That suggests there is no obvious Metal throughput win available from naive parallelism alone.
+
 ## Conclusion
 
 - The Go API and worker plumbing needed for future batched embedding work are now in place.
 - The actual native multi-sequence optimization remains unresolved and this issue should stay open.
 - The current shipped implementation is intentionally conservative: correct and safe, but not faster.
+- The follow-up spike points away from context-budget starvation and toward the real blocker being the complexity of a correct multi-sequence `mtmd` / M-RoPE bridge for Qwen3-VL on Metal.
+- Given the flat dual-context result, issue 014 should be deferred on Metal unless there is a strong reason to revisit it with upstream `mtmd` changes or on CUDA hardware.
 
 ## Acceptance Criteria
 

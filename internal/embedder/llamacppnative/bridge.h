@@ -9,6 +9,22 @@ extern "C" {
 
 typedef struct imgsearch_llama_handle imgsearch_llama_handle;
 
+typedef struct imgsearch_llama_embed_inspect {
+    int32_t text_chunks;
+    int32_t image_chunks;
+    int32_t text_tokens;
+    int32_t image_tokens;
+    int32_t total_tokens;
+    int32_t total_positions;
+    int32_t max_image_tokens;
+    int32_t max_image_nx;
+    int32_t max_image_ny;
+    int32_t n_ctx;
+    int32_t n_ctx_seq;
+    int32_t n_seq_max;
+    int32_t n_batch;
+} imgsearch_llama_embed_inspect;
+
 imgsearch_llama_handle * imgsearch_llama_new(
     const char * model_path,
     const char * mmproj_path,
@@ -40,6 +56,12 @@ int32_t imgsearch_llama_embed_image(
     const char * instruction,
     float * out,
     int32_t out_len);
+
+int32_t imgsearch_llama_inspect_embed_image(
+    imgsearch_llama_handle * handle,
+    const char * image_path,
+    const char * instruction,
+    imgsearch_llama_embed_inspect * out);
 
 int32_t imgsearch_llama_generate_image(
     imgsearch_llama_handle * handle,

@@ -63,6 +63,22 @@ type Embedder struct {
 	passageInstruction string
 }
 
+type EmbedInspect struct {
+	TextChunks     int
+	ImageChunks    int
+	TextTokens     int
+	ImageTokens    int
+	TotalTokens    int
+	TotalPositions int
+	MaxImageTokens int
+	MaxImageNX     int
+	MaxImageNY     int
+	NCtx           int
+	NCtxSeq        int
+	NSeqMax        int
+	NBatch         int
+}
+
 type preparedEmbedPath struct {
 	path    string
 	cleanup func()
@@ -296,6 +312,54 @@ func (e *Embedder) embedPreparedPathsLocked(ctx context.Context, paths []prepare
 		results[i] = vec
 	}
 	return results, nil
+}
+
+func (e *Embedder) InspectImageEmbedding(ctx context.Context, path string) (EmbedInspect, error) {
+	var out EmbedInspect
+	if err := ensureContextActive(ctx); err != nil {
+		return out, err
+	}
+
+	preprocessedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(path, e.imageMaxSide)
+	if err != nil {
+		return out, err
+	}
+	defer cleanup()
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.handle == nil {
+		return out, fmt.Errorf("llama-cpp-native embedder is closed")
+	}
+
+	cPath := C.CString(preprocessedPath)
+	defer C.free(unsafe.Pointer(cPath))
+	cInstruction := C.CString(e.passageInstruction)
+	defer C.free(unsafe.Pointer(cInstruction))
+
+	var nativeOut C.imgsearch_llama_embed_inspect
+	if C.imgsearch_llama_inspect_embed_image(e.handle, cPath, cInstruction, &nativeOut) != 0 {
+		return out, e.lastErrorLocked()
+	}
+
+	out = EmbedInspect{
+		TextChunks:     int(nativeOut.text_chunks),
+		ImageChunks:    int(nativeOut.image_chunks),
+		TextTokens:     int(nativeOut.text_tokens),
+		ImageTokens:    int(nativeOut.image_tokens),
+		TotalTokens:    int(nativeOut.total_tokens),
+		TotalPositions: int(nativeOut.total_positions),
+		MaxImageTokens: int(nativeOut.max_image_tokens),
+		MaxImageNX:     int(nativeOut.max_image_nx),
+		MaxImageNY:     int(nativeOut.max_image_ny),
+		NCtx:           int(nativeOut.n_ctx),
+		NCtxSeq:        int(nativeOut.n_ctx_seq),
+		NSeqMax:        int(nativeOut.n_seq_max),
+		NBatch:         int(nativeOut.n_batch),
+	}
+
+	return out, nil
 }
 
 func (e *Embedder) embedImagePathLocked(path string, out []float32) error {

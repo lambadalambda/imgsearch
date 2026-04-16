@@ -363,6 +363,86 @@ int32_t eval_prompt(
     return copy_embedding(handle, seq_id, out, out_len);
 }
 
+int32_t inspect_prompt(
+    imgsearch_llama_handle * handle,
+    const std::string & prompt,
+    const mtmd_bitmap ** bitmaps,
+    size_t n_bitmaps,
+    imgsearch_llama_embed_inspect * out) {
+    if (handle == nullptr || handle->mctx == nullptr || handle->lctx == nullptr) {
+        return set_error(handle, "llama.cpp handle is not initialized");
+    }
+    if (out == nullptr) {
+        return set_error(handle, "inspect output is required");
+    }
+
+    std::memset(out, 0, sizeof(*out));
+
+    mtmd_input_chunks * chunks = mtmd_input_chunks_init();
+    if (chunks == nullptr) {
+        return set_error(handle, "failed to allocate mtmd chunks");
+    }
+
+    mtmd_input_text text{};
+    text.text = prompt.c_str();
+    text.add_special = true;
+    text.parse_special = true;
+
+    int32_t tok_res = mtmd_tokenize(handle->mctx, chunks, &text, bitmaps, n_bitmaps);
+    if (tok_res != 0) {
+        mtmd_input_chunks_free(chunks);
+        return set_error(handle, "mtmd tokenization failed");
+    }
+
+    const size_t n_chunks = mtmd_input_chunks_size(chunks);
+    for (size_t i = 0; i < n_chunks; i++) {
+        const mtmd_input_chunk * chunk = mtmd_input_chunks_get(chunks, i);
+        if (chunk == nullptr) {
+            continue;
+        }
+
+        const size_t n_tokens = mtmd_input_chunk_get_n_tokens(chunk);
+        switch (mtmd_input_chunk_get_type(chunk)) {
+            case MTMD_INPUT_CHUNK_TYPE_TEXT:
+                out->text_chunks++;
+                out->text_tokens += static_cast<int32_t>(n_tokens);
+                break;
+            case MTMD_INPUT_CHUNK_TYPE_IMAGE: {
+                out->image_chunks++;
+                out->image_tokens += static_cast<int32_t>(n_tokens);
+                if (static_cast<int32_t>(n_tokens) > out->max_image_tokens) {
+                    out->max_image_tokens = static_cast<int32_t>(n_tokens);
+                }
+
+                const mtmd_image_tokens * image_tokens = mtmd_input_chunk_get_tokens_image(chunk);
+                if (image_tokens != nullptr) {
+                    const int32_t nx = static_cast<int32_t>(mtmd_image_tokens_get_nx(image_tokens));
+                    const int32_t ny = static_cast<int32_t>(mtmd_image_tokens_get_ny(image_tokens));
+                    if (nx > out->max_image_nx) {
+                        out->max_image_nx = nx;
+                    }
+                    if (ny > out->max_image_ny) {
+                        out->max_image_ny = ny;
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    out->total_tokens = static_cast<int32_t>(mtmd_helper_get_n_tokens(chunks));
+    out->total_positions = static_cast<int32_t>(mtmd_helper_get_n_pos(chunks));
+    out->n_ctx = static_cast<int32_t>(llama_n_ctx(handle->lctx));
+    out->n_ctx_seq = static_cast<int32_t>(llama_n_ctx_seq(handle->lctx));
+    out->n_seq_max = static_cast<int32_t>(llama_n_seq_max(handle->lctx));
+    out->n_batch = static_cast<int32_t>(llama_n_batch(handle->lctx));
+
+    mtmd_input_chunks_free(chunks);
+    return 0;
+}
+
 bool ensure_chat_templates(imgsearch_llama_handle * handle) {
     if (handle == nullptr || handle->model == nullptr) {
         set_error(handle, "llama.cpp handle is not initialized");
@@ -747,6 +827,34 @@ int32_t imgsearch_llama_embed_image(
     return res;
 }
 
+int32_t imgsearch_llama_inspect_embed_image(
+    imgsearch_llama_handle * handle,
+    const char * image_path,
+    const char * instruction,
+    imgsearch_llama_embed_inspect * out) {
+    const std::string image = trim(image_path);
+    if (image.empty()) {
+        return set_error(handle, "image_path is required");
+    }
+
+    mtmd_bitmap * bitmap = mtmd_helper_bitmap_init_from_file(handle->mctx, image.c_str());
+    if (bitmap == nullptr) {
+        return set_error(handle, "failed to decode image for mtmd input");
+    }
+
+    bitmap = maybe_resize_bitmap(handle, bitmap);
+    if (bitmap == nullptr) {
+        return -1;
+    }
+
+    const std::string prompt = compose_prompt(instruction, mtmd_default_marker());
+    const mtmd_bitmap * bitmaps[] = {bitmap};
+    int32_t res = inspect_prompt(handle, prompt, bitmaps, 1, out);
+
+    mtmd_bitmap_free(bitmap);
+    return res;
+}
+
 int32_t imgsearch_llama_generate_image(
     imgsearch_llama_handle * handle,
     const char * image_path,
@@ -828,6 +936,14 @@ int32_t imgsearch_llama_embed_image(
     const char *,
     float *,
     int32_t) {
+    return -1;
+}
+
+int32_t imgsearch_llama_inspect_embed_image(
+    imgsearch_llama_handle *,
+    const char *,
+    const char *,
+    imgsearch_llama_embed_inspect *) {
     return -1;
 }
 

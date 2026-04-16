@@ -3,7 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
-- feat: add `EmbedImages` and worker-side grouped image embedding plumbing, plus `-llama-native-max-sequences` for Go-side batch chunking. The current native implementation still uses the stable single-image bridge internally, and the 100-image benchmark showed no throughput gain (`batch-2` ~= sequential, `batch-4` slower).
+- feat: add `EmbedImages`, worker-side grouped image embedding plumbing, and native inspection/spike tests for issue 014. The current native implementation still uses the stable single-image bridge internally, the 100-image benchmark showed no throughput gain (`batch-2` ~= sequential, `batch-4` slower), and follow-up Metal spikes showed no easy win from tighter context sizing assumptions or dual-context parallelism.
 - feat: add batch job claiming (`claimBatch`, `ProcessBatch`) and `-worker-batch-size` flag as worker infrastructure for issue 014 (batched inference). This reduces queue/DB overhead, but did not show a reliable standalone end-to-end speedup in the 100-image real-embedder benchmark.
 - perf: reduce default embedder context size from 8192 to 512, freeing ~1 GiB of KV cache memory (1152 MiB → 72 MiB) with no quality regression or latency change on the 100-image benchmark.
 - feat: add `-llama-native-flash-attn`, `-llama-native-cache-type-k`, `-llama-native-cache-type-v` CLI flags for llama.cpp attention and KV cache tuning. Same flags available for the annotator with `-llama-native-annotator-*` prefix. Default is auto (-1) for all three, preserving existing behavior.

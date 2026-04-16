@@ -41,6 +41,22 @@ type AnnotatorConfig struct {
 
 type Annotator struct{}
 
+type EmbedInspect struct {
+	TextChunks     int
+	ImageChunks    int
+	TextTokens     int
+	ImageTokens    int
+	TotalTokens    int
+	TotalPositions int
+	MaxImageTokens int
+	MaxImageNX     int
+	MaxImageNY     int
+	NCtx           int
+	NCtxSeq        int
+	NSeqMax        int
+	NBatch         int
+}
+
 func New(Config) (*Embedder, error) {
 	return nil, fmt.Errorf("llama-cpp-native requires cgo and a built llama.cpp runtime")
 }
@@ -61,6 +77,10 @@ func (e *Embedder) EmbedImage(context.Context, string) ([]float32, error) {
 
 func (e *Embedder) EmbedImages(context.Context, []string) ([][]float32, error) {
 	return nil, fmt.Errorf("llama-cpp-native embedder is unavailable in this build")
+}
+
+func (e *Embedder) InspectImageEmbedding(context.Context, string) (EmbedInspect, error) {
+	return EmbedInspect{}, fmt.Errorf("llama-cpp-native embedder is unavailable in this build")
 }
 
 func (a *Annotator) Close() error { return nil }
