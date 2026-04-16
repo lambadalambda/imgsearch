@@ -4,6 +4,7 @@ All notable changes to this project are tracked in this file.
 
 ## Unreleased
 - feat: add MVP video search by sampling a fixed number of representative frames per uploaded video, embedding those frames through the existing image pipeline, and grouping frame hits back into video search results with timestamps and preview frames.
+- feat: extend the bulk import task so `mise run import-images <dir>` also imports supported videos (`.mp4`, `.mov`, `.webm`, `.mkv`) through the same upload pipeline, while skipping videos larger than 20 MB by default.
 - feat: add `EmbedImages`, worker-side grouped image embedding plumbing, and native inspection/spike tests for issue 014. The current native implementation still uses the stable single-image bridge internally, the 100-image benchmark showed no throughput gain (`batch-2` ~= sequential, `batch-4` slower), and follow-up Metal spikes showed no easy win from tighter context sizing assumptions or dual-context parallelism.
 - feat: add batch job claiming (`claimBatch`, `ProcessBatch`) and `-worker-batch-size` flag as worker infrastructure for issue 014 (batched inference). This reduces queue/DB overhead, but did not show a reliable standalone end-to-end speedup in the 100-image real-embedder benchmark.
 - perf: reduce default embedder context size from 8192 to 512, freeing ~1 GiB of KV cache memory (1152 MiB → 72 MiB) with no quality regression or latency change on the 100-image benchmark.

@@ -6,10 +6,11 @@ usage() {
   echo ""
   echo "examples:"
   echo "  scripts/import_images.sh ./fixtures/images"
-  echo "  scripts/import_images.sh ./photos http://127.0.0.1:8080"
+  echo "  scripts/import_images.sh ./media http://127.0.0.1:8080"
   echo ""
   echo "optional env:"
   echo "  IMGSEARCH_IMPORT_CONVERT=auto|never|vips (default: auto)"
+  echo "  IMGSEARCH_IMPORT_MAX_VIDEO_BYTES=<bytes> (default: 20971520, 20 MB)"
 }
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -21,6 +22,7 @@ source_dir="$1"
 api_base_url="${2:-${IMGSEARCH_API_URL:-http://127.0.0.1:8080}}"
 upload_url="${api_base_url%/}/api/upload"
 convert_mode="${IMGSEARCH_IMPORT_CONVERT:-auto}"
+max_video_bytes="${IMGSEARCH_IMPORT_MAX_VIDEO_BYTES:-20971520}"
 
 if [[ ! -d "$source_dir" ]]; then
   echo "source dir does not exist: $source_dir" >&2
@@ -34,6 +36,11 @@ case "$convert_mode" in
     exit 1
     ;;
 esac
+
+if ! [[ "$max_video_bytes" =~ ^[0-9]+$ ]]; then
+  echo "invalid IMGSEARCH_IMPORT_MAX_VIDEO_BYTES value: $max_video_bytes" >&2
+  exit 1
+fi
 
 has_vips=0
 if command -v vips >/dev/null 2>&1; then
@@ -84,8 +91,20 @@ while IFS= read -r -d '' path; do
   ext="$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')"
 
   should_convert=0
+  is_video=0
   if [[ "$ext" == "webp" || "$ext" == "avif" ]]; then
     should_convert=1
+  fi
+  if [[ "$ext" == "mp4" || "$ext" == "mov" || "$ext" == "webm" || "$ext" == "mkv" ]]; then
+    is_video=1
+  fi
+
+  if [[ "$is_video" -eq 1 ]]; then
+    file_size="$(stat -f %z "$path")"
+    if [[ "$file_size" -gt "$max_video_bytes" ]]; then
+      echo "SKIP $path (video exceeds max size ${max_video_bytes} bytes)"
+      continue
+    fi
   fi
 
   upload_path="$path"
@@ -143,13 +162,13 @@ while IFS= read -r -d '' path; do
   else
     echo "FAIL $path (status=${http_code:-curl-error} body=$body)"
   fi
-done < <(find "$source_dir" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" -o -iname "*.avif" \) -print0)
+done < <(find "$source_dir" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" -o -iname "*.avif" -o -iname "*.mp4" -o -iname "*.mov" -o -iname "*.webm" -o -iname "*.mkv" \) -print0)
 
 echo ""
 echo "Import summary: total=$total created=$created duplicates=$duplicates converted=$converted failed=$failed"
 
 if [[ "$total" -eq 0 ]]; then
-  echo "No supported images found in $source_dir"
+  echo "No supported media found in $source_dir"
 fi
 
 if [[ "$failed" -gt 0 ]]; then
