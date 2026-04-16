@@ -23,6 +23,7 @@ import (
 	"imgsearch/internal/upload"
 	"imgsearch/internal/vectorindex"
 	"imgsearch/internal/vectorindex/sqlitevector"
+	"imgsearch/internal/videos"
 	"imgsearch/internal/webui"
 	"imgsearch/internal/worker"
 )
@@ -336,6 +337,7 @@ func newServerMux(
 	mux := http.NewServeMux()
 	mux.Handle("/api/upload", upload.NewHandler(uploadSvc))
 	mux.Handle("/api/images", images.NewHandler(&images.Handler{DB: sqlDB, ModelID: modelID}))
+	mux.Handle("/api/videos", videos.NewHandler(&videos.Handler{DB: sqlDB, ModelID: modelID}))
 	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: sqlDB, ModelID: modelID}))
 	mux.Handle("/api/live", live.NewHandler(&live.Handler{DB: sqlDB, ModelID: modelID, Interval: 2 * time.Second, ImagesLimit: 120, ImagesOffset: 0}))
 	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: sqlDB, ModelID: modelID}))

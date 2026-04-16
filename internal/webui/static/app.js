@@ -1,10 +1,14 @@
 const state = {
   images: [],
+  videos: [],
   results: [],
   imagesTotal: 0,
+  videosTotal: 0,
   stats: null,
   galleryPage: 0,
+  videosPage: 0,
   galleryPageSize: 24,
+  videosPageSize: 24,
   activeTab: 'gallery',
 };
 
@@ -16,6 +20,15 @@ const galleryPageLabel = document.getElementById('gallery-page-label');
 const galleryTabButton = document.getElementById('tab-gallery');
 const galleryTabCount = document.getElementById('tab-gallery-count');
 const galleryPanel = document.getElementById('gallery-panel');
+
+const videosGrid = document.getElementById('videos-grid');
+const videosStatus = document.getElementById('videos-status');
+const videosPrevButton = document.getElementById('videos-prev');
+const videosNextButton = document.getElementById('videos-next');
+const videosPageLabel = document.getElementById('videos-page-label');
+const videosTabButton = document.getElementById('tab-videos');
+const videosTabCount = document.getElementById('tab-videos-count');
+const videosPanel = document.getElementById('videos-panel');
 
 const resultsGrid = document.getElementById('results-grid');
 const resultsTabButton = document.getElementById('tab-results');
@@ -48,6 +61,10 @@ const lightbox = document.getElementById('image-lightbox');
 const lightboxImage = document.getElementById('lightbox-image');
 const lightboxCaption = document.getElementById('lightbox-caption');
 const lightboxCloseButton = document.getElementById('lightbox-close');
+const videoModal = document.getElementById('video-modal');
+const videoElement = document.getElementById('video-player');
+const videoCaption = document.getElementById('video-caption');
+const videoCloseButton = document.getElementById('video-close');
 
 const liveConnectionBadge = document.getElementById('live-connection');
 const liveConnectionLabel = document.getElementById('live-connection-label');
@@ -62,6 +79,7 @@ let receivedLiveSnapshot = false;
 let liveReconnectDelayMs = 1500;
 let imagesRequestToken = 0;
 let statsRequestToken = 0;
+let videoPlayer = null;
 const liveReconnectDelayMaxMs = 30000;
 
 function setStatus(target, message, kind) {
@@ -154,32 +172,47 @@ function stateClass(indexState) {
   return 'state pending';
 }
 
-function totalGalleryPages() {
-  return Math.max(1, Math.ceil(state.imagesTotal / state.galleryPageSize));
+function totalPages(total, pageSize) {
+  return Math.max(1, Math.ceil(total / pageSize));
 }
 
 function updateTabCounts() {
   galleryTabCount.textContent = String(state.imagesTotal || 0);
+  videosTabCount.textContent = String(state.videosTotal || 0);
   resultsTabCount.textContent = String(state.results.length || 0);
   resultsTabButton.disabled = state.results.length === 0 && state.activeTab !== 'results';
 }
 
 function renderPagination() {
-  const pages = totalGalleryPages();
-  const pageNumber = state.galleryPage + 1;
-  galleryPageLabel.textContent = `Page ${pageNumber} of ${pages}`;
+  const galleryPages = totalPages(state.imagesTotal, state.galleryPageSize);
+  galleryPageLabel.textContent = `Page ${state.galleryPage + 1} of ${galleryPages}`;
   galleryPrevButton.disabled = state.galleryPage <= 0;
-  galleryNextButton.disabled = state.galleryPage >= pages - 1;
+  galleryNextButton.disabled = state.galleryPage >= galleryPages - 1;
+
+  const videoPages = totalPages(state.videosTotal, state.videosPageSize);
+  videosPageLabel.textContent = `Page ${state.videosPage + 1} of ${videoPages}`;
+  videosPrevButton.disabled = state.videosPage <= 0;
+  videosNextButton.disabled = state.videosPage >= videoPages - 1;
 }
 
 function setActiveTab(name) {
-  state.activeTab = name === 'results' ? 'results' : 'gallery';
+  if (name === 'results') {
+    state.activeTab = 'results';
+  } else if (name === 'videos') {
+    state.activeTab = 'videos';
+  } else {
+    state.activeTab = 'gallery';
+  }
   const galleryActive = state.activeTab === 'gallery';
+  const videosActive = state.activeTab === 'videos';
+  const resultsActive = state.activeTab === 'results';
 
   galleryTabButton.setAttribute('aria-selected', galleryActive ? 'true' : 'false');
-  resultsTabButton.setAttribute('aria-selected', galleryActive ? 'false' : 'true');
+  videosTabButton.setAttribute('aria-selected', videosActive ? 'true' : 'false');
+  resultsTabButton.setAttribute('aria-selected', resultsActive ? 'true' : 'false');
   galleryPanel.hidden = !galleryActive;
-  resultsPanel.hidden = galleryActive;
+  videosPanel.hidden = !videosActive;
+  resultsPanel.hidden = !resultsActive;
   updateTabCounts();
   clearResultsButton.disabled = state.results.length === 0;
 }
@@ -195,6 +228,7 @@ function cardMarkup(item, mode) {
   const safeName = escapeHTML(item.original_name);
   const safePath = escapeHTML(item.storage_path);
   const mediaType = item.media_type || 'image';
+  const safeMimeType = escapeHTML(item.mime_type || 'video/mp4');
   const thumbPath = mediaType === 'video' && item.preview_path ? item.preview_path : item.storage_path;
   const thumbURL = escapeHTML(toMediaURL(thumbPath));
   const mediaURL = escapeHTML(toMediaURL(item.storage_path));
@@ -232,8 +266,13 @@ function cardMarkup(item, mode) {
       <button
         type="button"
         class="thumb-button"
+        data-media-type="${mediaType}"
         data-lightbox-src="${thumbURL}"
         data-lightbox-caption="${safeName}${mediaType === 'video' ? ' preview frame' : ''}"
+        data-player-src="${mediaURL}"
+        data-player-poster="${thumbURL}"
+        data-player-type="${safeMimeType}"
+        data-player-caption="${safeName}"
         aria-label="Open full ${mediaType === 'video' ? 'preview frame' : 'image'} for ${safeName}"
       >
         <img src="${thumbURL}" alt="${safeName}" loading="lazy" />
@@ -271,6 +310,22 @@ function renderGallery() {
   galleryGrid.innerHTML = state.images.map((item) => cardMarkup(item, 'gallery')).join('');
 }
 
+function renderVideos() {
+  updateTabCounts();
+  renderPagination();
+
+  if (state.videos.length === 0) {
+    if (state.videosTotal > 0) {
+      videosGrid.innerHTML = '<p class="empty">No videos are visible on this page yet. Move back toward newer pages.</p>';
+    } else {
+      videosGrid.innerHTML = '<p class="empty">No videos here yet. Upload a clip to start building the video archive.</p>';
+    }
+    return;
+  }
+
+  videosGrid.innerHTML = state.videos.map((item) => cardMarkup(item, 'videos')).join('');
+}
+
 function renderResults() {
   updateTabCounts();
   clearResultsButton.disabled = state.results.length === 0;
@@ -281,6 +336,16 @@ function renderResults() {
   }
 
   resultsGrid.innerHTML = state.results.map((item) => cardMarkup(item, 'result')).join('');
+}
+
+function mediaByImageID() {
+  const byID = new Map(state.images.map((item) => [item.image_id, item]));
+  state.videos.forEach((item) => {
+    if (Number(item.image_id) > 0) {
+      byID.set(item.image_id, item);
+    }
+  });
+  return byID;
 }
 
 function renderStats() {
@@ -339,12 +404,15 @@ function setOverlayState(kind, active) {
   if (kind === 'modal') {
     document.body.classList.toggle('modal-open', active);
   }
+  if (kind === 'video') {
+    document.body.classList.toggle('lightbox-open', active);
+  }
 
   if (!shell) {
     return;
   }
 
-  const hasOverlay = Boolean((uploadModal && !uploadModal.hidden) || (lightbox && !lightbox.hidden));
+  const hasOverlay = Boolean((uploadModal && !uploadModal.hidden) || (lightbox && !lightbox.hidden) || (videoModal && !videoModal.hidden));
   if (hasOverlay) {
     shell.setAttribute('inert', '');
     shell.setAttribute('aria-hidden', 'true');
@@ -427,6 +495,80 @@ function closeLightbox() {
   lastFocusedElement = null;
 }
 
+function ensureVideoPlayer() {
+  if (videoPlayer || !videoElement || typeof window.videojs !== 'function') {
+    return videoPlayer;
+  }
+  videoPlayer = window.videojs(videoElement, {
+    controls: true,
+    preload: 'auto',
+    fluid: true,
+  });
+  return videoPlayer;
+}
+
+function openVideoPlayer(source, poster, caption, mimeType) {
+  if (!videoModal || !videoElement || !source) {
+    return;
+  }
+
+  lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const player = ensureVideoPlayer();
+  if (player) {
+    player.poster(poster || '');
+    player.src({ src: source, type: mimeType || 'video/mp4' });
+    player.currentTime(0);
+    player.ready(() => {
+      player.play().catch(() => {});
+    });
+  } else {
+    videoElement.setAttribute('controls', 'controls');
+    videoElement.poster = poster || '';
+    videoElement.src = source;
+    videoElement.currentTime = 0;
+    void videoElement.play().catch(() => {});
+  }
+  if (videoCaption) {
+    videoCaption.textContent = caption || '';
+  }
+  videoModal.setAttribute('aria-label', caption || 'Video player');
+  videoModal.hidden = false;
+  setOverlayState('video', true);
+
+  if (videoCloseButton) {
+    videoCloseButton.focus();
+  }
+}
+
+function closeVideoPlayer() {
+  if (!videoModal || videoModal.hidden) {
+    return;
+  }
+
+  if (videoPlayer) {
+    videoPlayer.pause();
+    videoPlayer.currentTime(0);
+    videoPlayer.src({ src: '', type: 'video/mp4' });
+    videoPlayer.poster('');
+  } else if (videoElement) {
+    videoElement.pause();
+    videoElement.removeAttribute('src');
+    videoElement.load();
+    videoElement.poster = '';
+  }
+  if (videoCaption) {
+    videoCaption.textContent = '';
+  }
+  videoModal.hidden = true;
+  videoModal.removeAttribute('aria-label');
+  setOverlayState('video', false);
+
+  if (lastFocusedElement) {
+    lastFocusedElement.focus();
+  }
+  lastFocusedElement = null;
+}
+
 function openUploadModal() {
   if (!uploadModal) {
     return;
@@ -499,6 +641,33 @@ async function loadImages() {
   setStatus(galleryStatus, `Showing ${start}-${end} of ${state.imagesTotal} image(s), newest first.`, 'success');
 }
 
+async function loadVideos() {
+  const offset = state.videosPage * state.videosPageSize;
+  setStatus(videosStatus, 'Loading videos...', 'info');
+
+  const response = await fetch('/api/videos' + `?limit=${state.videosPageSize}&offset=${offset}`);
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not load videos');
+  }
+
+  const nextVideos = payload.videos || [];
+  const nextTotal = Number(payload.total || nextVideos.length);
+  const maxPage = Math.max(0, Math.ceil(nextTotal / state.videosPageSize) - 1);
+  if (nextVideos.length === 0 && nextTotal > 0 && state.videosPage > maxPage) {
+    state.videosPage = maxPage;
+    return loadVideos();
+  }
+
+  state.videos = nextVideos;
+  state.videosTotal = nextTotal;
+  renderVideos();
+
+  const start = state.videosTotal === 0 ? 0 : offset + 1;
+  const end = offset + state.videos.length;
+  setStatus(videosStatus, `Showing ${start}-${end} of ${state.videosTotal} video(s), newest first.`, 'success');
+}
+
 async function runTextSearch(query, negative) {
   const params = new URLSearchParams({ q: query, limit: '24' });
   if (negative) {
@@ -510,7 +679,7 @@ async function runTextSearch(query, negative) {
     throw new Error(payload.error || 'Text search failed');
   }
 
-  const imageByID = new Map(state.images.map((item) => [item.image_id, item]));
+  const imageByID = mediaByImageID();
   state.results = (payload.results || []).map((item) => {
     const image = imageByID.get(item.image_id) || {};
     return {
@@ -533,7 +702,7 @@ async function runSimilarSearch(imageID, anchorHint) {
     throw new Error(payload.error || 'Similar search failed');
   }
 
-  const imageByID = new Map(state.images.map((item) => [item.image_id, item]));
+  const imageByID = mediaByImageID();
   const mergedResults = (payload.results || []).map((item) => {
     const image = imageByID.get(item.image_id) || {};
     return {
@@ -684,11 +853,13 @@ function startPollingFallback() {
 
   pollingTimer = window.setInterval(() => {
     loadImages().catch((err) => setStatus(galleryStatus, err.message || 'Gallery refresh failed', 'error'));
+    loadVideos().catch((err) => setStatus(videosStatus, err.message || 'Video refresh failed', 'error'));
     loadStats().catch((err) => setStatus(statsSummary, err.message || 'Status refresh failed', 'error'));
   }, 5000);
 
   if (!receivedLiveSnapshot) {
     loadImages().catch((err) => setStatus(galleryStatus, err.message || 'Initial load failed', 'error'));
+    loadVideos().catch((err) => setStatus(videosStatus, err.message || 'Initial video load failed', 'error'));
     loadStats().catch((err) => setStatus(statsSummary, err.message || 'Initial status load failed', 'error'));
   }
 }
@@ -784,6 +955,7 @@ function attachSimilarHandler(target) {
     const anchorHint =
       state.results.find((item) => Number(item.image_id) === imageID) ||
       state.images.find((item) => Number(item.image_id) === imageID) ||
+      state.videos.find((item) => Number(item.image_id) === imageID) ||
       null;
     try {
       await runSimilarSearch(imageID, anchorHint);
@@ -797,6 +969,17 @@ function attachLightboxHandler(target) {
   target.addEventListener('click', (event) => {
     const trigger = event.target.closest('.thumb-button');
     if (!trigger || !target.contains(trigger)) {
+      return;
+    }
+
+    const mediaType = trigger.dataset.mediaType || 'image';
+    if (mediaType === 'video') {
+      openVideoPlayer(
+        trigger.dataset.playerSrc || '',
+        trigger.dataset.playerPoster || '',
+        trigger.dataset.playerCaption || '',
+        trigger.dataset.playerType || 'video/mp4',
+      );
       return;
     }
 
@@ -826,6 +1009,7 @@ function attachDescriptionToggleHandler(target) {
 }
 
 galleryTabButton.addEventListener('click', () => setActiveTab('gallery'));
+videosTabButton.addEventListener('click', () => setActiveTab('videos'));
 resultsTabButton.addEventListener('click', () => setActiveTab('results'));
 
 galleryPrevButton.addEventListener('click', async () => {
@@ -849,6 +1033,30 @@ galleryNextButton.addEventListener('click', async () => {
     await loadImages();
   } catch (err) {
     setStatus(galleryStatus, err.message || 'Could not load next page', 'error');
+  }
+});
+
+videosPrevButton.addEventListener('click', async () => {
+  if (state.videosPage <= 0) {
+    return;
+  }
+  state.videosPage -= 1;
+  try {
+    await loadVideos();
+  } catch (err) {
+    setStatus(videosStatus, err.message || 'Could not load previous page', 'error');
+  }
+});
+
+videosNextButton.addEventListener('click', async () => {
+  if (state.videosPage >= totalPages(state.videosTotal, state.videosPageSize) - 1) {
+    return;
+  }
+  state.videosPage += 1;
+  try {
+    await loadVideos();
+  } catch (err) {
+    setStatus(videosStatus, err.message || 'Could not load next page', 'error');
   }
 });
 
@@ -902,10 +1110,12 @@ uploadForm.addEventListener('submit', async (event) => {
     setStatus(uploadStatus, message, 'success');
     uploadForm.reset();
     state.galleryPage = 0;
+    state.videosPage = 0;
     setActiveTab('gallery');
 
     if (!isLiveSocketActive()) {
       await loadImages();
+      await loadVideos();
       await loadStats();
     }
 
@@ -941,6 +1151,7 @@ searchForm.addEventListener('submit', async (event) => {
 
 refreshImagesButton.addEventListener('click', () => {
   loadImages().catch((err) => setStatus(galleryStatus, err.message || 'Refresh failed', 'error'));
+  loadVideos().catch((err) => setStatus(videosStatus, err.message || 'Video refresh failed', 'error'));
 });
 
 refreshStatsButton.addEventListener('click', () => {
@@ -954,6 +1165,7 @@ retryFailedButton.addEventListener('click', async () => {
     const result = await retryFailedJobs();
     await loadStats();
     await loadImages();
+    await loadVideos();
     const hadWork = result.retried > 0 || result.enqueuedMissing > 0;
     setStatus(
       statsSummary,
@@ -978,14 +1190,21 @@ clearResultsButton.addEventListener('click', () => {
 });
 
 attachSimilarHandler(galleryGrid);
+attachSimilarHandler(videosGrid);
 attachSimilarHandler(resultsGrid);
 attachLightboxHandler(galleryGrid);
+attachLightboxHandler(videosGrid);
 attachLightboxHandler(resultsGrid);
 attachDescriptionToggleHandler(galleryGrid);
+attachDescriptionToggleHandler(videosGrid);
 attachDescriptionToggleHandler(resultsGrid);
 
 if (lightboxCloseButton) {
   lightboxCloseButton.addEventListener('click', closeLightbox);
+}
+
+if (videoCloseButton) {
+  videoCloseButton.addEventListener('click', closeVideoPlayer);
 }
 
 if (lightbox) {
@@ -996,9 +1215,19 @@ if (lightbox) {
   });
 }
 
+if (videoModal) {
+  videoModal.addEventListener('click', (event) => {
+    if (event.target === videoModal) {
+      closeVideoPlayer();
+    }
+  });
+}
+
 document.addEventListener('keydown', (event) => {
   if (lightbox && !lightbox.hidden) {
     trapFocus(event, lightbox);
+  } else if (videoModal && !videoModal.hidden) {
+    trapFocus(event, videoModal);
   } else if (uploadModal && !uploadModal.hidden) {
     trapFocus(event, uploadModal);
   }
@@ -1012,16 +1241,23 @@ document.addEventListener('keydown', (event) => {
     return;
   }
 
+  if (videoModal && !videoModal.hidden) {
+    closeVideoPlayer();
+    return;
+  }
+
   if (uploadModal && !uploadModal.hidden) {
     closeUploadModal();
   }
 });
 
 renderGallery();
+renderVideos();
 renderResults();
 renderStats();
 setActiveTab('gallery');
 
 loadImages().catch((err) => setStatus(galleryStatus, err.message || 'Initial load failed', 'error'));
+loadVideos().catch((err) => setStatus(videosStatus, err.message || 'Initial video load failed', 'error'));
 loadStats().catch((err) => setStatus(statsSummary, err.message || 'Initial status load failed', 'error'));
 connectLiveUpdates();

@@ -4,7 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>imgsearch</title>
+    <link href="https://vjs.zencdn.net/8.23.4/video-js.css" rel="stylesheet" />
     <link rel="stylesheet" href="/assets/styles.css" />
+    <script src="https://vjs.zencdn.net/8.23.4/video.min.js"></script>
     <script src="/assets/app.js" defer></script>
   </head>
   <body>
@@ -20,7 +22,7 @@
             </p>
           </div>
           <p class="lede">
-            Search your image and video library by phrase or by example, then move between fresh imports, the full gallery, and result sets without leaving the page.
+            Search your image and video library by phrase or by example, then move between fresh imports, image browsing, video browsing, and result sets without leaving the page.
           </p>
         </div>
 
@@ -80,15 +82,19 @@
             <h2 id="library-view-title">Library view</h2>
           </div>
           <div class="workspace-tools">
-            <button id="refresh-images" type="button" class="ghost">Refresh Gallery</button>
+            <button id="refresh-images" type="button" class="ghost">Refresh Library</button>
             <button id="clear-results" type="button" class="ghost">Clear Results</button>
           </div>
         </div>
 
-        <div class="tablist" role="tablist" aria-label="Gallery views">
+        <div class="tablist" role="tablist" aria-label="Library views">
           <button id="tab-gallery" type="button" class="tab-button" role="tab" aria-selected="true" aria-controls="gallery-panel">
-            <span>Gallery</span>
+            <span>Images</span>
             <span id="tab-gallery-count" class="tab-count">0</span>
+          </button>
+          <button id="tab-videos" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="videos-panel">
+            <span>Videos</span>
+            <span id="tab-videos-count" class="tab-count">0</span>
           </button>
           <button id="tab-results" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="results-panel">
             <span>Search Results</span>
@@ -108,6 +114,20 @@
             </div>
           </div>
           <div id="gallery-grid" class="grid gallery-grid"></div>
+        </section>
+
+        <section id="videos-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-videos" hidden>
+          <div class="panel-toolbar gallery-toolbar">
+            <div>
+              <p id="videos-status" class="status toolbar-status" role="status" aria-live="polite"></p>
+            </div>
+            <div class="pagination-controls" aria-label="Video pagination">
+              <button id="videos-prev" type="button" class="ghost">Newer</button>
+              <p id="videos-page-label" class="pagination-label">Page 1</p>
+              <button id="videos-next" type="button" class="ghost">Older</button>
+            </div>
+          </div>
+          <div id="videos-grid" class="grid videos-grid"></div>
         </section>
 
         <section id="results-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-results" hidden>
@@ -147,6 +167,14 @@
         <img id="lightbox-image" alt="" />
         <figcaption id="lightbox-caption"></figcaption>
       </figure>
+    </div>
+
+    <div id="video-modal" class="lightbox video-modal" role="dialog" aria-modal="true" aria-labelledby="video-caption" hidden>
+      <button id="video-close" type="button" class="lightbox-close" aria-label="Close video player">Close</button>
+      <div class="video-modal-card">
+        <video id="video-player" class="video-js vjs-big-play-centered" controls preload="auto"></video>
+        <p id="video-caption" class="video-caption"></p>
+      </div>
     </div>
 
     <div id="live-announcer" class="sr-only" role="status" aria-live="polite"></div>

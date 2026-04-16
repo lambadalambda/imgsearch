@@ -31,6 +31,7 @@ type SearchResult struct {
 	VideoID          int64    `json:"video_id,omitempty"`
 	PreviewPath      string   `json:"preview_path,omitempty"`
 	MatchTimestampMS int64    `json:"match_timestamp_ms,omitempty"`
+	MimeType         string   `json:"mime_type,omitempty"`
 	Distance         float64  `json:"distance"`
 	OriginalName     string   `json:"original_name"`
 	StoragePath      string   `json:"storage_path"`
@@ -212,11 +213,13 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]S
 	SELECT i.id,
 	       i.original_name,
 	       i.storage_path,
+	       i.mime_type,
 	       COALESCE(i.description, ''),
 	       COALESCE(i.tags_json, '[]'),
 	       vf.video_id,
 	       v.original_name,
 	       v.storage_path,
+	       v.mime_type,
 	       vf.timestamp_ms
 	FROM images i
 	LEFT JOIN video_frames vf ON vf.image_id = i.id
@@ -232,18 +235,20 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]S
 		imageID           int64
 		originalName      string
 		storagePath       string
+		mimeType          string
 		description       string
 		tags              []string
 		videoID           sql.NullInt64
 		videoOriginalName sql.NullString
 		videoStoragePath  sql.NullString
+		videoMimeType     sql.NullString
 		timestampMS       sql.NullInt64
 	}
 	byID := make(map[int64][]mediaRow, len(ids))
 	for rows.Next() {
 		var row mediaRow
 		var tagsJSON string
-		if err := rows.Scan(&row.imageID, &row.originalName, &row.storagePath, &row.description, &tagsJSON, &row.videoID, &row.videoOriginalName, &row.videoStoragePath, &row.timestampMS); err != nil {
+		if err := rows.Scan(&row.imageID, &row.originalName, &row.storagePath, &row.mimeType, &row.description, &tagsJSON, &row.videoID, &row.videoOriginalName, &row.videoStoragePath, &row.videoMimeType, &row.timestampMS); err != nil {
 			return nil, fmt.Errorf("scan enriched image row: %w", err)
 		}
 		tags, err := decodeTagsJSON(tagsJSON)
@@ -274,6 +279,7 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]S
 			result := SearchResult{
 				ImageID:      hit.ImageID,
 				MediaType:    "image",
+				MimeType:     row.mimeType,
 				Distance:     hit.Distance,
 				OriginalName: row.originalName,
 				StoragePath:  filepath.ToSlash(row.storagePath),
@@ -285,6 +291,7 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]S
 				result.VideoID = row.videoID.Int64
 				result.OriginalName = row.videoOriginalName.String
 				result.StoragePath = filepath.ToSlash(row.videoStoragePath.String)
+				result.MimeType = row.videoMimeType.String
 				result.PreviewPath = filepath.ToSlash(row.storagePath)
 				result.MatchTimestampMS = row.timestampMS.Int64
 			}

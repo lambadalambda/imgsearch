@@ -400,6 +400,26 @@ input:focus-visible {
   text-transform: uppercase;
 }
 
+.video-modal-card {
+  width: min(980px, calc(100vw - 48px));
+  display: grid;
+  gap: 12px;
+}
+
+.video-modal .video-js {
+  width: 100%;
+  max-height: min(78vh, 720px);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.video-caption {
+  margin: 0;
+  color: #fffdf9;
+  font-size: 0.95rem;
+  text-align: center;
+}
+
 .meta {
   display: grid;
   gap: 8px;

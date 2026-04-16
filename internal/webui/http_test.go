@@ -35,6 +35,9 @@ func TestRootServesIndexPage(t *testing.T) {
 	if !strings.Contains(body, "id=\"image-lightbox\"") {
 		t.Fatalf("expected lightbox container in page")
 	}
+	if !strings.Contains(body, "video.min.js") || !strings.Contains(body, "id=\"video-player\"") {
+		t.Fatalf("expected Video.js player assets in page")
+	}
 	if !strings.Contains(body, "id=\"live-connection\"") {
 		t.Fatalf("expected live connection indicator in page")
 	}
@@ -53,8 +56,14 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "fetch('/api/images'") {
 		t.Fatalf("expected app javascript payload")
 	}
+	if !strings.Contains(rr.Body.String(), "fetch('/api/videos'") {
+		t.Fatalf("expected videos javascript payload")
+	}
 	if !strings.Contains(rr.Body.String(), "openLightbox") {
 		t.Fatalf("expected lightbox javascript behavior")
+	}
+	if !strings.Contains(rr.Body.String(), "openVideoPlayer") {
+		t.Fatalf("expected Video.js player behavior in javascript")
 	}
 	if !strings.Contains(rr.Body.String(), "is_anchor") {
 		t.Fatalf("expected similar-search anchor behavior in javascript")
