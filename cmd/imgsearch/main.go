@@ -39,6 +39,7 @@ func main() {
 	llamaNativeUseGPU := flag.Bool("llama-native-use-gpu", true, "whether llama-cpp-native should use GPU for mtmd/mmproj")
 	llamaNativeContextSize := flag.Int("llama-native-context-size", defaultLlamaNativeEmbedderContextSize, "context size for llama-cpp-native runtime")
 	llamaNativeBatchSize := flag.Int("llama-native-batch-size", 512, "batch size for llama-cpp-native runtime")
+	llamaNativeMaxSequences := flag.Int("llama-native-max-sequences", 1, "maximum independent sequences for llama-cpp-native embedding batches")
 	llamaNativeThreads := flag.Int("llama-native-threads", 0, "thread count for llama-cpp-native runtime (0 uses backend default)")
 	llamaNativeFlashAttnType := flag.Int("llama-native-flash-attn", defaultLlamaNativeFlashAttnType, "flash attention type for llama-cpp-native (-1=auto, 0=off, 1=on)")
 	llamaNativeCacheTypeK := flag.Int("llama-native-cache-type-k", defaultLlamaNativeCacheTypeK, "K cache type for llama-cpp-native (-1=default, 0=f32, 1=f16, 8=q8_0)")
@@ -231,6 +232,7 @@ func main() {
 		UseGPU:             *llamaNativeUseGPU,
 		ContextSize:        *llamaNativeContextSize,
 		BatchSize:          *llamaNativeBatchSize,
+		MaxSequences:       *llamaNativeMaxSequences,
 		Threads:            *llamaNativeThreads,
 		ImageMaxSide:       resolvedLlamaNativeImageMaxSide,
 		ImageMaxTokens:     resolvedLlamaNativeImageMaxTokens,

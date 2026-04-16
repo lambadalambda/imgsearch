@@ -17,6 +17,7 @@ type Config struct {
 	UseGPU             bool
 	ContextSize        int
 	BatchSize          int
+	MaxSequences       int
 	Threads            int
 	ImageMaxSide       int
 	ImageMaxTokens     int
@@ -55,6 +56,10 @@ func (e *Embedder) EmbedText(context.Context, string) ([]float32, error) {
 }
 
 func (e *Embedder) EmbedImage(context.Context, string) ([]float32, error) {
+	return nil, fmt.Errorf("llama-cpp-native embedder is unavailable in this build")
+}
+
+func (e *Embedder) EmbedImages(context.Context, []string) ([][]float32, error) {
 	return nil, fmt.Errorf("llama-cpp-native embedder is unavailable in this build")
 }
 

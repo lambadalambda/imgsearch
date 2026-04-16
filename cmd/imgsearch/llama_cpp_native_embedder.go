@@ -17,6 +17,7 @@ type llamaCPPNativeEmbedderOptions struct {
 	UseGPU             bool
 	ContextSize        int
 	BatchSize          int
+	MaxSequences       int
 	Threads            int
 	ImageMaxSide       int
 	ImageMaxTokens     int
@@ -72,6 +73,9 @@ func newLlamaCPPNativeEmbedder(opts llamaCPPNativeEmbedderOptions) (embedder.Emb
 	if opts.BatchSize <= 0 {
 		return nil, fmt.Errorf("llama-cpp-native batch size must be positive")
 	}
+	if opts.MaxSequences < 0 {
+		return nil, fmt.Errorf("llama-cpp-native max sequences must be non-negative")
+	}
 
 	imageMaxSide, imageMaxTokens, err := resolveLlamaCPPNativeImageLimits(opts.ImageMaxSide, opts.ImageMaxTokens)
 	if err != nil {
@@ -86,6 +90,7 @@ func newLlamaCPPNativeEmbedder(opts llamaCPPNativeEmbedderOptions) (embedder.Emb
 		UseGPU:             opts.UseGPU,
 		ContextSize:        opts.ContextSize,
 		BatchSize:          opts.BatchSize,
+		MaxSequences:       opts.MaxSequences,
 		Threads:            opts.Threads,
 		ImageMaxSide:       imageMaxSide,
 		ImageMaxTokens:     imageMaxTokens,

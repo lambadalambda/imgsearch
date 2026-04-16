@@ -29,6 +29,7 @@ const (
 	defaultQueryInstruction   = "Retrieve images or text relevant to the user's query."
 	defaultPassageInstruction = "Represent this image or text for retrieval."
 	defaultImageMaxSide       = 384
+	defaultMaxSequences       = 1
 	defaultFlashAttnType      = -1
 	defaultCacheType          = -1
 )
@@ -41,6 +42,7 @@ type Config struct {
 	UseGPU             bool
 	ContextSize        int
 	BatchSize          int
+	MaxSequences       int
 	Threads            int
 	ImageMaxSide       int
 	ImageMaxTokens     int
@@ -55,9 +57,15 @@ type Embedder struct {
 	mu                 sync.Mutex
 	handle             *C.imgsearch_llama_handle
 	dimensions         int
+	maxSequences       int
 	imageMaxSide       int
 	queryInstruction   string
 	passageInstruction string
+}
+
+type preparedEmbedPath struct {
+	path    string
+	cleanup func()
 }
 
 func New(cfg Config) (*Embedder, error) {
@@ -101,6 +109,11 @@ func New(cfg Config) (*Embedder, error) {
 	useGPU := 0
 	if cfg.UseGPU {
 		useGPU = 1
+	}
+
+	maxSequences := cfg.MaxSequences
+	if maxSequences <= 0 {
+		maxSequences = defaultMaxSequences
 	}
 
 	flashAttnType := cfg.FlashAttnType
@@ -151,6 +164,7 @@ func New(cfg Config) (*Embedder, error) {
 	return &Embedder{
 		handle:             h,
 		dimensions:         actualDims,
+		maxSequences:       maxSequences,
 		imageMaxSide:       imageMaxSide,
 		queryInstruction:   queryInstruction,
 		passageInstruction: passageInstruction,
@@ -202,15 +216,41 @@ func (e *Embedder) EmbedText(ctx context.Context, text string) ([]float32, error
 }
 
 func (e *Embedder) EmbedImage(ctx context.Context, path string) ([]float32, error) {
-	if err := ensureContextActive(ctx); err != nil {
-		return nil, err
-	}
-
-	preprocessedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(path, e.imageMaxSide)
+	vecs, err := e.EmbedImages(ctx, []string{path})
 	if err != nil {
 		return nil, err
 	}
-	defer cleanup()
+	if len(vecs) != 1 {
+		return nil, fmt.Errorf("llama-cpp-native batch image embedding count mismatch: got %d want 1", len(vecs))
+	}
+	return vecs[0], nil
+}
+
+func (e *Embedder) EmbedImages(ctx context.Context, paths []string) ([][]float32, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return nil, err
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("image path batch is empty")
+	}
+
+	prepared := make([]preparedEmbedPath, 0, len(paths))
+	for _, path := range paths {
+		preprocessedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(path, e.imageMaxSide)
+		if err != nil {
+			for _, item := range prepared {
+				item.cleanup()
+			}
+			return nil, err
+		}
+		prepared = append(prepared, preparedEmbedPath{path: preprocessedPath, cleanup: cleanup})
+	}
+	defer func() {
+		for _, item := range prepared {
+			item.cleanup()
+		}
+	}()
+
 	if err := ensureContextActive(ctx); err != nil {
 		return nil, err
 	}
@@ -222,12 +262,40 @@ func (e *Embedder) EmbedImage(ctx context.Context, path string) ([]float32, erro
 		return nil, fmt.Errorf("llama-cpp-native embedder is closed")
 	}
 
-	out := make([]float32, e.dimensions)
-	if err := e.embedImagePathLocked(preprocessedPath, out); err != nil {
-		return nil, err
+	results := make([][]float32, 0, len(prepared))
+	for start := 0; start < len(prepared); start += e.maxSequences {
+		end := start + e.maxSequences
+		if end > len(prepared) {
+			end = len(prepared)
+		}
+		chunk := prepared[start:end]
+		chunkOut, err := e.embedPreparedPathsLocked(ctx, chunk)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, chunkOut...)
 	}
 
-	return out, nil
+	return results, nil
+}
+
+func (e *Embedder) embedPreparedPathsLocked(ctx context.Context, paths []preparedEmbedPath) ([][]float32, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+
+	results := make([][]float32, len(paths))
+	for i := range paths {
+		vec := make([]float32, e.dimensions)
+		if err := ensureContextActive(ctx); err != nil {
+			return nil, err
+		}
+		if err := e.embedImagePathLocked(paths[i].path, vec); err != nil {
+			return nil, err
+		}
+		results[i] = vec
+	}
+	return results, nil
 }
 
 func (e *Embedder) embedImagePathLocked(path string, out []float32) error {

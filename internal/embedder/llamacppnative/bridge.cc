@@ -286,7 +286,7 @@ mtmd_bitmap * maybe_resize_bitmap(imgsearch_llama_handle * handle, mtmd_bitmap *
     return resized_bitmap;
 }
 
-int32_t copy_embedding(imgsearch_llama_handle * handle, float * out, int32_t out_len) {
+int32_t copy_embedding(imgsearch_llama_handle * handle, llama_seq_id seq_id, float * out, int32_t out_len) {
     if (handle == nullptr || handle->lctx == nullptr) {
         return set_error(handle, "llama.cpp handle is not initialized");
     }
@@ -297,9 +297,11 @@ int32_t copy_embedding(imgsearch_llama_handle * handle, float * out, int32_t out
         return set_error(handle, "embedding output buffer dimension mismatch");
     }
 
-    const float * embd = llama_get_embeddings_seq(handle->lctx, 0);
+    const float * embd = llama_get_embeddings_seq(handle->lctx, seq_id);
     if (embd == nullptr) {
-        embd = llama_get_embeddings_ith(handle->lctx, -1);
+        if (seq_id == 0) {
+            embd = llama_get_embeddings_ith(handle->lctx, -1);
+        }
     }
     if (embd == nullptr) {
         return set_error(handle, "failed to read llama.cpp embedding output");
@@ -315,6 +317,7 @@ int32_t eval_prompt(
     const std::string & prompt,
     const mtmd_bitmap ** bitmaps,
     size_t n_bitmaps,
+    llama_seq_id seq_id,
     float * out,
     int32_t out_len) {
     if (handle == nullptr || handle->mctx == nullptr || handle->lctx == nullptr) {
@@ -346,9 +349,9 @@ int32_t eval_prompt(
         handle->lctx,
         chunks,
         0,
-        0,
+        seq_id,
         handle->n_batch,
-        false,
+        true,
         &new_n_past);
 
     mtmd_input_chunks_free(chunks);
@@ -357,7 +360,7 @@ int32_t eval_prompt(
         return set_error(handle, "mtmd evaluation failed");
     }
 
-    return copy_embedding(handle, out, out_len);
+    return copy_embedding(handle, seq_id, out, out_len);
 }
 
 bool ensure_chat_templates(imgsearch_llama_handle * handle) {
@@ -708,7 +711,7 @@ int32_t imgsearch_llama_embed_text(
     if (prompt.empty()) {
         return set_error(handle, "text embedding prompt is empty");
     }
-    return eval_prompt(handle, prompt, nullptr, 0, out, out_len);
+    return eval_prompt(handle, prompt, nullptr, 0, 0, out, out_len);
 }
 
 int32_t imgsearch_llama_embed_image(
@@ -738,7 +741,7 @@ int32_t imgsearch_llama_embed_image(
 
     const std::string prompt = compose_prompt(instruction, mtmd_default_marker());
     const mtmd_bitmap * bitmaps[] = {bitmap};
-    int32_t res = eval_prompt(handle, prompt, bitmaps, 1, out, out_len);
+    int32_t res = eval_prompt(handle, prompt, bitmaps, 1, 0, out, out_len);
 
     mtmd_bitmap_free(bitmap);
     return res;

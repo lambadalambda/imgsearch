@@ -188,7 +188,57 @@ func TestNativeFixtureRetrievalQuality(t *testing.T) {
 	}
 }
 
+func TestNativeBatchEmbeddingsMatchSequential(t *testing.T) {
+	if os.Getenv("RUN_LLAMACPP_NATIVE_INTEGRATION") != "1" {
+		t.Skip("set RUN_LLAMACPP_NATIVE_INTEGRATION=1 with LLAMA_NATIVE_MODEL_PATH and LLAMA_NATIVE_MMPROJ_PATH")
+	}
+
+	seqEmbedder := newNativeEmbedderForIntegrationWithMaxSequences(t, 1)
+
+	repoRoot := findRepoRoot(t)
+	paths := []string{
+		filepath.Join(repoRoot, "fixtures", "images", "cat_1.jpg"),
+		filepath.Join(repoRoot, "fixtures", "images", "dog_1.jpg"),
+		filepath.Join(repoRoot, "fixtures", "images", "woman_2.jpg"),
+		filepath.Join(repoRoot, "fixtures", "images", "woman_office.jpg"),
+	}
+
+	ctx := context.Background()
+	seqVecs := make([][]float32, len(paths))
+	for i, path := range paths {
+		vec, err := seqEmbedder.EmbedImage(ctx, path)
+		if err != nil {
+			t.Fatalf("sequential embed %d: %v", i, err)
+		}
+		seqVecs[i] = vec
+	}
+	if err := seqEmbedder.Close(); err != nil {
+		t.Fatalf("close sequential embedder: %v", err)
+	}
+
+	batchEmbedder := newNativeEmbedderForIntegrationWithMaxSequences(t, 4)
+
+	batchVecs, err := batchEmbedder.EmbedImages(ctx, paths)
+	if err != nil {
+		t.Fatalf("batch embed: %v", err)
+	}
+	if len(batchVecs) != len(paths) {
+		t.Fatalf("batch embedding count: got=%d want=%d", len(batchVecs), len(paths))
+	}
+
+	for i := range paths {
+		sim := cosine(seqVecs[i], batchVecs[i])
+		if sim < 0.999 {
+			t.Fatalf("embedding cosine mismatch for %s: got=%.6f want>=0.999", filepath.Base(paths[i]), sim)
+		}
+	}
+}
+
 func newNativeEmbedderForIntegration(t *testing.T) *Embedder {
+	return newNativeEmbedderForIntegrationWithMaxSequences(t, envIntOrDefault(t, "LLAMA_NATIVE_MAX_SEQUENCES", defaultMaxSequences))
+}
+
+func newNativeEmbedderForIntegrationWithMaxSequences(t *testing.T, maxSequences int) *Embedder {
 	t.Helper()
 
 	modelPath := strings.TrimSpace(os.Getenv("LLAMA_NATIVE_MODEL_PATH"))
@@ -208,6 +258,7 @@ func newNativeEmbedderForIntegration(t *testing.T) *Embedder {
 		UseGPU:             envBoolOrDefault("LLAMA_NATIVE_USE_GPU", true),
 		ContextSize:        envIntOrDefault(t, "LLAMA_NATIVE_CONTEXT_SIZE", 512),
 		BatchSize:          envIntOrDefault(t, "LLAMA_NATIVE_BATCH_SIZE", 512),
+		MaxSequences:       maxSequences,
 		Threads:            envIntOrDefault(t, "LLAMA_NATIVE_THREADS", 0),
 		ImageMaxSide:       envIntOrDefault(t, "LLAMA_NATIVE_IMAGE_MAX_SIDE", 384),
 		ImageMaxTokens:     envIntOrDefault(t, "LLAMA_NATIVE_IMAGE_MAX_TOKENS", 0),

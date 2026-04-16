@@ -4,6 +4,7 @@ package llamacppnative
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,26 +19,58 @@ func BenchmarkNativeEmbedImage(b *testing.B) {
 		b.Skip("set RUN_LLAMACPP_NATIVE_INTEGRATION=1 with LLAMA_NATIVE_MODEL_PATH and LLAMA_NATIVE_MMPROJ_PATH")
 	}
 
-	embedder := newNativeEmbedderForBenchmark(b)
-
 	root := findRepoRootFromBenchmark(b)
 	imagePaths := benchmarkImagePaths(b, root)
 
 	ctx := context.Background()
-	if _, err := embedder.EmbedImage(ctx, imagePaths[0]); err != nil {
-		b.Fatalf("warm embed: %v", err)
-	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		vec, err := embedder.EmbedImage(ctx, imagePaths[i%len(imagePaths)])
-		if err != nil {
-			b.Fatalf("embed image: %v", err)
+	b.Run("sequential", func(b *testing.B) {
+		embedder := newNativeEmbedderForBenchmarkWithMaxSequences(b, 1)
+		if _, err := embedder.EmbedImage(ctx, imagePaths[0]); err != nil {
+			b.Fatalf("warm embed: %v", err)
 		}
-		if len(vec) == 0 {
-			b.Fatal("empty embedding")
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			vec, err := embedder.EmbedImage(ctx, imagePaths[i%len(imagePaths)])
+			if err != nil {
+				b.Fatalf("embed image: %v", err)
+			}
+			if len(vec) == 0 {
+				b.Fatal("empty embedding")
+			}
 		}
+	})
+
+	for _, batchSize := range []int{2, 4} {
+		batchSize := batchSize
+		if batchSize > len(imagePaths) {
+			continue
+		}
+		b.Run(fmt.Sprintf("batch-%d", batchSize), func(b *testing.B) {
+			embedder := newNativeEmbedderForBenchmarkWithMaxSequences(b, batchSize)
+			if _, err := embedder.EmbedImages(ctx, imagePaths[:batchSize]); err != nil {
+				b.Fatalf("warm batch embed: %v", err)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				start := (i * batchSize) % len(imagePaths)
+				paths := make([]string, 0, batchSize)
+				for j := 0; j < batchSize; j++ {
+					paths = append(paths, imagePaths[(start+j)%len(imagePaths)])
+				}
+				vecs, err := embedder.EmbedImages(ctx, paths)
+				if err != nil {
+					b.Fatalf("batch embed images: %v", err)
+				}
+				if len(vecs) != len(paths) {
+					b.Fatalf("batch embedding count: got=%d want=%d", len(vecs), len(paths))
+				}
+			}
+		})
 	}
 }
 
@@ -115,6 +148,10 @@ func BenchmarkNativeAnnotateImage(b *testing.B) {
 }
 
 func newNativeEmbedderForBenchmark(b *testing.B) *Embedder {
+	return newNativeEmbedderForBenchmarkWithMaxSequences(b, envIntOrDefaultBenchmark("LLAMA_NATIVE_MAX_SEQUENCES", defaultMaxSequences))
+}
+
+func newNativeEmbedderForBenchmarkWithMaxSequences(b *testing.B, maxSequences int) *Embedder {
 	b.Helper()
 
 	modelPath := envOr("LLAMA_NATIVE_MODEL_PATH", "")
@@ -134,6 +171,7 @@ func newNativeEmbedderForBenchmark(b *testing.B) *Embedder {
 		UseGPU:             envBoolOrDefault("LLAMA_NATIVE_USE_GPU", true),
 		ContextSize:        envIntOrDefaultBenchmark("LLAMA_NATIVE_CONTEXT_SIZE", 512),
 		BatchSize:          envIntOrDefaultBenchmark("LLAMA_NATIVE_BATCH_SIZE", 512),
+		MaxSequences:       maxSequences,
 		Threads:            envIntOrDefaultBenchmark("LLAMA_NATIVE_THREADS", 0),
 		ImageMaxSide:       envIntOrDefaultBenchmark("LLAMA_NATIVE_IMAGE_MAX_SIDE", 384),
 		ImageMaxTokens:     envIntOrDefaultBenchmark("LLAMA_NATIVE_IMAGE_MAX_TOKENS", 0),

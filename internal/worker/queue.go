@@ -399,6 +399,15 @@ func (q *Queue) ProcessBatch(ctx context.Context, owner string, batchSize int) (
 	if q == nil || q.DB == nil {
 		return 0, fmt.Errorf("queue db is nil")
 	}
+	if q.Embedder == nil {
+		return 0, fmt.Errorf("queue embedder is nil")
+	}
+	if q.Index == nil {
+		return 0, fmt.Errorf("queue index is nil")
+	}
+	if q.DataDir == "" {
+		return 0, fmt.Errorf("queue data dir is empty")
+	}
 	if batchSize <= 0 {
 		batchSize = 1
 	}
@@ -409,6 +418,18 @@ func (q *Queue) ProcessBatch(ctx context.Context, owner string, batchSize int) (
 	}
 	if len(jobs) == 0 {
 		return 0, nil
+	}
+	if owner == "" {
+		owner = "worker"
+	}
+	if q.LeaseDuration <= 0 {
+		q.LeaseDuration = 30 * time.Second
+	}
+
+	if len(jobs) > 1 {
+		if batcher, ok := q.Embedder.(embedder.BatchImageEmbedder); ok && allClaimedJobsAreKind(jobs, "embed_image") {
+			return q.processEmbedJobsBatch(ctx, batcher, jobs), nil
+		}
 	}
 
 	processed := 0
@@ -421,6 +442,119 @@ func (q *Queue) ProcessBatch(ctx context.Context, owner string, batchSize int) (
 		}
 	}
 	return processed, nil
+}
+
+func allClaimedJobsAreKind(jobs []claimedJob, kind string) bool {
+	if len(jobs) == 0 {
+		return false
+	}
+	for _, job := range jobs {
+		if job.Kind != kind {
+			return false
+		}
+	}
+	return true
+}
+
+func (q *Queue) processEmbedJobsBatch(ctx context.Context, batcher embedder.BatchImageEmbedder, jobs []claimedJob) int {
+	type preparedJob struct {
+		job              claimedJob
+		absPath          string
+		needsAnnotations bool
+	}
+
+	prepared := make([]preparedJob, 0, len(jobs))
+	for _, job := range jobs {
+		log.Printf("worker claimed job id=%d kind=%s image_id=%d attempt=%d/%d", job.ID, job.Kind, job.ImageID, job.Attempts, job.MaxAttempts)
+
+		storagePath, needsAnnotations, err := q.loadImageTaskData(ctx, job.ImageID)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			continue
+		}
+
+		absPath := filepath.Join(q.DataDir, filepath.FromSlash(storagePath))
+		if _, err := os.Stat(absPath); err != nil {
+			_ = q.failOrRetry(ctx, job, fmt.Errorf("stat image file: %w", err))
+			continue
+		}
+
+		prepared = append(prepared, preparedJob{
+			job:              job,
+			absPath:          absPath,
+			needsAnnotations: needsAnnotations,
+		})
+	}
+
+	if len(prepared) == 0 {
+		return 0
+	}
+
+	paths := make([]string, len(prepared))
+	for i, item := range prepared {
+		paths[i] = item.absPath
+	}
+
+	batchStartedAt := time.Now()
+	vecs, err := batcher.EmbedImages(ctx, paths)
+	batchDuration := time.Since(batchStartedAt)
+	if err != nil {
+		for _, item := range prepared {
+			_ = q.failOrRetry(ctx, item.job, err)
+		}
+		return 0
+	}
+	if len(vecs) != len(prepared) {
+		err := fmt.Errorf("batch embedding count mismatch: got %d want %d", len(vecs), len(prepared))
+		for _, item := range prepared {
+			_ = q.failOrRetry(ctx, item.job, err)
+		}
+		return 0
+	}
+
+	avgEmbedDuration := batchDuration / time.Duration(len(prepared))
+	processed := 0
+	for i, item := range prepared {
+		if len(vecs[i]) == 0 {
+			_ = q.failOrRetry(ctx, item.job, fmt.Errorf("empty embedding vector"))
+			continue
+		}
+
+		indexStartedAt := time.Now()
+		if err := q.Index.Upsert(ctx, item.job.ImageID, item.job.ModelID, vecs[i]); err != nil {
+			_ = q.failOrRetry(ctx, item.job, err)
+			continue
+		}
+		indexDuration := time.Since(indexStartedAt)
+
+		completeStartedAt := time.Now()
+		if err := q.completeJob(ctx, item.job, nil); err != nil {
+			_ = q.failOrRetry(ctx, item.job, err)
+			continue
+		}
+		completeDuration := time.Since(completeStartedAt)
+
+		log.Printf(
+			"worker completed job id=%d kind=%s image_id=%d total=%s load=%s stat=%s embed=%s annotate=%s db=%s index=%s annotations_needed=%t annotation_attempted=%t annotation_stored=%t batch_size=%d",
+			item.job.ID,
+			item.job.Kind,
+			item.job.ImageID,
+			batchDuration.Round(time.Millisecond),
+			0*time.Millisecond,
+			0*time.Millisecond,
+			avgEmbedDuration.Round(time.Millisecond),
+			0*time.Millisecond,
+			completeDuration.Round(time.Millisecond),
+			indexDuration.Round(time.Millisecond),
+			item.needsAnnotations,
+			false,
+			false,
+			len(prepared),
+		)
+		processed++
+	}
+
+	return processed
 }
 
 func (q *Queue) processJob(ctx context.Context, owner string, job claimedJob) bool {

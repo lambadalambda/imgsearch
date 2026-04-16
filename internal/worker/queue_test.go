@@ -32,6 +32,40 @@ func (f *fakeEmbedder) EmbedImage(_ context.Context, _ string) ([]float32, error
 	return out, nil
 }
 
+type fakeBatchEmbedder struct {
+	vec             []float32
+	err             error
+	batchErr        error
+	embedImageCalls int
+	embedBatchCalls int
+	batchPaths      []string
+}
+
+func (f *fakeBatchEmbedder) EmbedImage(_ context.Context, _ string) ([]float32, error) {
+	f.embedImageCalls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make([]float32, len(f.vec))
+	copy(out, f.vec)
+	return out, nil
+}
+
+func (f *fakeBatchEmbedder) EmbedImages(_ context.Context, paths []string) ([][]float32, error) {
+	f.embedBatchCalls++
+	f.batchPaths = append([]string(nil), paths...)
+	if f.batchErr != nil {
+		return nil, f.batchErr
+	}
+	out := make([][]float32, len(paths))
+	for i := range paths {
+		vec := make([]float32, len(f.vec))
+		copy(vec, f.vec)
+		out[i] = vec
+	}
+	return out, nil
+}
+
 type fakeIndex struct {
 	db      *sql.DB
 	upserts []vectorindex.SearchHit
@@ -668,6 +702,58 @@ func TestProcessBatchContinuesOnSingleJobFailure(t *testing.T) {
 	}
 	if pendingCount != 1 {
 		t.Fatalf("expected 1 pending job (retried), got %d", pendingCount)
+	}
+}
+
+func TestProcessBatchUsesEmbedImagesWhenAvailable(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 3)
+	batch := &fakeBatchEmbedder{vec: []float32{1, 2, 3, 4}}
+	q.Embedder = batch
+
+	count, err := q.ProcessBatch(context.Background(), "worker-1", 3)
+	if err != nil {
+		t.Fatalf("process batch: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 processed jobs, got %d", count)
+	}
+	if batch.embedBatchCalls != 1 {
+		t.Fatalf("expected 1 EmbedImages call, got %d", batch.embedBatchCalls)
+	}
+	if batch.embedImageCalls != 0 {
+		t.Fatalf("expected 0 EmbedImage calls, got %d", batch.embedImageCalls)
+	}
+	if len(batch.batchPaths) != 3 {
+		t.Fatalf("expected 3 batch paths, got %d", len(batch.batchPaths))
+	}
+
+	var doneCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE state = 'done'`).Scan(&doneCount); err != nil {
+		t.Fatalf("count done: %v", err)
+	}
+	if doneCount != 3 {
+		t.Fatalf("expected 3 done jobs, got %d", doneCount)
+	}
+}
+
+func TestProcessBatchRetriesAllJobsWhenBatchEmbedFails(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 3)
+	q.Embedder = &fakeBatchEmbedder{vec: []float32{1, 2, 3, 4}, batchErr: errors.New("batch failed")}
+
+	count, err := q.ProcessBatch(context.Background(), "worker-1", 3)
+	if err != nil {
+		t.Fatalf("process batch: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 processed jobs, got %d", count)
+	}
+
+	var pendingCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE state = 'pending'`).Scan(&pendingCount); err != nil {
+		t.Fatalf("count pending: %v", err)
+	}
+	if pendingCount != 3 {
+		t.Fatalf("expected 3 pending jobs after retry, got %d", pendingCount)
 	}
 }
 
