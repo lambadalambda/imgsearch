@@ -34,6 +34,9 @@ VALUES
 `); err != nil {
 		t.Fatalf("seed videos: %v", err)
 	}
+	if _, err := dbConn.Exec(`UPDATE videos SET transcript_text = 'tis better to remain silent' WHERE id = 1`); err != nil {
+		t.Fatalf("seed transcript text: %v", err)
+	}
 	if _, err := dbConn.Exec(`
 INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
 VALUES
@@ -95,6 +98,9 @@ func TestListVideosReturnsResults(t *testing.T) {
 	}
 	if resp.Videos[1].PreviewPath != "images/f1" || resp.Videos[1].ImageID != 10 {
 		t.Fatalf("unexpected preview frame for video 1: %+v", resp.Videos[1])
+	}
+	if resp.Videos[1].TranscriptText != "tis better to remain silent" {
+		t.Fatalf("expected transcript text in video list, got %+v", resp.Videos[1])
 	}
 }
 

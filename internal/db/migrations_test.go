@@ -90,6 +90,7 @@ func TestRunMigrationsCreatesCoreTables(t *testing.T) {
 		"images",
 		"videos",
 		"video_frames",
+		"video_transcript_embeddings",
 		"embedding_models",
 		"image_embeddings",
 		"index_jobs",

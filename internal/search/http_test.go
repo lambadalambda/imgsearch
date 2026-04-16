@@ -239,6 +239,64 @@ VALUES
 	}
 }
 
+func TestTextSearchReturnsVideoResultFromTranscriptEmbedding(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES (20, 'vf20', 'frame.jpg', 'images/vf20', 'image/jpeg', 100, 100)
+`); err != nil {
+		t.Fatalf("seed frame image: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, transcript_text)
+VALUES (8, 'vid8', 'speech.mp4', 'videos/vid8', 'video/mp4', 4000, 1280, 720, 1, 'tis better to remain silent and be thought a fool')
+`); err != nil {
+		t.Fatalf("seed video: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (8, 20, 0, 1000)
+`); err != nil {
+		t.Fatalf("seed preview frame: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_transcript_embeddings(video_id, model_id, dim, vector_blob)
+VALUES (8, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 0})); err != nil {
+		t.Fatalf("seed transcript embedding: %v", err)
+	}
+
+	h := NewHandler(&Handler{
+		DB:       dbConn,
+		ModelID:  1,
+		DataDir:  "/tmp",
+		Embedder: &fakeEmbedder{textVec: []float32{1, 0}},
+		Index:    &fakeIndex{hits: nil},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/text?q=silent", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("expected 1 result from transcript embedding, got %d: %+v", len(resp.Results), resp.Results)
+	}
+	if resp.Results[0].MediaType != "video" || resp.Results[0].VideoID != 8 {
+		t.Fatalf("expected video 8 transcript result, got %+v", resp.Results[0])
+	}
+	if !strings.Contains(resp.Results[0].TranscriptText, "remain silent") {
+		t.Fatalf("expected transcript text on result, got %+v", resp.Results[0])
+	}
+}
+
 func TestSimilarSearchReturnsResults(t *testing.T) {
 	dbConn := setupSearchDB(t)
 	h := NewHandler(&Handler{

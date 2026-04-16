@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"imgsearch/internal/transcribe"
+
 	ort "github.com/yalue/onnxruntime_go"
 )
 
@@ -29,6 +31,18 @@ type Transcript struct {
 	TokenIDs      []int
 	Tokens        []string
 	TimestampsSec []float64
+}
+
+type Recognizer struct {
+	Config RecognizerConfig
+}
+
+func (r *Recognizer) TranscribeVideo(ctx context.Context, videoPath string) (transcribe.Transcript, error) {
+	transcriptResult, err := TranscribeVideo(ctx, r.Config, videoPath)
+	if err != nil {
+		return transcribe.Transcript{}, err
+	}
+	return transcribe.Transcript{Text: transcriptResult.Text}, nil
 }
 
 func TranscribeVideo(ctx context.Context, cfg RecognizerConfig, videoPath string) (Transcript, error) {

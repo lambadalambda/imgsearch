@@ -15,6 +15,7 @@ import (
 
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/transcribe"
 	"imgsearch/internal/vectorindex"
 )
 
@@ -24,6 +25,15 @@ type fakeEmbedder struct {
 }
 
 func (f *fakeEmbedder) EmbedImage(_ context.Context, _ string) ([]float32, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make([]float32, len(f.vec))
+	copy(out, f.vec)
+	return out, nil
+}
+
+func (f *fakeEmbedder) EmbedText(_ context.Context, _ string) ([]float32, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -75,6 +85,18 @@ type fakeIndex struct {
 type fakeAnnotator struct {
 	annotation embedder.ImageAnnotation
 	err        error
+}
+
+type fakeVideoTranscriber struct {
+	transcript transcribe.Transcript
+	err        error
+}
+
+func (f *fakeVideoTranscriber) TranscribeVideo(context.Context, string) (transcribe.Transcript, error) {
+	if f.err != nil {
+		return transcribe.Transcript{}, f.err
+	}
+	return f.transcript, nil
 }
 
 func (f *fakeAnnotator) AnnotateImage(context.Context, string) (embedder.ImageAnnotation, error) {
@@ -149,6 +171,7 @@ func setupQueueTest(t *testing.T) (*Queue, *sql.DB) {
 		DataDir:       dataDir,
 		LeaseDuration: 30 * time.Second,
 		Embedder:      &fakeEmbedder{vec: []float32{1, 2, 3, 4}},
+		TextEmbedder:  &fakeEmbedder{vec: []float32{1, 2, 3, 4}},
 		Index:         &fakeIndex{db: sqlDB},
 	}
 
@@ -199,6 +222,68 @@ func TestProcessOneSuccessStoresEmbeddingAndMarksDone(t *testing.T) {
 	}
 	if dim != 4 {
 		t.Fatalf("expected dim 4, got %d", dim)
+	}
+}
+
+func TestProcessOneTranscribeVideoStoresTranscriptAndEmbedding(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	q.Transcriber = &fakeVideoTranscriber{transcript: transcribe.Transcript{Text: "tis better to remain silent"}}
+	q.TextEmbedder = &fakeEmbedder{vec: []float32{9, 8, 7, 6}}
+
+	if _, err := sqlDB.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (3, 'vid3', 'clip.mp4', 'videos/vid3', 'video/mp4', 1000, 640, 360, 1)
+`); err != nil {
+		t.Fatalf("insert video: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (3, 1, 0, 0)
+`); err != nil {
+		t.Fatalf("insert video frame: %v", err)
+	}
+	if _, err := sqlDB.Exec(`DELETE FROM index_jobs WHERE id = 1`); err != nil {
+		t.Fatalf("delete default job: %v", err)
+	}
+	var modelID int64
+	if err := sqlDB.QueryRow(`SELECT id FROM embedding_models LIMIT 1`).Scan(&modelID); err != nil {
+		t.Fatalf("select model id: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, video_id, model_id, state)
+VALUES (10, 'transcribe_video', NULL, 3, ?, 'pending')
+`, modelID); err != nil {
+		t.Fatalf("insert transcribe job: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(q.DataDir, "videos"), 0o755); err != nil {
+		t.Fatalf("mkdir videos dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(q.DataDir, "videos", "vid3"), []byte("video"), 0o644); err != nil {
+		t.Fatalf("write video file: %v", err)
+	}
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+
+	var transcriptText string
+	if err := sqlDB.QueryRow(`SELECT transcript_text FROM videos WHERE id = 3`).Scan(&transcriptText); err != nil {
+		t.Fatalf("select transcript: %v", err)
+	}
+	if transcriptText != "tis better to remain silent" {
+		t.Fatalf("unexpected transcript text: %q", transcriptText)
+	}
+
+	var dim int
+	if err := sqlDB.QueryRow(`SELECT dim FROM video_transcript_embeddings WHERE video_id = 3 AND model_id = ?`, modelID).Scan(&dim); err != nil {
+		t.Fatalf("select transcript embedding dim: %v", err)
+	}
+	if dim != 4 {
+		t.Fatalf("expected transcript dim 4, got %d", dim)
 	}
 }
 

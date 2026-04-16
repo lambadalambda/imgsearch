@@ -16,19 +16,20 @@ type Handler struct {
 }
 
 type VideoItem struct {
-	VideoID      int64  `json:"video_id"`
-	ImageID      int64  `json:"image_id,omitempty"`
-	MediaType    string `json:"media_type"`
-	OriginalName string `json:"original_name"`
-	StoragePath  string `json:"storage_path"`
-	PreviewPath  string `json:"preview_path,omitempty"`
-	MimeType     string `json:"mime_type"`
-	DurationMS   int64  `json:"duration_ms"`
-	Width        int    `json:"width"`
-	Height       int    `json:"height"`
-	FrameCount   int    `json:"frame_count"`
-	IndexState   string `json:"index_state"`
-	CreatedAt    string `json:"created_at"`
+	VideoID        int64  `json:"video_id"`
+	ImageID        int64  `json:"image_id,omitempty"`
+	MediaType      string `json:"media_type"`
+	OriginalName   string `json:"original_name"`
+	StoragePath    string `json:"storage_path"`
+	PreviewPath    string `json:"preview_path,omitempty"`
+	TranscriptText string `json:"transcript_text,omitempty"`
+	MimeType       string `json:"mime_type"`
+	DurationMS     int64  `json:"duration_ms"`
+	Width          int    `json:"width"`
+	Height         int    `json:"height"`
+	FrameCount     int    `json:"frame_count"`
+	IndexState     string `json:"index_state"`
+	CreatedAt      string `json:"created_at"`
 }
 
 type ListResponse struct {
@@ -65,6 +66,17 @@ WITH frame_jobs AS (
    AND j.model_id = ?
    AND j.kind = 'embed_image'
   GROUP BY vf.video_id
+), transcript_jobs AS (
+  SELECT j.video_id,
+         SUM(CASE WHEN j.state = 'failed' THEN 1 ELSE 0 END) AS failed_jobs,
+         SUM(CASE WHEN j.state = 'leased' THEN 1 ELSE 0 END) AS leased_jobs,
+         SUM(CASE WHEN j.state = 'done' THEN 1 ELSE 0 END) AS done_jobs,
+         COUNT(j.id) AS total_jobs
+  FROM index_jobs j
+  WHERE j.video_id IS NOT NULL
+    AND j.model_id = ?
+    AND j.kind = 'transcribe_video'
+  GROUP BY j.video_id
 ), preview_frames AS (
   SELECT vf.video_id,
          vf.image_id,
@@ -77,6 +89,7 @@ SELECT v.id,
        v.original_name,
        v.storage_path,
        v.mime_type,
+       COALESCE(v.transcript_text, ''),
        v.duration_ms,
        v.width,
        v.height,
@@ -84,18 +97,20 @@ SELECT v.id,
        COALESCE(p.image_id, 0),
        COALESCE(p.storage_path, ''),
        CASE
-         WHEN COALESCE(f.failed_jobs, 0) > 0 THEN 'failed'
-         WHEN COALESCE(f.done_jobs, 0) > 0 AND COALESCE(f.done_jobs, 0) = COALESCE(f.total_jobs, 0) THEN 'done'
-         WHEN COALESCE(f.leased_jobs, 0) > 0 THEN 'leased'
+         WHEN COALESCE(f.failed_jobs, 0) > 0 OR COALESCE(tj.failed_jobs, 0) > 0 THEN 'failed'
+         WHEN COALESCE(f.leased_jobs, 0) > 0 OR COALESCE(tj.leased_jobs, 0) > 0 THEN 'leased'
+         WHEN COALESCE(f.total_jobs, 0) > 0 AND COALESCE(f.done_jobs, 0) = COALESCE(f.total_jobs, 0)
+           AND (COALESCE(tj.total_jobs, 0) = 0 OR COALESCE(tj.done_jobs, 0) = COALESCE(tj.total_jobs, 0)) THEN 'done'
          ELSE 'pending'
        END AS index_state,
        v.created_at
 FROM videos v
 LEFT JOIN frame_jobs f ON f.video_id = v.id
+LEFT JOIN transcript_jobs tj ON tj.video_id = v.id
 LEFT JOIN preview_frames p ON p.video_id = v.id AND p.rn = 1
 ORDER BY v.id DESC
 LIMIT ? OFFSET ?
-`, modelID, limit, offset)
+`, modelID, modelID, limit, offset)
 	if err != nil {
 		return ListResponse{}, fmt.Errorf("query videos: %w", err)
 	}
@@ -109,6 +124,7 @@ LIMIT ? OFFSET ?
 			&item.OriginalName,
 			&item.StoragePath,
 			&item.MimeType,
+			&item.TranscriptText,
 			&item.DurationMS,
 			&item.Width,
 			&item.Height,

@@ -115,6 +115,68 @@ CREATE INDEX IF NOT EXISTS idx_video_frames_image_id
 ON video_frames(image_id);
 `,
 	},
+	{
+		version: 4,
+		sql: `
+ALTER TABLE videos ADD COLUMN transcript_text TEXT NOT NULL DEFAULT '';
+ALTER TABLE videos ADD COLUMN transcript_updated_at TEXT;
+
+CREATE TABLE IF NOT EXISTS video_transcript_embeddings (
+  video_id INTEGER NOT NULL,
+  model_id INTEGER NOT NULL,
+  dim INTEGER NOT NULL,
+  vector_blob BLOB NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (video_id, model_id),
+  FOREIGN KEY (video_id) REFERENCES videos(id),
+  FOREIGN KEY (model_id) REFERENCES embedding_models(id)
+);
+`,
+	},
+	{
+		version: 5,
+		sql: `
+CREATE TABLE IF NOT EXISTS index_jobs_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  image_id INTEGER,
+  video_id INTEGER,
+  model_id INTEGER NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('pending', 'leased', 'done', 'failed')),
+  run_after TEXT,
+  leased_until TEXT,
+  lease_owner TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  last_error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK ((image_id IS NOT NULL) <> (video_id IS NOT NULL)),
+  FOREIGN KEY (image_id) REFERENCES images(id),
+  FOREIGN KEY (video_id) REFERENCES videos(id),
+  FOREIGN KEY (model_id) REFERENCES embedding_models(id)
+);
+
+INSERT INTO index_jobs_new(id, kind, image_id, video_id, model_id, state, run_after, leased_until, lease_owner, attempts, max_attempts, last_error, created_at, updated_at)
+SELECT id, kind, image_id, NULL, model_id, state, run_after, leased_until, lease_owner, attempts, max_attempts, last_error, created_at, updated_at
+FROM index_jobs;
+
+DROP TABLE index_jobs;
+ALTER TABLE index_jobs_new RENAME TO index_jobs;
+
+CREATE INDEX IF NOT EXISTS idx_index_jobs_state_run_after
+ON index_jobs(state, run_after);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_index_jobs_unique_image_target
+ON index_jobs(kind, image_id, model_id)
+WHERE image_id IS NOT NULL AND video_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_index_jobs_unique_video_target
+ON index_jobs(kind, video_id, model_id)
+WHERE video_id IS NOT NULL AND image_id IS NULL;
+`,
+	},
 }
 
 func LatestVersion() int {

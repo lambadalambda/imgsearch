@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/transcribe"
 	"imgsearch/internal/vectorindex"
 )
 
@@ -21,7 +22,9 @@ type Queue struct {
 	LeaseDuration  time.Duration
 	RetryBaseDelay time.Duration
 	Embedder       embedder.ImageEmbedder
+	TextEmbedder   embedder.TextEmbedder
 	Annotator      embedder.ImageAnnotator
+	Transcriber    transcribe.VideoTranscriber
 	Index          vectorindex.VectorIndex
 }
 
@@ -29,6 +32,7 @@ type claimedJob struct {
 	ID          int64
 	Kind        string
 	ImageID     int64
+	VideoID     int64
 	ModelID     int64
 	Attempts    int
 	MaxAttempts int
@@ -66,26 +70,33 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 	var loadTaskDataDuration time.Duration
 	var statDuration time.Duration
 	var embedDuration time.Duration
+	var transcribeDuration time.Duration
 	var annotateDuration time.Duration
 	var completeDuration time.Duration
 	var indexDuration time.Duration
+	var stageStartedAt time.Time
 
-	stageStartedAt := time.Now()
-	storagePath, needsAnnotations, err := q.loadImageTaskData(ctx, job.ImageID)
-	loadTaskDataDuration = time.Since(stageStartedAt)
-	if err != nil {
-		_ = q.failOrRetry(ctx, job, err)
-		return true, err
-	}
+	storagePath := ""
+	needsAnnotations := false
+	absPath := ""
+	if job.Kind != "transcribe_video" {
+		stageStartedAt := time.Now()
+		storagePath, needsAnnotations, err = q.loadImageTaskData(ctx, job.ImageID)
+		loadTaskDataDuration = time.Since(stageStartedAt)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return true, err
+		}
 
-	absPath := filepath.Join(q.DataDir, filepath.FromSlash(storagePath))
-	stageStartedAt = time.Now()
-	if _, err := os.Stat(absPath); err != nil {
+		absPath = filepath.Join(q.DataDir, filepath.FromSlash(storagePath))
+		stageStartedAt = time.Now()
+		if _, err := os.Stat(absPath); err != nil {
+			statDuration = time.Since(stageStartedAt)
+			_ = q.failOrRetry(ctx, job, fmt.Errorf("stat image file: %w", err))
+			return true, err
+		}
 		statDuration = time.Since(stageStartedAt)
-		_ = q.failOrRetry(ctx, job, fmt.Errorf("stat image file: %w", err))
-		return true, err
 	}
-	statDuration = time.Since(stageStartedAt)
 
 	var annotation *embedder.ImageAnnotation
 	annotationAttempted := false
@@ -133,26 +144,86 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 		}
 		annotation = &generated
 		annotationStored = true
+	case "transcribe_video":
+		if q.Transcriber == nil {
+			err := fmt.Errorf("video transcriber is unavailable")
+			_ = q.failOrRetry(ctx, job, err)
+			return true, err
+		}
+		if q.TextEmbedder == nil {
+			err := fmt.Errorf("text embedder is unavailable")
+			_ = q.failOrRetry(ctx, job, err)
+			return true, err
+		}
+		videoID, videoStoragePath, err := q.loadVideoTaskData(ctx, job.VideoID)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return true, err
+		}
+		videoAbsPath := filepath.Join(q.DataDir, filepath.FromSlash(videoStoragePath))
+		stageStartedAt = time.Now()
+		if _, err := os.Stat(videoAbsPath); err != nil {
+			statDuration = time.Since(stageStartedAt)
+			_ = q.failOrRetry(ctx, job, fmt.Errorf("stat video file: %w", err))
+			return true, err
+		}
+		statDuration = time.Since(stageStartedAt)
+
+		stageStartedAt = time.Now()
+		transcript, err := q.Transcriber.TranscribeVideo(ctx, videoAbsPath)
+		transcribeDuration = time.Since(stageStartedAt)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return true, nil
+		}
+		if strings.TrimSpace(transcript.Text) == "" {
+			err := fmt.Errorf("empty transcript")
+			_ = q.failOrRetry(ctx, job, err)
+			return true, nil
+		}
+
+		stageStartedAt = time.Now()
+		vec, err := q.TextEmbedder.EmbedText(ctx, transcript.Text)
+		embedDuration = time.Since(stageStartedAt)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return true, nil
+		}
+		if len(vec) == 0 {
+			err := fmt.Errorf("empty transcript embedding vector")
+			_ = q.failOrRetry(ctx, job, err)
+			return true, nil
+		}
+
+		stageStartedAt = time.Now()
+		if err := q.completeVideoTranscriptJob(ctx, job, videoID, transcript, vec); err != nil {
+			completeDuration = time.Since(stageStartedAt)
+			_ = q.failOrRetry(ctx, job, err)
+			return true, err
+		}
+		completeDuration = time.Since(stageStartedAt)
 	default:
 		err := fmt.Errorf("unsupported job kind %q", job.Kind)
 		_ = q.failOrRetry(ctx, job, err)
 		return true, err
 	}
 
-	stageStartedAt = time.Now()
-	if err := q.completeJob(ctx, job, annotation); err != nil {
+	if job.Kind != "transcribe_video" {
+		stageStartedAt = time.Now()
+		if err := q.completeJob(ctx, job, annotation); err != nil {
+			completeDuration = time.Since(stageStartedAt)
+			_ = q.failOrRetry(ctx, job, err)
+			return true, err
+		}
 		completeDuration = time.Since(stageStartedAt)
-		_ = q.failOrRetry(ctx, job, err)
-		return true, err
 	}
-	completeDuration = time.Since(stageStartedAt)
 
 	annotationErrSuffix := ""
 	if annotationErrText != "" {
 		annotationErrSuffix = fmt.Sprintf(" annotation_error=%q", annotationErrText)
 	}
 	log.Printf(
-		"worker completed job id=%d kind=%s image_id=%d total=%s load=%s stat=%s embed=%s annotate=%s db=%s index=%s annotations_needed=%t annotation_attempted=%t annotation_stored=%t%s",
+		"worker completed job id=%d kind=%s image_id=%d total=%s load=%s stat=%s embed=%s transcribe=%s annotate=%s db=%s index=%s annotations_needed=%t annotation_attempted=%t annotation_stored=%t%s",
 		job.ID,
 		job.Kind,
 		job.ImageID,
@@ -160,6 +231,7 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 		loadTaskDataDuration.Round(time.Millisecond),
 		statDuration.Round(time.Millisecond),
 		embedDuration.Round(time.Millisecond),
+		transcribeDuration.Round(time.Millisecond),
 		annotateDuration.Round(time.Millisecond),
 		completeDuration.Round(time.Millisecond),
 		indexDuration.Round(time.Millisecond),
@@ -178,16 +250,11 @@ func (q *Queue) claimNext(ctx context.Context, owner string) (claimedJob, bool, 
 		return claimedJob{}, false, fmt.Errorf("begin claim tx: %w", err)
 	}
 
-	kindFilter := "kind = 'embed_image'"
-	orderBy := "created_at ASC"
-	if q.Annotator != nil {
-		kindFilter = "kind IN ('embed_image', 'annotate_image')"
-		orderBy = "CASE kind WHEN 'embed_image' THEN 0 ELSE 1 END ASC, created_at ASC"
-	}
+	kindFilter, orderBy := q.claimableKindSQL()
 
 	var job claimedJob
 	err = tx.QueryRowContext(ctx, fmt.Sprintf(`
-SELECT id, kind, image_id, model_id, attempts, max_attempts
+SELECT id, kind, COALESCE(image_id, 0), COALESCE(video_id, 0), model_id, attempts, max_attempts
 FROM index_jobs
 WHERE %s
   AND (run_after IS NULL OR run_after <= datetime('now'))
@@ -197,7 +264,7 @@ WHERE %s
   )
 ORDER BY %s
 LIMIT 1
-`, kindFilter, orderBy)).Scan(&job.ID, &job.Kind, &job.ImageID, &job.ModelID, &job.Attempts, &job.MaxAttempts)
+`, kindFilter, orderBy)).Scan(&job.ID, &job.Kind, &job.ImageID, &job.VideoID, &job.ModelID, &job.Attempts, &job.MaxAttempts)
 	if err == sql.ErrNoRows {
 		_ = tx.Rollback()
 		return claimedJob{}, false, nil
@@ -264,10 +331,7 @@ func (q *Queue) claimBatch(ctx context.Context, owner string, limit int) ([]clai
 		return nil, fmt.Errorf("begin claim batch tx: %w", err)
 	}
 
-	kindFilter := "kind = 'embed_image'"
-	if q.Annotator != nil {
-		kindFilter = "kind IN ('embed_image', 'annotate_image')"
-	}
+	kindFilter, orderBy := q.claimableKindSQL()
 
 	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`
 SELECT id, kind FROM index_jobs
@@ -277,9 +341,9 @@ WHERE %s
     state = 'pending'
     OR (state = 'leased' AND leased_until IS NOT NULL AND leased_until <= datetime('now'))
   )
-ORDER BY CASE kind WHEN 'embed_image' THEN 0 ELSE 1 END ASC, created_at ASC
+ORDER BY %s
 LIMIT ?
-`, kindFilter), limit)
+`, kindFilter, orderBy), limit)
 	if err != nil {
 		_ = tx.Rollback()
 		if isSQLiteLockError(err) {
@@ -374,7 +438,7 @@ WHERE id = ?
 
 	var jobs []claimedJob
 	jobRows, err := q.DB.QueryContext(ctx, fmt.Sprintf(`
-SELECT id, kind, image_id, model_id, attempts, max_attempts
+SELECT id, kind, COALESCE(image_id, 0), COALESCE(video_id, 0), model_id, attempts, max_attempts
 FROM index_jobs
 WHERE id IN (%s)
 ORDER BY created_at ASC
@@ -384,7 +448,7 @@ ORDER BY created_at ASC
 	}
 	for jobRows.Next() {
 		var j claimedJob
-		if err := jobRows.Scan(&j.ID, &j.Kind, &j.ImageID, &j.ModelID, &j.Attempts, &j.MaxAttempts); err != nil {
+		if err := jobRows.Scan(&j.ID, &j.Kind, &j.ImageID, &j.VideoID, &j.ModelID, &j.Attempts, &j.MaxAttempts); err != nil {
 			_ = jobRows.Close()
 			return nil, fmt.Errorf("scan claimed job: %w", err)
 		}
@@ -563,26 +627,34 @@ func (q *Queue) processJob(ctx context.Context, owner string, job claimedJob) bo
 	var loadTaskDataDuration time.Duration
 	var statDuration time.Duration
 	var embedDuration time.Duration
+	var transcribeDuration time.Duration
 	var annotateDuration time.Duration
 	var completeDuration time.Duration
 	var indexDuration time.Duration
+	var stageStartedAt time.Time
+	var err error
 
-	stageStartedAt := time.Now()
-	storagePath, needsAnnotations, err := q.loadImageTaskData(ctx, job.ImageID)
-	loadTaskDataDuration = time.Since(stageStartedAt)
-	if err != nil {
-		_ = q.failOrRetry(ctx, job, err)
-		return false
-	}
+	storagePath := ""
+	needsAnnotations := false
+	absPath := ""
+	if job.Kind != "transcribe_video" {
+		stageStartedAt := time.Now()
+		storagePath, needsAnnotations, err = q.loadImageTaskData(ctx, job.ImageID)
+		loadTaskDataDuration = time.Since(stageStartedAt)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return false
+		}
 
-	absPath := filepath.Join(q.DataDir, filepath.FromSlash(storagePath))
-	stageStartedAt = time.Now()
-	if _, err := os.Stat(absPath); err != nil {
+		absPath = filepath.Join(q.DataDir, filepath.FromSlash(storagePath))
+		stageStartedAt = time.Now()
+		if _, err := os.Stat(absPath); err != nil {
+			statDuration = time.Since(stageStartedAt)
+			_ = q.failOrRetry(ctx, job, fmt.Errorf("stat image file: %w", err))
+			return false
+		}
 		statDuration = time.Since(stageStartedAt)
-		_ = q.failOrRetry(ctx, job, fmt.Errorf("stat image file: %w", err))
-		return false
 	}
-	statDuration = time.Since(stageStartedAt)
 
 	var annotation *embedder.ImageAnnotation
 	annotationAttempted := false
@@ -629,25 +701,81 @@ func (q *Queue) processJob(ctx context.Context, owner string, job claimedJob) bo
 		}
 		annotation = &generated
 		annotationStored = true
+	case "transcribe_video":
+		if q.Transcriber == nil {
+			_ = q.failOrRetry(ctx, job, fmt.Errorf("video transcriber is unavailable"))
+			return false
+		}
+		if q.TextEmbedder == nil {
+			_ = q.failOrRetry(ctx, job, fmt.Errorf("text embedder is unavailable"))
+			return false
+		}
+		videoID, videoStoragePath, err := q.loadVideoTaskData(ctx, job.VideoID)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return false
+		}
+		videoAbsPath := filepath.Join(q.DataDir, filepath.FromSlash(videoStoragePath))
+		stageStartedAt = time.Now()
+		if _, err := os.Stat(videoAbsPath); err != nil {
+			statDuration = time.Since(stageStartedAt)
+			_ = q.failOrRetry(ctx, job, fmt.Errorf("stat video file: %w", err))
+			return false
+		}
+		statDuration = time.Since(stageStartedAt)
+
+		stageStartedAt = time.Now()
+		transcript, err := q.Transcriber.TranscribeVideo(ctx, videoAbsPath)
+		transcribeDuration = time.Since(stageStartedAt)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return false
+		}
+		if strings.TrimSpace(transcript.Text) == "" {
+			_ = q.failOrRetry(ctx, job, fmt.Errorf("empty transcript"))
+			return false
+		}
+
+		stageStartedAt = time.Now()
+		vec, err := q.TextEmbedder.EmbedText(ctx, transcript.Text)
+		embedDuration = time.Since(stageStartedAt)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return false
+		}
+		if len(vec) == 0 {
+			_ = q.failOrRetry(ctx, job, fmt.Errorf("empty transcript embedding vector"))
+			return false
+		}
+
+		stageStartedAt = time.Now()
+		if err := q.completeVideoTranscriptJob(ctx, job, videoID, transcript, vec); err != nil {
+			completeDuration = time.Since(stageStartedAt)
+			_ = q.failOrRetry(ctx, job, err)
+			return false
+		}
+		completeDuration = time.Since(stageStartedAt)
 	default:
 		_ = q.failOrRetry(ctx, job, fmt.Errorf("unsupported job kind %q", job.Kind))
 		return false
 	}
 
-	stageStartedAt = time.Now()
-	if err := q.completeJob(ctx, job, annotation); err != nil {
+	if job.Kind != "transcribe_video" {
+		stageStartedAt = time.Now()
+		if err := q.completeJob(ctx, job, annotation); err != nil {
+			completeDuration = time.Since(stageStartedAt)
+			_ = q.failOrRetry(ctx, job, err)
+			return false
+		}
 		completeDuration = time.Since(stageStartedAt)
-		_ = q.failOrRetry(ctx, job, err)
-		return false
 	}
-	completeDuration = time.Since(stageStartedAt)
 
 	annotationErrSuffix := ""
 	if annotationErrText != "" {
 		annotationErrSuffix = fmt.Sprintf(" annotation_error=%q", annotationErrText)
 	}
 	log.Printf(
-		"worker completed job id=%d kind=%s image_id=%d total=%s load=%s stat=%s embed=%s annotate=%s db=%s index=%s annotations_needed=%t annotation_attempted=%t annotation_stored=%t%s",
+		"worker completed job id=%d kind=%s image_id=%d total=%s load=%s stat=%s embed=%s transcribe=%s annotate=%s db=%s index=%s annotations_needed=%t annotation_attempted=%t annotation_stored=%t%s",
 		job.ID,
 		job.Kind,
 		job.ImageID,
@@ -655,6 +783,7 @@ func (q *Queue) processJob(ctx context.Context, owner string, job claimedJob) bo
 		loadTaskDataDuration.Round(time.Millisecond),
 		statDuration.Round(time.Millisecond),
 		embedDuration.Round(time.Millisecond),
+		transcribeDuration.Round(time.Millisecond),
 		annotateDuration.Round(time.Millisecond),
 		completeDuration.Round(time.Millisecond),
 		indexDuration.Round(time.Millisecond),
@@ -684,6 +813,18 @@ WHERE id = ?
 		return "", false, fmt.Errorf("load image task data: %w", err)
 	}
 	return storagePath, needsAnnotations == 1, nil
+}
+
+func (q *Queue) loadVideoTaskData(ctx context.Context, videoID int64) (int64, string, error) {
+	var storagePath string
+	if err := q.DB.QueryRowContext(ctx, `
+SELECT id, storage_path
+FROM videos
+WHERE id = ?
+`, videoID).Scan(&videoID, &storagePath); err != nil {
+		return 0, "", fmt.Errorf("load video task data: %w", err)
+	}
+	return videoID, storagePath, nil
 }
 
 func (q *Queue) completeJob(ctx context.Context, job claimedJob, annotation *embedder.ImageAnnotation) error {
@@ -721,6 +862,43 @@ WHERE id = ?
 		return fmt.Errorf("commit complete tx: %w", err)
 	}
 
+	return nil
+}
+
+func (q *Queue) completeVideoTranscriptJob(ctx context.Context, job claimedJob, videoID int64, transcript transcribe.Transcript, vec []float32) error {
+	tx, err := q.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin complete video transcript tx: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE videos
+SET transcript_text = ?, transcript_updated_at = datetime('now')
+WHERE id = ?
+`, transcript.Text, videoID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("update video transcript: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO video_transcript_embeddings(video_id, model_id, dim, vector_blob)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(video_id, model_id)
+DO UPDATE SET dim = excluded.dim, vector_blob = excluded.vector_blob, updated_at = datetime('now')
+`, videoID, job.ModelID, len(vec), vectorindex.FloatsToBlob(vec)); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("upsert video transcript embedding: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE index_jobs
+SET state = 'done', leased_until = NULL, lease_owner = NULL, last_error = NULL, updated_at = datetime('now')
+WHERE id = ?
+`, job.ID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("mark transcript job done: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit complete video transcript tx: %w", err)
+	}
 	return nil
 }
 
@@ -766,4 +944,21 @@ func isSQLiteLockError(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "database is busy")
+}
+
+func (q *Queue) claimableKindSQL() (string, string) {
+	kinds := []string{"'embed_image'"}
+	orderParts := []string{"WHEN 'embed_image' THEN 0"}
+	priority := 1
+	if q.Transcriber != nil {
+		kinds = append(kinds, "'transcribe_video'")
+		orderParts = append(orderParts, fmt.Sprintf("WHEN 'transcribe_video' THEN %d", priority))
+		priority++
+	}
+	if q.Annotator != nil {
+		kinds = append(kinds, "'annotate_image'")
+		orderParts = append(orderParts, fmt.Sprintf("WHEN 'annotate_image' THEN %d", priority))
+		priority++
+	}
+	return fmt.Sprintf("kind IN (%s)", strings.Join(kinds, ", ")), fmt.Sprintf("CASE kind %s ELSE %d END ASC, created_at ASC", strings.Join(orderParts, " "), priority)
 }

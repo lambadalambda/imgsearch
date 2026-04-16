@@ -1,6 +1,6 @@
 # 017: Video Transcript Search via Integrated Local ASR
 
-## Status: Investigated, Not Implemented
+## Status: Completed (Configuration-Gated)
 
 ## Goal
 
@@ -83,6 +83,22 @@ The decoder/joint model is stateful and expects:
 
 Outputs include logits plus updated recurrent state tensors.
 
+## Landed Feature
+
+The app now supports integrated video transcription with the Parakeet ONNX path when configured with:
+
+- `-parakeet-onnx-bundle-dir`
+- `-parakeet-onnxruntime-lib`
+
+When enabled:
+
+- newly uploaded videos enqueue a `transcribe_video` job
+- existing videos missing transcripts or transcript embeddings are backfilled at startup
+- the worker transcribes each video and stores `videos.transcript_text`
+- the transcript text is embedded with the active Qwen text embedder and stored in `video_transcript_embeddings`
+- text search merges frame-based video hits with transcript-embedding hits
+- the Videos tab shows transcript text
+
 ## Conclusion
 
 An integrated Go + ONNX Runtime path looks plausible, but the ONNX files alone are not enough.
@@ -130,4 +146,4 @@ It now supports:
 - optional audio extraction + feature generation
 - optional encoder execution on a local video fixture
 
-This remains a spike artifact, not part of the product feature yet.
+This command remains useful for debugging and inspection, but the underlying Parakeet ONNX path is now integrated into the product feature behind explicit runtime configuration.

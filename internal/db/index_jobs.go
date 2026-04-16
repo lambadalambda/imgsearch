@@ -64,6 +64,35 @@ WHERE NOT EXISTS (
 	return rows, nil
 }
 
+func EnsureVideoTranscriptJobsForModel(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
+	if db == nil {
+		return 0, fmt.Errorf("db is nil")
+	}
+	if modelID <= 0 {
+		return 0, fmt.Errorf("invalid model id")
+	}
+
+	res, err := db.ExecContext(ctx, `
+INSERT OR IGNORE INTO index_jobs(kind, image_id, video_id, model_id, state)
+SELECT 'transcribe_video', NULL, v.id, ?, 'pending'
+FROM videos v
+LEFT JOIN video_transcript_embeddings vte
+  ON vte.video_id = v.id
+ AND vte.model_id = ?
+WHERE trim(COALESCE(v.transcript_text, '')) = ''
+   OR vte.video_id IS NULL
+`, modelID, modelID)
+	if err != nil {
+		return 0, fmt.Errorf("ensure video transcript jobs for model %d: %w", modelID, err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected for video transcript jobs model %d: %w", modelID, err)
+	}
+	return rows, nil
+}
+
 func RequeueDoneJobsMissingAnnotations(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
 	if db == nil {
 		return 0, fmt.Errorf("db is nil")
@@ -126,6 +155,25 @@ func PurgeOtherModelIndexJobs(ctx context.Context, db *sql.DB, activeModelID int
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return 0, fmt.Errorf("rows affected while purging index jobs: %w", err)
+	}
+	return rows, nil
+}
+
+func PurgeOtherModelVideoTranscriptEmbeddings(ctx context.Context, db *sql.DB, activeModelID int64) (int64, error) {
+	if db == nil {
+		return 0, fmt.Errorf("db is nil")
+	}
+	if activeModelID <= 0 {
+		return 0, fmt.Errorf("invalid active model id")
+	}
+
+	res, err := db.ExecContext(ctx, `DELETE FROM video_transcript_embeddings WHERE model_id <> ?`, activeModelID)
+	if err != nil {
+		return 0, fmt.Errorf("purge video transcript embeddings for other models: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected while purging video transcript embeddings: %w", err)
 	}
 	return rows, nil
 }

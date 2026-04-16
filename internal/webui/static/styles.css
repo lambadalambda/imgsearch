@@ -472,6 +472,15 @@ input:focus-visible {
 	gap: 6px;
 }
 
+.transcript-wrap {
+	border-left: 2px solid color-mix(in oklab, var(--accent-soft) 70%, white 30%);
+	padding-left: 10px;
+}
+
+.transcript-text {
+	color: var(--ink);
+}
+
 .description-wrap[data-expanded="true"] .description {
 	display: block;
 	-webkit-line-clamp: unset;

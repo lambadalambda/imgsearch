@@ -309,6 +309,7 @@ func TestStoreCreatesVideoFramesAndEmbedJobs(t *testing.T) {
 	svc, sqlDB := setupService(t)
 	svc.VideoSampler = &fakeVideoSampler{durationMS: 12_000, width: 1920, height: 1080, frames: 3}
 	svc.VideoFrameCount = 3
+	svc.EnableVideoTranscripts = true
 
 	out, err := svc.Store(context.Background(), "clip.mp4", bytes.NewReader(mp4Bytes()))
 	if err != nil {
@@ -362,6 +363,14 @@ func TestStoreCreatesVideoFramesAndEmbedJobs(t *testing.T) {
 	}
 	if annotateCount != 0 {
 		t.Fatalf("expected 0 annotate jobs for video frames, got %d", annotateCount)
+	}
+
+	var transcribeCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'transcribe_video'`).Scan(&transcribeCount); err != nil {
+		t.Fatalf("count transcribe jobs: %v", err)
+	}
+	if transcribeCount != 1 {
+		t.Fatalf("expected 1 transcribe job for video, got %d", transcribeCount)
 	}
 
 	abs := filepath.Join(svc.DataDir, out.StoragePath)

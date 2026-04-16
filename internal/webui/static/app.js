@@ -257,9 +257,12 @@ function cardMarkup(item, mode) {
   const thumbURL = escapeHTML(toMediaURL(thumbPath));
   const mediaURL = escapeHTML(toMediaURL(item.storage_path));
   const description = typeof item.description === 'string' ? item.description.trim() : '';
+  const transcriptText = typeof item.transcript_text === 'string' ? item.transcript_text.trim() : '';
   const tags = Array.isArray(item.tags) ? item.tags.filter((tag) => typeof tag === 'string' && tag.trim() !== '').slice(0, 10) : [];
   const descriptionID = `description-${mode}-${Number(item.image_id) || 0}`;
+  const transcriptID = `transcript-${mode}-${Number(item.video_id) || Number(item.image_id) || 0}`;
   const canExpandDescription = shouldShowDescriptionToggle(description);
+  const canExpandTranscript = shouldShowDescriptionToggle(transcriptText);
   const status = item.index_state || 'done';
   const safeStatus = escapeHTML(status);
   const score = typeof item.distance === 'number' && !item.is_anchor ? `<p class="distance">distance ${item.distance.toFixed(4)}</p>` : '';
@@ -274,6 +277,12 @@ function cardMarkup(item, mode) {
     ? `<div class="description-wrap" data-expanded="false">
         <p id="${descriptionID}" class="description">${escapeHTML(description)}</p>
         ${canExpandDescription ? `<button type="button" class="description-toggle" aria-expanded="false" aria-controls="${descriptionID}">Show more</button>` : ''}
+      </div>`
+    : '';
+  const transcriptMarkup = transcriptText
+    ? `<div class="description-wrap transcript-wrap" data-expanded="false">
+        <p id="${transcriptID}" class="description transcript-text">${escapeHTML(transcriptText)}</p>
+        ${canExpandTranscript ? `<button type="button" class="description-toggle" aria-expanded="false" aria-controls="${transcriptID}">Show more</button>` : ''}
       </div>`
     : '';
   const tagsMarkup = tags.length > 0
@@ -301,6 +310,7 @@ function cardMarkup(item, mode) {
         <h3>${safeName}</h3>
         <p class="path">${safePath}</p>
         ${descriptionMarkup}
+        ${transcriptMarkup}
         ${tagsMarkup}
         ${videoMeta}
         <p class="${stateClass(status)}">${safeStatus}</p>

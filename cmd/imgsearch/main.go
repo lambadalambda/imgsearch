@@ -20,6 +20,8 @@ import (
 	"imgsearch/internal/live"
 	"imgsearch/internal/search"
 	"imgsearch/internal/stats"
+	"imgsearch/internal/transcribe"
+	"imgsearch/internal/transcribe/parakeetonnx"
 	"imgsearch/internal/upload"
 	"imgsearch/internal/vectorindex"
 	"imgsearch/internal/vectorindex/sqlitevector"
@@ -49,6 +51,9 @@ func main() {
 	llamaNativeImageMaxTokens := flag.Int("llama-native-image-max-tokens", 0, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
 	llamaNativeQueryInstruction := flag.String("llama-native-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp-native text query embeddings")
 	llamaNativePassageInstruction := flag.String("llama-native-passage-instruction", "Represent this image or text for retrieval.", "instruction used for llama-cpp-native image/document embeddings")
+	parakeetOnnxBundleDir := flag.String("parakeet-onnx-bundle-dir", strings.TrimSpace(os.Getenv("PARAKEET_ONNX_BUNDLE_DIR")), "directory containing the Parakeet ONNX bundle for video transcription")
+	parakeetOnnxRuntimeLib := flag.String("parakeet-onnxruntime-lib", strings.TrimSpace(os.Getenv("PARAKEET_ONNXRUNTIME_LIB")), "path to the ONNX Runtime shared library used for Parakeet video transcription")
+	parakeetOnnxCoreML := flag.Bool("parakeet-onnx-coreml", os.Getenv("PARAKEET_ONNX_COREML") == "1", "whether to request the CoreML execution provider for Parakeet ONNX video transcription")
 	enableAnnotations := flag.Bool("enable-annotations", true, "whether to load and run image annotation models")
 	llamaNativeAnnotatorModelPath := flag.String("llama-native-annotator-model-path", "", "optional path to a separate llama.cpp GGUF vision model used only for image descriptions/tags")
 	llamaNativeAnnotatorMMProjPath := flag.String("llama-native-annotator-mmproj-path", "", "optional path to a separate llama.cpp GGUF mmproj used only for image descriptions/tags")
@@ -202,6 +207,13 @@ func main() {
 	if purgedEmbeddings > 0 {
 		log.Printf("purged %d embeddings for inactive model versions", purgedEmbeddings)
 	}
+	purgedVideoTranscriptEmbeddings, err := db.PurgeOtherModelVideoTranscriptEmbeddings(context.Background(), sqlDB, modelID)
+	if err != nil {
+		log.Fatalf("purge old video transcript embeddings: %v", err)
+	}
+	if purgedVideoTranscriptEmbeddings > 0 {
+		log.Printf("purged %d video transcript embeddings for inactive model versions", purgedVideoTranscriptEmbeddings)
+	}
 	purgedJobs, err := db.PurgeOtherModelIndexJobs(context.Background(), sqlDB, modelID)
 	if err != nil {
 		log.Fatalf("purge old index jobs: %v", err)
@@ -250,6 +262,25 @@ func main() {
 		defer func() { _ = closer.Close() }()
 	}
 
+	var videoTranscriber transcribe.VideoTranscriber
+	if strings.TrimSpace(*parakeetOnnxBundleDir) != "" && strings.TrimSpace(*parakeetOnnxRuntimeLib) != "" {
+		videoTranscriber = &parakeetonnx.Recognizer{Config: parakeetonnx.RecognizerConfig{
+			ONNXRuntimeLib: strings.TrimSpace(*parakeetOnnxRuntimeLib),
+			BundleDir:      strings.TrimSpace(*parakeetOnnxBundleDir),
+			UseCoreML:      *parakeetOnnxCoreML,
+		}}
+		enqueuedTranscriptJobs, err := db.EnsureVideoTranscriptJobsForModel(context.Background(), sqlDB, modelID)
+		if err != nil {
+			log.Fatalf("ensure video transcript jobs: %v", err)
+		}
+		if enqueuedTranscriptJobs > 0 {
+			log.Printf("enqueued %d video transcript jobs for model_id=%d", enqueuedTranscriptJobs, modelID)
+		}
+		log.Printf("video transcription enabled via Parakeet ONNX bundle %s", strings.TrimSpace(*parakeetOnnxBundleDir))
+	} else {
+		log.Printf("video transcription disabled")
+	}
+
 	var imageAnnotator embedder.ImageAnnotator
 	canAnnotateImages := false
 	annotatorModelPath := strings.TrimSpace(*llamaNativeAnnotatorModelPath)
@@ -290,9 +321,10 @@ func main() {
 	}
 
 	uploadSvc := &upload.Service{
-		DB:      sqlDB,
-		DataDir: *dataDir,
-		ModelID: modelID,
+		DB:                     sqlDB,
+		DataDir:                *dataDir,
+		ModelID:                modelID,
+		EnableVideoTranscripts: videoTranscriber != nil,
 	}
 
 	queue := &worker.Queue{
@@ -301,7 +333,9 @@ func main() {
 		LeaseDuration:  30 * time.Second,
 		RetryBaseDelay: 5 * time.Second,
 		Embedder:       activeEmbedder,
+		TextEmbedder:   activeEmbedder,
 		Annotator:      imageAnnotator,
+		Transcriber:    videoTranscriber,
 		Index:          index,
 	}
 	log.Printf("imgsearch initialized with database %s", dbPath)

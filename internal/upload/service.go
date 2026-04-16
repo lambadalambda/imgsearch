@@ -120,11 +120,12 @@ func decodeDimensionsFromBytes(content []byte, mime string) (int, int, error) {
 }
 
 type Service struct {
-	DB              *sql.DB
-	DataDir         string
-	ModelID         int64
-	VideoFrameCount int
-	VideoSampler    VideoSampler
+	DB                     *sql.DB
+	DataDir                string
+	ModelID                int64
+	VideoFrameCount        int
+	VideoSampler           VideoSampler
+	EnableVideoTranscripts bool
 }
 
 type StoreResult struct {
@@ -249,7 +250,7 @@ ON CONFLICT(sha256) DO NOTHING
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO index_jobs(kind, image_id, model_id, state)
 VALUES('embed_image', ?, ?, 'pending')
-ON CONFLICT(kind, image_id, model_id) DO NOTHING
+ON CONFLICT DO NOTHING
 `, out.ImageID, s.ModelID); err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert index job: %w", err)
@@ -264,7 +265,7 @@ WHERE i.id = ?
     OR COALESCE(i.tags_json, '') = ''
     OR COALESCE(i.tags_json, '[]') = '[]'
   )
-ON CONFLICT(kind, image_id, model_id) DO NOTHING
+ON CONFLICT DO NOTHING
 `, s.ModelID, out.ImageID); err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert annotation job: %w", err)
@@ -350,13 +351,23 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?)
 	}
 
 	for _, frame := range sample.Frames {
-		renamed, err := s.storeVideoFrameTx(ctx, tx, out.VideoID, frame)
+		_, renamed, err := s.storeVideoFrameTx(ctx, tx, out.VideoID, frame)
 		if err != nil {
 			_ = tx.Rollback()
 			return StoreResult{}, err
 		}
 		if renamed != "" {
 			renamedPaths = append(renamedPaths, renamed)
+		}
+	}
+	if s.EnableVideoTranscripts {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO index_jobs(kind, image_id, video_id, model_id, state)
+VALUES('transcribe_video', NULL, ?, ?, 'pending')
+ON CONFLICT DO NOTHING
+`, out.VideoID, s.ModelID); err != nil {
+			_ = tx.Rollback()
+			return StoreResult{}, fmt.Errorf("insert transcribe job: %w", err)
 		}
 	}
 
@@ -373,10 +384,10 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?)
 	return out, nil
 }
 
-func (s *Service) storeVideoFrameTx(ctx context.Context, tx *sql.Tx, videoID int64, frame SampledFrame) (string, error) {
+func (s *Service) storeVideoFrameTx(ctx context.Context, tx *sql.Tx, videoID int64, frame SampledFrame) (int64, string, error) {
 	content, err := os.ReadFile(frame.Path)
 	if err != nil {
-		return "", fmt.Errorf("read sampled frame: %w", err)
+		return 0, "", fmt.Errorf("read sampled frame: %w", err)
 	}
 	header := content
 	if len(header) > 512 {
@@ -384,11 +395,11 @@ func (s *Service) storeVideoFrameTx(ctx context.Context, tx *sql.Tx, videoID int
 	}
 	mime := resolveMime(header, http.DetectContentType(header))
 	if !isSupportedImageMime(mime) {
-		return "", ErrUnsupportedFormat
+		return 0, "", ErrUnsupportedFormat
 	}
 	width, height, err := decodeDimensionsFromBytes(content, mime)
 	if err != nil {
-		return "", err
+		return 0, "", err
 	}
 
 	hash := sha256.Sum256(content)
@@ -402,22 +413,22 @@ VALUES(?, ?, ?, ?, ?, ?)
 ON CONFLICT(sha256) DO NOTHING
 `, digest, filepath.Base(frame.Path), storageRel, mime, width, height)
 	if err != nil {
-		return "", fmt.Errorf("insert sampled frame image: %w", err)
+		return 0, "", fmt.Errorf("insert sampled frame image: %w", err)
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
-		return "", fmt.Errorf("sampled frame rows affected: %w", err)
+		return 0, "", fmt.Errorf("sampled frame rows affected: %w", err)
 	}
 
 	var imageID int64
 	if rows > 0 {
 		imageID, err = res.LastInsertId()
 		if err != nil {
-			return "", fmt.Errorf("sampled frame last insert id: %w", err)
+			return 0, "", fmt.Errorf("sampled frame last insert id: %w", err)
 		}
 	} else {
 		if err := tx.QueryRowContext(ctx, `SELECT id FROM images WHERE sha256 = ?`, digest).Scan(&imageID); err != nil {
-			return "", fmt.Errorf("load sampled frame image: %w", err)
+			return 0, "", fmt.Errorf("load sampled frame image: %w", err)
 		}
 	}
 
@@ -425,25 +436,25 @@ ON CONFLICT(sha256) DO NOTHING
 INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
 VALUES(?, ?, ?, ?)
 `, videoID, imageID, frame.FrameIndex, frame.TimestampMS); err != nil {
-		return "", fmt.Errorf("insert video frame: %w", err)
+		return 0, "", fmt.Errorf("insert video frame: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO index_jobs(kind, image_id, model_id, state)
 VALUES('embed_image', ?, ?, 'pending')
-ON CONFLICT(kind, image_id, model_id) DO NOTHING
+ON CONFLICT DO NOTHING
 `, imageID, s.ModelID); err != nil {
-		return "", fmt.Errorf("insert sampled frame embed job: %w", err)
+		return 0, "", fmt.Errorf("insert sampled frame embed job: %w", err)
 	}
 
 	if rows > 0 {
 		if err := os.Rename(frame.Path, storageAbs); err != nil {
-			return "", fmt.Errorf("move sampled frame to storage: %w", err)
+			return 0, "", fmt.Errorf("move sampled frame to storage: %w", err)
 		}
-		return storageAbs, nil
+		return imageID, storageAbs, nil
 	}
 
 	if err := os.Remove(frame.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("remove duplicate sampled frame temp file: %w", err)
+		return 0, "", fmt.Errorf("remove duplicate sampled frame temp file: %w", err)
 	}
-	return "", nil
+	return imageID, "", nil
 }
