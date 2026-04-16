@@ -18,7 +18,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 ## Performance Optimization
 
 - [x] P0 Enable Flash Attention and tune llama.cpp context parameters: `docs/issues/011-flash-attention-and-context-tuning.md`
-- [ ] P1 Eliminate double image preprocessing round-trip: `docs/issues/012-eliminate-double-preprocessing.md`
+- [x] P1 Eliminate double image preprocessing round-trip: `docs/issues/012-eliminate-double-preprocessing.md` (cancelled: benchmarked 36% slower on M2 Max, raw pixels 16x larger than JPEG)
 - [ ] P2 Batch job claiming at the queue level: `docs/issues/013-batch-job-claiming.md`
 - [ ] P2 Batched embedding inference via multi-sequence llama.cpp: `docs/issues/014-batched-embedding-inference.md`
 - [ ] P3 Pipeline CPU preprocessing with GPU inference: `docs/issues/015-pipeline-cpu-gpu-overlap.md`
