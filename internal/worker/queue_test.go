@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -416,6 +417,295 @@ WHERE id = 1
 	if state != "done" {
 		t.Fatalf("expected done after reclaim, got %s", state)
 	}
+}
+
+func setupMultiImageQueue(t *testing.T, imageCount int) (*Queue, *sql.DB) {
+	t.Helper()
+
+	sqlDB, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	if err := db.RunMigrations(context.Background(), sqlDB); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
+	modelID, err := db.EnsureEmbeddingModel(context.Background(), sqlDB, db.EmbeddingModelSpec{
+		Name:       "test-model",
+		Version:    "v1",
+		Dimensions: 4,
+		Metric:     "cosine",
+		Normalized: true,
+	})
+	if err != nil {
+		t.Fatalf("ensure model: %v", err)
+	}
+
+	dataDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataDir, "images"), 0o755); err != nil {
+		t.Fatalf("mkdir images dir: %v", err)
+	}
+
+	for i := 1; i <= imageCount; i++ {
+		sha := fmt.Sprintf("sha%d", i)
+		name := fmt.Sprintf("img%d.jpg", i)
+		storagePath := fmt.Sprintf("images/%s", sha)
+		if _, err := sqlDB.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES (?, ?, ?, ?, 'image/jpeg', 10, 10)
+`, int64(i), sha, name, storagePath); err != nil {
+			t.Fatalf("insert image %d: %v", i, err)
+		}
+		if err := os.WriteFile(filepath.Join(dataDir, "images", sha), []byte("test"), 0o644); err != nil {
+			t.Fatalf("write image file %d: %v", i, err)
+		}
+		if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(kind, image_id, model_id, state)
+VALUES ('embed_image', ?, ?, 'pending')
+`, int64(i), modelID); err != nil {
+			t.Fatalf("insert job %d: %v", i, err)
+		}
+	}
+
+	q := &Queue{
+		DB:            sqlDB,
+		DataDir:       dataDir,
+		LeaseDuration: 30 * time.Second,
+		Embedder:      &fakeEmbedder{vec: []float32{1, 2, 3, 4}},
+		Index:         &fakeIndex{db: sqlDB},
+	}
+
+	return q, sqlDB
+}
+
+func TestClaimBatchClaimsUpToLimitJobsOfSameKind(t *testing.T) {
+	q, _ := setupMultiImageQueue(t, 5)
+
+	jobs, err := q.claimBatch(context.Background(), "worker-1", 3)
+	if err != nil {
+		t.Fatalf("claim batch: %v", err)
+	}
+	if len(jobs) != 3 {
+		t.Fatalf("expected 3 jobs, got %d", len(jobs))
+	}
+	for _, j := range jobs {
+		if j.Kind != "embed_image" {
+			t.Fatalf("expected embed_image kind, got %s", j.Kind)
+		}
+		if j.Attempts != 1 {
+			t.Fatalf("expected attempts=1, got %d", j.Attempts)
+		}
+	}
+}
+
+func TestClaimBatchReturnsFewerWhenNotEnoughEligible(t *testing.T) {
+	q, _ := setupMultiImageQueue(t, 2)
+
+	jobs, err := q.claimBatch(context.Background(), "worker-1", 5)
+	if err != nil {
+		t.Fatalf("claim batch: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("expected 2 jobs, got %d", len(jobs))
+	}
+}
+
+func TestClaimBatchReturnsEmptyWhenNoEligibleJobs(t *testing.T) {
+	q, _ := setupMultiImageQueue(t, 2)
+
+	_, _ = q.claimBatch(context.Background(), "worker-1", 10)
+
+	jobs, err := q.claimBatch(context.Background(), "worker-1", 5)
+	if err != nil {
+		t.Fatalf("claim batch: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("expected 0 jobs, got %d", len(jobs))
+	}
+}
+
+func TestClaimBatchAllLeasedWithSameOwner(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 3)
+
+	jobs, err := q.claimBatch(context.Background(), "batch-worker", 3)
+	if err != nil {
+		t.Fatalf("claim batch: %v", err)
+	}
+	if len(jobs) != 3 {
+		t.Fatalf("expected 3 jobs, got %d", len(jobs))
+	}
+
+	for _, j := range jobs {
+		var owner string
+		var state string
+		if err := sqlDB.QueryRow(`SELECT lease_owner, state FROM index_jobs WHERE id = ?`, j.ID).Scan(&owner, &state); err != nil {
+			t.Fatalf("select job %d: %v", j.ID, err)
+		}
+		if owner != "batch-worker" {
+			t.Fatalf("expected owner batch-worker, got %s", owner)
+		}
+		if state != "leased" {
+			t.Fatalf("expected state leased, got %s", state)
+		}
+	}
+}
+
+func TestClaimBatchSkipsExpiredLeasesAndPendingOnly(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 4)
+
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'leased', leased_until = datetime('now', '-1 minute') WHERE image_id = 1`); err != nil {
+		t.Fatalf("expire lease: %v", err)
+	}
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE image_id = 2`); err != nil {
+		t.Fatalf("mark done: %v", err)
+	}
+
+	jobs, err := q.claimBatch(context.Background(), "worker-1", 4)
+	if err != nil {
+		t.Fatalf("claim batch: %v", err)
+	}
+	if len(jobs) != 3 {
+		t.Fatalf("expected 3 jobs (1 expired lease + 2 pending, skipping 1 done), got %d", len(jobs))
+	}
+}
+
+func TestClaimBatchWithAnnotatorClaimsEmbedFirst(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 3)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE image_id = 1`); err != nil {
+		t.Fatalf("mark done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(kind, image_id, model_id, state)
+VALUES ('annotate_image', 1, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate job: %v", err)
+	}
+	q.Annotator = &fakeAnnotator{annotation: embedder.ImageAnnotation{Description: "desc", Tags: []string{"t"}}}
+
+	jobs, err := q.claimBatch(context.Background(), "worker-1", 5)
+	if err != nil {
+		t.Fatalf("claim batch: %v", err)
+	}
+	if len(jobs) < 2 {
+		t.Fatalf("expected at least 2 jobs, got %d", len(jobs))
+	}
+	for _, j := range jobs {
+		if j.Kind != "embed_image" {
+			t.Fatalf("expected all batched jobs to be embed_image, got %s", j.Kind)
+		}
+	}
+}
+
+func TestProcessBatchProcessesMultipleJobs(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 5)
+
+	count, err := q.ProcessBatch(context.Background(), "worker-1", 3)
+	if err != nil {
+		t.Fatalf("process batch: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 processed, got %d", count)
+	}
+
+	var doneCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE state = 'done'`).Scan(&doneCount); err != nil {
+		t.Fatalf("count done: %v", err)
+	}
+	if doneCount != 3 {
+		t.Fatalf("expected 3 done jobs, got %d", doneCount)
+	}
+
+	var pendingCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE state = 'pending'`).Scan(&pendingCount); err != nil {
+		t.Fatalf("count pending: %v", err)
+	}
+	if pendingCount != 2 {
+		t.Fatalf("expected 2 pending jobs, got %d", pendingCount)
+	}
+}
+
+func TestProcessBatchReturnsZeroWhenEmpty(t *testing.T) {
+	q, _ := setupMultiImageQueue(t, 0)
+
+	count, err := q.ProcessBatch(context.Background(), "worker-1", 5)
+	if err != nil {
+		t.Fatalf("process batch: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 processed, got %d", count)
+	}
+}
+
+func TestProcessBatchContinuesOnSingleJobFailure(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 3)
+
+	if _, err := sqlDB.Exec(`DELETE FROM image_embeddings WHERE image_id = 2`); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	q.Index = &failingAtIndex{failAtImageID: 2, db: sqlDB}
+
+	count, err := q.ProcessBatch(context.Background(), "worker-1", 3)
+	if err != nil {
+		t.Fatalf("process batch: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 processed (skipping 1 failure), got %d", count)
+	}
+
+	var doneCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE state = 'done'`).Scan(&doneCount); err != nil {
+		t.Fatalf("count done: %v", err)
+	}
+	if doneCount != 2 {
+		t.Fatalf("expected 2 done jobs, got %d", doneCount)
+	}
+
+	var pendingCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE state = 'pending'`).Scan(&pendingCount); err != nil {
+		t.Fatalf("count pending: %v", err)
+	}
+	if pendingCount != 1 {
+		t.Fatalf("expected 1 pending job (retried), got %d", pendingCount)
+	}
+}
+
+type failingAtIndex struct {
+	failAtImageID int64
+	db            *sql.DB
+	upserts       int
+}
+
+func (f *failingAtIndex) Upsert(_ context.Context, imageID int64, modelID int64, vec []float32) error {
+	if imageID == f.failAtImageID {
+		return errors.New("index unavailable")
+	}
+	if f.db != nil {
+		if _, err := f.db.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(image_id, model_id)
+DO UPDATE SET
+  dim = excluded.dim,
+  vector_blob = excluded.vector_blob,
+  updated_at = datetime('now')
+`, imageID, modelID, len(vec), vectorindex.FloatsToBlob(vec)); err != nil {
+			return err
+		}
+	}
+	f.upserts++
+	return nil
+}
+
+func (f *failingAtIndex) Delete(context.Context, int64, int64) error { return nil }
+
+func (f *failingAtIndex) Search(context.Context, int64, []float32, int) ([]vectorindex.SearchHit, error) {
+	return nil, nil
+}
+
+func (f *failingAtIndex) SearchByImageID(context.Context, int64, int64, int) ([]vectorindex.SearchHit, error) {
+	return nil, nil
 }
 
 func TestProcessOneSetsRunAfterWhenRetryDelayConfigured(t *testing.T) {

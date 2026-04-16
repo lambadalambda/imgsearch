@@ -1,78 +1,92 @@
 # 013: Batch Job Claiming at the Queue Level
 
+## Status: Completed (Infrastructure)
+
 ## Context
 
-The worker currently claims one job at a time via `claimNext()` (`internal/worker/queue.go:175-255`). Each claim is a SELECT + UPDATE transaction. Between jobs, there's a 500ms idle poll (`internal/worker/runner.go:21`). When processing a batch of images (e.g., after a bulk upload), this means:
+The worker currently claims one job at a time via `claimNext()` (`internal/worker/queue.go`). Each claim is a SELECT + UPDATE transaction. Between jobs, there's a 500ms idle poll (`internal/worker/runner.go`). When processing a batch of images (e.g., after a bulk upload), this means:
 
 1. Claim one job → process it → claim next → 500ms idle if queue appears empty momentarily → repeat
 2. Each claim is a SQLite transaction, adding overhead per image
 3. When switching between embed and annotate job kinds, models may need to reload if running separately (though currently both are kept resident)
 
-Claiming multiple jobs of the same kind in one transaction would reduce per-image overhead and keep the model "hot" across consecutive jobs without idle gaps.
+Claiming multiple jobs of the same kind in one transaction reduces per-image queue overhead and keeps the model hot across consecutive jobs without idle gaps. In practice, this mostly prepares the worker for issue 014 rather than delivering a strong standalone throughput win.
 
-## Proposed Changes
+## Changes Made
 
 ### A. Batch claim endpoint
-Add a `claimBatch(ctx, owner, limit)` method that claims N jobs of the same kind in one transaction:
-
-```sql
-SELECT id, kind, image_id, model_id, attempts, max_attempts
-FROM index_jobs
-WHERE kind = ?
-  AND (state = 'pending' OR ...)
-ORDER BY created_at ASC
-LIMIT ?
-```
-
-Then UPDATE all claimed rows in the same transaction.
+Added `claimBatch(ctx, owner, limit)` method in `internal/worker/queue.go` that claims up to N jobs of the **same kind** in one transaction:
+- Queries eligible jobs (pending or expired leases), ordered by embed_image priority then created_at
+- Filters to a single job kind (whichever kind appears first in priority order)
+- Updates all claimed rows in one transaction with the same lease owner/duration
+- Returns the claimed jobs with their current state
 
 ### B. Batch-aware worker loop
-Modify `ProcessOne` to accept a batch of claimed jobs and process them sequentially (or batched, if issue 014 is also done). The worker loop calls `claimBatch` instead of `claimNext`.
+Added `ProcessBatch(ctx, owner, batchSize)` method that:
+- Calls `claimBatch` to claim a batch of same-kind jobs
+- Processes each job sequentially via `processJob` (extracted helper)
+- Continues processing remaining jobs if one fails
+- Returns the count of successfully processed jobs
+
+Added `RunLoopBatch(ctx, q, owner, idleDelay, batchSize)` in `runner.go`:
+- `batchSize > 1` uses `ProcessBatch`
+- `batchSize == 1` uses existing `ProcessOne` (backward compatible)
+- `RunLoop` preserved as a thin wrapper calling `RunLoopBatch` with batchSize=1
 
 ### C. Configurable batch size
-Add a `-worker-batch-size` flag (default 4-8 for embedding, 1-2 for annotation). Tune based on available VRAM after issue 011 frees up context memory.
+Added `-worker-batch-size` flag (default 1, meaning no batching by default). This enables opt-in batch processing and is ready for issue 014 (batched inference) which will set a higher default.
 
 ### D. Batch DB writes
-For embedding jobs, collect all vectors from a batch and upsert them in one transaction instead of one at a time.
+Deferred to issue 014. Currently each job in a batch completes individually.
 
-## Risks
+## Benchmark Results
 
-- Claiming too many jobs at once risks stale leases if the worker crashes mid-batch. The existing lease expiry mechanism handles this (leases expire after 30s), but a batch of 8 embedding jobs at ~200ms each = 1.6s, well within the lease window.
-- Batch claiming changes the failure semantics: if job 5 of 8 fails, jobs 6-8 are still leased and will need to wait for lease expiry. This is acceptable given the short processing times.
-- SQLite single-connection constraint means batch writes still serialize, but grouping them in one transaction is faster than N separate transactions.
+Benchmarked with the real native embedder on 100 random images copied from `~/old`, with `-enable-annotations=false` and `-vector-backend=bruteforce`. Timing was measured from the first `worker claimed job` log line to the last `worker completed job` log line.
+
+### Dataset setup
+
+```bash
+mkdir -p /tmp/imgsearch-bench-data && shuf -zn 100 -e ~/old/* | xargs -0 -I{} cp "{}" /tmp/imgsearch-bench-data/
+```
+
+### Results
+
+- `batch_size=1`
+  - run 1: 82s
+  - run 2: 92s
+  - average: 87s
+- `batch_size=4`
+  - run 1: 78s
+- `batch_size=8`
+  - run 1: 103s
+  - run 2: 82s
+  - average: 92.5s
+
+### Conclusion
+
+- Queue-level batching alone does not show a clear, reliable end-to-end speedup with the real embedder on this M2 Max benchmark.
+- A separate DB-only microbenchmark still showed lower queue overhead from batching, but that saving is too small to materially affect the full embedding pipeline where GPU inference dominates.
+- `batch_size=4` looked promising in one run, but the overall result is best treated as neutral until issue 014 adds actual batched inference.
+- This issue should be viewed as groundwork for issue 014, not as a standalone performance win.
 
 ## Acceptance Criteria
 
-- [ ] `claimBatch` method implemented with configurable batch size
-- [ ] Worker loop uses batch claiming
-- [ ] Queue stats endpoint reflects batch processing accurately
-- [ ] Existing job retry and lease expiry still work correctly
-- [ ] Reduced idle time between consecutive jobs of the same kind
-- [ ] Integration test: bulk upload of 20 images processes faster than before
+- [x] `claimBatch` method implemented with configurable batch size
+- [x] Worker loop uses batch claiming (opt-in via `-worker-batch-size` flag)
+- [x] Existing job retry and lease expiry still work correctly (19/19 tests pass)
+- [x] Reduced idle time between consecutive jobs of the same kind (batch claims eliminate per-job claim latency and idle polls within a batch)
+- [ ] Queue stats endpoint reflects batch processing accurately (deferred, not critical)
+- [ ] Integration test: bulk upload of 20 images processes faster than before (not demonstrated here; defer meaningful throughput gains to issue 014)
 
-## Priority
+## Risks (Mitigated)
 
-Medium. This is a prerequisite for issue 014 (batched inference) and improves throughput even without it by reducing per-job overhead. Also reduces the 500ms idle gaps between jobs.
+- Claiming too many jobs at once risks stale leases if the worker crashes mid-batch. The existing lease expiry mechanism handles this (leases expire after 30s). A batch of 8 embedding jobs at ~530ms each = ~4.2s, well within the 30s lease window.
+- Batch claiming changes the failure semantics: if job 5 of 8 fails, jobs 6-8 are still leased and will be processed. The failed job is retried via `failOrRetry`. This is acceptable given the short processing times.
+- SQLite single-connection constraint means batch writes still serialize, but the batch claim reduces N separate claim transactions to 1.
 
-## Benchmarking Protocol
+## Files Changed
 
-### Baseline (before changes)
-1. Upload 100 images and record:
-   - Total time from first job claimed to last job completed
-   - Number of idle gaps (500ms polls between jobs) visible in logs
-   - Total DB transaction count (each claim + complete = 2 transactions per job)
-2. Record per-job `complete` (DB write) timing from worker logs.
-
-### After changes
-1. Same 100-image dataset.
-2. Record same metrics plus: batch claim size distribution, time between consecutive jobs of the same kind.
-3. Compare total end-to-end time.
-
-### Success criteria
-- Fewer total DB transactions (batch claim reduces round-trips)
-- Reduced or eliminated idle gaps between same-kind jobs
-- Total end-to-end time for 100 images measurably faster
-
-## Estimated Effort
-
-Medium. Changes to `queue.go` (new claim method, batch processing), `runner.go` (loop changes), and `main.go` (new flag). ~100-150 lines changed. Tests for the new claim semantics.
+- `internal/worker/queue.go` — added `claimBatch`, `ProcessBatch`, `processJob`
+- `internal/worker/queue_test.go` — added 10 new tests for batch claiming and batch processing
+- `internal/worker/runner.go` — added `RunLoopBatch`, `RunLoop` delegates to it
+- `cmd/imgsearch/main.go` — added `-worker-batch-size` flag, uses `RunLoopBatch`

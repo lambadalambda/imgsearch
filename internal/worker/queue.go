@@ -254,6 +254,285 @@ WHERE id = ?
 	return job, true, nil
 }
 
+func (q *Queue) claimBatch(ctx context.Context, owner string, limit int) ([]claimedJob, error) {
+	if limit <= 0 {
+		limit = 1
+	}
+
+	tx, err := q.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin claim batch tx: %w", err)
+	}
+
+	kindFilter := "kind = 'embed_image'"
+	if q.Annotator != nil {
+		kindFilter = "kind IN ('embed_image', 'annotate_image')"
+	}
+
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`
+SELECT id, kind FROM index_jobs
+WHERE %s
+  AND (run_after IS NULL OR run_after <= datetime('now'))
+  AND (
+    state = 'pending'
+    OR (state = 'leased' AND leased_until IS NOT NULL AND leased_until <= datetime('now'))
+  )
+ORDER BY CASE kind WHEN 'embed_image' THEN 0 ELSE 1 END ASC, created_at ASC
+LIMIT ?
+`, kindFilter), limit)
+	if err != nil {
+		_ = tx.Rollback()
+		if isSQLiteLockError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("select claimable jobs: %w", err)
+	}
+
+	type idKind struct {
+		id   int64
+		kind string
+	}
+	var candidates []idKind
+	for rows.Next() {
+		var ik idKind
+		if err := rows.Scan(&ik.id, &ik.kind); err != nil {
+			_ = rows.Close()
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("scan claimable job: %w", err)
+		}
+		candidates = append(candidates, ik)
+	}
+	_ = rows.Close()
+
+	if len(candidates) == 0 {
+		_ = tx.Rollback()
+		return nil, nil
+	}
+
+	chosenKind := candidates[0].kind
+	var filtered []idKind
+	for _, c := range candidates {
+		if c.kind == chosenKind {
+			filtered = append(filtered, c)
+		}
+	}
+
+	leaseSeconds := int(q.LeaseDuration.Seconds())
+	if leaseSeconds <= 0 {
+		leaseSeconds = 30
+	}
+
+	placeholders := make([]string, len(filtered))
+	args := make([]any, 0, len(filtered)*3+1)
+	for i, f := range filtered {
+		placeholders[i] = "?"
+		args = append(args, owner, fmt.Sprintf("+%d seconds", leaseSeconds), f.id)
+	}
+
+	query := fmt.Sprintf(`
+UPDATE index_jobs
+SET state = 'leased',
+    attempts = attempts + 1,
+    lease_owner = ?,
+    leased_until = datetime('now', ?),
+    updated_at = datetime('now')
+WHERE id = ?
+  AND (
+    state = 'pending'
+    OR (state = 'leased' AND leased_until IS NOT NULL AND leased_until <= datetime('now'))
+  )
+`)
+	var updateQuery strings.Builder
+	updateQuery.WriteString("UPDATE index_jobs SET state = 'leased', attempts = attempts + 1, lease_owner = ?, leased_until = datetime('now', ?), updated_at = datetime('now') WHERE id = ? AND (state = 'pending' OR (state = 'leased' AND leased_until IS NOT NULL AND leased_until <= datetime('now')))")
+	for i := 1; i < len(filtered); i++ {
+		updateQuery.WriteString(";\n")
+		updateQuery.WriteString(query)
+		args = append(args, owner, fmt.Sprintf("+%d seconds", leaseSeconds), filtered[i].id)
+	}
+
+	_, err = tx.ExecContext(ctx, updateQuery.String(), args...)
+	if err != nil {
+		_ = tx.Rollback()
+		if isSQLiteLockError(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("update claimed batch: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit claim batch tx: %w", err)
+	}
+
+	idArgs := make([]any, len(filtered))
+	for i, f := range filtered {
+		idArgs[i] = f.id
+	}
+	ph := make([]string, len(filtered))
+	for i := range ph {
+		ph[i] = "?"
+	}
+
+	var jobs []claimedJob
+	jobRows, err := q.DB.QueryContext(ctx, fmt.Sprintf(`
+SELECT id, kind, image_id, model_id, attempts, max_attempts
+FROM index_jobs
+WHERE id IN (%s)
+ORDER BY created_at ASC
+`, strings.Join(ph, ",")), idArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("select claimed jobs: %w", err)
+	}
+	for jobRows.Next() {
+		var j claimedJob
+		if err := jobRows.Scan(&j.ID, &j.Kind, &j.ImageID, &j.ModelID, &j.Attempts, &j.MaxAttempts); err != nil {
+			_ = jobRows.Close()
+			return nil, fmt.Errorf("scan claimed job: %w", err)
+		}
+		jobs = append(jobs, j)
+	}
+	_ = jobRows.Close()
+
+	return jobs, nil
+}
+
+func (q *Queue) ProcessBatch(ctx context.Context, owner string, batchSize int) (int, error) {
+	if q == nil || q.DB == nil {
+		return 0, fmt.Errorf("queue db is nil")
+	}
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+
+	jobs, err := q.claimBatch(ctx, owner, batchSize)
+	if err != nil {
+		return 0, err
+	}
+	if len(jobs) == 0 {
+		return 0, nil
+	}
+
+	processed := 0
+	for _, job := range jobs {
+		if err := ctx.Err(); err != nil {
+			return processed, err
+		}
+		if q.processJob(ctx, owner, job) {
+			processed++
+		}
+	}
+	return processed, nil
+}
+
+func (q *Queue) processJob(ctx context.Context, owner string, job claimedJob) bool {
+	log.Printf("worker claimed job id=%d kind=%s image_id=%d attempt=%d/%d", job.ID, job.Kind, job.ImageID, job.Attempts, job.MaxAttempts)
+	jobStartedAt := time.Now()
+	var loadTaskDataDuration time.Duration
+	var statDuration time.Duration
+	var embedDuration time.Duration
+	var annotateDuration time.Duration
+	var completeDuration time.Duration
+	var indexDuration time.Duration
+
+	stageStartedAt := time.Now()
+	storagePath, needsAnnotations, err := q.loadImageTaskData(ctx, job.ImageID)
+	loadTaskDataDuration = time.Since(stageStartedAt)
+	if err != nil {
+		_ = q.failOrRetry(ctx, job, err)
+		return false
+	}
+
+	absPath := filepath.Join(q.DataDir, filepath.FromSlash(storagePath))
+	stageStartedAt = time.Now()
+	if _, err := os.Stat(absPath); err != nil {
+		statDuration = time.Since(stageStartedAt)
+		_ = q.failOrRetry(ctx, job, fmt.Errorf("stat image file: %w", err))
+		return false
+	}
+	statDuration = time.Since(stageStartedAt)
+
+	var annotation *embedder.ImageAnnotation
+	annotationAttempted := false
+	annotationStored := false
+	annotationErrText := ""
+
+	switch job.Kind {
+	case "embed_image":
+		stageStartedAt = time.Now()
+		vec, err := q.Embedder.EmbedImage(ctx, absPath)
+		embedDuration = time.Since(stageStartedAt)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return false
+		}
+
+		if len(vec) == 0 {
+			_ = q.failOrRetry(ctx, job, fmt.Errorf("empty embedding vector"))
+			return false
+		}
+
+		stageStartedAt = time.Now()
+		if err := q.Index.Upsert(ctx, job.ImageID, job.ModelID, vec); err != nil {
+			indexDuration = time.Since(stageStartedAt)
+			_ = q.failOrRetry(ctx, job, err)
+			return false
+		}
+		indexDuration = time.Since(stageStartedAt)
+	case "annotate_image":
+		if !needsAnnotations {
+			break
+		}
+		if q.Annotator == nil {
+			return false
+		}
+		annotationAttempted = true
+		stageStartedAt = time.Now()
+		generated, err := q.Annotator.AnnotateImage(ctx, absPath)
+		annotateDuration = time.Since(stageStartedAt)
+		if err != nil {
+			annotationErrText = err.Error()
+			_ = q.failOrRetry(ctx, job, err)
+			return false
+		}
+		annotation = &generated
+		annotationStored = true
+	default:
+		_ = q.failOrRetry(ctx, job, fmt.Errorf("unsupported job kind %q", job.Kind))
+		return false
+	}
+
+	stageStartedAt = time.Now()
+	if err := q.completeJob(ctx, job, annotation); err != nil {
+		completeDuration = time.Since(stageStartedAt)
+		_ = q.failOrRetry(ctx, job, err)
+		return false
+	}
+	completeDuration = time.Since(stageStartedAt)
+
+	annotationErrSuffix := ""
+	if annotationErrText != "" {
+		annotationErrSuffix = fmt.Sprintf(" annotation_error=%q", annotationErrText)
+	}
+	log.Printf(
+		"worker completed job id=%d kind=%s image_id=%d total=%s load=%s stat=%s embed=%s annotate=%s db=%s index=%s annotations_needed=%t annotation_attempted=%t annotation_stored=%t%s",
+		job.ID,
+		job.Kind,
+		job.ImageID,
+		time.Since(jobStartedAt).Round(time.Millisecond),
+		loadTaskDataDuration.Round(time.Millisecond),
+		statDuration.Round(time.Millisecond),
+		embedDuration.Round(time.Millisecond),
+		annotateDuration.Round(time.Millisecond),
+		completeDuration.Round(time.Millisecond),
+		indexDuration.Round(time.Millisecond),
+		needsAnnotations,
+		annotationAttempted,
+		annotationStored,
+		annotationErrSuffix,
+	)
+
+	return true
+}
+
 func (q *Queue) loadImageTaskData(ctx context.Context, imageID int64) (string, bool, error) {
 	var storagePath string
 	var needsAnnotations int

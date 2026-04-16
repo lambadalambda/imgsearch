@@ -31,6 +31,7 @@ func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
 	modeFlag := flag.String("mode", string(runtimeModeAll), "process mode: all, api, or worker")
+	workerBatchSize := flag.Int("worker-batch-size", 1, "number of jobs to claim per batch (1 disables batching)")
 	llamaNativeModelPath := flag.String("llama-native-model-path", defaultLlamaNativeModelPath, "path to the llama.cpp GGUF embedding model")
 	llamaNativeMMProjPath := flag.String("llama-native-mmproj-path", defaultLlamaNativeMMProjPath, "path to the llama.cpp GGUF mmproj model")
 	llamaNativeDimensions := flag.Int("llama-native-dimensions", defaultLlamaNativeDimensions, "embedding dimensions for llama-cpp-native model metadata")
@@ -306,9 +307,9 @@ func main() {
 
 	if mode.startsWorker() {
 		if mode.startsHTTP() {
-			go worker.RunLoop(context.Background(), queue, "main-worker", 500*time.Millisecond)
+			go worker.RunLoopBatch(context.Background(), queue, "main-worker", 500*time.Millisecond, *workerBatchSize)
 		} else {
-			worker.RunLoop(context.Background(), queue, "main-worker", 500*time.Millisecond)
+			worker.RunLoopBatch(context.Background(), queue, "main-worker", 500*time.Millisecond, *workerBatchSize)
 			return
 		}
 	}
