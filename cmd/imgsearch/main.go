@@ -280,6 +280,9 @@ func main() {
 			BundleDir:      resolvedParakeetBundleDir,
 			UseCoreML:      *parakeetOnnxCoreML,
 		}}
+		if closer, ok := videoTranscriber.(interface{ Close() error }); ok {
+			defer func() { _ = closer.Close() }()
+		}
 		enqueuedTranscriptJobs, err := db.EnsureVideoTranscriptJobsForModel(context.Background(), sqlDB, modelID)
 		if err != nil {
 			log.Fatalf("ensure video transcript jobs: %v", err)

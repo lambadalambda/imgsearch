@@ -98,6 +98,13 @@ When enabled:
 - the transcript text is embedded with the active Qwen text embedder and stored in `video_transcript_embeddings`
 - text search merges frame-based video hits with transcript-embedding hits
 - the Videos tab shows transcript text
+- the recommended runtime mode is the default CPU ONNX Runtime path with persistent reused sessions
+
+## Runtime Notes
+
+- The recognizer now keeps the Parakeet encoder and decoder sessions resident and reuses them across jobs. This avoids large per-video model/session reload spikes and materially improves throughput.
+- The CoreML execution provider is currently considered experimental for the Parakeet ONNX path on this machine. In testing it produced CoreAnalytics leak warnings and much worse memory behavior than the default CPU runtime.
+- As a result, the default `mise` startup path leaves `-parakeet-onnx-coreml=0` unless explicitly overridden.
 
 ## Conclusion
 

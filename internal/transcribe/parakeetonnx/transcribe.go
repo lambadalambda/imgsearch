@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"imgsearch/internal/transcribe"
 
@@ -34,15 +35,184 @@ type Transcript struct {
 }
 
 type Recognizer struct {
-	Config RecognizerConfig
+	Config           RecognizerConfig
+	mu               sync.Mutex
+	ready            bool
+	initErr          error
+	vocab            []string
+	blankIdx         int
+	maxTokensPerStep int
+	encoderSession   *ort.DynamicAdvancedSession
+	decoderSession   *ort.DynamicAdvancedSession
 }
 
 func (r *Recognizer) TranscribeVideo(ctx context.Context, videoPath string) (transcribe.Transcript, error) {
-	transcriptResult, err := TranscribeVideo(ctx, r.Config, videoPath)
+	samples, err := ExtractPCM16kMono(ctx, videoPath)
+	if err != nil {
+		return transcribe.Transcript{}, err
+	}
+	features, err := BuildFeatures(samples)
+	if err != nil {
+		return transcribe.Transcript{}, err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.ensureReadyLocked(); err != nil {
+		return transcribe.Transcript{}, err
+	}
+
+	transcriptResult, err := r.transcribeFeaturesLocked(features)
 	if err != nil {
 		return transcribe.Transcript{}, err
 	}
 	return transcribe.Transcript{Text: transcriptResult.Text}, nil
+}
+
+func (r *Recognizer) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var firstErr error
+	if r.encoderSession != nil {
+		if err := r.encoderSession.Destroy(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		r.encoderSession = nil
+	}
+	if r.decoderSession != nil {
+		if err := r.decoderSession.Destroy(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		r.decoderSession = nil
+	}
+	r.ready = false
+	r.initErr = nil
+	return firstErr
+}
+
+func (r *Recognizer) ensureReadyLocked() error {
+	if r.ready {
+		return r.initErr
+	}
+	r.ready = true
+	r.initErr = r.initLocked()
+	return r.initErr
+}
+
+func (r *Recognizer) initLocked() error {
+	if r.Config.ONNXRuntimeLib == "" {
+		return fmt.Errorf("onnxruntime library path is required")
+	}
+	if r.Config.BundleDir == "" {
+		return fmt.Errorf("bundle directory is required")
+	}
+
+	vocab, blankIdx, err := loadVocab(filepath.Join(r.Config.BundleDir, "vocab.txt"))
+	if err != nil {
+		return err
+	}
+	maxTokensPerStep, err := loadMaxTokensPerStep(filepath.Join(r.Config.BundleDir, "config.json"))
+	if err != nil {
+		return err
+	}
+
+	ortInitMu.Lock()
+	defer ortInitMu.Unlock()
+	ort.SetSharedLibraryPath(r.Config.ONNXRuntimeLib)
+	if !ort.IsInitialized() {
+		if err := ort.InitializeEnvironment(); err != nil {
+			return fmt.Errorf("initialize onnxruntime: %w", err)
+		}
+	}
+
+	options, err := ort.NewSessionOptions()
+	if err != nil {
+		return fmt.Errorf("new session options: %w", err)
+	}
+	defer options.Destroy()
+	if r.Config.UseCoreML {
+		if err := options.AppendExecutionProviderCoreMLV2(map[string]string{}); err != nil {
+			return fmt.Errorf("append CoreML provider: %w", err)
+		}
+	}
+
+	encoderSession, err := ort.NewDynamicAdvancedSession(
+		filepath.Join(r.Config.BundleDir, "encoder-model.int8.onnx"),
+		[]string{"audio_signal", "length"},
+		[]string{"outputs", "encoded_lengths"},
+		options,
+	)
+	if err != nil {
+		return fmt.Errorf("create encoder session: %w", err)
+	}
+	decoderSession, err := ort.NewDynamicAdvancedSession(
+		filepath.Join(r.Config.BundleDir, "decoder_joint-model.int8.onnx"),
+		[]string{"encoder_outputs", "targets", "target_length", "input_states_1", "input_states_2"},
+		[]string{"outputs", "prednet_lengths", "output_states_1", "output_states_2"},
+		options,
+	)
+	if err != nil {
+		_ = encoderSession.Destroy()
+		return fmt.Errorf("create decoder session: %w", err)
+	}
+
+	r.vocab = vocab
+	r.blankIdx = blankIdx
+	r.maxTokensPerStep = maxTokensPerStep
+	r.encoderSession = encoderSession
+	r.decoderSession = decoderSession
+	return nil
+}
+
+func (r *Recognizer) transcribeFeaturesLocked(features Features) (Transcript, error) {
+	encodedFrames, encodedLen, err := runEncoderSession(r.encoderSession, features)
+	if err != nil {
+		return Transcript{}, err
+	}
+	if encodedLen <= 0 {
+		return Transcript{}, fmt.Errorf("encoder returned non-positive encoded length %d", encodedLen)
+	}
+
+	state1, state2, err := makeInitialDecoderState(filepath.Join(r.Config.BundleDir, "decoder_joint-model.int8.onnx"), nil)
+	if err != nil {
+		return Transcript{}, err
+	}
+
+	tokens := make([]int, 0, encodedLen)
+	timestamps := make([]float64, 0, encodedLen)
+	t := 0
+	emitted := 0
+	for t < encodedLen {
+		logits, step, next1, next2, err := decodeStep(r.decoderSession, encodedFrames[t], tokens, r.blankIdx, len(r.vocab), state1, state2)
+		if err != nil {
+			return Transcript{}, err
+		}
+		token := argmax(logits[:len(r.vocab)])
+		if token != r.blankIdx {
+			state1, state2 = next1, next2
+			tokens = append(tokens, token)
+			timestamps = append(timestamps, windowStepSeconds*8*float64(t))
+			emitted++
+		}
+
+		if step > 0 {
+			t += step
+			emitted = 0
+		} else if token == r.blankIdx || emitted == r.maxTokensPerStep {
+			t++
+			emitted = 0
+		}
+	}
+
+	decodedTokens := make([]string, 0, len(tokens))
+	for _, id := range tokens {
+		if id < 0 || id >= len(r.vocab) {
+			continue
+		}
+		decodedTokens = append(decodedTokens, r.vocab[id])
+	}
+	text := decodeTokens(decodedTokens)
+	return Transcript{Text: text, TokenIDs: tokens, Tokens: decodedTokens, TimestampsSec: timestamps}, nil
 }
 
 func TranscribeVideo(ctx context.Context, cfg RecognizerConfig, videoPath string) (Transcript, error) {
@@ -58,118 +228,13 @@ func TranscribeVideo(ctx context.Context, cfg RecognizerConfig, videoPath string
 }
 
 func TranscribeFeatures(cfg RecognizerConfig, features Features) (Transcript, error) {
-	if cfg.ONNXRuntimeLib == "" {
-		return Transcript{}, fmt.Errorf("onnxruntime library path is required")
-	}
-	if cfg.BundleDir == "" {
-		return Transcript{}, fmt.Errorf("bundle directory is required")
-	}
-
-	vocab, blankIdx, err := loadVocab(filepath.Join(cfg.BundleDir, "vocab.txt"))
-	if err != nil {
+	r := &Recognizer{Config: cfg}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.ensureReadyLocked(); err != nil {
 		return Transcript{}, err
 	}
-	maxTokensPerStep, err := loadMaxTokensPerStep(filepath.Join(cfg.BundleDir, "config.json"))
-	if err != nil {
-		return Transcript{}, err
-	}
-
-	ortInitMu.Lock()
-	defer ortInitMu.Unlock()
-	ort.SetSharedLibraryPath(cfg.ONNXRuntimeLib)
-	if !ort.IsInitialized() {
-		if err := ort.InitializeEnvironment(); err != nil {
-			return Transcript{}, fmt.Errorf("initialize onnxruntime: %w", err)
-		}
-		defer func() { _ = ort.DestroyEnvironment() }()
-	}
-
-	options, err := ort.NewSessionOptions()
-	if err != nil {
-		return Transcript{}, fmt.Errorf("new session options: %w", err)
-	}
-	defer options.Destroy()
-	if cfg.UseCoreML {
-		if err := options.AppendExecutionProviderCoreMLV2(map[string]string{}); err != nil {
-			return Transcript{}, fmt.Errorf("append CoreML provider: %w", err)
-		}
-	}
-
-	encoderSession, err := ort.NewDynamicAdvancedSession(
-		filepath.Join(cfg.BundleDir, "encoder-model.int8.onnx"),
-		[]string{"audio_signal", "length"},
-		[]string{"outputs", "encoded_lengths"},
-		options,
-	)
-	if err != nil {
-		return Transcript{}, fmt.Errorf("create encoder session: %w", err)
-	}
-	defer encoderSession.Destroy()
-
-	decoderSession, err := ort.NewDynamicAdvancedSession(
-		filepath.Join(cfg.BundleDir, "decoder_joint-model.int8.onnx"),
-		[]string{"encoder_outputs", "targets", "target_length", "input_states_1", "input_states_2"},
-		[]string{"outputs", "prednet_lengths", "output_states_1", "output_states_2"},
-		options,
-	)
-	if err != nil {
-		return Transcript{}, fmt.Errorf("create decoder session: %w", err)
-	}
-	defer decoderSession.Destroy()
-
-	encodedFrames, encodedLen, err := runEncoderSession(encoderSession, features)
-	if err != nil {
-		return Transcript{}, err
-	}
-	if encodedLen <= 0 {
-		return Transcript{}, fmt.Errorf("encoder returned non-positive encoded length %d", encodedLen)
-	}
-
-	state1, state2, err := makeInitialDecoderState(filepath.Join(cfg.BundleDir, "decoder_joint-model.int8.onnx"), options)
-	if err != nil {
-		return Transcript{}, err
-	}
-
-	tokens := make([]int, 0, encodedLen)
-	timestamps := make([]float64, 0, encodedLen)
-	t := 0
-	emitted := 0
-	for t < encodedLen {
-		logits, step, next1, next2, err := decodeStep(decoderSession, encodedFrames[t], tokens, blankIdx, len(vocab), state1, state2)
-		if err != nil {
-			return Transcript{}, err
-		}
-		token := argmax(logits[:len(vocab)])
-		if token != blankIdx {
-			state1, state2 = next1, next2
-			tokens = append(tokens, token)
-			timestamps = append(timestamps, windowStepSeconds*8*float64(t))
-			emitted++
-		}
-
-		if step > 0 {
-			t += step
-			emitted = 0
-		} else if token == blankIdx || emitted == maxTokensPerStep {
-			t++
-			emitted = 0
-		}
-	}
-
-	decodedTokens := make([]string, 0, len(tokens))
-	for _, id := range tokens {
-		if id < 0 || id >= len(vocab) {
-			continue
-		}
-		decodedTokens = append(decodedTokens, vocab[id])
-	}
-	text := decodeTokens(decodedTokens)
-	return Transcript{
-		Text:          text,
-		TokenIDs:      tokens,
-		Tokens:        decodedTokens,
-		TimestampsSec: timestamps,
-	}, nil
+	return r.transcribeFeaturesLocked(features)
 }
 
 func runEncoderSession(session *ort.DynamicAdvancedSession, features Features) ([][]float32, int, error) {
@@ -227,7 +292,15 @@ func runEncoderSession(session *ort.DynamicAdvancedSession, features Features) (
 }
 
 func makeInitialDecoderState(decoderPath string, options *ort.SessionOptions) ([]float32, []float32, error) {
-	inputs, _, err := ort.GetInputOutputInfoWithOptions(decoderPath, options)
+	var (
+		inputs []ort.InputOutputInfo
+		err    error
+	)
+	if options != nil {
+		inputs, _, err = ort.GetInputOutputInfoWithOptions(decoderPath, options)
+	} else {
+		inputs, _, err = ort.GetInputOutputInfo(decoderPath)
+	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("inspect decoder inputs: %w", err)
 	}
