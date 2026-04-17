@@ -319,6 +319,7 @@ function cardMarkup(item, mode) {
   const safeStatus = escapeHTML(humanizeIndexState(status));
   const scoreLabel = formatMatch(item.distance);
   const score = scoreLabel && !item.is_anchor ? `<p class="distance">${escapeHTML(scoreLabel)}</p>` : '';
+  const scoreBadge = scoreLabel && !item.is_anchor ? `<p class="thumb-match-badge">${escapeHTML(scoreLabel)}</p>` : '';
   const canSearchSimilar = status === 'done' && Number(item.image_id) > 0;
   const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use frame' : 'Use anchor') : 'Find similar';
   const disabled = canSearchSimilar ? '' : 'disabled';
@@ -365,6 +366,7 @@ function cardMarkup(item, mode) {
           <button class="ghost thumb-action similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
           ${deleteButton}
         </div>
+        ${scoreBadge}
       </div>
       <div class="meta">
         <div class="meta-main">
@@ -377,7 +379,6 @@ function cardMarkup(item, mode) {
           <div class="meta-status-row">
             <p class="${stateClass(status)}">${safeStatus}</p>
             ${anchorBadge}
-            ${score}
           </div>
           ${supportMarkup}
         </div>

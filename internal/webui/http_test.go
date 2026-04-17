@@ -119,6 +119,9 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "${overlayTagsMarkup}") || !strings.Contains(rr.Body.String(), "${overlaySupportMarkup}") {
 		t.Fatalf("expected overlay detail layer to include tags and expanded supporting text")
 	}
+	if !strings.Contains(rr.Body.String(), "const scoreBadge =") || !strings.Contains(rr.Body.String(), "thumb-match-badge") {
+		t.Fatalf("expected score badge markup over thumbnail for match percentage prominence")
+	}
 }
 
 func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
@@ -171,6 +174,12 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	}
 	if !strings.Contains(body, ".card-detail-overlay .overlay-supporting-text") {
 		t.Fatalf("expected overlay supporting text to override rest-state clamps")
+	}
+	if !strings.Contains(body, ".thumb-match-badge") {
+		t.Fatalf("expected dedicated thumbnail match badge styling rules")
+	}
+	if !strings.Contains(body, "right: 10px;") || !strings.Contains(body, "bottom: 10px;") {
+		t.Fatalf("expected thumbnail match badge to stay anchored at lower right")
 	}
 }
 

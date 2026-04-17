@@ -424,6 +424,24 @@ input:focus-visible {
   text-transform: uppercase;
 }
 
+.thumb-match-badge {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(254, 249, 236, 0.72);
+  background: rgba(43, 36, 22, 0.84);
+  color: #fff9eb;
+  box-shadow: 0 8px 16px rgba(22, 17, 9, 0.28);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  z-index: 3;
+}
+
 .thumb-actions {
   position: absolute;
   top: 8px;
