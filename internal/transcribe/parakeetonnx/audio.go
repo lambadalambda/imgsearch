@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"math"
 	"os/exec"
+	"strings"
+
+	"imgsearch/internal/transcribe"
 )
 
 const SampleRate = 16000
@@ -26,12 +29,16 @@ func ExtractPCM16kMono(ctx context.Context, videoPath string) ([]float32, error)
 	output, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("extract audio with ffmpeg: %w: %s", err, string(ee.Stderr))
+			stderr := strings.TrimSpace(string(ee.Stderr))
+			if isNoAudioFFmpegError(stderr) {
+				return nil, fmt.Errorf("%w: %s", transcribe.ErrNoAudio, stderr)
+			}
+			return nil, fmt.Errorf("extract audio with ffmpeg: %w: %s", err, stderr)
 		}
 		return nil, fmt.Errorf("extract audio with ffmpeg: %w", err)
 	}
 	if len(output) == 0 {
-		return nil, fmt.Errorf("ffmpeg returned no audio samples")
+		return nil, transcribe.ErrNoAudio
 	}
 	if len(output)%4 != 0 {
 		return nil, fmt.Errorf("invalid f32le output length %d", len(output))
@@ -47,4 +54,12 @@ func ExtractPCM16kMono(ctx context.Context, videoPath string) ([]float32, error)
 		}
 	}
 	return samples, nil
+}
+
+func isNoAudioFFmpegError(stderr string) bool {
+	msg := strings.ToLower(stderr)
+	return strings.Contains(msg, "no audio") ||
+		strings.Contains(msg, "does not contain any stream") ||
+		strings.Contains(msg, "matches no streams") ||
+		strings.Contains(msg, "contains no stream")
 }

@@ -1,6 +1,11 @@
 package transcribe
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+var ErrNoAudio = errors.New("video has no audio")
 
 type Transcript struct {
 	Text string

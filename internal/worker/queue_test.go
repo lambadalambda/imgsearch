@@ -197,6 +197,47 @@ VALUES ('embed_image', 1, ?, 'pending')
 	return q, sqlDB
 }
 
+func seedVideoTranscribeJob(t *testing.T, q *Queue, sqlDB *sql.DB, videoID int64, jobID int64) int64 {
+	t.Helper()
+
+	if _, err := sqlDB.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (?, ?, ?, ?, 'video/mp4', 1000, 640, 360, 1)
+`, videoID, fmt.Sprintf("vid%d", videoID), fmt.Sprintf("clip-%d.mp4", videoID), fmt.Sprintf("videos/vid%d", videoID)); err != nil {
+		t.Fatalf("insert video: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (?, 1, 0, 0)
+`, videoID); err != nil {
+		t.Fatalf("insert video frame: %v", err)
+	}
+	if _, err := sqlDB.Exec(`DELETE FROM index_jobs WHERE id = 1`); err != nil {
+		t.Fatalf("delete default job: %v", err)
+	}
+
+	var modelID int64
+	if err := sqlDB.QueryRow(`SELECT id FROM embedding_models LIMIT 1`).Scan(&modelID); err != nil {
+		t.Fatalf("select model id: %v", err)
+	}
+
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, video_id, model_id, state)
+VALUES (?, 'transcribe_video', NULL, ?, ?, 'pending')
+`, jobID, videoID, modelID); err != nil {
+		t.Fatalf("insert transcribe job: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(q.DataDir, "videos"), 0o755); err != nil {
+		t.Fatalf("mkdir videos dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(q.DataDir, "videos", fmt.Sprintf("vid%d", videoID)), []byte("video"), 0o644); err != nil {
+		t.Fatalf("write video file: %v", err)
+	}
+
+	return modelID
+}
+
 func TestProcessOneSuccessStoresEmbeddingAndMarksDone(t *testing.T) {
 	q, sqlDB := setupQueueTest(t)
 
@@ -284,6 +325,86 @@ VALUES (10, 'transcribe_video', NULL, 3, ?, 'pending')
 	}
 	if dim != 4 {
 		t.Fatalf("expected transcript dim 4, got %d", dim)
+	}
+}
+
+func TestProcessOneTranscribeVideoWithEmptyTranscriptMarksDoneWithoutEmbedding(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	q.Transcriber = &fakeVideoTranscriber{transcript: transcribe.Transcript{Text: "   "}}
+	q.TextEmbedder = &fakeEmbedder{err: errors.New("text embedder should not be called for empty transcript")}
+
+	modelID := seedVideoTranscribeJob(t, q, sqlDB, 6, 16)
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+
+	var transcriptText string
+	if err := sqlDB.QueryRow(`SELECT transcript_text FROM videos WHERE id = 6`).Scan(&transcriptText); err != nil {
+		t.Fatalf("select transcript: %v", err)
+	}
+	if transcriptText != "" {
+		t.Fatalf("expected empty transcript text, got %q", transcriptText)
+	}
+
+	var jobState string
+	if err := sqlDB.QueryRow(`SELECT state FROM index_jobs WHERE id = 16`).Scan(&jobState); err != nil {
+		t.Fatalf("select transcribe job state: %v", err)
+	}
+	if jobState != "done" {
+		t.Fatalf("expected transcribe job done, got %s", jobState)
+	}
+
+	var transcriptEmbeddings int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM video_transcript_embeddings WHERE video_id = 6 AND model_id = ?`, modelID).Scan(&transcriptEmbeddings); err != nil {
+		t.Fatalf("count transcript embeddings: %v", err)
+	}
+	if transcriptEmbeddings != 0 {
+		t.Fatalf("expected no transcript embeddings for empty transcript, got %d", transcriptEmbeddings)
+	}
+}
+
+func TestProcessOneTranscribeVideoWithoutAudioMarksDoneWithoutEmbedding(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	q.Transcriber = &fakeVideoTranscriber{err: transcribe.ErrNoAudio}
+	q.TextEmbedder = &fakeEmbedder{err: errors.New("text embedder should not be called when video has no audio")}
+
+	modelID := seedVideoTranscribeJob(t, q, sqlDB, 7, 17)
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+
+	var transcriptText string
+	if err := sqlDB.QueryRow(`SELECT transcript_text FROM videos WHERE id = 7`).Scan(&transcriptText); err != nil {
+		t.Fatalf("select transcript: %v", err)
+	}
+	if transcriptText != "" {
+		t.Fatalf("expected empty transcript text for no-audio video, got %q", transcriptText)
+	}
+
+	var jobState string
+	if err := sqlDB.QueryRow(`SELECT state FROM index_jobs WHERE id = 17`).Scan(&jobState); err != nil {
+		t.Fatalf("select transcribe job state: %v", err)
+	}
+	if jobState != "done" {
+		t.Fatalf("expected transcribe job done for no-audio video, got %s", jobState)
+	}
+
+	var transcriptEmbeddings int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM video_transcript_embeddings WHERE video_id = 7 AND model_id = ?`, modelID).Scan(&transcriptEmbeddings); err != nil {
+		t.Fatalf("count transcript embeddings: %v", err)
+	}
+	if transcriptEmbeddings != 0 {
+		t.Fatalf("expected no transcript embeddings for no-audio video, got %d", transcriptEmbeddings)
 	}
 }
 

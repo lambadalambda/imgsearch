@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -174,13 +175,29 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 		transcript, err := q.Transcriber.TranscribeVideo(ctx, videoAbsPath)
 		transcribeDuration = time.Since(stageStartedAt)
 		if err != nil {
+			if isNoAudioTranscriptError(err) {
+				stageStartedAt = time.Now()
+				if err := q.completeVideoTranscriptJob(ctx, job, videoID, transcribe.Transcript{Text: ""}, nil); err != nil {
+					completeDuration = time.Since(stageStartedAt)
+					_ = q.failOrRetry(ctx, job, err)
+					return true, err
+				}
+				completeDuration = time.Since(stageStartedAt)
+				break
+			}
 			_ = q.failOrRetry(ctx, job, err)
 			return true, nil
 		}
-		if strings.TrimSpace(transcript.Text) == "" {
-			err := fmt.Errorf("empty transcript")
-			_ = q.failOrRetry(ctx, job, err)
-			return true, nil
+		transcript.Text = strings.TrimSpace(transcript.Text)
+		if transcript.Text == "" {
+			stageStartedAt = time.Now()
+			if err := q.completeVideoTranscriptJob(ctx, job, videoID, transcript, nil); err != nil {
+				completeDuration = time.Since(stageStartedAt)
+				_ = q.failOrRetry(ctx, job, err)
+				return true, err
+			}
+			completeDuration = time.Since(stageStartedAt)
+			break
 		}
 
 		stageStartedAt = time.Now()
@@ -730,12 +747,29 @@ func (q *Queue) processJob(ctx context.Context, owner string, job claimedJob) bo
 		transcript, err := q.Transcriber.TranscribeVideo(ctx, videoAbsPath)
 		transcribeDuration = time.Since(stageStartedAt)
 		if err != nil {
+			if isNoAudioTranscriptError(err) {
+				stageStartedAt = time.Now()
+				if err := q.completeVideoTranscriptJob(ctx, job, videoID, transcribe.Transcript{Text: ""}, nil); err != nil {
+					completeDuration = time.Since(stageStartedAt)
+					_ = q.failOrRetry(ctx, job, err)
+					return false
+				}
+				completeDuration = time.Since(stageStartedAt)
+				break
+			}
 			_ = q.failOrRetry(ctx, job, err)
 			return false
 		}
-		if strings.TrimSpace(transcript.Text) == "" {
-			_ = q.failOrRetry(ctx, job, fmt.Errorf("empty transcript"))
-			return false
+		transcript.Text = strings.TrimSpace(transcript.Text)
+		if transcript.Text == "" {
+			stageStartedAt = time.Now()
+			if err := q.completeVideoTranscriptJob(ctx, job, videoID, transcript, nil); err != nil {
+				completeDuration = time.Since(stageStartedAt)
+				_ = q.failOrRetry(ctx, job, err)
+				return false
+			}
+			completeDuration = time.Since(stageStartedAt)
+			break
 		}
 
 		stageStartedAt = time.Now()
@@ -874,15 +908,26 @@ func (q *Queue) completeVideoTranscriptJob(ctx context.Context, job claimedJob, 
 		return fmt.Errorf("begin complete video transcript tx: %w", err)
 	}
 
+	transcriptText := strings.TrimSpace(transcript.Text)
+
 	if _, err := tx.ExecContext(ctx, `
 UPDATE videos
 SET transcript_text = ?, transcript_updated_at = datetime('now')
 WHERE id = ?
-`, transcript.Text, videoID); err != nil {
+`, transcriptText, videoID); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("update video transcript: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if len(vec) == 0 {
+		if _, err := tx.ExecContext(ctx, `
+DELETE FROM video_transcript_embeddings
+WHERE video_id = ?
+  AND model_id = ?
+`, videoID, job.ModelID); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("delete empty video transcript embedding: %w", err)
+		}
+	} else if _, err := tx.ExecContext(ctx, `
 INSERT INTO video_transcript_embeddings(video_id, model_id, dim, vector_blob)
 VALUES (?, ?, ?, ?)
 ON CONFLICT(video_id, model_id)
@@ -903,6 +948,20 @@ WHERE id = ?
 		return fmt.Errorf("commit complete video transcript tx: %w", err)
 	}
 	return nil
+}
+
+func isNoAudioTranscriptError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, transcribe.ErrNoAudio) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no audio") ||
+		strings.Contains(msg, "does not contain any stream") ||
+		strings.Contains(msg, "matches no streams") ||
+		strings.Contains(msg, "no audio samples")
 }
 
 func (q *Queue) failOrRetry(ctx context.Context, job claimedJob, procErr error) error {
