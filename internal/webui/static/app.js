@@ -320,7 +320,7 @@ function cardMarkup(item, mode) {
   const scoreLabel = formatMatch(item.distance);
   const score = scoreLabel && !item.is_anchor ? `<p class="distance">${escapeHTML(scoreLabel)}</p>` : '';
   const scoreBadge = scoreLabel && !item.is_anchor ? `<p class="thumb-match-badge">${escapeHTML(scoreLabel)}</p>` : '';
-  const canSearchSimilar = status === 'done' && Number(item.image_id) > 0;
+  const canSearchSimilar = Number(item.image_id) > 0 && (status === 'done' || mediaType === 'video');
   const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use frame' : 'Use anchor') : 'Find similar';
   const disabled = canSearchSimilar ? '' : 'disabled';
   const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';

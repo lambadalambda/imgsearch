@@ -122,6 +122,9 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "const scoreBadge =") || !strings.Contains(rr.Body.String(), "thumb-match-badge") {
 		t.Fatalf("expected score badge markup over thumbnail for match percentage prominence")
 	}
+	if !strings.Contains(rr.Body.String(), "status === 'done' || mediaType === 'video'") {
+		t.Fatalf("expected similar action to stay available for videos regardless of transcript-only index state")
+	}
 }
 
 func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
