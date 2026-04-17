@@ -128,6 +128,11 @@ JOIN images i ON i.id = j.image_id
 WHERE j.kind = 'embed_image'
   AND j.model_id = ?
   AND j.state = 'done'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM video_frames vf
+    WHERE vf.image_id = i.id
+  )
   AND (
     trim(COALESCE(i.description, '')) = ''
     OR COALESCE(i.tags_json, '') = ''

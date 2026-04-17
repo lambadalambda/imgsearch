@@ -131,6 +131,35 @@ func TestStatsHandlerReturnsQueueCountsAndFailures(t *testing.T) {
 	}
 }
 
+func TestCollectExcludesVideoFramesFromAnnotationGaps(t *testing.T) {
+	dbConn := setupStatsDB(t)
+
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES (6, 'f', 'frame.jpg', 'images/f', 'image/jpeg', 10, 10);
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (1, 'v1', 'clip.mp4', 'videos/v1.mp4', 'video/mp4', 1000, 640, 480, 1);
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (1, 6, 0, 0);
+
+INSERT INTO index_jobs(id, kind, image_id, model_id, state, leased_until, attempts, max_attempts, last_error)
+VALUES (18, 'embed_image', 6, 1, 'done', NULL, 1, 3, NULL);
+`); err != nil {
+		t.Fatalf("seed video frame + embed job: %v", err)
+	}
+
+	resp, err := Collect(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("collect stats: %v", err)
+	}
+
+	if resp.Queue.AnnotationsMissing != 1 {
+		t.Fatalf("queue.annotations_missing: got=%d want=1", resp.Queue.AnnotationsMissing)
+	}
+}
+
 func TestStatsHandlerRejectsInvalidMethod(t *testing.T) {
 	dbConn := setupStatsDB(t)
 	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
