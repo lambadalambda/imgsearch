@@ -368,7 +368,7 @@ input:focus-visible {
   border: 1px solid color-mix(in oklab, var(--line) 86%, white 14%);
   background: #fffdf9;
   box-shadow: var(--shadow-card-rest);
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .card:hover,
@@ -376,7 +376,6 @@ input:focus-visible {
   z-index: 14;
   border-color: color-mix(in oklab, var(--line-strong) 80%, white 20%);
   box-shadow: 0 12px 24px rgba(44, 37, 25, 0.14);
-  transform: translateY(-1px);
 }
 
 .thumb-wrap {
@@ -517,8 +516,9 @@ input:focus-visible {
 }
 
 .meta-foot {
-  display: flex;
-  align-items: center;
+  display: grid;
+  gap: 6px;
+  align-content: start;
 }
 
 .meta-status-row {
@@ -532,12 +532,9 @@ input:focus-visible {
   margin: 0;
   font-size: 0.95rem;
   line-height: 1.28;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
-  min-height: calc(1.28em * 2);
-  word-break: break-word;
+  text-overflow: ellipsis;
 }
 
 .path,
@@ -596,6 +593,13 @@ input:focus-visible {
   margin: 0;
 }
 
+.overlay-status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .overlay-title {
   color: var(--ink);
   font-size: 0.92rem;
@@ -611,7 +615,7 @@ input:focus-visible {
   word-break: break-word;
 }
 
-.overlay-supporting-text {
+.card-detail-overlay .overlay-supporting-text {
   display: block;
   min-height: 0;
   -webkit-line-clamp: unset;
@@ -671,12 +675,12 @@ input:focus-visible {
 .tag-chip {
 	display: inline-flex;
 	align-items: center;
-	padding: 3px 7px;
+	padding: 2px 8px;
 	border-radius: var(--radius-control);
 	background: #f0eadf;
 	color: var(--muted-strong);
 	font-size: 0.74rem;
-	line-height: 1;
+	line-height: 1.5;
 	text-transform: lowercase;
 	white-space: nowrap;
 }

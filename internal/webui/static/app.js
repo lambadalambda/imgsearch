@@ -341,6 +341,7 @@ function cardMarkup(item, mode) {
   const overlayVideoMeta = videoMeta
     ? `<div class="overlay-video-meta">${videoMeta}</div>`
     : '';
+  const overlayStatusMarkup = `<div class="overlay-status-row"><p class="${stateClass(status)}">${safeStatus}</p>${anchorBadge}${score}</div>`;
 
   return `
     <article class="card">
@@ -369,7 +370,6 @@ function cardMarkup(item, mode) {
         <div class="meta-main">
           <h3>${safeName}</h3>
           <p class="path">${safePath}</p>
-          ${supportMarkup}
           ${videoMeta}
           ${compactTagsMarkup}
         </div>
@@ -379,14 +379,16 @@ function cardMarkup(item, mode) {
             ${anchorBadge}
             ${score}
           </div>
+          ${supportMarkup}
         </div>
       </div>
       <div class="card-detail-overlay" aria-hidden="true">
         <p class="overlay-title">${safeName}</p>
         <p class="overlay-path">${safePath}</p>
-        ${overlaySupportMarkup}
         ${overlayVideoMeta}
         ${overlayTagsMarkup}
+        ${overlayStatusMarkup}
+        ${overlaySupportMarkup}
       </div>
     </article>
   `;

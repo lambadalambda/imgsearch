@@ -113,6 +113,12 @@ func TestAssetsAreServed(t *testing.T) {
 	if strings.Contains(rr.Body.String(), "<div class=\"card-actions\">") {
 		t.Fatalf("expected action controls moved out of card meta stack")
 	}
+	if !strings.Contains(rr.Body.String(), "const overlayStatusMarkup =") {
+		t.Fatalf("expected overlay detail layer to include status row markup")
+	}
+	if !strings.Contains(rr.Body.String(), "${overlayTagsMarkup}") || !strings.Contains(rr.Body.String(), "${overlaySupportMarkup}") {
+		t.Fatalf("expected overlay detail layer to include tags and expanded supporting text")
+	}
 }
 
 func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
@@ -153,6 +159,18 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	}
 	if !strings.Contains(body, ".thumb-actions") {
 		t.Fatalf("expected thumbnail action overlay styling rules")
+	}
+	if strings.Contains(body, "box-shadow: 0 12px 24px rgba(44, 37, 25, 0.14);\n  transform:") {
+		t.Fatalf("expected card hover state to avoid vertical movement")
+	}
+	if !strings.Contains(body, "white-space: nowrap;") || !strings.Contains(body, "text-overflow: ellipsis;") {
+		t.Fatalf("expected compact card title/path to truncate horizontally")
+	}
+	if !strings.Contains(body, "padding: 2px 8px;") {
+		t.Fatalf("expected tag chips to match state-pill interior spacing")
+	}
+	if !strings.Contains(body, ".card-detail-overlay .overlay-supporting-text") {
+		t.Fatalf("expected overlay supporting text to override rest-state clamps")
 	}
 }
 
