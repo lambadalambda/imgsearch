@@ -74,6 +74,12 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "match_timestamp_ms") || !strings.Contains(rr.Body.String(), "preview_path") {
 		t.Fatalf("expected video-result rendering fields in javascript")
 	}
+	if !strings.Contains(rr.Body.String(), "const mediaURL = escapeHTML(toMediaURL(item.storage_path));") {
+		t.Fatalf("expected mediaURL helper in card rendering to avoid video player runtime errors")
+	}
+	if !strings.Contains(rr.Body.String(), "data-player-src=\"${mediaURL}\"") {
+		t.Fatalf("expected player source binding to use mediaURL in card rendering")
+	}
 }
 
 func TestMediaServesFilesFromDataDir(t *testing.T) {

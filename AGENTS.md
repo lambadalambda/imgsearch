@@ -11,6 +11,7 @@
 ## Quality and Workflow
 - Prefer simple, readable code over clever code.
 - Add or update tests for every behavior change.
+- Treat UI/runtime regressions the same way: add a failing regression test first when practical, then fix the bug and keep the test so it does not reappear.
 - Keep dependencies minimal and justify each new dependency.
 - Document architectural decisions and trade-offs in `docs/`.
 - When reviews or investigations uncover actionable follow-up work, track it in `docs/issues.md` as a checklist and keep one dedicated note per issue under `docs/issues/` with context, risks, and acceptance criteria.

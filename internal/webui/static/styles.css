@@ -80,7 +80,6 @@ body.lightbox-open {
   flex-wrap: wrap;
 }
 
-.eyebrow,
 .section-label,
 .field-label {
   margin: 0;
@@ -329,11 +328,7 @@ input:focus-visible {
 }
 
 .tab-count {
-  min-width: 1.8rem;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: color-mix(in oklab, var(--accent-soft) 85%, white 15%);
-  color: var(--accent-strong);
+  color: var(--muted);
   font-size: 0.8rem;
 }
 
@@ -467,7 +462,7 @@ input:focus-visible {
 	font-size: 0.88rem;
 	line-height: 1.45;
 	display: -webkit-box;
-	-webkit-line-clamp: 4;
+	-webkit-line-clamp: 2;
 	-webkit-box-orient: vertical;
 	overflow: hidden;
 }
@@ -483,7 +478,8 @@ input:focus-visible {
 }
 
 .transcript-text {
-	color: var(--ink);
+	color: var(--muted-strong);
+	font-style: italic;
 }
 
 .description-wrap[data-expanded="true"] .description {
@@ -536,7 +532,16 @@ input:focus-visible {
 }
 
 .path {
-  word-break: break-all;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.62;
+}
+
+.card:hover .path,
+.card:focus-within .path {
+  opacity: 0.9;
 }
 
 .state {
@@ -565,14 +570,9 @@ input:focus-visible {
   color: var(--bad);
 }
 
-.state.leased {
+.state.processing {
   background: #e3eff4;
   color: var(--leased);
-}
-
-.state.media {
-  background: #efe8da;
-  color: var(--muted-strong);
 }
 
 .state.anchor {

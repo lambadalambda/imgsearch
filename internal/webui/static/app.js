@@ -159,7 +159,22 @@ function formatTimestamp(timestampMs) {
   return `${String(minutes)}:${String(seconds).padStart(2, '0')}`;
 }
 
-function videoMetaMarkup(item, mode, mediaURL) {
+function formatMatch(distance) {
+  if (typeof distance !== 'number' || Number.isNaN(distance)) {
+    return '';
+  }
+  const match = Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
+  return `${match}% match`;
+}
+
+function humanizeIndexState(indexState) {
+  if (indexState === 'leased') {
+    return 'processing';
+  }
+  return indexState || 'done';
+}
+
+function videoMetaMarkup(item, mode) {
   if ((item.media_type || 'image') !== 'video') {
     return '';
   }
@@ -171,10 +186,6 @@ function videoMetaMarkup(item, mode, mediaURL) {
   const details = [];
   if (Number(item.duration_ms) > 0) {
     details.push(`duration ${escapeHTML(formatTimestamp(item.duration_ms))}`);
-  }
-  if (Number(item.frame_count) > 0) {
-    const frameCount = Number(item.frame_count);
-    details.push(`${frameCount} sampled frame${frameCount === 1 ? '' : 's'}`);
   }
   if (details.length === 0) {
     return '';
@@ -191,7 +202,7 @@ function stateClass(indexState) {
     return 'state failed';
   }
   if (indexState === 'leased') {
-    return 'state leased';
+    return 'state processing';
   }
   return 'state pending';
 }
@@ -264,15 +275,15 @@ function cardMarkup(item, mode) {
   const canExpandDescription = shouldShowDescriptionToggle(description);
   const canExpandTranscript = shouldShowDescriptionToggle(transcriptText);
   const status = item.index_state || 'done';
-  const safeStatus = escapeHTML(status);
-  const score = typeof item.distance === 'number' && !item.is_anchor ? `<p class="distance">distance ${item.distance.toFixed(4)}</p>` : '';
+  const safeStatus = escapeHTML(humanizeIndexState(status));
+  const scoreLabel = formatMatch(item.distance);
+  const score = scoreLabel && !item.is_anchor ? `<p class="distance">${escapeHTML(scoreLabel)}</p>` : '';
   const canSearchSimilar = status === 'done' && Number(item.image_id) > 0;
   const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use preview frame' : 'Use as anchor') : 'Find similar';
   const disabled = canSearchSimilar ? '' : 'disabled';
   const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';
   const anchorBadge = item.is_anchor ? '<p class="state anchor">anchor</p>' : '';
-  const mediaBadge = mediaType === 'video' ? '<p class="state media">video</p>' : '<p class="state media">image</p>';
-  const videoMeta = videoMetaMarkup(item, mode, mediaURL);
+  const videoMeta = videoMetaMarkup(item, mode);
   const descriptionMarkup = description
     ? `<div class="description-wrap" data-expanded="false">
         <p id="${descriptionID}" class="description">${escapeHTML(description)}</p>
@@ -314,7 +325,6 @@ function cardMarkup(item, mode) {
         ${tagsMarkup}
         ${videoMeta}
         <p class="${stateClass(status)}">${safeStatus}</p>
-        ${mediaBadge}
         ${anchorBadge}
         ${score}
         <button class="ghost similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
@@ -407,7 +417,7 @@ function renderStats() {
   );
 
   const imagesTotal = Number(payload.images_total || state.imagesTotal || 0);
-  statsDetail.textContent = `Library ${imagesTotal} images. Pending ${pending}. In progress ${leased}.`;
+  statsDetail.textContent = `Library ${imagesTotal} images. Pending ${pending}. Processing ${leased}.`;
   retryFailedButton.disabled = failed === 0 && missing === 0 && annotationsMissing === 0;
 
   const failures = payload.recent_failures || [];
