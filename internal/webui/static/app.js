@@ -286,6 +286,19 @@ function supportTextClass(item, supportText) {
   return 'supporting-text';
 }
 
+function tagsMarkup(tags, includeOverflowChip) {
+  if (!Array.isArray(tags) || tags.length === 0) {
+    return '';
+  }
+
+  const visibleTags = includeOverflowChip ? tags.slice(0, 4) : tags;
+  const hiddenTagCount = includeOverflowChip ? Math.max(0, tags.length - visibleTags.length) : 0;
+
+  return `<ul class="tag-list${includeOverflowChip ? '' : ' overlay-tag-list'}">${visibleTags
+    .map((tag) => `<li class="tag-chip${tag.toLowerCase() === 'nsfw' ? ' tag-chip-nsfw' : ''}">${escapeHTML(tag)}</li>`)
+    .join('')}${hiddenTagCount > 0 ? `<li class="tag-chip tag-chip-more">+${hiddenTagCount}</li>` : ''}</ul>`;
+}
+
 function cardMarkup(item, mode) {
   const safeName = escapeHTML(item.original_name);
   const safePath = escapeHTML(item.storage_path);
@@ -302,8 +315,6 @@ function cardMarkup(item, mode) {
         .map((tag) => tag.trim())
         .slice(0, 8)
     : [];
-  const visibleTags = tags.slice(0, 4);
-  const hiddenTagCount = Math.max(0, tags.length - visibleTags.length);
   const status = item.index_state || 'done';
   const safeStatus = escapeHTML(humanizeIndexState(status));
   const scoreLabel = formatMatch(item.distance);
@@ -315,43 +326,52 @@ function cardMarkup(item, mode) {
   const anchorBadge = item.is_anchor ? '<p class="state anchor">anchor</p>' : '';
   const videoMeta = videoMetaMarkup(item, mode);
   const deleteButton = mode === 'gallery'
-    ? `<button class="ghost danger delete-action" data-delete-kind="image" data-delete-id="${item.image_id}" data-delete-name="${safeName}">Delete</button>`
+    ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="image" data-delete-id="${item.image_id}" data-delete-name="${safeName}">Delete</button>`
     : mode === 'videos'
-      ? `<button class="ghost danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}">Delete</button>`
+      ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}">Delete</button>`
       : '';
   const supportMarkup = supportText
     ? `<p class="${supportClass}">${escapeHTML(supportText)}</p>`
     : '';
-  const tagsMarkup = visibleTags.length > 0
-    ? `<ul class="tag-list">${visibleTags
-        .map((tag) => `<li class="tag-chip${tag.toLowerCase() === 'nsfw' ? ' tag-chip-nsfw' : ''}">${escapeHTML(tag)}</li>`)
-        .join('')}${hiddenTagCount > 0 ? `<li class="tag-chip tag-chip-more">+${hiddenTagCount}</li>` : ''}</ul>`
+  const compactTagsMarkup = tagsMarkup(tags, true);
+  const overlayTagsMarkup = tagsMarkup(tags, false);
+  const overlaySupportMarkup = supportText
+    ? `<p class="${supportClass} overlay-supporting-text">${escapeHTML(supportText)}</p>`
+    : '';
+  const overlayVideoMeta = videoMeta
+    ? `<div class="overlay-video-meta">${videoMeta}</div>`
     : '';
 
   return `
     <article class="card">
-      <button
-        type="button"
-        class="thumb-button"
-        data-media-type="${mediaType}"
-        data-lightbox-src="${thumbURL}"
-        data-lightbox-caption="${safeName}${mediaType === 'video' ? ' preview frame' : ''}"
-        data-player-src="${mediaURL}"
-        data-player-poster="${thumbURL}"
-        data-player-type="${safeMimeType}"
-        data-player-caption="${safeName}"
-        aria-label="Open full ${mediaType === 'video' ? 'preview frame' : 'image'} for ${safeName}"
-      >
-        <img src="${thumbURL}" alt="${safeName}" loading="lazy" />
-        ${mediaType === 'video' ? '<span class="thumb-video-badge">video</span>' : ''}
-      </button>
+      <div class="thumb-wrap">
+        <button
+          type="button"
+          class="thumb-button"
+          data-media-type="${mediaType}"
+          data-lightbox-src="${thumbURL}"
+          data-lightbox-caption="${safeName}${mediaType === 'video' ? ' preview frame' : ''}"
+          data-player-src="${mediaURL}"
+          data-player-poster="${thumbURL}"
+          data-player-type="${safeMimeType}"
+          data-player-caption="${safeName}"
+          aria-label="Open full ${mediaType === 'video' ? 'preview frame' : 'image'} for ${safeName}"
+        >
+          <img src="${thumbURL}" alt="${safeName}" loading="lazy" />
+          ${mediaType === 'video' ? '<span class="thumb-video-badge">video</span>' : ''}
+        </button>
+        <div class="thumb-actions" role="group" aria-label="Card actions for ${safeName}">
+          <button class="ghost thumb-action similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
+          ${deleteButton}
+        </div>
+      </div>
       <div class="meta">
         <div class="meta-main">
           <h3>${safeName}</h3>
           <p class="path">${safePath}</p>
           ${supportMarkup}
           ${videoMeta}
-          ${tagsMarkup}
+          ${compactTagsMarkup}
         </div>
         <div class="meta-foot">
           <div class="meta-status-row">
@@ -359,11 +379,14 @@ function cardMarkup(item, mode) {
             ${anchorBadge}
             ${score}
           </div>
-          <div class="card-actions">
-            <button class="ghost similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
-            ${deleteButton}
-          </div>
         </div>
+      </div>
+      <div class="card-detail-overlay" aria-hidden="true">
+        <p class="overlay-title">${safeName}</p>
+        <p class="overlay-path">${safePath}</p>
+        ${overlaySupportMarkup}
+        ${overlayVideoMeta}
+        ${overlayTagsMarkup}
       </div>
     </article>
   `;

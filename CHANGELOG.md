@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ux: add layered hover/focus card detail overlays (issue 020) so clipped title/supporting content/tags expand above neighboring cards without changing grid row height.
+- ux: move similar/delete controls into thumbnail action overlays (issue 021), keeping cards calmer at rest while preserving keyboard and delete-confirmation behavior.
 - ux: tighten UI chrome/radius language (issue 018) by collapsing to shared panel/control radius tokens, reducing over-pill styling, and calming default tab/card framing.
 - ux: standardize card resting density (issue 019) with fixed media/meta proportions, aggressive title/path/supporting-text clamping, and single-row tag overflow chips to keep image/video/result grids visually consistent.
 - feat: add configuration-gated transcript-backed video search using a local Parakeet ONNX pipeline. When `-parakeet-onnx-bundle-dir` and `-parakeet-onnxruntime-lib` are set, videos are transcribed in the worker, transcript text is shown in the Videos tab, transcript embeddings are stored with the active Qwen model, and text search can match videos by transcript content. The integrated recognizer now reuses ONNX sessions across jobs, and CoreML stays off by default because the CPU path has been more stable and memory-efficient in practice.

@@ -1,6 +1,6 @@
 # 020: Add Hover/Focus Overlay Expansion for Clipped Card Content
 
-## Status: Open
+## Status: Completed
 
 ## Goal
 
@@ -26,12 +26,20 @@ The current inline expand/collapse pattern is functional, but it pushes card hei
 - Support both hover and keyboard focus
 - Keep reduced-motion behavior tasteful and accessible
 
+## Scope Landed
+
+- Added a dedicated `card-detail-overlay` layer per card that sits absolutely above the base grid card and is hidden in rest state.
+- Kept card resting dimensions fixed while expanded content overlays neighbors instead of reflowing rows.
+- Added hover + `:focus-within` activation so pointer and keyboard interactions reveal the same expanded content affordance.
+- Expanded overlay content includes full title/path/support text, unclamped video meta text, and wrapped tag rows.
+- Tuned motion to subtle opacity/translate transitions and disabled those transitions under `prefers-reduced-motion`.
+
 ## Acceptance Criteria
 
-- [ ] Cards keep a stable resting size in the grid
-- [ ] Hover/focus expansion does not push neighboring cards around
-- [ ] Expanded content remains readable and layered correctly above the grid
-- [ ] Keyboard users can access the same expansion affordance via focus
+- [x] Cards keep a stable resting size in the grid
+- [x] Hover/focus expansion does not push neighboring cards around
+- [x] Expanded content remains readable and layered correctly above the grid
+- [x] Keyboard users can access the same expansion affordance via focus
 
 ## Notes
 

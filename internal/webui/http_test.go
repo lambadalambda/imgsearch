@@ -104,6 +104,15 @@ func TestAssetsAreServed(t *testing.T) {
 	if strings.Contains(rr.Body.String(), "description-toggle") || strings.Contains(rr.Body.String(), "Show more") {
 		t.Fatalf("expected inline description toggle pattern removed from card rendering")
 	}
+	if !strings.Contains(rr.Body.String(), "card-detail-overlay") {
+		t.Fatalf("expected card rendering to include overlay detail layer")
+	}
+	if !strings.Contains(rr.Body.String(), "thumb-actions") {
+		t.Fatalf("expected card rendering to include thumbnail action overlay")
+	}
+	if strings.Contains(rr.Body.String(), "<div class=\"card-actions\">") {
+		t.Fatalf("expected action controls moved out of card meta stack")
+	}
 }
 
 func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
@@ -124,7 +133,10 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	if strings.Contains(body, "--radius-lg:") || strings.Contains(body, "--radius-md:") || strings.Contains(body, "--radius-sm:") {
 		t.Fatalf("expected legacy multi-size radius tokens to be removed")
 	}
-	if !strings.Contains(body, "grid-template-rows: 220px minmax(172px, 172px);") {
+	if !strings.Contains(body, "--card-media-height: 220px;") || !strings.Contains(body, "--card-meta-height: 172px;") {
+		t.Fatalf("expected cards to declare fixed resting media/meta dimensions")
+	}
+	if !strings.Contains(body, "grid-template-rows: var(--card-media-height) minmax(var(--card-meta-height), var(--card-meta-height));") {
 		t.Fatalf("expected cards to use fixed resting media/meta proportions")
 	}
 	if !strings.Contains(body, ".supporting-text") {
@@ -132,6 +144,15 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	}
 	if !strings.Contains(body, "max-height: 1.8em;") {
 		t.Fatalf("expected tag row to clamp at rest")
+	}
+	if !strings.Contains(body, ".card-detail-overlay") {
+		t.Fatalf("expected overlay expansion rules for clipped card content")
+	}
+	if !strings.Contains(body, ".card:focus-within .card-detail-overlay") {
+		t.Fatalf("expected keyboard focus to reveal card overlay details")
+	}
+	if !strings.Contains(body, ".thumb-actions") {
+		t.Fatalf("expected thumbnail action overlay styling rules")
 	}
 }
 

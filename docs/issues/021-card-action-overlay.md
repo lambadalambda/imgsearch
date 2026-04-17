@@ -1,6 +1,6 @@
 # 021: Move Card Actions into Thumbnail Overlays and Simplify Rest State
 
-## Status: Open
+## Status: Completed
 
 ## Goal
 
@@ -31,12 +31,23 @@ These controls contribute to card-height variation and make the resting grid fee
   - video cards
   - search result cards where appropriate
 
+## Scope Landed
+
+- Moved `Find similar` and delete actions from the card meta stack into a `thumb-actions` overlay anchored to the thumbnail region.
+- Added hover + keyboard-focus activation so actions remain hidden at rest and become available on interaction.
+- Preserved media-type behavior:
+  - images: similar + delete
+  - videos: similar + delete
+  - search results: similar/anchor action where available, no delete button
+- Kept delete confirmation and delete API flow unchanged.
+- Reduced rest-state control weight in card metadata to keep the grid calmer and more gallery-like.
+
 ## Acceptance Criteria
 
-- [ ] Similar/Delete actions no longer dominate the default card layout
-- [ ] Actions remain discoverable and accessible with mouse and keyboard
-- [ ] Hover/focus action presentation feels lighter and more product-like
-- [ ] Delete confirmation behavior remains unchanged
+- [x] Similar/Delete actions no longer dominate the default card layout
+- [x] Actions remain discoverable and accessible with mouse and keyboard
+- [x] Hover/focus action presentation feels lighter and more product-like
+- [x] Delete confirmation behavior remains unchanged
 
 ## Notes
 
