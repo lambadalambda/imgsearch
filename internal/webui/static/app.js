@@ -531,9 +531,33 @@ function ensureVideoPlayer() {
   videoPlayer = window.videojs(videoElement, {
     controls: true,
     preload: 'auto',
-    fluid: true,
+    fluid: false,
   });
   return videoPlayer;
+}
+
+function layoutVideoPlayer(player) {
+  if (!player || !videoModal || videoModal.hidden) {
+    return;
+  }
+
+  const intrinsicWidth = Number(player.videoWidth()) || Number(videoElement.videoWidth) || 16;
+  const intrinsicHeight = Number(player.videoHeight()) || Number(videoElement.videoHeight) || 9;
+  const ratio = intrinsicWidth / intrinsicHeight || 16 / 9;
+  const targetWidth = Math.min(window.innerWidth - 64, 960);
+  const targetHeight = Math.min(window.innerHeight - 180, 720);
+
+  let width = targetWidth;
+  let height = width / ratio;
+  if (height > targetHeight) {
+    height = targetHeight;
+    width = height * ratio;
+  }
+
+  width = Math.max(240, Math.floor(width));
+  height = Math.max(160, Math.floor(height));
+
+  player.dimensions(width, height);
 }
 
 function openVideoPlayer(source, poster, caption, mimeType) {
@@ -547,6 +571,9 @@ function openVideoPlayer(source, poster, caption, mimeType) {
     player.poster(poster || '');
     player.src({ src: source, type: mimeType || 'video/mp4' });
     player.currentTime(0);
+    player.one('loadedmetadata', () => {
+      layoutVideoPlayer(player);
+    });
     player.ready(() => {
       player.play().catch(() => {});
     });
@@ -563,6 +590,10 @@ function openVideoPlayer(source, poster, caption, mimeType) {
   videoModal.setAttribute('aria-label', caption || 'Video player');
   videoModal.hidden = false;
   setOverlayState('video', true);
+
+  if (player) {
+    layoutVideoPlayer(player);
+  }
 
   if (videoCloseButton) {
     videoCloseButton.focus();
@@ -1251,6 +1282,12 @@ if (videoModal) {
     }
   });
 }
+
+window.addEventListener('resize', () => {
+  if (videoPlayer && videoModal && !videoModal.hidden) {
+    layoutVideoPlayer(videoPlayer);
+  }
+});
 
 document.addEventListener('keydown', (event) => {
   if (lightbox && !lightbox.hidden) {

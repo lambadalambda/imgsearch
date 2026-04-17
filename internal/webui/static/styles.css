@@ -401,14 +401,17 @@ input:focus-visible {
 }
 
 .video-modal-card {
-  width: min(980px, calc(100vw - 48px));
+  width: fit-content;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  min-height: 0;
   display: grid;
   gap: 12px;
+  justify-items: center;
 }
 
 .video-modal .video-js {
-  width: 100%;
-  max-height: min(78vh, 720px);
+  min-height: 0;
   border-radius: var(--radius-md);
   overflow: hidden;
 }
@@ -424,6 +427,8 @@ input:focus-visible {
   display: grid;
   gap: 8px;
   padding: 12px;
+  align-content: start;
+  justify-items: start;
 }
 
 .meta h3 {
@@ -541,6 +546,8 @@ input:focus-visible {
   padding: 3px 10px;
   font-size: 0.76rem;
   text-transform: lowercase;
+  align-self: start;
+  justify-self: start;
 }
 
 .state.done {
