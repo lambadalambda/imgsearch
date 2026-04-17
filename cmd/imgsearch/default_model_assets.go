@@ -32,6 +32,11 @@ const (
 	defaultLlamaNativeAnnotator26BMMProjPath = "./models/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf"
 	defaultLlamaNativeAnnotator26BModelURL   = "https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26b-a4b-it-heretic.q4_k_m.gguf"
 	defaultLlamaNativeAnnotator26BMMProjURL  = "https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf"
+	defaultParakeetOnnxBundleDir             = "./models/Parakeet/parakeet-tdt-0.6b-v3-onnx"
+	defaultParakeetOnnxConfigURL             = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/config.json"
+	defaultParakeetOnnxVocabURL              = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt"
+	defaultParakeetOnnxDecoderURL            = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.int8.onnx"
+	defaultParakeetOnnxEncoderURL            = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.int8.onnx"
 	defaultDownloadUserAgent                 = "imgsearch/1.0"
 	defaultDownloadTimeout                   = 30 * time.Minute
 	defaultDownloadProgressPeriod            = 5 * time.Second
@@ -85,6 +90,32 @@ func ensureDefaultLlamaNativeAnnotatorAssetsForVariant(ctx context.Context, vari
 	default:
 		return "", "", fmt.Errorf("unsupported llama-cpp-native annotator variant %q (expected %q or %q)", variant, defaultLlamaNativeAnnotatorVariant, llamaNativeAnnotatorVariant26B)
 	}
+}
+
+func ensureDefaultParakeetOnnxAssets(ctx context.Context, bundleDir string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	bundleDir = strings.TrimSpace(bundleDir)
+	if bundleDir == "" {
+		bundleDir = defaultParakeetOnnxBundleDir
+	}
+	if bundleDir != defaultParakeetOnnxBundleDir {
+		return bundleDir, nil
+	}
+
+	files := map[string]string{
+		"config.json":                   defaultParakeetOnnxConfigURL,
+		"vocab.txt":                     defaultParakeetOnnxVocabURL,
+		"decoder_joint-model.int8.onnx": defaultParakeetOnnxDecoderURL,
+		"encoder-model.int8.onnx":       defaultParakeetOnnxEncoderURL,
+	}
+	for name, url := range files {
+		if _, err := ensureDefaultModelAsset(ctx, nil, filepath.Join(bundleDir, name), filepath.Join(defaultParakeetOnnxBundleDir, name), url); err != nil {
+			return "", err
+		}
+	}
+	return bundleDir, nil
 }
 
 func ensureDefaultAssetPair(ctx context.Context, httpClient *http.Client, modelPath string, mmprojPath string, defaultModelPath string, defaultModelURL string, defaultMMProjPath string, defaultMMProjURL string) (string, string, error) {

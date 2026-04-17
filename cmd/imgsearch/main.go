@@ -51,7 +51,11 @@ func main() {
 	llamaNativeImageMaxTokens := flag.Int("llama-native-image-max-tokens", 0, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
 	llamaNativeQueryInstruction := flag.String("llama-native-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp-native text query embeddings")
 	llamaNativePassageInstruction := flag.String("llama-native-passage-instruction", "Represent this image or text for retrieval.", "instruction used for llama-cpp-native image/document embeddings")
-	parakeetOnnxBundleDir := flag.String("parakeet-onnx-bundle-dir", strings.TrimSpace(os.Getenv("PARAKEET_ONNX_BUNDLE_DIR")), "directory containing the Parakeet ONNX bundle for video transcription")
+	parakeetBundleDefault := strings.TrimSpace(os.Getenv("PARAKEET_ONNX_BUNDLE_DIR"))
+	if parakeetBundleDefault == "" {
+		parakeetBundleDefault = defaultParakeetOnnxBundleDir
+	}
+	parakeetOnnxBundleDir := flag.String("parakeet-onnx-bundle-dir", parakeetBundleDefault, "directory containing the Parakeet ONNX bundle for video transcription")
 	parakeetOnnxRuntimeLib := flag.String("parakeet-onnxruntime-lib", strings.TrimSpace(os.Getenv("PARAKEET_ONNXRUNTIME_LIB")), "path to the ONNX Runtime shared library used for Parakeet video transcription")
 	parakeetOnnxCoreML := flag.Bool("parakeet-onnx-coreml", os.Getenv("PARAKEET_ONNX_COREML") == "1", "whether to request the CoreML execution provider for Parakeet ONNX video transcription")
 	enableAnnotations := flag.Bool("enable-annotations", true, "whether to load and run image annotation models")
@@ -263,10 +267,17 @@ func main() {
 	}
 
 	var videoTranscriber transcribe.VideoTranscriber
-	if strings.TrimSpace(*parakeetOnnxBundleDir) != "" && strings.TrimSpace(*parakeetOnnxRuntimeLib) != "" {
+	resolvedParakeetBundleDir := strings.TrimSpace(*parakeetOnnxBundleDir)
+	if strings.TrimSpace(*parakeetOnnxRuntimeLib) != "" {
+		resolvedParakeetBundleDir, err = ensureDefaultParakeetOnnxAssets(context.Background(), resolvedParakeetBundleDir)
+		if err != nil {
+			log.Fatalf("ensure Parakeet ONNX assets: %v", err)
+		}
+	}
+	if resolvedParakeetBundleDir != "" && strings.TrimSpace(*parakeetOnnxRuntimeLib) != "" {
 		videoTranscriber = &parakeetonnx.Recognizer{Config: parakeetonnx.RecognizerConfig{
 			ONNXRuntimeLib: strings.TrimSpace(*parakeetOnnxRuntimeLib),
-			BundleDir:      strings.TrimSpace(*parakeetOnnxBundleDir),
+			BundleDir:      resolvedParakeetBundleDir,
 			UseCoreML:      *parakeetOnnxCoreML,
 		}}
 		enqueuedTranscriptJobs, err := db.EnsureVideoTranscriptJobsForModel(context.Background(), sqlDB, modelID)
@@ -276,7 +287,7 @@ func main() {
 		if enqueuedTranscriptJobs > 0 {
 			log.Printf("enqueued %d video transcript jobs for model_id=%d", enqueuedTranscriptJobs, modelID)
 		}
-		log.Printf("video transcription enabled via Parakeet ONNX bundle %s", strings.TrimSpace(*parakeetOnnxBundleDir))
+		log.Printf("video transcription enabled via Parakeet ONNX bundle %s", resolvedParakeetBundleDir)
 	} else {
 		log.Printf("video transcription disabled")
 	}

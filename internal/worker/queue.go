@@ -155,12 +155,13 @@ func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
 			_ = q.failOrRetry(ctx, job, err)
 			return true, err
 		}
-		videoID, videoStoragePath, err := q.loadVideoTaskData(ctx, job.VideoID)
+		videoID, videoOriginalName, videoStoragePath, err := q.loadVideoTaskData(ctx, job.VideoID)
 		if err != nil {
 			_ = q.failOrRetry(ctx, job, err)
 			return true, err
 		}
 		videoAbsPath := filepath.Join(q.DataDir, filepath.FromSlash(videoStoragePath))
+		log.Printf("worker transcribing video id=%d file=%q path=%s", videoID, videoOriginalName, videoStoragePath)
 		stageStartedAt = time.Now()
 		if _, err := os.Stat(videoAbsPath); err != nil {
 			statDuration = time.Since(stageStartedAt)
@@ -710,12 +711,13 @@ func (q *Queue) processJob(ctx context.Context, owner string, job claimedJob) bo
 			_ = q.failOrRetry(ctx, job, fmt.Errorf("text embedder is unavailable"))
 			return false
 		}
-		videoID, videoStoragePath, err := q.loadVideoTaskData(ctx, job.VideoID)
+		videoID, videoOriginalName, videoStoragePath, err := q.loadVideoTaskData(ctx, job.VideoID)
 		if err != nil {
 			_ = q.failOrRetry(ctx, job, err)
 			return false
 		}
 		videoAbsPath := filepath.Join(q.DataDir, filepath.FromSlash(videoStoragePath))
+		log.Printf("worker transcribing video id=%d file=%q path=%s", videoID, videoOriginalName, videoStoragePath)
 		stageStartedAt = time.Now()
 		if _, err := os.Stat(videoAbsPath); err != nil {
 			statDuration = time.Since(stageStartedAt)
@@ -815,16 +817,17 @@ WHERE id = ?
 	return storagePath, needsAnnotations == 1, nil
 }
 
-func (q *Queue) loadVideoTaskData(ctx context.Context, videoID int64) (int64, string, error) {
+func (q *Queue) loadVideoTaskData(ctx context.Context, videoID int64) (int64, string, string, error) {
+	var originalName string
 	var storagePath string
 	if err := q.DB.QueryRowContext(ctx, `
-SELECT id, storage_path
+SELECT id, original_name, storage_path
 FROM videos
 WHERE id = ?
-`, videoID).Scan(&videoID, &storagePath); err != nil {
-		return 0, "", fmt.Errorf("load video task data: %w", err)
+`, videoID).Scan(&videoID, &originalName, &storagePath); err != nil {
+		return 0, "", "", fmt.Errorf("load video task data: %w", err)
 	}
-	return videoID, storagePath, nil
+	return videoID, originalName, storagePath, nil
 }
 
 func (q *Queue) completeJob(ctx context.Context, job claimedJob, annotation *embedder.ImageAnnotation) error {
