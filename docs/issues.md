@@ -27,6 +27,10 @@ This is a lightweight working checklist for system issues and cleanup found duri
 
 - [x] P2 Add MVP video search via sampled representative frames: `docs/issues/016-video-search-via-sampled-frames.md`
 - [x] P2 Add transcript-backed video search with integrated local ASR: `docs/issues/017-video-transcript-asr-spike.md`
+- [ ] P2 Tighten UI radius language and chrome hierarchy: `docs/issues/018-ui-radius-and-chrome-tightening.md`
+- [ ] P2 Standardize library card height and content density: `docs/issues/019-card-height-and-density.md`
+- [ ] P2 Add hover/focus overlay expansion for clipped card content: `docs/issues/020-card-overlay-expansion.md`
+- [ ] P3 Move card actions into thumbnail overlays and simplify rest state: `docs/issues/021-card-action-overlay.md`
 
 ## Notes
 
