@@ -1,6 +1,6 @@
 # 018: Tighten UI Radius and Chrome Hierarchy
 
-## Status: Open
+## Status: Completed
 
 ## Goal
 
@@ -37,12 +37,22 @@ This gives the interface a soft template-like feel rather than a tighter, more e
 - Simplify tab-count presentation
 - Revisit rest-state shadow and border intensity for cards/panels
 
+## Scope Landed
+
+- Replaced the old three-step radius token system with two shared scales:
+  - `--radius-panel`
+  - `--radius-control`
+- Rebased buttons, inputs, tabs, cards, status chips, modal surfaces, and lightbox controls on the tighter shared radius language.
+- Reduced heavy chrome in tab controls and selected-tab framing.
+- Softened rest-state panel/card shadow and border treatment while preserving focus/hover contrast.
+- Kept full pill radius for intentional dot/progress affordances.
+
 ## Acceptance Criteria
 
-- [ ] Buttons, cards, inputs, and tabs share a smaller, more consistent corner language
-- [ ] Pill-shaped treatment is limited to a small set of intentional UI elements
-- [ ] The UI reads visually calmer and less like a generic app template
-- [ ] No layout or behavior regressions in the existing web UI/server tests
+- [x] Buttons, cards, inputs, and tabs share a smaller, more consistent corner language
+- [x] Pill-shaped treatment is limited to a small set of intentional UI elements
+- [x] The UI reads visually calmer and less like a generic app template
+- [x] No layout or behavior regressions in the existing web UI/server tests
 
 ## Notes
 

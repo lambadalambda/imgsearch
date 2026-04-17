@@ -252,11 +252,38 @@ function setActiveTab(name) {
   clearResultsButton.disabled = state.results.length === 0;
 }
 
-function shouldShowDescriptionToggle(description) {
-  if (!description) {
-    return false;
+function normalizeText(value) {
+  if (typeof value !== 'string') {
+    return '';
   }
-  return description.length > 160 || description.split(/\s+/).length > 28;
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function supportTextForItem(item, mode) {
+  const description = normalizeText(item.description);
+  const transcriptText = normalizeText(item.transcript_text);
+  const mediaType = item.media_type || 'image';
+
+  if (mediaType === 'video' || mode === 'videos') {
+    return transcriptText || description;
+  }
+
+  if (mode === 'result' && transcriptText) {
+    return transcriptText;
+  }
+
+  return description || transcriptText;
+}
+
+function supportTextClass(item, supportText) {
+  if (!supportText) {
+    return '';
+  }
+  const transcriptText = normalizeText(item.transcript_text);
+  if (transcriptText && supportText === transcriptText) {
+    return 'supporting-text supporting-transcript';
+  }
+  return 'supporting-text';
 }
 
 function cardMarkup(item, mode) {
@@ -267,19 +294,22 @@ function cardMarkup(item, mode) {
   const thumbPath = mediaType === 'video' && item.preview_path ? item.preview_path : item.storage_path;
   const thumbURL = escapeHTML(toMediaURL(thumbPath));
   const mediaURL = escapeHTML(toMediaURL(item.storage_path));
-  const description = typeof item.description === 'string' ? item.description.trim() : '';
-  const transcriptText = typeof item.transcript_text === 'string' ? item.transcript_text.trim() : '';
-  const tags = Array.isArray(item.tags) ? item.tags.filter((tag) => typeof tag === 'string' && tag.trim() !== '').slice(0, 10) : [];
-  const descriptionID = `description-${mode}-${Number(item.image_id) || 0}`;
-  const transcriptID = `transcript-${mode}-${Number(item.video_id) || Number(item.image_id) || 0}`;
-  const canExpandDescription = shouldShowDescriptionToggle(description);
-  const canExpandTranscript = shouldShowDescriptionToggle(transcriptText);
+  const supportText = supportTextForItem(item, mode);
+  const supportClass = supportTextClass(item, supportText);
+  const tags = Array.isArray(item.tags)
+    ? item.tags
+        .filter((tag) => typeof tag === 'string' && tag.trim() !== '')
+        .map((tag) => tag.trim())
+        .slice(0, 8)
+    : [];
+  const visibleTags = tags.slice(0, 4);
+  const hiddenTagCount = Math.max(0, tags.length - visibleTags.length);
   const status = item.index_state || 'done';
   const safeStatus = escapeHTML(humanizeIndexState(status));
   const scoreLabel = formatMatch(item.distance);
   const score = scoreLabel && !item.is_anchor ? `<p class="distance">${escapeHTML(scoreLabel)}</p>` : '';
   const canSearchSimilar = status === 'done' && Number(item.image_id) > 0;
-  const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use preview frame' : 'Use as anchor') : 'Find similar';
+  const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use frame' : 'Use anchor') : 'Find similar';
   const disabled = canSearchSimilar ? '' : 'disabled';
   const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';
   const anchorBadge = item.is_anchor ? '<p class="state anchor">anchor</p>' : '';
@@ -289,20 +319,13 @@ function cardMarkup(item, mode) {
     : mode === 'videos'
       ? `<button class="ghost danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}">Delete</button>`
       : '';
-  const descriptionMarkup = description
-    ? `<div class="description-wrap" data-expanded="false">
-        <p id="${descriptionID}" class="description">${escapeHTML(description)}</p>
-        ${canExpandDescription ? `<button type="button" class="description-toggle" aria-expanded="false" aria-controls="${descriptionID}">Show more</button>` : ''}
-      </div>`
+  const supportMarkup = supportText
+    ? `<p class="${supportClass}">${escapeHTML(supportText)}</p>`
     : '';
-  const transcriptMarkup = transcriptText
-    ? `<div class="description-wrap transcript-wrap" data-expanded="false">
-        <p id="${transcriptID}" class="description transcript-text">${escapeHTML(transcriptText)}</p>
-        ${canExpandTranscript ? `<button type="button" class="description-toggle" aria-expanded="false" aria-controls="${transcriptID}">Show more</button>` : ''}
-      </div>`
-    : '';
-  const tagsMarkup = tags.length > 0
-    ? `<ul class="tag-list">${tags.map((tag) => `<li class="tag-chip${tag.trim().toLowerCase() === 'nsfw' ? ' tag-chip-nsfw' : ''}">${escapeHTML(tag)}</li>`).join('')}</ul>`
+  const tagsMarkup = visibleTags.length > 0
+    ? `<ul class="tag-list">${visibleTags
+        .map((tag) => `<li class="tag-chip${tag.toLowerCase() === 'nsfw' ? ' tag-chip-nsfw' : ''}">${escapeHTML(tag)}</li>`)
+        .join('')}${hiddenTagCount > 0 ? `<li class="tag-chip tag-chip-more">+${hiddenTagCount}</li>` : ''}</ul>`
     : '';
 
   return `
@@ -323,18 +346,23 @@ function cardMarkup(item, mode) {
         ${mediaType === 'video' ? '<span class="thumb-video-badge">video</span>' : ''}
       </button>
       <div class="meta">
-        <h3>${safeName}</h3>
-        <p class="path">${safePath}</p>
-        ${descriptionMarkup}
-        ${transcriptMarkup}
-        ${tagsMarkup}
-        ${videoMeta}
-        <p class="${stateClass(status)}">${safeStatus}</p>
-        ${anchorBadge}
-        ${score}
-        <div class="card-actions">
-          <button class="ghost similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
-          ${deleteButton}
+        <div class="meta-main">
+          <h3>${safeName}</h3>
+          <p class="path">${safePath}</p>
+          ${supportMarkup}
+          ${videoMeta}
+          ${tagsMarkup}
+        </div>
+        <div class="meta-foot">
+          <div class="meta-status-row">
+            <p class="${stateClass(status)}">${safeStatus}</p>
+            ${anchorBadge}
+            ${score}
+          </div>
+          <div class="card-actions">
+            <button class="ghost similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
+            ${deleteButton}
+          </div>
         </div>
       </div>
     </article>
@@ -1128,25 +1156,6 @@ function attachDeleteHandler(target) {
   });
 }
 
-function attachDescriptionToggleHandler(target) {
-  target.addEventListener('click', (event) => {
-    const button = event.target.closest('.description-toggle');
-    if (!button || !target.contains(button)) {
-      return;
-    }
-
-    const wrap = button.closest('.description-wrap');
-    if (!wrap) {
-      return;
-    }
-
-    const expanded = wrap.dataset.expanded === 'true';
-    wrap.dataset.expanded = expanded ? 'false' : 'true';
-    button.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-    button.textContent = expanded ? 'Show more' : 'Show less';
-  });
-}
-
 galleryTabButton.addEventListener('click', () => setActiveTab('gallery'));
 videosTabButton.addEventListener('click', () => setActiveTab('videos'));
 resultsTabButton.addEventListener('click', () => setActiveTab('results'));
@@ -1336,9 +1345,6 @@ attachDeleteHandler(videosGrid);
 attachLightboxHandler(galleryGrid);
 attachLightboxHandler(videosGrid);
 attachLightboxHandler(resultsGrid);
-attachDescriptionToggleHandler(galleryGrid);
-attachDescriptionToggleHandler(videosGrid);
-attachDescriptionToggleHandler(resultsGrid);
 
 if (lightboxCloseButton) {
   lightboxCloseButton.addEventListener('click', closeLightbox);

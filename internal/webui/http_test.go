@@ -92,6 +92,47 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "delete-action") {
 		t.Fatalf("expected delete action class in card rendering")
 	}
+	if !strings.Contains(rr.Body.String(), "const supportText =") {
+		t.Fatalf("expected card rendering to choose a single support text slot")
+	}
+	if !strings.Contains(rr.Body.String(), "supporting-text") {
+		t.Fatalf("expected compact supporting text class in card rendering")
+	}
+	if !strings.Contains(rr.Body.String(), "tag-chip-more") {
+		t.Fatalf("expected compact tag overflow chip support in card rendering")
+	}
+	if strings.Contains(rr.Body.String(), "description-toggle") || strings.Contains(rr.Body.String(), "Show more") {
+		t.Fatalf("expected inline description toggle pattern removed from card rendering")
+	}
+}
+
+func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
+	h := NewHandler(t.TempDir())
+
+	req := httptest.NewRequest(http.MethodGet, "/assets/styles.css", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	body := rr.Body.String()
+	if !strings.Contains(body, "--radius-panel:") || !strings.Contains(body, "--radius-control:") {
+		t.Fatalf("expected two-tier radius tokens for panel and control scales")
+	}
+	if strings.Contains(body, "--radius-lg:") || strings.Contains(body, "--radius-md:") || strings.Contains(body, "--radius-sm:") {
+		t.Fatalf("expected legacy multi-size radius tokens to be removed")
+	}
+	if !strings.Contains(body, "grid-template-rows: 220px minmax(172px, 172px);") {
+		t.Fatalf("expected cards to use fixed resting media/meta proportions")
+	}
+	if !strings.Contains(body, ".supporting-text") {
+		t.Fatalf("expected dedicated supporting text clamping rules")
+	}
+	if !strings.Contains(body, "max-height: 1.8em;") {
+		t.Fatalf("expected tag row to clamp at rest")
+	}
 }
 
 func TestMediaServesFilesFromDataDir(t *testing.T) {

@@ -14,10 +14,10 @@
   --warn: #8b6422;
   --bad: #a33636;
   --leased: #2d6780;
-  --radius-lg: 24px;
-  --radius-md: 16px;
-  --radius-sm: 12px;
-  --shadow: 0 16px 40px rgba(47, 38, 24, 0.08);
+  --radius-panel: 16px;
+  --radius-control: 10px;
+  --shadow: 0 12px 32px rgba(47, 38, 24, 0.07);
+  --shadow-card-rest: 0 7px 18px rgba(44, 37, 25, 0.08);
 }
 
 * {
@@ -55,7 +55,7 @@ body.lightbox-open {
 .panel {
   border: 1px solid var(--line);
   background: color-mix(in oklab, var(--surface) 94%, white 6%);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-panel);
   box-shadow: var(--shadow);
 }
 
@@ -130,7 +130,7 @@ input[type="search"],
 input[type="file"] {
   width: 100%;
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   background: #fffdf9;
   color: var(--ink);
   font: inherit;
@@ -154,7 +154,7 @@ input[type="search"]::placeholder {
 
 button {
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -220,7 +220,7 @@ input:focus-visible {
 
 .status-strip {
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   background: color-mix(in oklab, var(--surface-strong) 84%, white 16%);
   padding: 14px;
   display: grid;
@@ -286,7 +286,7 @@ input:focus-visible {
 .failure-item {
   border: 1px solid #e9cfcd;
   background: #fff7f6;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   padding: 9px 11px;
   color: #7b3434;
   font-size: 0.84rem;
@@ -305,31 +305,35 @@ input:focus-visible {
 .tablist {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   width: fit-content;
-  padding: 6px;
-  border-radius: 999px;
-  background: #efe8da;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklab, var(--line) 78%, white 22%);
+  background: color-mix(in oklab, var(--surface-strong) 88%, white 12%);
 }
 
 .tab-button {
   background: transparent;
   color: var(--muted-strong);
-  padding: 10px 14px;
+  border-radius: 8px;
+  padding: 8px 12px;
   display: inline-flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
 .tab-button[aria-selected="true"] {
   background: #fffdf8;
   color: var(--ink);
-  box-shadow: 0 3px 10px rgba(44, 37, 25, 0.08);
+  border: 1px solid color-mix(in oklab, var(--line) 84%, white 16%);
+  box-shadow: 0 1px 2px rgba(44, 37, 25, 0.08);
 }
 
 .tab-count {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
 }
 
 .tab-panel {
@@ -353,11 +357,20 @@ input:focus-visible {
 
 .card {
   display: grid;
-  grid-template-rows: 220px auto;
+  grid-template-rows: 220px minmax(172px, 172px);
   overflow: hidden;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklab, var(--line) 86%, white 14%);
   background: #fffdf9;
+  box-shadow: var(--shadow-card-rest);
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.card:hover,
+.card:focus-within {
+  border-color: color-mix(in oklab, var(--line-strong) 80%, white 20%);
+  box-shadow: 0 12px 24px rgba(44, 37, 25, 0.14);
+  transform: translateY(-1px);
 }
 
 .thumb-button {
@@ -386,7 +399,7 @@ input:focus-visible {
   left: 12px;
   bottom: 12px;
   padding: 5px 10px;
-  border-radius: 999px;
+  border-radius: 7px;
   background: rgba(35, 32, 28, 0.82);
   color: #fffdf9;
   font-size: 0.76rem;
@@ -407,7 +420,7 @@ input:focus-visible {
 
 .video-modal .video-js {
   min-height: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-control);
   overflow: hidden;
 }
 
@@ -420,15 +433,42 @@ input:focus-visible {
 
 .meta {
   display: grid;
-  gap: 8px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 10px;
   padding: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.meta-main {
+  display: grid;
+  gap: 6px;
   align-content: start;
-  justify-items: start;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.meta-foot {
+  display: grid;
+  gap: 8px;
+}
+
+.meta-status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .meta h3 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.28;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(1.28em * 2);
   word-break: break-word;
 }
 
@@ -438,12 +478,33 @@ input:focus-visible {
 .media-link {
   margin: 0;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
 }
 
 .video-meta {
-  display: grid;
-  gap: 4px;
+  min-height: 1.2em;
+}
+
+.timestamp {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.supporting-text {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.84rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(1.35em * 2);
+}
+
+.supporting-transcript {
+  font-style: italic;
 }
 
 .media-link {
@@ -456,79 +517,39 @@ input:focus-visible {
   color: var(--accent);
 }
 
-.description {
-	margin: 0;
-	color: var(--ink);
-	font-size: 0.88rem;
-	line-height: 1.45;
-	display: -webkit-box;
-	-webkit-line-clamp: 2;
-	-webkit-box-orient: vertical;
-	overflow: hidden;
-}
-
-.description-wrap {
-	display: grid;
-	gap: 6px;
-}
-
-.transcript-wrap {
-	border-left: 2px solid color-mix(in oklab, var(--accent-soft) 70%, white 30%);
-	padding-left: 10px;
-}
-
-.transcript-text {
-	color: var(--muted-strong);
-	font-style: italic;
-}
-
-.description-wrap[data-expanded="true"] .description {
-	display: block;
-	-webkit-line-clamp: unset;
-	-webkit-box-orient: initial;
-	overflow: visible;
-}
-
-.description-toggle {
-	justify-self: start;
-	padding: 0;
-	border-radius: 0;
-	background: transparent;
-	color: var(--accent-strong);
-	font-size: 0.8rem;
-	font-weight: 600;
-	text-decoration: underline;
-	text-underline-offset: 2px;
-}
-
-.description-toggle:hover {
-	color: var(--accent);
-}
-
 .tag-list {
 	margin: 0;
 	padding: 0;
 	list-style: none;
 	display: flex;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	gap: 6px;
+	overflow: hidden;
+	max-height: 1.8em;
 }
 
 .tag-chip {
 	display: inline-flex;
 	align-items: center;
-	padding: 4px 8px;
-	border-radius: 999px;
+	padding: 3px 7px;
+	border-radius: var(--radius-control);
 	background: #f0eadf;
 	color: var(--muted-strong);
-	font-size: 0.76rem;
+	font-size: 0.74rem;
 	line-height: 1;
 	text-transform: lowercase;
+	white-space: nowrap;
 }
 
 .tag-chip-nsfw {
 	background: #fae5e4;
 	color: var(--bad);
+}
+
+.tag-chip-more {
+	background: #ece5d7;
+	color: var(--muted);
+	text-transform: none;
 }
 
 .path {
@@ -547,12 +568,10 @@ input:focus-visible {
 .state {
   margin: 0;
   width: fit-content;
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 0.76rem;
+  border-radius: var(--radius-control);
+  padding: 2px 8px;
+  font-size: 0.74rem;
   text-transform: lowercase;
-  align-self: start;
-  justify-self: start;
 }
 
 .state.done {
@@ -586,8 +605,16 @@ input:focus-visible {
 
 .card-actions {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.card-actions .ghost {
+  padding: 7px 10px;
+  font-size: 0.76rem;
+  white-space: nowrap;
 }
 
 .danger {
@@ -668,7 +695,7 @@ input:focus-visible {
 .modal-card {
   width: min(520px, calc(100vw - 28px));
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-panel);
   background: #fffdf9;
   box-shadow: 0 28px 80px rgba(28, 23, 18, 0.22);
   padding: 20px;
@@ -713,7 +740,7 @@ input:focus-visible {
   max-width: 100%;
   max-height: calc(88vh - 44px);
   object-fit: contain;
-  border-radius: 12px;
+  border-radius: var(--radius-control);
   box-shadow: 0 22px 50px rgba(0, 0, 0, 0.5);
   background: #181714;
 }
@@ -734,7 +761,7 @@ input:focus-visible {
   background: rgba(15, 14, 12, 0.68);
   color: #fff;
   padding: 8px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
 }
 
 .lightbox-close:hover:not(:disabled) {
@@ -796,7 +823,7 @@ input:focus-visible {
   }
 
   .card {
-    grid-template-rows: 162px auto;
+    grid-template-rows: 162px minmax(164px, 164px);
   }
 
   .tablist {

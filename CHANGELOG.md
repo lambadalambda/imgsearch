@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ux: tighten UI chrome/radius language (issue 018) by collapsing to shared panel/control radius tokens, reducing over-pill styling, and calming default tab/card framing.
+- ux: standardize card resting density (issue 019) with fixed media/meta proportions, aggressive title/path/supporting-text clamping, and single-row tag overflow chips to keep image/video/result grids visually consistent.
 - feat: add configuration-gated transcript-backed video search using a local Parakeet ONNX pipeline. When `-parakeet-onnx-bundle-dir` and `-parakeet-onnxruntime-lib` are set, videos are transcribed in the worker, transcript text is shown in the Videos tab, transcript embeddings are stored with the active Qwen model, and text search can match videos by transcript content. The integrated recognizer now reuses ONNX sessions across jobs, and CoreML stays off by default because the CPU path has been more stable and memory-efficient in practice.
 - feat: add MVP video search by sampling a fixed number of representative frames per uploaded video, embedding those frames through the existing image pipeline, and grouping frame hits back into video search results with timestamps and preview frames.
 - feat: extend the bulk import task so `mise run import-images <dir>` also imports supported videos (`.mp4`, `.mov`, `.webm`, `.mkv`) through the same upload pipeline, while skipping videos larger than 20 MB by default.

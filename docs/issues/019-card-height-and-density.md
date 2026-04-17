@@ -1,6 +1,6 @@
 # 019: Standardize Library Card Height and Content Density
 
-## Status: Open
+## Status: Completed
 
 ## Goal
 
@@ -39,12 +39,21 @@ This creates ragged rows, weak visual rhythm, and a cluttered engineering-tool f
 - Tighten title/path/supporting-text/tag presentation
 - Normalize thumbnail-to-meta proportions across Images/Videos/Results cards
 
+## Scope Landed
+
+- Reworked card rendering to use one compact supporting-text slot at rest instead of stacking description + transcript blocks.
+- Removed inline card expansion controls from rest-state cards so grid rows keep a consistent silhouette.
+- Added fixed resting media/meta proportions for cards in all grids (Images, Videos, Results).
+- Clamped title/path/supporting text and video metadata at rest.
+- Changed tag rendering to a single-row compact list with a `+N` overflow chip to prevent multi-row card growth.
+- Kept existing search, delete, and media-open behaviors intact.
+
 ## Acceptance Criteria
 
-- [ ] Cards in grid views have a much more consistent resting height
-- [ ] Titles, paths, and prose blocks are clipped at rest instead of growing the grid unpredictably
-- [ ] Tag rows no longer create multi-row card-height explosions by default
-- [ ] The card layout still works for images, videos, and search results
+- [x] Cards in grid views have a much more consistent resting height
+- [x] Titles, paths, and prose blocks are clipped at rest instead of growing the grid unpredictably
+- [x] Tag rows no longer create multi-row card-height explosions by default
+- [x] The card layout still works for images, videos, and search results
 
 ## Notes
 
