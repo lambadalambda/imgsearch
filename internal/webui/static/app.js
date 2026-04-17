@@ -1095,7 +1095,7 @@ galleryPrevButton.addEventListener('click', async () => {
 });
 
 galleryNextButton.addEventListener('click', async () => {
-  if (state.galleryPage >= totalGalleryPages() - 1) {
+  if (state.galleryPage >= totalPages(state.imagesTotal, state.galleryPageSize) - 1) {
     return;
   }
   state.galleryPage += 1;

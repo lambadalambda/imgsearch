@@ -80,6 +80,12 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "data-player-src=\"${mediaURL}\"") {
 		t.Fatalf("expected player source binding to use mediaURL in card rendering")
 	}
+	if !strings.Contains(rr.Body.String(), "totalPages(state.imagesTotal, state.galleryPageSize)") {
+		t.Fatalf("expected gallery pagination to use shared totalPages helper")
+	}
+	if strings.Contains(rr.Body.String(), "totalGalleryPages()") {
+		t.Fatalf("expected removed totalGalleryPages helper not to be referenced in app javascript")
+	}
 }
 
 func TestMediaServesFilesFromDataDir(t *testing.T) {
