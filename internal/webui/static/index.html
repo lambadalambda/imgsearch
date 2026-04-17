@@ -11,32 +11,24 @@
   </head>
   <body>
     <main class="shell">
-      <header class="masthead panel">
-        <div class="brand-block">
-          <div class="brand-row">
-            <h1>imgsearch</h1>
-            <p id="live-connection" class="connection-badge" data-state="connecting" role="status" aria-live="polite">
-              <span class="connection-dot" aria-hidden="true"></span>
-              <span id="live-connection-label">Connecting live updates...</span>
-            </p>
-          </div>
-          <p class="lede">
-            Search your image and video library by phrase or by example, then move between fresh imports, image browsing, video browsing, and result sets without leaving the page.
-          </p>
+      <header class="masthead">
+        <div class="brand-row">
+          <h1>imgsearch</h1>
         </div>
 
-        <div class="control-block">
-          <form id="text-search-form" class="search-bar">
-            <label class="field field-primary">
-              <span class="field-label">Search</span>
-              <input
-                id="text-query"
-                type="search"
-                placeholder="cute cosplay, dog on grass, woman portrait"
-                autocomplete="off"
-                required
-              />
-            </label>
+        <form id="text-search-form" class="search-bar">
+          <label class="field field-primary">
+            <span class="sr-only">Search</span>
+            <input
+              id="text-query"
+              type="search"
+              placeholder="cute cosplay, dog on grass, woman portrait"
+              autocomplete="off"
+              required
+            />
+          </label>
+          <details class="search-advanced">
+            <summary class="search-advanced-toggle">Exclude</summary>
             <label class="field field-secondary">
               <span class="field-label">Exclude</span>
               <input
@@ -46,33 +38,41 @@
                 autocomplete="off"
               />
             </label>
-            <div class="search-actions">
-              <button type="submit" class="cta">Search</button>
-              <button id="upload-open" type="button" class="ghost">Upload</button>
-            </div>
-          </form>
-          <p id="search-status" class="status search-status" role="status" aria-live="polite"></p>
-
-          <section class="status-strip" aria-labelledby="indexing-title">
-            <div class="status-strip-head">
-              <div>
-                <p class="section-label">Indexing</p>
-                <h2 id="indexing-title">Library status</h2>
-              </div>
-              <div class="status-actions">
-                <button id="retry-failed" type="button" class="ghost">Retry stuck</button>
-                <button id="refresh-stats" type="button" class="ghost">Refresh</button>
-              </div>
-            </div>
-            <p id="stats-summary" class="status summary-status" role="status" aria-live="polite"></p>
-            <div class="progress-track progress-track-compact" aria-hidden="true">
-              <div id="stats-progress" class="progress-fill"></div>
-            </div>
-            <p id="stats-detail" class="status detail-status"></p>
-            <div id="stats-failures" class="failure-list failure-list-compact"></div>
-          </section>
-        </div>
+          </details>
+          <div class="search-actions">
+            <button type="submit" class="cta">Search</button>
+            <button id="upload-open" type="button" class="ghost quiet-action">Upload</button>
+          </div>
+        </form>
       </header>
+
+      <section id="ops-bar" class="ops-bar" aria-label="Library indexing status" data-state="idle">
+        <div class="ops-inline">
+          <p id="live-connection" class="connection-badge" data-state="connecting" role="status" aria-live="polite">
+            <span class="connection-dot" aria-hidden="true"></span>
+            <span id="live-connection-label">Connecting live updates...</span>
+          </p>
+          <p id="search-status" class="status search-status" role="status" aria-live="polite"></p>
+          <p id="stats-summary" class="status summary-status" role="status" aria-live="polite"></p>
+          <p id="stats-detail" class="status detail-status"></p>
+          <details class="ops-menu">
+            <summary class="ghost quiet-action ops-menu-trigger">
+              <span aria-hidden="true">...</span>
+              <span class="sr-only">More library actions</span>
+            </summary>
+            <div class="ops-menu-body">
+              <div class="status-actions">
+                <button id="retry-failed" type="button" class="ghost quiet-action">Retry stuck</button>
+                <button id="refresh-stats" type="button" class="ghost quiet-action">Refresh</button>
+              </div>
+              <div id="stats-failures" class="failure-list failure-list-compact"></div>
+            </div>
+          </details>
+        </div>
+        <div class="progress-track progress-track-compact" aria-hidden="true">
+          <div id="stats-progress" class="progress-fill"></div>
+        </div>
+      </section>
 
       <section class="workspace panel" aria-labelledby="library-view-title">
         <div class="workspace-head">

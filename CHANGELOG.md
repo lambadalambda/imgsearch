@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ux: shift to a search-first masthead (issue 022) by shrinking top chrome, moving indexing controls into a quiet ops bar/disclosure, and demoting infrequent controls so Search stays primary.
 - ux: add layered hover/focus card detail overlays (issue 020) so clipped title/supporting content/tags expand above neighboring cards without changing grid row height.
 - ux: move similar/delete controls into thumbnail action overlays (issue 021), keeping cards calmer at rest while preserving keyboard and delete-confirmation behavior.
 - ux: tighten UI chrome/radius language (issue 018) by collapsing to shared panel/control radius tokens, reducing over-pill styling, and calming default tab/card framing.

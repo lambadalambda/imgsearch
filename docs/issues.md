@@ -31,6 +31,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P2 Standardize library card height and content density: `docs/issues/019-card-height-and-density.md`
 - [x] P2 Add hover/focus overlay expansion for clipped card content: `docs/issues/020-card-overlay-expansion.md`
 - [x] P3 Move card actions into thumbnail overlays and simplify rest state: `docs/issues/021-card-action-overlay.md`
+- [x] P2 Shift to a search-first masthead and quiet ops controls: `docs/issues/022-search-first-masthead-and-quiet-ops.md`
 
 ## Notes
 

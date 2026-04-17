@@ -41,6 +41,21 @@ func TestRootServesIndexPage(t *testing.T) {
 	if !strings.Contains(body, "id=\"live-connection\"") {
 		t.Fatalf("expected live connection indicator in page")
 	}
+	if strings.Contains(body, "class=\"masthead panel\"") {
+		t.Fatalf("expected masthead to be compact chrome without panel treatment")
+	}
+	if !strings.Contains(body, "id=\"ops-bar\"") || !strings.Contains(body, "class=\"ops-bar\"") {
+		t.Fatalf("expected compact ops bar container outside masthead")
+	}
+	if !strings.Contains(body, "<details class=\"search-advanced\"") {
+		t.Fatalf("expected exclude query to live behind advanced search disclosure")
+	}
+	if !strings.Contains(body, "<details class=\"ops-menu\"") {
+		t.Fatalf("expected retry and refresh actions to be wrapped in a quiet ops menu")
+	}
+	if strings.Contains(body, "Search your image and video library by phrase") {
+		t.Fatalf("expected marketing lede removed from compact masthead")
+	}
 }
 
 func TestAssetsAreServed(t *testing.T) {
@@ -125,6 +140,12 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "status === 'done' || mediaType === 'video'") {
 		t.Fatalf("expected similar action to stay available for videos regardless of transcript-only index state")
 	}
+	if !strings.Contains(rr.Body.String(), "const opsBar = document.getElementById('ops-bar');") {
+		t.Fatalf("expected javascript hook for compact ops bar state")
+	}
+	if !strings.Contains(rr.Body.String(), "opsBar.dataset.state =") {
+		t.Fatalf("expected javascript to toggle quiet/active ops bar presentation")
+	}
 }
 
 func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
@@ -183,6 +204,18 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	}
 	if !strings.Contains(body, "right: 10px;") || !strings.Contains(body, "bottom: 10px;") {
 		t.Fatalf("expected thumbnail match badge to stay anchored at lower right")
+	}
+	if !strings.Contains(body, ".ops-bar") || !strings.Contains(body, ".ops-menu") {
+		t.Fatalf("expected compact ops-bar and quiet ops-menu styling rules")
+	}
+	if !strings.Contains(body, ".search-advanced") {
+		t.Fatalf("expected advanced-search disclosure styling rules")
+	}
+	if strings.Contains(body, "grid-template-columns: minmax(280px, 0.95fr) minmax(420px, 1.35fr);") {
+		t.Fatalf("expected old heavyweight masthead two-column layout to be removed")
+	}
+	if strings.Contains(body, "font-size: clamp(2.2rem, 5vw, 4rem);") {
+		t.Fatalf("expected oversized hero-style title scale to be removed from masthead")
 	}
 }
 

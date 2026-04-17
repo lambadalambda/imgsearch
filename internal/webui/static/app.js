@@ -51,6 +51,7 @@ const refreshImagesButton = document.getElementById('refresh-images');
 const clearResultsButton = document.getElementById('clear-results');
 const refreshStatsButton = document.getElementById('refresh-stats');
 const retryFailedButton = document.getElementById('retry-failed');
+const opsBar = document.getElementById('ops-bar');
 
 const statsSummary = document.getElementById('stats-summary');
 const statsDetail = document.getElementById('stats-detail');
@@ -452,6 +453,9 @@ function mediaByImageID() {
 function renderStats() {
   const payload = state.stats;
   if (!payload || !payload.queue) {
+    if (opsBar) {
+      opsBar.dataset.state = 'idle';
+    }
     setStatus(statsSummary, 'No queue stats available yet.', 'info');
     statsDetail.textContent = '';
     statsProgress.style.width = '0%';
@@ -470,16 +474,21 @@ function renderStats() {
   const leased = Number(queue.leased || 0);
   const completed = done + failed;
   const pct = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+  const hasWork = failed > 0 || missing > 0 || annotationsMissing > 0 || pending > 0 || leased > 0;
+
+  if (opsBar) {
+    opsBar.dataset.state = hasWork ? 'active' : 'idle';
+  }
 
   statsProgress.style.width = `${pct}%`;
   setStatus(
     statsSummary,
-    `Indexed ${done} of ${total}. Failed ${failed}. Missing ${missing}. Annotation gaps ${annotationsMissing}.`,
+    `Indexed ${done}/${total} - ${failed} failed - ${missing} missing - ${annotationsMissing} annotation gaps.`,
     failed > 0 ? 'error' : (missing > 0 || annotationsMissing > 0) ? 'info' : 'success',
   );
 
   const imagesTotal = Number(payload.images_total || state.imagesTotal || 0);
-  statsDetail.textContent = `Library ${imagesTotal} images. Pending ${pending}. Processing ${leased}.`;
+  statsDetail.textContent = `Library ${imagesTotal} images - Pending ${pending} - Processing ${leased}.`;
   retryFailedButton.disabled = failed === 0 && missing === 0 && annotationsMissing === 0;
 
   const failures = payload.recent_failures || [];
