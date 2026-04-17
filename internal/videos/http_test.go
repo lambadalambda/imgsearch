@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
 
 	"imgsearch/internal/db"
+	"imgsearch/internal/vectorindex"
 )
 
 func setupVideosDB(t *testing.T) *sql.DB {
@@ -114,5 +117,110 @@ func TestListVideosRejectsInvalidMethod(t *testing.T) {
 
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestDeleteVideoRemovesVideoFramesTranscriptAndOrphanFiles(t *testing.T) {
+	dbConn := setupVideosDB(t)
+	dataDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataDir, "videos"), 0o755); err != nil {
+		t.Fatalf("mkdir videos dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dataDir, "images"), 0o755); err != nil {
+		t.Fatalf("mkdir images dir: %v", err)
+	}
+	for _, rel := range []string{"videos/v1", "images/f1", "images/f2"} {
+		if err := os.WriteFile(filepath.Join(dataDir, filepath.FromSlash(rel)), []byte(rel), 0o644); err != nil {
+			t.Fatalf("write fixture file %s: %v", rel, err)
+		}
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_transcript_embeddings(video_id, model_id, dim, vector_blob)
+VALUES (1, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 2})); err != nil {
+		t.Fatalf("seed transcript embedding: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES
+	(10, 1, 2, ?),
+	(11, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 2}), vectorindex.FloatsToBlob([]float32{3, 4})); err != nil {
+		t.Fatalf("seed image embeddings: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: dataDir})
+	req := httptest.NewRequest(http.MethodDelete, "/api/videos/1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	assertCount(t, dbConn, `SELECT COUNT(*) FROM videos WHERE id = 1`, 0)
+	assertCount(t, dbConn, `SELECT COUNT(*) FROM video_frames WHERE video_id = 1`, 0)
+	assertCount(t, dbConn, `SELECT COUNT(*) FROM video_transcript_embeddings WHERE video_id = 1`, 0)
+	assertCount(t, dbConn, `SELECT COUNT(*) FROM images WHERE id IN (10,11)`, 0)
+	assertCount(t, dbConn, `SELECT COUNT(*) FROM image_embeddings WHERE image_id IN (10,11)`, 0)
+	assertCount(t, dbConn, `SELECT COUNT(*) FROM index_jobs WHERE video_id = 1 OR image_id IN (10,11)`, 0)
+	for _, rel := range []string{"videos/v1", "images/f1", "images/f2"} {
+		if _, err := os.Stat(filepath.Join(dataDir, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+			t.Fatalf("expected file %s removed, stat err=%v", rel, err)
+		}
+	}
+}
+
+func TestDeleteVideoKeepsSharedFrameImageUsedByOtherVideo(t *testing.T) {
+	dbConn := setupVideosDB(t)
+	dataDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataDir, "videos"), 0o755); err != nil {
+		t.Fatalf("mkdir videos dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dataDir, "images"), 0o755); err != nil {
+		t.Fatalf("mkdir images dir: %v", err)
+	}
+	for _, rel := range []string{"videos/v1", "videos/v3", "images/f1"} {
+		if err := os.WriteFile(filepath.Join(dataDir, filepath.FromSlash(rel)), []byte(rel), 0o644); err != nil {
+			t.Fatalf("write fixture file %s: %v", rel, err)
+		}
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (3, 'v3', 'third.mp4', 'videos/v3', 'video/mp4', 1000, 320, 240, 1)
+`); err != nil {
+		t.Fatalf("seed extra video: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (3, 10, 0, 100)
+`); err != nil {
+		t.Fatalf("seed shared frame: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: dataDir})
+	req := httptest.NewRequest(http.MethodDelete, "/api/videos/1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	assertCount(t, dbConn, `SELECT COUNT(*) FROM videos WHERE id = 3`, 1)
+	assertCount(t, dbConn, `SELECT COUNT(*) FROM images WHERE id = 10`, 1)
+	if _, err := os.Stat(filepath.Join(dataDir, "images", "f1")); err != nil {
+		t.Fatalf("expected shared frame file retained: %v", err)
+	}
+}
+
+func assertCount(t *testing.T, dbConn *sql.DB, query string, want int) {
+	t.Helper()
+	var got int
+	if err := dbConn.QueryRow(query).Scan(&got); err != nil {
+		t.Fatalf("query count %q: %v", query, err)
+	}
+	if got != want {
+		t.Fatalf("count for %q: got=%d want=%d", query, got, want)
 	}
 }

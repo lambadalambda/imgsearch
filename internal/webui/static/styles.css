@@ -584,6 +584,22 @@ input:focus-visible {
   justify-self: start;
 }
 
+.card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.danger {
+  color: var(--bad);
+  border-color: color-mix(in oklab, var(--bad) 40%, var(--line-strong) 60%);
+}
+
+.danger:hover:not(:disabled) {
+  background: color-mix(in oklab, #fae5e4 75%, white 25%);
+  color: var(--bad);
+}
+
 .empty {
   margin: 0;
   padding: 18px 4px 8px;

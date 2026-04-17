@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"imgsearch/internal/httputil"
 )
@@ -14,6 +17,7 @@ import (
 type Handler struct {
 	DB      *sql.DB
 	ModelID int64
+	DataDir string
 }
 
 type ImageItem struct {
@@ -132,22 +136,108 @@ func decodeTagsJSON(raw string) ([]string, error) {
 
 func NewHandler(h *Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
+			limit := parseLimit(r, 50)
+			offset := parseOffset(r)
+
+			resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset)
+			if err != nil {
+				httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
+				return
+			}
+
+			httputil.WriteJSON(w, http.StatusOK, resp)
+		case http.MethodDelete:
+			imageID, err := parseItemID(r.URL.Path, "/api/images/")
+			if err != nil {
+				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image id")
+				return
+			}
+			if err := Delete(r.Context(), h.DB, h.DataDir, imageID); err != nil {
+				switch {
+				case strings.Contains(err.Error(), "derived video frame"):
+					httputil.WriteJSONError(w, http.StatusConflict, err.Error())
+				case err == sql.ErrNoRows:
+					httputil.WriteJSONError(w, http.StatusNotFound, "image not found")
+				default:
+					httputil.WriteJSONError(w, http.StatusInternalServerError, "delete failed")
+				}
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
 			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-			return
 		}
-
-		limit := parseLimit(r, 50)
-		offset := parseOffset(r)
-
-		resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset)
-		if err != nil {
-			httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
-			return
-		}
-
-		httputil.WriteJSON(w, http.StatusOK, resp)
 	})
+}
+
+func Delete(ctx context.Context, db *sql.DB, dataDir string, imageID int64) error {
+	if db == nil {
+		return fmt.Errorf("images database unavailable")
+	}
+	if imageID <= 0 {
+		return fmt.Errorf("invalid image id")
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete image tx: %w", err)
+	}
+
+	var derivedCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_frames WHERE image_id = ?`, imageID).Scan(&derivedCount); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("check derived video frame: %w", err)
+	}
+	if derivedCount > 0 {
+		_ = tx.Rollback()
+		return fmt.Errorf("cannot delete derived video frame image directly")
+	}
+
+	var storagePath string
+	var thumbnailPath sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT storage_path, thumbnail_path FROM images WHERE id = ?`, imageID).Scan(&storagePath, &thumbnailPath); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM image_embeddings WHERE image_id = ?`, imageID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete image embeddings: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM index_jobs WHERE image_id = ?`, imageID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete image jobs: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM images WHERE id = ?`, imageID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete image row: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete image tx: %w", err)
+	}
+
+	removeStoredPath(dataDir, storagePath)
+	if thumbnailPath.Valid {
+		removeStoredPath(dataDir, thumbnailPath.String)
+	}
+	return nil
+}
+
+func parseItemID(path string, prefix string) (int64, error) {
+	idText := strings.TrimPrefix(path, prefix)
+	if idText == path || idText == "" || strings.ContainsRune(idText, '/') {
+		return 0, fmt.Errorf("invalid id path")
+	}
+	return strconv.ParseInt(idText, 10, 64)
+}
+
+func removeStoredPath(dataDir string, rel string) {
+	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(rel) == "" {
+		return
+	}
+	_ = os.Remove(filepath.Join(dataDir, filepath.FromSlash(rel)))
 }
 
 func parseLimit(r *http.Request, fallback int) int {

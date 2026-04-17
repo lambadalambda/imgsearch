@@ -284,6 +284,11 @@ function cardMarkup(item, mode) {
   const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';
   const anchorBadge = item.is_anchor ? '<p class="state anchor">anchor</p>' : '';
   const videoMeta = videoMetaMarkup(item, mode);
+  const deleteButton = mode === 'gallery'
+    ? `<button class="ghost danger delete-action" data-delete-kind="image" data-delete-id="${item.image_id}" data-delete-name="${safeName}">Delete</button>`
+    : mode === 'videos'
+      ? `<button class="ghost danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}">Delete</button>`
+      : '';
   const descriptionMarkup = description
     ? `<div class="description-wrap" data-expanded="false">
         <p id="${descriptionID}" class="description">${escapeHTML(description)}</p>
@@ -327,7 +332,10 @@ function cardMarkup(item, mode) {
         <p class="${stateClass(status)}">${safeStatus}</p>
         ${anchorBadge}
         ${score}
-        <button class="ghost similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
+        <div class="card-actions">
+          <button class="ghost similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
+          ${deleteButton}
+        </div>
       </div>
     </article>
   `;
@@ -1008,6 +1016,27 @@ async function retryFailedJobs() {
   };
 }
 
+async function deleteMedia(kind, id, name) {
+  const label = kind === 'video' ? 'video' : 'image';
+  if (!window.confirm(`Delete ${label} \"${name || 'this item'}\"? This cannot be undone.`)) {
+    return false;
+  }
+  const response = await fetch(`/api/${kind === 'video' ? 'videos' : 'images'}/${id}`, { method: 'DELETE' });
+  if (response.status === 204) {
+    return true;
+  }
+  let message = `Could not delete ${label}`;
+  try {
+    const payload = await response.json();
+    if (payload && payload.error) {
+      message = payload.error;
+    }
+  } catch {
+    // fall back to the generic message.
+  }
+  throw new Error(message);
+}
+
 function attachSimilarHandler(target) {
   target.addEventListener('click', async (event) => {
     const button = event.target.closest('.similar-action');
@@ -1056,6 +1085,46 @@ function attachLightboxHandler(target) {
     const source = trigger.dataset.lightboxSrc || '';
     const caption = trigger.dataset.lightboxCaption || '';
     openLightbox(source, caption);
+  });
+}
+
+function attachDeleteHandler(target) {
+  target.addEventListener('click', async (event) => {
+    const trigger = event.target.closest('.delete-action');
+    if (!trigger || !target.contains(trigger)) {
+      return;
+    }
+
+    const kind = trigger.dataset.deleteKind || 'image';
+    const id = Number(trigger.dataset.deleteId || 0);
+    const name = trigger.dataset.deleteName || '';
+    if (!Number.isFinite(id) || id <= 0) {
+      return;
+    }
+
+    try {
+      const deleted = await deleteMedia(kind, id, name);
+      if (!deleted) {
+        return;
+      }
+      state.results = state.results.filter((item) => {
+        if (kind === 'video') {
+          return Number(item.video_id) !== id;
+        }
+        return Number(item.image_id) !== id;
+      });
+      renderResults();
+      await loadImages();
+      await loadVideos();
+      await loadStats();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Delete failed';
+      if (kind === 'video') {
+        setStatus(videosStatus, message, 'error');
+      } else {
+        setStatus(galleryStatus, message, 'error');
+      }
+    }
   });
 }
 
@@ -1262,6 +1331,8 @@ clearResultsButton.addEventListener('click', () => {
 attachSimilarHandler(galleryGrid);
 attachSimilarHandler(videosGrid);
 attachSimilarHandler(resultsGrid);
+attachDeleteHandler(galleryGrid);
+attachDeleteHandler(videosGrid);
 attachLightboxHandler(galleryGrid);
 attachLightboxHandler(videosGrid);
 attachLightboxHandler(resultsGrid);

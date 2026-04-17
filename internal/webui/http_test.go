@@ -86,6 +86,12 @@ func TestAssetsAreServed(t *testing.T) {
 	if strings.Contains(rr.Body.String(), "totalGalleryPages()") {
 		t.Fatalf("expected removed totalGalleryPages helper not to be referenced in app javascript")
 	}
+	if !strings.Contains(rr.Body.String(), "deleteMedia(kind, id, name)") || !strings.Contains(rr.Body.String(), "fetch(`/api/${kind === 'video' ? 'videos' : 'images'}/${id}`") {
+		t.Fatalf("expected delete media workflow in javascript")
+	}
+	if !strings.Contains(rr.Body.String(), "delete-action") {
+		t.Fatalf("expected delete action class in card rendering")
+	}
 }
 
 func TestMediaServesFilesFromDataDir(t *testing.T) {

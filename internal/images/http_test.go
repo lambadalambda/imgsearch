@@ -4,13 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
 
 	"imgsearch/internal/db"
+	"imgsearch/internal/vectorindex"
 )
 
 func setupImagesDB(t *testing.T) *sql.DB {
@@ -258,5 +262,75 @@ VALUES (9, 3, 0, 500)
 		if item.ImageID == 3 {
 			t.Fatalf("expected derived frame image 3 to be excluded, got %+v", resp.Images)
 		}
+	}
+}
+
+func TestDeleteImageRemovesRowJobsEmbeddingsAndFile(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	dataDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataDir, "images"), 0o755); err != nil {
+		t.Fatalf("mkdir images dir: %v", err)
+	}
+	imagePath := filepath.Join(dataDir, "images", "a")
+	if err := os.WriteFile(imagePath, []byte("image"), 0o644); err != nil {
+		t.Fatalf("write image file: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (1, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 2})); err != nil {
+		t.Fatalf("seed image embedding: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: dataDir})
+	req := httptest.NewRequest(http.MethodDelete, "/api/images/1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	assertMissingRow(t, dbConn, `SELECT COUNT(*) FROM images WHERE id = 1`)
+	assertMissingRow(t, dbConn, `SELECT COUNT(*) FROM image_embeddings WHERE image_id = 1`)
+	assertMissingRow(t, dbConn, `SELECT COUNT(*) FROM index_jobs WHERE image_id = 1`)
+	if _, err := os.Stat(imagePath); !os.IsNotExist(err) {
+		t.Fatalf("expected image file removed, stat err=%v", err)
+	}
+}
+
+func TestDeleteImageRejectsDerivedVideoFrame(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (9, 'vid', 'clip.mp4', 'videos/vid', 'video/mp4', 12000, 1920, 1080, 1)
+`); err != nil {
+		t.Fatalf("seed video: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (9, 3, 0, 500)
+`); err != nil {
+		t.Fatalf("seed video frame: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: t.TempDir()})
+	req := httptest.NewRequest(http.MethodDelete, "/api/images/3", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func assertMissingRow(t *testing.T, dbConn *sql.DB, query string, args ...any) {
+	t.Helper()
+	var count int
+	if err := dbConn.QueryRow(query, args...).Scan(&count); err != nil {
+		t.Fatalf("count rows with %q: %v", query, err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 rows for %s, got %d", fmt.Sprintf(query, args...), count)
 	}
 }

@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"imgsearch/internal/httputil"
 )
@@ -13,6 +16,7 @@ import (
 type Handler struct {
 	DB      *sql.DB
 	ModelID int64
+	DataDir string
 }
 
 type VideoItem struct {
@@ -148,22 +152,156 @@ LIMIT ? OFFSET ?
 
 func NewHandler(h *Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
+			limit := parseLimit(r, 50)
+			offset := parseOffset(r)
+
+			resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset)
+			if err != nil {
+				httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
+				return
+			}
+
+			httputil.WriteJSON(w, http.StatusOK, resp)
+		case http.MethodDelete:
+			videoID, err := parseItemID(r.URL.Path, "/api/videos/")
+			if err != nil {
+				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid video id")
+				return
+			}
+			if err := Delete(r.Context(), h.DB, h.DataDir, videoID); err != nil {
+				if err == sql.ErrNoRows {
+					httputil.WriteJSONError(w, http.StatusNotFound, "video not found")
+					return
+				}
+				httputil.WriteJSONError(w, http.StatusInternalServerError, "delete failed")
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		default:
 			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-			return
 		}
-
-		limit := parseLimit(r, 50)
-		offset := parseOffset(r)
-
-		resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset)
-		if err != nil {
-			httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
-			return
-		}
-
-		httputil.WriteJSON(w, http.StatusOK, resp)
 	})
+}
+
+func Delete(ctx context.Context, db *sql.DB, dataDir string, videoID int64) error {
+	if db == nil {
+		return fmt.Errorf("videos database unavailable")
+	}
+	if videoID <= 0 {
+		return fmt.Errorf("invalid video id")
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete video tx: %w", err)
+	}
+
+	var videoPath string
+	if err := tx.QueryRowContext(ctx, `SELECT storage_path FROM videos WHERE id = ?`, videoID).Scan(&videoPath); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+
+	type frameRef struct {
+		imageID       int64
+		storagePath   string
+		thumbnailPath sql.NullString
+	}
+	frameRows, err := tx.QueryContext(ctx, `
+SELECT i.id, i.storage_path, i.thumbnail_path
+FROM video_frames vf
+JOIN images i ON i.id = vf.image_id
+WHERE vf.video_id = ?
+`, videoID)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("load video frames: %w", err)
+	}
+	frames := make([]frameRef, 0, 8)
+	for frameRows.Next() {
+		var ref frameRef
+		if err := frameRows.Scan(&ref.imageID, &ref.storagePath, &ref.thumbnailPath); err != nil {
+			_ = frameRows.Close()
+			_ = tx.Rollback()
+			return fmt.Errorf("scan video frame ref: %w", err)
+		}
+		frames = append(frames, ref)
+	}
+	_ = frameRows.Close()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM video_transcript_embeddings WHERE video_id = ?`, videoID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete video transcript embeddings: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM index_jobs WHERE video_id = ?`, videoID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete video jobs: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM video_frames WHERE video_id = ?`, videoID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete video frames: %w", err)
+	}
+
+	pathsToDelete := []string{videoPath}
+	thumbsToDelete := []string{}
+	for _, frame := range frames {
+		var remaining int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM video_frames WHERE image_id = ?`, frame.imageID).Scan(&remaining); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("count remaining frame refs: %w", err)
+		}
+		if remaining > 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM image_embeddings WHERE image_id = ?`, frame.imageID); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("delete frame embeddings: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM index_jobs WHERE image_id = ?`, frame.imageID); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("delete frame jobs: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM images WHERE id = ?`, frame.imageID); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("delete frame image row: %w", err)
+		}
+		pathsToDelete = append(pathsToDelete, frame.storagePath)
+		if frame.thumbnailPath.Valid {
+			thumbsToDelete = append(thumbsToDelete, frame.thumbnailPath.String)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM videos WHERE id = ?`, videoID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete video row: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete video tx: %w", err)
+	}
+	for _, path := range pathsToDelete {
+		removeStoredPath(dataDir, path)
+	}
+	for _, thumb := range thumbsToDelete {
+		removeStoredPath(dataDir, thumb)
+	}
+	return nil
+}
+
+func parseItemID(path string, prefix string) (int64, error) {
+	idText := strings.TrimPrefix(path, prefix)
+	if idText == path || idText == "" || strings.ContainsRune(idText, '/') {
+		return 0, fmt.Errorf("invalid id path")
+	}
+	return strconv.ParseInt(idText, 10, 64)
+}
+
+func removeStoredPath(dataDir string, rel string) {
+	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(rel) == "" {
+		return
+	}
+	_ = os.Remove(filepath.Join(dataDir, filepath.FromSlash(rel)))
 }
 
 func parseLimit(r *http.Request, fallback int) int {
