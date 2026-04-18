@@ -53,6 +53,18 @@ func TestRootServesIndexPage(t *testing.T) {
 	if !strings.Contains(body, "<details class=\"ops-menu\"") {
 		t.Fatalf("expected retry and refresh actions to be wrapped in a quiet ops menu")
 	}
+	if !strings.Contains(body, "id=\"tab-tags\"") || !strings.Contains(body, "aria-controls=\"tags-panel\"") {
+		t.Fatalf("expected workspace tablist to include dedicated tags tab")
+	}
+	if !strings.Contains(body, "id=\"tags-panel\"") || !strings.Contains(body, "id=\"tag-cloud\"") {
+		t.Fatalf("expected tags panel shell with tag cloud container")
+	}
+	if !strings.Contains(body, "id=\"results-prev\"") || !strings.Contains(body, "id=\"results-next\"") || !strings.Contains(body, "id=\"results-page-label\"") {
+		t.Fatalf("expected results pagination controls in results toolbar")
+	}
+	if !strings.Contains(body, "id=\"search-tag-input\"") || !strings.Contains(body, "id=\"search-tag-suggestions\"") {
+		t.Fatalf("expected advanced search tag filter controls with autocomplete shell")
+	}
 	if strings.Contains(body, "Search your image and video library by phrase") {
 		t.Fatalf("expected marketing lede removed from compact masthead")
 	}
@@ -146,6 +158,39 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "opsBar.dataset.state =") {
 		t.Fatalf("expected javascript to toggle quiet/active ops bar presentation")
 	}
+	if !strings.Contains(rr.Body.String(), "const tagsTabButton = document.getElementById('tab-tags');") {
+		t.Fatalf("expected javascript hook for tags tab button")
+	}
+	if !strings.Contains(rr.Body.String(), "fetch('/api/search/tag-cloud?limit=80')") {
+		t.Fatalf("expected javascript to lazily load tag cloud data")
+	}
+	if !strings.Contains(rr.Body.String(), "setActiveTab('tags')") {
+		t.Fatalf("expected tags tab activation handler in javascript")
+	}
+	if !strings.Contains(rr.Body.String(), "fetch(`/api/search/tags?${params.toString()}`)") {
+		t.Fatalf("expected javascript tag search request wiring")
+	}
+	if !strings.Contains(rr.Body.String(), "tagCloud.addEventListener('click'") {
+		t.Fatalf("expected javascript click handler for tag cloud chips")
+	}
+	if !strings.Contains(rr.Body.String(), "await runTagSearch([tag], 'any');") {
+		t.Fatalf("expected tag cloud chip clicks to run single-tag search")
+	}
+	if !strings.Contains(rr.Body.String(), "item.search_source === 'tag' ? '' : formatMatch(item.distance)") {
+		t.Fatalf("expected tag-search results to skip similarity score badge")
+	}
+	if !strings.Contains(rr.Body.String(), "params.append('tag', tag)") || !strings.Contains(rr.Body.String(), "params.set('tag_mode', tagMode)") {
+		t.Fatalf("expected text search request to include optional tag restriction parameters")
+	}
+	if !strings.Contains(rr.Body.String(), "fetch(`/api/search/tag-cloud?${params.toString()}`)") {
+		t.Fatalf("expected javascript autocomplete lookups for tag suggestions")
+	}
+	if !strings.Contains(rr.Body.String(), "tag-chip-button") {
+		t.Fatalf("expected javascript card rendering support for clickable tag buttons")
+	}
+	if !strings.Contains(rr.Body.String(), "resultsPrevButton") || !strings.Contains(rr.Body.String(), "resultsNextButton") {
+		t.Fatalf("expected javascript handlers for results pagination controls")
+	}
 }
 
 func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
@@ -216,6 +261,24 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	}
 	if strings.Contains(body, "font-size: clamp(2.2rem, 5vw, 4rem);") {
 		t.Fatalf("expected oversized hero-style title scale to be removed from masthead")
+	}
+	if !strings.Contains(body, ".tag-cloud-list") || !strings.Contains(body, ".tag-cloud-chip") {
+		t.Fatalf("expected tag cloud shell styling rules")
+	}
+	if !strings.Contains(body, ".tag-cloud-chip-size-1") || !strings.Contains(body, ".tag-cloud-chip-size-4") {
+		t.Fatalf("expected tiered tag cloud chip size classes")
+	}
+	if !strings.Contains(body, ".tag-cloud-chip:hover:not(:disabled)") {
+		t.Fatalf("expected interactive hover treatment for tag cloud chips")
+	}
+	if !strings.Contains(body, ".search-tag-suggestions") || !strings.Contains(body, ".search-tag-suggestion") {
+		t.Fatalf("expected autocomplete suggestion panel styling rules")
+	}
+	if !strings.Contains(body, ".tag-chip-button") {
+		t.Fatalf("expected clickable tag button styling rules")
+	}
+	if !strings.Contains(body, ".results-pagination") {
+		t.Fatalf("expected results pagination styling rules")
 	}
 }
 

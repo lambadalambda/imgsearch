@@ -29,15 +29,35 @@
           </label>
           <details class="search-advanced">
             <summary class="search-advanced-toggle">Exclude</summary>
-            <label class="field field-secondary">
-              <span class="field-label">Exclude</span>
-              <input
-                id="negative-query"
-                type="search"
-                placeholder="text, meme caption, cartoon"
-                autocomplete="off"
-              />
-            </label>
+            <div class="search-advanced-panel">
+              <label class="field field-secondary">
+                <span class="field-label">Exclude</span>
+                <input
+                  id="negative-query"
+                  type="search"
+                  placeholder="text, meme caption, cartoon"
+                  autocomplete="off"
+                />
+              </label>
+              <div class="field field-secondary search-tag-filter">
+                <span class="field-label">Restrict by tags</span>
+                <div id="search-tag-chips" class="search-tag-chips"></div>
+                <input
+                  id="search-tag-input"
+                  class="search-tag-input"
+                  type="search"
+                  placeholder="type tag + Enter"
+                  autocomplete="off"
+                  aria-label="Add tag filter"
+                />
+                <div id="search-tag-suggestions" class="search-tag-suggestions" role="listbox" aria-label="Tag suggestions"></div>
+                <label class="search-tag-mode-label" for="search-tag-mode">Match mode</label>
+                <select id="search-tag-mode" class="search-tag-mode" aria-label="Tag match mode">
+                  <option value="all">All tags</option>
+                  <option value="any">Any tag</option>
+                </select>
+              </div>
+            </div>
           </details>
           <div class="search-actions">
             <button type="submit" class="cta">Search</button>
@@ -95,6 +115,9 @@
             <span>Videos</span>
             <span id="tab-videos-count" class="tab-count">0</span>
           </button>
+          <button id="tab-tags" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="tags-panel">
+            <span>Tags</span>
+          </button>
           <button id="tab-results" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="results-panel">
             <span>Search Results</span>
             <span id="tab-results-count" class="tab-count">0</span>
@@ -129,9 +152,21 @@
           <div id="videos-grid" class="grid videos-grid"></div>
         </section>
 
-        <section id="results-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-results" hidden>
+        <section id="tags-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-tags" hidden>
           <div class="panel-toolbar">
-            <p class="status toolbar-status">Latest text or similar-image search results stay here until you clear them.</p>
+            <p id="tags-status" class="status toolbar-status" role="status" aria-live="polite"></p>
+          </div>
+          <div id="tag-cloud" class="tag-cloud-list" role="list" aria-label="Top library tags"></div>
+        </section>
+
+        <section id="results-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-results" hidden>
+          <div class="panel-toolbar results-toolbar">
+            <p class="status toolbar-status">Latest text, tag, or similar-image search results stay here until you clear them.</p>
+            <div class="pagination-controls results-pagination" aria-label="Result pagination">
+              <button id="results-prev" type="button" class="ghost">Newer</button>
+              <p id="results-page-label" class="pagination-label">Page 1</p>
+              <button id="results-next" type="button" class="ghost">Older</button>
+            </div>
           </div>
           <div id="results-grid" class="grid results-grid"></div>
         </section>

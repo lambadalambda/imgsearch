@@ -2,13 +2,21 @@ const state = {
   images: [],
   videos: [],
   results: [],
+  tagCloud: [],
   imagesTotal: 0,
   videosTotal: 0,
+  resultsTotal: 0,
   stats: null,
   galleryPage: 0,
   videosPage: 0,
+  resultsPage: 0,
   galleryPageSize: 24,
   videosPageSize: 24,
+  resultsPageSize: 24,
+  resultsMode: 'none',
+  activeTagFilters: [],
+  activeTagMode: 'any',
+  searchTagFilters: [],
   activeTab: 'gallery',
 };
 
@@ -30,10 +38,18 @@ const videosTabButton = document.getElementById('tab-videos');
 const videosTabCount = document.getElementById('tab-videos-count');
 const videosPanel = document.getElementById('videos-panel');
 
+const tagsTabButton = document.getElementById('tab-tags');
+const tagsPanel = document.getElementById('tags-panel');
+const tagsStatus = document.getElementById('tags-status');
+const tagCloud = document.getElementById('tag-cloud');
+
 const resultsGrid = document.getElementById('results-grid');
 const resultsTabButton = document.getElementById('tab-results');
 const resultsTabCount = document.getElementById('tab-results-count');
 const resultsPanel = document.getElementById('results-panel');
+const resultsPrevButton = document.getElementById('results-prev');
+const resultsNextButton = document.getElementById('results-next');
+const resultsPageLabel = document.getElementById('results-page-label');
 
 const uploadModal = document.getElementById('upload-modal');
 const uploadOpenButton = document.getElementById('upload-open');
@@ -46,6 +62,10 @@ const searchForm = document.getElementById('text-search-form');
 const textQuery = document.getElementById('text-query');
 const negativeQuery = document.getElementById('negative-query');
 const searchStatus = document.getElementById('search-status');
+const searchTagChips = document.getElementById('search-tag-chips');
+const searchTagInput = document.getElementById('search-tag-input');
+const searchTagSuggestions = document.getElementById('search-tag-suggestions');
+const searchTagMode = document.getElementById('search-tag-mode');
 
 const refreshImagesButton = document.getElementById('refresh-images');
 const clearResultsButton = document.getElementById('clear-results');
@@ -81,6 +101,9 @@ let liveReconnectDelayMs = 1500;
 let imagesRequestToken = 0;
 let statsRequestToken = 0;
 let videoPlayer = null;
+let tagCloudLoaded = false;
+let tagSuggestionRequestToken = 0;
+let tagSuggestionDebounceTimer = null;
 const liveReconnectDelayMaxMs = 30000;
 
 function setStatus(target, message, kind) {
@@ -168,6 +191,151 @@ function formatMatch(distance) {
   return `${match}% match`;
 }
 
+function normalizeTagTerms(parts) {
+  if (!Array.isArray(parts)) {
+    return [];
+  }
+  const seen = new Set();
+  const normalized = [];
+  parts.forEach((part) => {
+    if (typeof part !== 'string') {
+      return;
+    }
+    const tag = part.trim().toLowerCase();
+    if (!tag || seen.has(tag)) {
+      return;
+    }
+    seen.add(tag);
+    normalized.push(tag);
+  });
+  return normalized;
+}
+
+function parseTagTerms(input) {
+  if (typeof input !== 'string') {
+    return [];
+  }
+  return normalizeTagTerms(input.split(','));
+}
+
+function renderSearchTagFilters() {
+  if (!searchTagChips) {
+    return;
+  }
+  if (!Array.isArray(state.searchTagFilters) || state.searchTagFilters.length === 0) {
+    searchTagChips.innerHTML = '';
+    return;
+  }
+  searchTagChips.innerHTML = state.searchTagFilters
+    .map((tag) => `<button type="button" class="search-tag-chip" data-tag-remove="${escapeHTML(tag)}" aria-label="Remove tag filter ${escapeHTML(tag)}">${escapeHTML(tag)}<span class="search-tag-chip-remove" aria-hidden="true">x</span></button>`)
+    .join('');
+}
+
+function addSearchTagFilters(parts) {
+  const next = normalizeTagTerms([...(state.searchTagFilters || []), ...parts]);
+  state.searchTagFilters = next;
+  renderSearchTagFilters();
+}
+
+function removeSearchTagFilter(tag) {
+  if (!Array.isArray(state.searchTagFilters)) {
+    state.searchTagFilters = [];
+    return;
+  }
+  state.searchTagFilters = state.searchTagFilters.filter((item) => item !== tag);
+  renderSearchTagFilters();
+}
+
+function clearTagSuggestions() {
+  if (!searchTagSuggestions) {
+    return;
+  }
+  searchTagSuggestions.innerHTML = '';
+  searchTagSuggestions.hidden = true;
+}
+
+function renderTagSuggestions(tags, query) {
+  if (!searchTagSuggestions) {
+    return;
+  }
+  if (!Array.isArray(tags) || tags.length === 0) {
+    clearTagSuggestions();
+    return;
+  }
+  searchTagSuggestions.hidden = false;
+  searchTagSuggestions.innerHTML = tags
+    .map((item) => {
+      const tag = typeof item.tag === 'string' ? item.tag : '';
+      if (!tag) {
+        return '';
+      }
+      const count = Number(item.count || 0);
+      return `<button type="button" class="search-tag-suggestion" data-tag-suggestion="${escapeHTML(tag)}" role="option" aria-label="Add tag filter ${escapeHTML(tag)} (${count})"><span>${escapeHTML(tag)}</span><span class="search-tag-suggestion-count">${count}</span></button>`;
+    })
+    .join('');
+  if (searchTagSuggestions.innerHTML.trim() === '') {
+    clearTagSuggestions();
+    return;
+  }
+  if (query && query.length > 0) {
+    searchTagSuggestions.dataset.query = query;
+  }
+}
+
+function scheduleTagSuggestions(query) {
+  if (!searchTagSuggestions) {
+    return;
+  }
+  const normalizedQuery = typeof query === 'string' ? query.trim().toLowerCase() : '';
+  if (tagSuggestionDebounceTimer !== null) {
+    window.clearTimeout(tagSuggestionDebounceTimer);
+    tagSuggestionDebounceTimer = null;
+  }
+  if (!normalizedQuery) {
+    clearTagSuggestions();
+    return;
+  }
+  tagSuggestionDebounceTimer = window.setTimeout(async () => {
+    const requestToken = ++tagSuggestionRequestToken;
+    try {
+      const params = new URLSearchParams({ limit: '8', min_count: '1', q: normalizedQuery });
+      const response = await fetch(`/api/search/tag-cloud?${params.toString()}`);
+      const payload = await response.json();
+      if (requestToken !== tagSuggestionRequestToken) {
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(payload.error || 'Tag suggestions failed');
+      }
+      const existing = new Set(state.searchTagFilters || []);
+      const suggestions = (payload.tags || []).filter((item) => {
+        const tag = typeof item.tag === 'string' ? item.tag : '';
+        return tag && !existing.has(tag);
+      });
+      renderTagSuggestions(suggestions, normalizedQuery);
+    } catch {
+      clearTagSuggestions();
+    }
+  }, 140);
+}
+
+function tagCloudSizeClass(count, minCount, maxCount) {
+  if (!Number.isFinite(count) || maxCount <= minCount) {
+    return 'tag-cloud-chip-size-2';
+  }
+  const ratio = (count - minCount) / Math.max(1, maxCount - minCount);
+  if (ratio >= 0.75) {
+    return 'tag-cloud-chip-size-4';
+  }
+  if (ratio >= 0.45) {
+    return 'tag-cloud-chip-size-3';
+  }
+  if (ratio >= 0.2) {
+    return 'tag-cloud-chip-size-2';
+  }
+  return 'tag-cloud-chip-size-1';
+}
+
 function humanizeIndexState(indexState) {
   if (indexState === 'leased') {
     return 'processing';
@@ -215,8 +383,9 @@ function totalPages(total, pageSize) {
 function updateTabCounts() {
   galleryTabCount.textContent = String(state.imagesTotal || 0);
   videosTabCount.textContent = String(state.videosTotal || 0);
-  resultsTabCount.textContent = String(state.results.length || 0);
-  resultsTabButton.disabled = state.results.length === 0 && state.activeTab !== 'results';
+  const resultCount = state.resultsMode === 'tag' ? Number(state.resultsTotal || 0) : Number(state.results.length || 0);
+  resultsTabCount.textContent = String(resultCount);
+  resultsTabButton.disabled = resultCount === 0 && state.activeTab !== 'results';
 }
 
 function renderPagination() {
@@ -226,14 +395,29 @@ function renderPagination() {
   galleryNextButton.disabled = state.galleryPage >= galleryPages - 1;
 
   const videoPages = totalPages(state.videosTotal, state.videosPageSize);
-  videosPageLabel.textContent = `Page ${state.videosPage + 1} of ${videoPages}`;
-  videosPrevButton.disabled = state.videosPage <= 0;
-  videosNextButton.disabled = state.videosPage >= videoPages - 1;
+	videosPageLabel.textContent = `Page ${state.videosPage + 1} of ${videoPages}`;
+	videosPrevButton.disabled = state.videosPage <= 0;
+	videosNextButton.disabled = state.videosPage >= videoPages - 1;
+
+  const resultTotal = state.resultsMode === 'tag' ? Number(state.resultsTotal || 0) : Number(state.results.length || 0);
+  const resultPages = totalPages(resultTotal, state.resultsPageSize);
+  const resultPage = state.resultsMode === 'tag' ? state.resultsPage : 0;
+  if (resultsPageLabel) {
+    resultsPageLabel.textContent = `Page ${Math.min(resultPages, resultPage + 1)} of ${resultPages}`;
+  }
+  if (resultsPrevButton) {
+    resultsPrevButton.disabled = state.resultsMode !== 'tag' || resultPage <= 0;
+  }
+  if (resultsNextButton) {
+    resultsNextButton.disabled = state.resultsMode !== 'tag' || resultPage >= resultPages - 1;
+  }
 }
 
 function setActiveTab(name) {
   if (name === 'results') {
     state.activeTab = 'results';
+  } else if (name === 'tags') {
+    state.activeTab = 'tags';
   } else if (name === 'videos') {
     state.activeTab = 'videos';
   } else {
@@ -241,14 +425,20 @@ function setActiveTab(name) {
   }
   const galleryActive = state.activeTab === 'gallery';
   const videosActive = state.activeTab === 'videos';
+  const tagsActive = state.activeTab === 'tags';
   const resultsActive = state.activeTab === 'results';
 
   galleryTabButton.setAttribute('aria-selected', galleryActive ? 'true' : 'false');
   videosTabButton.setAttribute('aria-selected', videosActive ? 'true' : 'false');
+  tagsTabButton.setAttribute('aria-selected', tagsActive ? 'true' : 'false');
   resultsTabButton.setAttribute('aria-selected', resultsActive ? 'true' : 'false');
   galleryPanel.hidden = !galleryActive;
   videosPanel.hidden = !videosActive;
+  tagsPanel.hidden = !tagsActive;
   resultsPanel.hidden = !resultsActive;
+  if (tagsActive) {
+    ensureTagCloudLoaded();
+  }
   updateTabCounts();
   clearResultsButton.disabled = state.results.length === 0;
 }
@@ -287,7 +477,7 @@ function supportTextClass(item, supportText) {
   return 'supporting-text';
 }
 
-function tagsMarkup(tags, includeOverflowChip) {
+function tagsMarkup(tags, includeOverflowChip, clickable) {
   if (!Array.isArray(tags) || tags.length === 0) {
     return '';
   }
@@ -296,7 +486,13 @@ function tagsMarkup(tags, includeOverflowChip) {
   const hiddenTagCount = includeOverflowChip ? Math.max(0, tags.length - visibleTags.length) : 0;
 
   return `<ul class="tag-list${includeOverflowChip ? '' : ' overlay-tag-list'}">${visibleTags
-    .map((tag) => `<li class="tag-chip${tag.toLowerCase() === 'nsfw' ? ' tag-chip-nsfw' : ''}">${escapeHTML(tag)}</li>`)
+    .map((tag) => {
+      const toneClass = tag.toLowerCase() === 'nsfw' ? ' tag-chip-nsfw' : '';
+      if (clickable) {
+        return `<li><button type="button" class="tag-chip tag-chip-button${toneClass}" data-tag-search="${escapeHTML(tag.toLowerCase())}">${escapeHTML(tag)}</button></li>`;
+      }
+      return `<li class="tag-chip${toneClass}">${escapeHTML(tag)}</li>`;
+    })
     .join('')}${hiddenTagCount > 0 ? `<li class="tag-chip tag-chip-more">+${hiddenTagCount}</li>` : ''}</ul>`;
 }
 
@@ -318,7 +514,7 @@ function cardMarkup(item, mode) {
     : [];
   const status = item.index_state || 'done';
   const safeStatus = escapeHTML(humanizeIndexState(status));
-  const scoreLabel = formatMatch(item.distance);
+  const scoreLabel = item.search_source === 'tag' ? '' : formatMatch(item.distance);
   const score = scoreLabel && !item.is_anchor ? `<p class="distance">${escapeHTML(scoreLabel)}</p>` : '';
   const scoreBadge = scoreLabel && !item.is_anchor ? `<p class="thumb-match-badge">${escapeHTML(scoreLabel)}</p>` : '';
   const canSearchSimilar = Number(item.image_id) > 0 && (status === 'done' || mediaType === 'video');
@@ -335,8 +531,8 @@ function cardMarkup(item, mode) {
   const supportMarkup = supportText
     ? `<p class="${supportClass}">${escapeHTML(supportText)}</p>`
     : '';
-  const compactTagsMarkup = tagsMarkup(tags, true);
-  const overlayTagsMarkup = tagsMarkup(tags, false);
+  const compactTagsMarkup = tagsMarkup(tags, true, true);
+  const overlayTagsMarkup = tagsMarkup(tags, false, true);
   const overlaySupportMarkup = supportText
     ? `<p class="${supportClass} overlay-supporting-text">${escapeHTML(supportText)}</p>`
     : '';
@@ -430,6 +626,7 @@ function renderVideos() {
 
 function renderResults() {
   updateTabCounts();
+  renderPagination();
   clearResultsButton.disabled = state.results.length === 0;
 
   if (state.results.length === 0) {
@@ -438,6 +635,110 @@ function renderResults() {
   }
 
   resultsGrid.innerHTML = state.results.map((item) => cardMarkup(item, 'result')).join('');
+}
+
+function renderTagCloud() {
+  if (!tagCloud) {
+    return;
+  }
+
+  const tags = Array.isArray(state.tagCloud) ? state.tagCloud : [];
+  if (tags.length === 0) {
+    tagCloud.innerHTML = '<p class="tag-cloud-empty">No tags yet. Let annotation finish and this panel will populate.</p>';
+    return;
+  }
+
+  const counts = tags.map((item) => Number(item.count || 0));
+  const minCount = counts.length > 0 ? Math.min(...counts) : 0;
+  const maxCount = counts.length > 0 ? Math.max(...counts) : 0;
+
+  tagCloud.innerHTML = tags
+    .map((item) => {
+      const tag = typeof item.tag === 'string' ? item.tag : '';
+      if (!tag) {
+        return '';
+      }
+      const count = Number(item.count || 0);
+      const sizeClass = tagCloudSizeClass(count, minCount, maxCount);
+      return `<button type="button" class="tag-cloud-chip ${sizeClass}" data-tag="${escapeHTML(tag)}" role="listitem" aria-label="Search by tag ${escapeHTML(tag)} (${count})"><span class="tag-cloud-label">${escapeHTML(tag)}</span><span class="tag-cloud-count">${count}</span></button>`;
+    })
+    .join('');
+}
+
+async function loadTagCloud() {
+  if (!tagCloud) {
+    return;
+  }
+  const response = await fetch('/api/search/tag-cloud?limit=80');
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not load tag cloud');
+  }
+  state.tagCloud = Array.isArray(payload.tags) ? payload.tags : [];
+  tagCloudLoaded = true;
+  renderTagCloud();
+}
+
+async function runTagSearch(tags, mode, page) {
+  const normalizedTags = normalizeTagTerms(tags);
+  if (normalizedTags.length === 0) {
+    throw new Error('Select at least one tag first.');
+  }
+
+  const safeMode = mode === 'all' ? 'all' : 'any';
+  const safePage = Number.isFinite(Number(page)) ? Math.max(0, Number(page)) : 0;
+  const params = new URLSearchParams({ limit: String(state.resultsPageSize), offset: String(safePage * state.resultsPageSize) });
+  params.set('mode', safeMode);
+  normalizedTags.forEach((tag) => params.append('tag', tag));
+
+  const response = await fetch(`/api/search/tags?${params.toString()}`);
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || 'Tag search failed');
+  }
+
+  const pageResults = payload.results || [];
+  const total = Number(payload.total || pageResults.length);
+  const maxPage = Math.max(0, totalPages(total, state.resultsPageSize) - 1);
+  if (pageResults.length === 0 && total > 0 && safePage > maxPage) {
+    return runTagSearch(normalizedTags, safeMode, maxPage);
+  }
+
+  const imageByID = mediaByImageID();
+  state.results = pageResults.map((item) => {
+    const image = imageByID.get(item.image_id) || {};
+    return {
+      ...image,
+      ...item,
+      index_state: image.index_state || 'done',
+      is_anchor: false,
+    };
+  });
+  state.resultsMode = 'tag';
+  state.resultsTotal = total;
+  state.resultsPage = safePage;
+  state.activeTagFilters = normalizedTags;
+  state.activeTagMode = safeMode;
+
+  renderResults();
+  setActiveTab('results');
+  const start = total === 0 ? 0 : safePage * state.resultsPageSize + 1;
+  const end = safePage * state.resultsPageSize + state.results.length;
+  setStatus(searchStatus, `Tag search (${normalizedTags.join(', ')}) showing ${start}-${end} of ${total}.`, 'success');
+}
+
+function ensureTagCloudLoaded() {
+  if (tagCloudLoaded) {
+    return;
+  }
+  setStatus(tagsStatus, 'Loading top tags...', 'info');
+  loadTagCloud()
+    .then(() => {
+      setStatus(tagsStatus, `Showing ${state.tagCloud.length} tag(s), ranked by frequency.`, 'success');
+    })
+    .catch((err) => {
+      setStatus(tagsStatus, err.message || 'Tag cloud failed to load', 'error');
+    });
 }
 
 function mediaByImageID() {
@@ -809,10 +1110,15 @@ async function loadVideos() {
   setStatus(videosStatus, `Showing ${start}-${end} of ${state.videosTotal} video(s), newest first.`, 'success');
 }
 
-async function runTextSearch(query, negative) {
+async function runTextSearch(query, negative, tagFilters, tagMode) {
   const params = new URLSearchParams({ q: query, limit: '24' });
   if (negative) {
     params.set('neg', negative);
+  }
+  const normalizedTags = normalizeTagTerms(tagFilters);
+  if (normalizedTags.length > 0) {
+    normalizedTags.forEach((tag) => params.append('tag', tag));
+    params.set('tag_mode', tagMode);
   }
   const response = await fetch(`/api/search/text?${params.toString()}`);
   const payload = await response.json();
@@ -830,6 +1136,10 @@ async function runTextSearch(query, negative) {
       is_anchor: false,
     };
   });
+  state.resultsMode = 'text';
+  state.resultsTotal = state.results.length;
+  state.resultsPage = 0;
+  state.activeTagFilters = [];
   renderResults();
   setActiveTab('results');
   setStatus(searchStatus, `Text search returned ${state.results.length} result(s).`, 'success');
@@ -875,6 +1185,10 @@ async function runSimilarSearch(imageID, anchorHint) {
     }));
 
   state.results = anchorResult ? [anchorResult, ...nonAnchorResults] : nonAnchorResults;
+  state.resultsMode = 'similar';
+  state.resultsTotal = state.results.length;
+  state.resultsPage = 0;
+  state.activeTagFilters = [];
   renderResults();
   setActiveTab('results');
   setStatus(searchStatus, `Similar search returned ${state.results.length} result(s).`, 'success');
@@ -1191,8 +1505,30 @@ function attachDeleteHandler(target) {
   });
 }
 
+function attachTagChipSearchHandler(target) {
+  target.addEventListener('click', async (event) => {
+    const trigger = event.target.closest('.tag-chip-button');
+    if (!trigger || !target.contains(trigger)) {
+      return;
+    }
+
+    const tag = typeof trigger.dataset.tagSearch === 'string' ? trigger.dataset.tagSearch.trim().toLowerCase() : '';
+    if (!tag) {
+      return;
+    }
+
+    setStatus(searchStatus, `Searching by tag: ${tag}...`, 'info');
+    try {
+      await runTagSearch([tag], 'any', 0);
+    } catch (err) {
+      setStatus(searchStatus, err.message || 'Tag search failed', 'error');
+    }
+  });
+}
+
 galleryTabButton.addEventListener('click', () => setActiveTab('gallery'));
 videosTabButton.addEventListener('click', () => setActiveTab('videos'));
+tagsTabButton.addEventListener('click', () => setActiveTab('tags'));
 resultsTabButton.addEventListener('click', () => setActiveTab('results'));
 
 galleryPrevButton.addEventListener('click', async () => {
@@ -1242,6 +1578,37 @@ videosNextButton.addEventListener('click', async () => {
     setStatus(videosStatus, err.message || 'Could not load next page', 'error');
   }
 });
+
+if (resultsPrevButton) {
+  resultsPrevButton.addEventListener('click', async () => {
+    if (state.resultsMode !== 'tag' || state.resultsPage <= 0) {
+      return;
+    }
+    state.resultsPage -= 1;
+    try {
+      await runTagSearch(state.activeTagFilters, state.activeTagMode, state.resultsPage);
+    } catch (err) {
+      setStatus(searchStatus, err.message || 'Could not load previous tag results page', 'error');
+    }
+  });
+}
+
+if (resultsNextButton) {
+  resultsNextButton.addEventListener('click', async () => {
+    if (state.resultsMode !== 'tag') {
+      return;
+    }
+    if (state.resultsPage >= totalPages(state.resultsTotal, state.resultsPageSize) - 1) {
+      return;
+    }
+    state.resultsPage += 1;
+    try {
+      await runTagSearch(state.activeTagFilters, state.activeTagMode, state.resultsPage);
+    } catch (err) {
+      setStatus(searchStatus, err.message || 'Could not load next tag results page', 'error');
+    }
+  });
+}
 
 uploadOpenButton.addEventListener('click', openUploadModal);
 uploadCloseButton.addEventListener('click', closeUploadModal);
@@ -1314,23 +1681,135 @@ searchForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const q = textQuery.value.trim();
   const neg = negativeQuery ? negativeQuery.value.trim() : '';
+  const pendingTagTerms = searchTagInput ? parseTagTerms(searchTagInput.value) : [];
+  if (pendingTagTerms.length > 0) {
+    addSearchTagFilters(pendingTagTerms);
+    if (searchTagInput) {
+      searchTagInput.value = '';
+    }
+    clearTagSuggestions();
+  }
+  const tagFilters = normalizeTagTerms([...(state.searchTagFilters || []), ...pendingTagTerms]);
+  const tagModeValue = searchTagMode && searchTagMode.value === 'any' ? 'any' : 'all';
   if (!q) {
     setStatus(searchStatus, 'Enter a search phrase first.', 'error');
     return;
   }
 
-  if (neg) {
+  if (neg && tagFilters.length > 0) {
+    setStatus(searchStatus, `Searching for "${q}" excluding "${neg}" with ${tagModeValue === 'all' ? 'all' : 'any'} tags (${tagFilters.join(', ')})...`, 'info');
+  } else if (neg) {
     setStatus(searchStatus, `Searching for "${q}" excluding "${neg}"...`, 'info');
+  } else if (tagFilters.length > 0) {
+    setStatus(searchStatus, `Searching for "${q}" with ${tagModeValue === 'all' ? 'all' : 'any'} tags (${tagFilters.join(', ')})...`, 'info');
   } else {
     setStatus(searchStatus, `Searching for "${q}"...`, 'info');
   }
 
   try {
-    await runTextSearch(q, neg);
+    await runTextSearch(q, neg, tagFilters, tagModeValue);
   } catch (err) {
     setStatus(searchStatus, err.message || 'Text search failed', 'error');
   }
 });
+
+if (searchTagChips) {
+  searchTagChips.addEventListener('click', (event) => {
+    const trigger = event.target.closest('[data-tag-remove]');
+    if (!trigger || !searchTagChips.contains(trigger)) {
+      return;
+    }
+    const tag = typeof trigger.dataset.tagRemove === 'string' ? trigger.dataset.tagRemove.trim().toLowerCase() : '';
+    if (!tag) {
+      return;
+    }
+    removeSearchTagFilter(tag);
+    if (searchTagInput && searchTagInput.value.trim() !== '') {
+      scheduleTagSuggestions(searchTagInput.value);
+    } else {
+      clearTagSuggestions();
+    }
+  });
+}
+
+if (searchTagSuggestions) {
+  searchTagSuggestions.addEventListener('click', (event) => {
+    const trigger = event.target.closest('[data-tag-suggestion]');
+    if (!trigger || !searchTagSuggestions.contains(trigger)) {
+      return;
+    }
+    const tag = typeof trigger.dataset.tagSuggestion === 'string' ? trigger.dataset.tagSuggestion.trim().toLowerCase() : '';
+    if (!tag) {
+      return;
+    }
+    addSearchTagFilters([tag]);
+    if (searchTagInput) {
+      searchTagInput.value = '';
+      searchTagInput.focus();
+    }
+    clearTagSuggestions();
+  });
+}
+
+if (searchTagInput) {
+  searchTagInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ',') {
+      event.preventDefault();
+      const parts = parseTagTerms(searchTagInput.value);
+      if (parts.length > 0) {
+        addSearchTagFilters(parts);
+      }
+      searchTagInput.value = '';
+      clearTagSuggestions();
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      clearTagSuggestions();
+      return;
+    }
+
+    if (event.key === 'Backspace' && searchTagInput.value.trim() === '' && state.searchTagFilters.length > 0) {
+      const trailingTag = state.searchTagFilters[state.searchTagFilters.length - 1];
+      removeSearchTagFilter(trailingTag);
+    }
+  });
+
+  searchTagInput.addEventListener('input', () => {
+    scheduleTagSuggestions(searchTagInput.value);
+  });
+
+  searchTagInput.addEventListener('focus', () => {
+    scheduleTagSuggestions(searchTagInput.value);
+  });
+
+  searchTagInput.addEventListener('blur', () => {
+    window.setTimeout(() => {
+      clearTagSuggestions();
+    }, 120);
+  });
+}
+
+if (tagCloud) {
+  tagCloud.addEventListener('click', async (event) => {
+    const trigger = event.target.closest('.tag-cloud-chip');
+    if (!trigger || !tagCloud.contains(trigger)) {
+      return;
+    }
+
+    const tag = typeof trigger.dataset.tag === 'string' ? trigger.dataset.tag.trim().toLowerCase() : '';
+    if (!tag) {
+      return;
+    }
+
+    setStatus(searchStatus, `Searching by tag: ${tag}...`, 'info');
+    try {
+      await runTagSearch([tag], 'any');
+    } catch (err) {
+      setStatus(searchStatus, err.message || 'Tag search failed', 'error');
+    }
+  });
+}
 
 refreshImagesButton.addEventListener('click', () => {
   loadImages().catch((err) => setStatus(galleryStatus, err.message || 'Refresh failed', 'error'));
@@ -1367,6 +1846,10 @@ retryFailedButton.addEventListener('click', async () => {
 
 clearResultsButton.addEventListener('click', () => {
   state.results = [];
+  state.resultsTotal = 0;
+  state.resultsPage = 0;
+  state.resultsMode = 'none';
+  state.activeTagFilters = [];
   renderResults();
   setActiveTab('gallery');
   setStatus(searchStatus, 'Search results cleared.', 'info');
@@ -1375,6 +1858,9 @@ clearResultsButton.addEventListener('click', () => {
 attachSimilarHandler(galleryGrid);
 attachSimilarHandler(videosGrid);
 attachSimilarHandler(resultsGrid);
+attachTagChipSearchHandler(galleryGrid);
+attachTagChipSearchHandler(videosGrid);
+attachTagChipSearchHandler(resultsGrid);
 attachDeleteHandler(galleryGrid);
 attachDeleteHandler(videosGrid);
 attachLightboxHandler(galleryGrid);
@@ -1442,6 +1928,8 @@ document.addEventListener('keydown', (event) => {
 renderGallery();
 renderVideos();
 renderResults();
+renderTagCloud();
+renderSearchTagFilters();
 renderStats();
 setActiveTab('gallery');
 

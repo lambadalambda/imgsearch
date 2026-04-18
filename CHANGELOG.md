@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat: add tag discovery and search workflows with `/api/search/tag-cloud` and paginated `/api/search/tags` (including grouped video matches), a workspace `Tags` tab with clickable cloud chips, advanced-search tag restrictions with autocomplete + `all/any` matching, and clickable card tags that trigger tag search.
 - fix: treat empty/no-audio video transcripts as successful transcribe jobs, storing an empty transcript and skipping transcript embeddings instead of retrying/failing the job.
 - fix: exclude derived video-frame images from "annotation gaps" stats so the dashboard only reports missing annotations for standalone images.
 - ux: shift to a search-first masthead (issue 022) by shrinking top chrome, moving indexing controls into a quiet ops bar/disclosure, and demoting infrequent controls so Search stays primary.

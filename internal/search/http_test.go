@@ -345,6 +345,271 @@ func TestSimilarSearchReturnsNotFoundWhenImageNotIndexed(t *testing.T) {
 	}
 }
 
+func TestTagSearchReturnsMatchingResults(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET description = 'A playful cat outside.', tags_json = '["cat","outdoors"]' WHERE id = 1;
+UPDATE images SET description = 'A friendly dog outside.', tags_json = '["dog","outdoors"]' WHERE id = 2;
+`); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/tags?tag=outdoors&limit=10", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("expected 2 tag results, got %d: %+v", len(resp.Results), resp.Results)
+	}
+	seen := map[int64]SearchResult{}
+	for _, result := range resp.Results {
+		seen[result.ImageID] = result
+		if result.SearchSource != "tag" {
+			t.Fatalf("expected tag search source, got %+v", result)
+		}
+	}
+	if _, ok := seen[1]; !ok {
+		t.Fatalf("expected image 1 in tag search results: %+v", resp.Results)
+	}
+	if _, ok := seen[2]; !ok {
+		t.Fatalf("expected image 2 in tag search results: %+v", resp.Results)
+	}
+}
+
+func TestTagSearchSupportsAllMode(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET tags_json = '["cat","outdoors"]' WHERE id = 1;
+UPDATE images SET tags_json = '["dog","outdoors"]' WHERE id = 2;
+`); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/tags?tag=dog&tag=outdoors&mode=all", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("expected 1 tag result for all-mode, got %d: %+v", len(resp.Results), resp.Results)
+	}
+	if resp.Results[0].ImageID != 2 {
+		t.Fatalf("expected image 2 for all-mode tag search, got %+v", resp.Results)
+	}
+}
+
+func TestTagSearchSupportsOffsetPaginationAndTotal(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES (3, 'c', 'bird.jpg', 'images/c', 'image/jpeg', 100, 100);
+
+UPDATE images SET tags_json = '["outdoors"]' WHERE id = 1;
+UPDATE images SET tags_json = '["outdoors"]' WHERE id = 2;
+UPDATE images SET tags_json = '["outdoors"]' WHERE id = 3;
+`); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/tags?tag=outdoors&limit=1&offset=1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Total != 3 {
+		t.Fatalf("expected total=3 for paginated tag search, got %d", resp.Total)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("expected one paginated result, got %d: %+v", len(resp.Results), resp.Results)
+	}
+	if resp.Results[0].ImageID != 2 {
+		t.Fatalf("expected second result to be image 2, got %+v", resp.Results[0])
+	}
+}
+
+func TestTagSearchIncludesVideoResultsFromTaggedFrames(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height, tags_json)
+VALUES (10, 'vf1', 'frame.jpg', 'images/vf1', 'image/jpeg', 100, 100, '["outdoors","trail"]');
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (7, 'vid', 'clip.mp4', 'videos/vid', 'video/mp4', 12000, 1920, 1080, 1);
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (7, 10, 0, 1000);
+`); err != nil {
+		t.Fatalf("seed tagged video frame: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/tags?tag=trail", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("expected one video result for tag, got %d: %+v", len(resp.Results), resp.Results)
+	}
+	if resp.Results[0].MediaType != "video" || resp.Results[0].VideoID != 7 {
+		t.Fatalf("expected video result for tag search, got %+v", resp.Results[0])
+	}
+	if resp.Results[0].PreviewPath != "images/vf1" {
+		t.Fatalf("expected preview path from matched frame, got %+v", resp.Results[0])
+	}
+}
+
+func TestTagSearchRejectsMissingTag(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/tags", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+}
+
+func TestTagCloudReturnsRankedTags(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET tags_json = '["cat","outdoors","sun"]' WHERE id = 1;
+UPDATE images SET tags_json = '["dog","outdoors"]' WHERE id = 2;
+`); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/tag-cloud?limit=3", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp TagCloudResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Tags) != 3 {
+		t.Fatalf("expected 3 cloud tags, got %d: %+v", len(resp.Tags), resp.Tags)
+	}
+	if resp.Tags[0].Tag != "outdoors" || resp.Tags[0].Count != 2 {
+		t.Fatalf("expected outdoors to lead with count 2, got %+v", resp.Tags[0])
+	}
+}
+
+func TestTagCloudSupportsPrefixQuery(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET tags_json = '["dog","outdoors"]' WHERE id = 1;
+UPDATE images SET tags_json = '["cat","indoor"]' WHERE id = 2;
+`); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/tag-cloud?limit=10&q=do", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp TagCloudResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Tags) != 1 {
+		t.Fatalf("expected one prefixed tag, got %d: %+v", len(resp.Tags), resp.Tags)
+	}
+	if resp.Tags[0].Tag != "dog" {
+		t.Fatalf("expected prefix query to return dog, got %+v", resp.Tags[0])
+	}
+}
+
+func TestTextSearchSupportsTagRestriction(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET tags_json = '["dog","outdoors"]' WHERE id = 1;
+UPDATE images SET tags_json = '["dog","indoor"]' WHERE id = 2;
+`); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{
+		DB:       dbConn,
+		ModelID:  1,
+		DataDir:  "/tmp",
+		Embedder: &fakeEmbedder{textVec: []float32{1, 0}},
+		Index: &fakeIndex{hits: []vectorindex.SearchHit{
+			{ImageID: 2, ModelID: 1, Distance: 0.1},
+			{ImageID: 1, ModelID: 1, Distance: 0.2},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/text?q=dog&tag=outdoors&tag_mode=all", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("expected one text result after tag restriction, got %d: %+v", len(resp.Results), resp.Results)
+	}
+	if resp.Results[0].ImageID != 1 {
+		t.Fatalf("expected image 1 to match outdoors restriction, got %+v", resp.Results[0])
+	}
+}
+
 func TestTextSearchWithNegativePromptCombinesEmbeddings(t *testing.T) {
 	dbConn := setupSearchDB(t)
 	embed := &fakeEmbedder{

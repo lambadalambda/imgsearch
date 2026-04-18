@@ -33,6 +33,7 @@ type SearchResult struct {
 	PreviewPath      string   `json:"preview_path,omitempty"`
 	MatchTimestampMS int64    `json:"match_timestamp_ms,omitempty"`
 	TranscriptText   string   `json:"transcript_text,omitempty"`
+	SearchSource     string   `json:"search_source,omitempty"`
 	MimeType         string   `json:"mime_type,omitempty"`
 	Distance         float64  `json:"distance"`
 	OriginalName     string   `json:"original_name"`
@@ -43,6 +44,16 @@ type SearchResult struct {
 
 type SearchResponse struct {
 	Results []SearchResult `json:"results"`
+	Total   int64          `json:"total,omitempty"`
+}
+
+type TagCount struct {
+	Tag   string `json:"tag"`
+	Count int64  `json:"count"`
+}
+
+type TagCloudResponse struct {
+	Tags []TagCount `json:"tags"`
 }
 
 const maxNegativePromptChars = 500
@@ -53,6 +64,8 @@ func NewHandler(h *Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/search/text", h.handleTextSearch)
 	mux.HandleFunc("/api/search/similar", h.handleSimilarSearch)
+	mux.HandleFunc("/api/search/tags", h.handleTagSearch)
+	mux.HandleFunc("/api/search/tag-cloud", h.handleTagCloud)
 	return mux
 }
 
@@ -71,6 +84,9 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSONError(w, http.StatusBadRequest, fmt.Sprintf("negative prompt too long (max %d characters)", maxNegativePromptChars))
 		return
 	}
+	tagFilters := parseExplicitTagFilters(r)
+	tagMode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tag_mode")))
+	tagMatchAll := tagMode != "any"
 
 	vec, err := h.embedQueryVector(r.Context(), q, neg)
 	if err != nil {
@@ -83,7 +99,14 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := parseLimit(r, 20)
-	hits, err := h.Index.Search(r.Context(), h.ModelID, vec, limit)
+	searchLimit := limit
+	if len(tagFilters) > 0 {
+		searchLimit = limit * 8
+		if searchLimit > 200 {
+			searchLimit = 200
+		}
+	}
+	hits, err := h.Index.Search(r.Context(), h.ModelID, vec, searchLimit)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "search failed")
 		return
@@ -94,14 +117,20 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "result enrich failed")
 		return
 	}
-	transcriptResults, err := h.searchTranscriptEmbeddings(r.Context(), vec, limit)
+	transcriptResults, err := h.searchTranscriptEmbeddings(r.Context(), vec, searchLimit)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "transcript search failed")
 		return
 	}
-	results := mergeResults(frameResults, transcriptResults, limit)
+	results := mergeResults(frameResults, transcriptResults, searchLimit)
+	if len(tagFilters) > 0 {
+		results = filterResultsByTags(results, tagFilters, tagMatchAll)
+	}
+	if len(results) > limit {
+		results = results[:limit]
+	}
 
-	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results})
+	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: int64(len(results))})
 }
 
 var errNegativeEmbedding = errors.New("negative embedding failed")
@@ -192,7 +221,55 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results})
+	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: int64(len(results))})
+}
+
+func (h *Handler) handleTagSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	tags := parseTagFilters(r)
+	if len(tags) == 0 {
+		httputil.WriteJSONError(w, http.StatusBadRequest, "missing tag")
+		return
+	}
+
+	limit := parseLimit(r, 24)
+	offset := parseOffset(r)
+	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
+	matchAll := mode == "all"
+
+	results, total, err := h.searchByTags(r.Context(), tags, limit, offset, matchAll)
+	if err != nil {
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "tag search failed")
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: total})
+}
+
+func (h *Handler) handleTagCloud(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	limit := parseLimit(r, 60)
+	if limit > 120 {
+		limit = 120
+	}
+	minCount := parseMinCount(r, 1)
+	prefix := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+
+	tags, err := h.tagCloud(r.Context(), limit, minCount, prefix)
+	if err != nil {
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "tag cloud failed")
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, TagCloudResponse{Tags: tags})
 }
 
 func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]SearchResult, error) {
@@ -313,6 +390,231 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]S
 		}
 	}
 	return results, nil
+}
+
+func (h *Handler) searchByTags(ctx context.Context, tags []string, limit int, offset int, matchAll bool) ([]SearchResult, int64, error) {
+	if len(tags) == 0 {
+		return []SearchResult{}, 0, nil
+	}
+
+	placeholders := make([]string, len(tags))
+	args := make([]any, 0, len(tags)+4)
+	for i, tag := range tags {
+		placeholders[i] = "?"
+		args = append(args, tag)
+	}
+	requiredCount := 0
+	if matchAll {
+		requiredCount = len(tags)
+	}
+
+	countArgs := append([]any{}, args...)
+	countArgs = append(countArgs, requiredCount, requiredCount)
+
+	var total int64
+	if err := h.DB.QueryRowContext(ctx, fmt.Sprintf(`
+WITH requested_tags(tag) AS (
+  SELECT %s
+), image_tag_matches AS (
+  SELECT i.id AS image_id,
+         COUNT(DISTINCT lower(trim(j.value))) AS matched_count
+  FROM images i
+  JOIN json_each(COALESCE(i.tags_json, '[]')) j
+    ON trim(COALESCE(j.value, '')) <> ''
+  JOIN requested_tags rt
+    ON lower(trim(j.value)) = rt.tag
+  GROUP BY i.id
+  HAVING (? = 0 OR COUNT(DISTINCT lower(trim(j.value))) = ?)
+), media_units AS (
+  SELECT
+    CASE WHEN vf.video_id IS NULL THEN 'image' ELSE 'video' END AS media_type,
+    COALESCE(vf.video_id, i.id) AS unit_id,
+    ROW_NUMBER() OVER (
+      PARTITION BY CASE WHEN vf.video_id IS NULL THEN 'image:' || i.id ELSE 'video:' || vf.video_id END
+      ORDER BY itm.matched_count DESC, i.id DESC
+    ) AS rn
+  FROM image_tag_matches itm
+  JOIN images i ON i.id = itm.image_id
+  LEFT JOIN video_frames vf ON vf.image_id = i.id
+)
+SELECT COUNT(*)
+FROM media_units
+WHERE rn = 1
+`, strings.Join(placeholders, " UNION ALL SELECT ")), countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count tag matches: %w", err)
+	}
+	if total == 0 {
+		return []SearchResult{}, 0, nil
+	}
+
+	args = append(args, requiredCount, requiredCount, limit, offset)
+
+	rows, err := h.DB.QueryContext(ctx, fmt.Sprintf(`
+WITH requested_tags(tag) AS (
+  SELECT %s
+), image_tag_matches AS (
+  SELECT i.id AS image_id,
+         COUNT(DISTINCT lower(trim(j.value))) AS matched_count
+  FROM images i
+  JOIN json_each(COALESCE(i.tags_json, '[]')) j
+    ON trim(COALESCE(j.value, '')) <> ''
+  JOIN requested_tags rt
+    ON lower(trim(j.value)) = rt.tag
+  GROUP BY i.id
+  HAVING (? = 0 OR COUNT(DISTINCT lower(trim(j.value))) = ?)
+), media_units AS (
+  SELECT
+    CASE WHEN vf.video_id IS NULL THEN 'image' ELSE 'video' END AS media_type,
+    COALESCE(vf.video_id, i.id) AS unit_id,
+    i.id AS image_id,
+    i.original_name AS image_original_name,
+    i.storage_path AS image_storage_path,
+    i.mime_type AS image_mime_type,
+    COALESCE(i.description, '') AS image_description,
+    COALESCE(i.tags_json, '[]') AS image_tags_json,
+    vf.video_id AS video_id,
+    v.original_name AS video_original_name,
+    v.storage_path AS video_storage_path,
+    v.mime_type AS video_mime_type,
+    COALESCE(v.transcript_text, '') AS video_transcript_text,
+    vf.timestamp_ms AS timestamp_ms,
+    itm.matched_count AS matched_count,
+    ROW_NUMBER() OVER (
+      PARTITION BY CASE WHEN vf.video_id IS NULL THEN 'image:' || i.id ELSE 'video:' || vf.video_id END
+      ORDER BY itm.matched_count DESC, i.id DESC
+    ) AS rn
+  FROM image_tag_matches itm
+  JOIN images i ON i.id = itm.image_id
+  LEFT JOIN video_frames vf ON vf.image_id = i.id
+  LEFT JOIN videos v ON v.id = vf.video_id
+)
+SELECT media_type,
+       unit_id,
+       image_id,
+       image_original_name,
+       image_storage_path,
+       image_mime_type,
+       image_description,
+       image_tags_json,
+       video_id,
+       video_original_name,
+       video_storage_path,
+       video_mime_type,
+       video_transcript_text,
+       timestamp_ms,
+       matched_count
+FROM media_units
+WHERE rn = 1
+ORDER BY matched_count DESC, unit_id DESC
+LIMIT ?
+OFFSET ?
+`, strings.Join(placeholders, " UNION ALL SELECT ")), args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query tag matches: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	results := make([]SearchResult, 0, limit)
+	for rows.Next() {
+		var result SearchResult
+		var mediaType string
+		var unitID int64
+		var imageStoragePath string
+		var imageTagsJSON string
+		var videoID sql.NullInt64
+		var videoOriginalName sql.NullString
+		var videoStoragePath sql.NullString
+		var videoMimeType sql.NullString
+		var videoTranscriptText sql.NullString
+		var timestampMS sql.NullInt64
+		var matchedCount int64
+		if err := rows.Scan(
+			&mediaType,
+			&unitID,
+			&result.ImageID,
+			&result.OriginalName,
+			&imageStoragePath,
+			&result.MimeType,
+			&result.Description,
+			&imageTagsJSON,
+			&videoID,
+			&videoOriginalName,
+			&videoStoragePath,
+			&videoMimeType,
+			&videoTranscriptText,
+			&timestampMS,
+			&matchedCount,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scan tag match row: %w", err)
+		}
+		decodedTags, err := decodeTagsJSON(imageTagsJSON)
+		if err != nil {
+			return nil, 0, fmt.Errorf("decode image %d tags: %w", result.ImageID, err)
+		}
+		result.Tags = decodedTags
+		result.SearchSource = "tag"
+		result.MediaType = mediaType
+		result.StoragePath = filepath.ToSlash(imageStoragePath)
+		if mediaType == "video" && videoID.Valid {
+			result.VideoID = videoID.Int64
+			result.OriginalName = videoOriginalName.String
+			result.StoragePath = filepath.ToSlash(videoStoragePath.String)
+			result.MimeType = videoMimeType.String
+			result.TranscriptText = videoTranscriptText.String
+			result.PreviewPath = filepath.ToSlash(imageStoragePath)
+			if timestampMS.Valid {
+				result.MatchTimestampMS = timestampMS.Int64
+			}
+		}
+		if mediaType == "image" {
+			result.ImageID = unitID
+		}
+		results = append(results, result)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate tag match rows: %w", err)
+	}
+
+	return results, total, nil
+}
+
+func (h *Handler) tagCloud(ctx context.Context, limit int, minCount int, prefix string) ([]TagCount, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+WITH unit_tags AS (
+  SELECT DISTINCT
+         CASE WHEN vf.video_id IS NULL THEN 'image:' || i.id ELSE 'video:' || vf.video_id END AS media_unit,
+         lower(trim(j.value)) AS tag
+  FROM images i
+  JOIN json_each(COALESCE(i.tags_json, '[]')) j
+    ON trim(COALESCE(j.value, '')) <> ''
+  LEFT JOIN video_frames vf ON vf.image_id = i.id
+)
+SELECT tag,
+       COUNT(*) AS count
+FROM unit_tags
+WHERE (? = '' OR tag LIKE ? || '%')
+GROUP BY tag
+HAVING COUNT(*) >= ?
+ORDER BY count DESC, tag ASC
+LIMIT ?
+`, prefix, prefix, minCount, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query tag cloud: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	tags := make([]TagCount, 0, limit)
+	for rows.Next() {
+		var item TagCount
+		if err := rows.Scan(&item.Tag, &item.Count); err != nil {
+			return nil, fmt.Errorf("scan tag cloud row: %w", err)
+		}
+		tags = append(tags, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate tag cloud rows: %w", err)
+	}
+	return tags, nil
 }
 
 func (h *Handler) searchTranscriptEmbeddings(ctx context.Context, query []float32, limit int) ([]SearchResult, error) {
@@ -463,4 +765,110 @@ func parseLimit(r *http.Request, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func parseOffset(r *http.Request) int {
+	v := r.URL.Query().Get("offset")
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 || n > 1000000 {
+		return 0
+	}
+	return n
+}
+
+func parseMinCount(r *http.Request, fallback int) int {
+	v := r.URL.Query().Get("min_count")
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 || n > 1000 {
+		return fallback
+	}
+	return n
+}
+
+func parseTagFilters(r *http.Request) []string {
+	parts := make([]string, 0, 8)
+	parts = append(parts, r.URL.Query()["tag"]...)
+	if v := strings.TrimSpace(r.URL.Query().Get("tags")); v != "" {
+		parts = append(parts, strings.Split(v, ",")...)
+	}
+	if len(parts) == 0 {
+		if v := strings.TrimSpace(r.URL.Query().Get("q")); v != "" {
+			parts = append(parts, strings.Split(v, ",")...)
+		}
+	}
+	return normalizeTagFilters(parts)
+}
+
+func parseExplicitTagFilters(r *http.Request) []string {
+	parts := make([]string, 0, 8)
+	parts = append(parts, r.URL.Query()["tag"]...)
+	if v := strings.TrimSpace(r.URL.Query().Get("tags")); v != "" {
+		parts = append(parts, strings.Split(v, ",")...)
+	}
+	return normalizeTagFilters(parts)
+}
+
+func normalizeTagFilters(raw []string) []string {
+	seen := make(map[string]struct{}, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, part := range raw {
+		tag := strings.ToLower(strings.TrimSpace(part))
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		out = append(out, tag)
+	}
+	return out
+}
+
+func filterResultsByTags(results []SearchResult, required []string, matchAll bool) []SearchResult {
+	normalizedRequired := normalizeTagFilters(required)
+	if len(normalizedRequired) == 0 {
+		return results
+	}
+
+	out := make([]SearchResult, 0, len(results))
+	for _, result := range results {
+		tags := normalizeTagFilters(result.Tags)
+		if len(tags) == 0 {
+			continue
+		}
+		tagSet := make(map[string]struct{}, len(tags))
+		for _, tag := range tags {
+			tagSet[tag] = struct{}{}
+		}
+
+		if matchAll {
+			allPresent := true
+			for _, requiredTag := range normalizedRequired {
+				if _, ok := tagSet[requiredTag]; !ok {
+					allPresent = false
+					break
+				}
+			}
+			if allPresent {
+				out = append(out, result)
+			}
+			continue
+		}
+
+		for _, requiredTag := range normalizedRequired {
+			if _, ok := tagSet[requiredTag]; ok {
+				out = append(out, result)
+				break
+			}
+		}
+	}
+
+	return out
 }
