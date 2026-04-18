@@ -280,6 +280,12 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	if !strings.Contains(body, ".results-pagination") {
 		t.Fatalf("expected results pagination styling rules")
 	}
+	if !strings.Contains(body, "overflow-x: hidden;") {
+		t.Fatalf("expected mobile-safe horizontal overflow guard in styles")
+	}
+	if !strings.Contains(body, "grid-template-columns: repeat(4, minmax(0, 1fr));") {
+		t.Fatalf("expected compact mobile tab grid to prevent horizontal scroll")
+	}
 }
 
 func TestMediaServesFilesFromDataDir(t *testing.T) {

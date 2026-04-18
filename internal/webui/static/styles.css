@@ -31,6 +31,7 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 8% 8%, rgba(179, 86, 36, 0.12), transparent 26%),
     radial-gradient(circle at 88% 14%, rgba(45, 103, 128, 0.12), transparent 28%),
@@ -1251,7 +1252,7 @@ input:focus-visible {
 
 @media (max-width: 760px) {
   .shell {
-    width: min(100vw - 20px, 720px);
+    width: min(720px, calc(100vw - 20px));
     margin-top: 12px;
     gap: 14px;
   }
@@ -1283,8 +1284,8 @@ input:focus-visible {
 
   .ops-menu-body,
   .search-advanced-panel {
-    width: min(340px, calc(100vw - 34px));
-    right: -6px;
+    width: min(340px, calc(100vw - 26px));
+    right: 0;
   }
 
   .grid {
@@ -1305,10 +1306,22 @@ input:focus-visible {
   .tablist {
     width: 100%;
     justify-content: stretch;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
   }
 
   .tab-button {
     flex: 1 1 0;
     justify-content: center;
+    min-width: 0;
+    padding: 8px 6px;
+  }
+
+  .tab-button span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }

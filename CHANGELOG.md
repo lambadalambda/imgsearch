@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(ui): prevent slight mobile horizontal scrolling by tightening small-screen shell/popover widths, clamping tab button shrink behavior, and adding a horizontal overflow guard.
 - feat: extend `scripts/import_images.sh` to accept 4chan thread URLs and import full-size thread pictures plus `.webm` from `i.4cdn.org` (skipping thumbnails and unsupported thread files), with browser-like 4chan media headers, HTTP 429 retry handling, and paced per-file 4chan download timing with jitter.
 - feat: add tag discovery and search workflows with `/api/search/tag-cloud` and paginated `/api/search/tags` (including grouped video matches), a workspace `Tags` tab with clickable cloud chips, advanced-search tag restrictions with autocomplete + `all/any` matching, and clickable card tags that trigger tag search.
 - fix: treat empty/no-audio video transcripts as successful transcribe jobs, storing an empty transcript and skipping transcript embeddings instead of retrying/failing the job.
