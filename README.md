@@ -36,6 +36,17 @@ Or any other folder:
 
 The import script uploads supported images to the local app and indexing continues in the background.
 
+You can also import full-size pictures and webms from a 4chan thread URL:
+
+```bash
+./scripts/import_images.sh https://boards.4chan.org/v/thread/737156945
+```
+
+For 4chan thread imports, the script pulls full files from `i.4cdn.org` (not thumbnails) and currently imports supported thread pictures plus `.webm` files.
+If 4chan rate-limits requests (`HTTP 429`), the importer retries with `Retry-After` support.
+If needed, tune retry behavior with `IMGSEARCH_IMPORT_HTTP_MAX_ATTEMPTS` and `IMGSEARCH_IMPORT_HTTP_RETRY_DELAY_SECONDS`.
+By default, 4chan media downloads are paced (about every 5 seconds with jitter) to reduce rate-limit spikes.
+
 ### Build From Source
 
 If there is no release for your system:

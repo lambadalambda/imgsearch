@@ -81,9 +81,16 @@ With the app running on `http://127.0.0.1:8080`, import a directory recursively:
 Optional arguments and behavior:
 
 - `mise run import-images -- ./photos http://127.0.0.1:8080`
+- `mise run import-images -- https://boards.4chan.org/v/thread/737156945`
 - `IMGSEARCH_IMPORT_CONVERT=auto` tries direct upload first, then auto-converts WEBP/AVIF with `vips` on failure.
 - `IMGSEARCH_IMPORT_CONVERT=vips` always converts WEBP/AVIF via `vips` before upload.
 - `IMGSEARCH_IMPORT_CONVERT=never` never converts and uploads files as-is.
+- 4chan imports require `python3` and pull full-size supported picture files plus `.webm` from the thread (not thumbnails).
+- `IMGSEARCH_IMPORT_HTTP_MAX_ATTEMPTS` controls how many times 4chan downloads are retried on HTTP 429 (default: 6).
+- `IMGSEARCH_IMPORT_HTTP_RETRY_DELAY_SECONDS` controls fallback retry delay in seconds when `Retry-After` is missing (default: 2).
+- `IMGSEARCH_IMPORT_4CHAN_USER_AGENT` overrides the browser-like default user agent used for 4chan media downloads.
+- `IMGSEARCH_IMPORT_4CHAN_MIN_DELAY_SECONDS` sets the base per-file delay between 4chan media downloads (default: 5).
+- `IMGSEARCH_IMPORT_4CHAN_JITTER_SECONDS` adds random delay jitter on top of the base delay (default: 2).
 
 ## Observability
 
