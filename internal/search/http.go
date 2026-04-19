@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/httputil"
@@ -43,8 +44,16 @@ type SearchResult struct {
 }
 
 type SearchResponse struct {
-	Results []SearchResult `json:"results"`
-	Total   int64          `json:"total,omitempty"`
+	Results []SearchResult       `json:"results"`
+	Total   int64                `json:"total,omitempty"`
+	Debug   *SearchDebugResponse `json:"debug,omitempty"`
+}
+
+type SearchDebugResponse struct {
+	DurationMS    int64  `json:"duration_ms"`
+	IndexBackend  string `json:"index_backend,omitempty"`
+	IndexStrategy string `json:"index_strategy,omitempty"`
+	Quantization  string `json:"quantization,omitempty"`
 }
 
 type TagCount struct {
@@ -70,6 +79,7 @@ func NewHandler(h *Handler) http.Handler {
 }
 
 func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	if r.Method != http.MethodGet {
 		httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -107,7 +117,9 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 			searchLimit = 200
 		}
 	}
-	hits, err := h.Index.Search(r.Context(), h.ModelID, vec, searchLimit)
+	indexDebug := vectorindex.SearchDebug{}
+	searchCtx := vectorindex.WithSearchDebug(r.Context(), &indexDebug)
+	hits, err := h.Index.Search(searchCtx, h.ModelID, vec, searchLimit)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "search failed")
 		return
@@ -131,7 +143,7 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 		results = results[:limit]
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: int64(len(results))})
+	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: int64(len(results)), Debug: buildSearchDebugResponse(start, indexDebug)})
 }
 
 var errNegativeEmbedding = errors.New("negative embedding failed")
@@ -190,6 +202,7 @@ func combineQueryWithNegative(query []float32, negative []float32) ([]float32, e
 }
 
 func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	if r.Method != http.MethodGet {
 		httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -214,7 +227,9 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 			searchLimit = 200
 		}
 	}
-	hits, err := h.Index.SearchByImageID(r.Context(), h.ModelID, imageID, searchLimit)
+	indexDebug := vectorindex.SearchDebug{}
+	searchCtx := vectorindex.WithSearchDebug(r.Context(), &indexDebug)
+	hits, err := h.Index.SearchByImageID(searchCtx, h.ModelID, imageID, searchLimit)
 	if err != nil {
 		if errors.Is(err, vectorindex.ErrNotFound) {
 			httputil.WriteJSONError(w, http.StatusNotFound, "image not indexed")
@@ -233,7 +248,30 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 		results = results[:limit]
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: int64(len(results))})
+	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: int64(len(results)), Debug: buildSearchDebugResponse(start, indexDebug)})
+}
+
+func buildSearchDebugResponse(start time.Time, info vectorindex.SearchDebug) *SearchDebugResponse {
+	durationMS := time.Since(start).Milliseconds()
+	if durationMS < 0 {
+		durationMS = 0
+	}
+	resp := &SearchDebugResponse{DurationMS: durationMS}
+	if strings.TrimSpace(info.Backend) != "" {
+		resp.IndexBackend = info.Backend
+	}
+	if strings.TrimSpace(info.Strategy) != "" {
+		resp.IndexStrategy = info.Strategy
+	}
+	switch {
+	case info.Quantized:
+		resp.Quantization = "on"
+	case strings.TrimSpace(info.Backend) != "":
+		resp.Quantization = "off"
+	default:
+		resp.Quantization = "unknown"
+	}
+	return resp
 }
 
 func (h *Handler) handleTagSearch(w http.ResponseWriter, r *http.Request) {

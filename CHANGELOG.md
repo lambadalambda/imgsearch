@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ux(search): include search debug details in success status text (duration, index backend/strategy, and quantization on/off) for text and similar-search responses.
+- perf(search): switch sqlite-vector search to `vector_quantize_scan` using request-sized top-k (instead of corpus-sized scan windows), with automatic re-quantization/preload when embeddings change and full-scan fallback when quantization functions are unavailable.
 - feat(ui): hide NSFW-tagged media by default with a workspace-level `Show NSFW` toggle, persisting preference and applying backend `include_nsfw` filtering across gallery/video/search/tag-cloud APIs so pagination totals stay correct.
 - fix(ui): use touch-first card interactions on coarse-pointer devices by showing thumbnail actions without hover, suppressing hover-only detail overlays, and preventing tap collisions between action controls and media-open handlers.
 - fix(ui): prevent slight mobile horizontal scrolling by tightening small-screen shell/popover widths, clamping tab button shrink behavior, and adding a horizontal overflow guard.

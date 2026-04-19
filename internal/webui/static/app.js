@@ -234,6 +234,24 @@ function applyNSFWQuery(params) {
   return params;
 }
 
+function formatSearchDebugSuffix(debug) {
+  const details = debug && typeof debug === 'object' ? debug : {};
+  const durationMS = Number(details.duration_ms);
+  const hasDuration = Number.isFinite(durationMS) && durationMS >= 0;
+  const durationLabel = hasDuration ? `${(durationMS / 1000).toFixed(durationMS >= 10000 ? 1 : 2)}s` : 'n/a';
+
+  const backend = typeof details.index_backend === 'string' && details.index_backend.trim() ? details.index_backend.trim() : 'unknown';
+  const strategy = typeof details.index_strategy === 'string' && details.index_strategy.trim() ? details.index_strategy.trim() : '';
+  const quantization = typeof details.quantization === 'string' && details.quantization.trim() ? details.quantization.trim() : 'unknown';
+
+  if (!hasDuration && backend === 'unknown' && quantization === 'unknown') {
+    return '';
+  }
+
+  const indexLabel = strategy ? `${backend}/${strategy}` : backend;
+  return ` (took ${durationLabel}, index: ${indexLabel}, quantization: ${quantization})`;
+}
+
 function renderSearchTagFilters() {
   if (!searchTagChips) {
     return;
@@ -1173,7 +1191,7 @@ async function runTextSearch(query, negative, tagFilters, tagMode) {
   state.activeTagFilters = [];
   renderResults();
   setActiveTab('results');
-  setStatus(searchStatus, `Text search returned ${state.results.length} result(s).`, 'success');
+  setStatus(searchStatus, `Text search returned ${state.results.length} result(s).${formatSearchDebugSuffix(payload.debug)}`, 'success');
 }
 
 async function runSimilarSearch(imageID, anchorHint) {
@@ -1222,7 +1240,7 @@ async function runSimilarSearch(imageID, anchorHint) {
   state.activeTagFilters = [];
   renderResults();
   setActiveTab('results');
-  setStatus(searchStatus, `Similar search returned ${state.results.length} result(s).`, 'success');
+  setStatus(searchStatus, `Similar search returned ${state.results.length} result(s).${formatSearchDebugSuffix(payload.debug)}`, 'success');
 }
 
 function imagesDiffer(currentImages, nextImages) {

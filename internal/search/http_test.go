@@ -87,16 +87,19 @@ type fakeIndex struct {
 	similarErr  error
 	searchVec   []float32
 	searchCalls int
+	debug       vectorindex.SearchDebug
 }
 
 func (f *fakeIndex) Upsert(context.Context, int64, int64, []float32) error { return nil }
 func (f *fakeIndex) Delete(context.Context, int64, int64) error            { return nil }
-func (f *fakeIndex) Search(_ context.Context, _ int64, query []float32, _ int) ([]vectorindex.SearchHit, error) {
+func (f *fakeIndex) Search(ctx context.Context, _ int64, query []float32, _ int) ([]vectorindex.SearchHit, error) {
+	vectorindex.SetSearchDebug(ctx, f.debug)
 	f.searchCalls++
 	f.searchVec = append([]float32(nil), query...)
 	return f.hits, nil
 }
-func (f *fakeIndex) SearchByImageID(context.Context, int64, int64, int) ([]vectorindex.SearchHit, error) {
+func (f *fakeIndex) SearchByImageID(ctx context.Context, _ int64, _ int64, _ int) ([]vectorindex.SearchHit, error) {
+	vectorindex.SetSearchDebug(ctx, f.debug)
 	if f.similarErr != nil {
 		return nil, f.similarErr
 	}
@@ -170,6 +173,12 @@ WHERE id = 2
 	}
 	if len(resp.Results[0].Tags) != 2 || resp.Results[0].Tags[0] != "dog" {
 		t.Fatalf("unexpected tags: %v", resp.Results[0].Tags)
+	}
+	if resp.Debug == nil {
+		t.Fatalf("expected debug metadata in text search response")
+	}
+	if resp.Debug.DurationMS < 0 {
+		t.Fatalf("expected non-negative duration_ms, got %d", resp.Debug.DurationMS)
 	}
 }
 
@@ -323,6 +332,52 @@ func TestSimilarSearchReturnsResults(t *testing.T) {
 	}
 	if len(resp.Results) != 1 || resp.Results[0].ImageID != 2 {
 		t.Fatalf("unexpected results: %+v", resp.Results)
+	}
+}
+
+func TestSimilarSearchIncludesDebugMetadata(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	h := NewHandler(&Handler{
+		DB:       dbConn,
+		ModelID:  1,
+		DataDir:  "/tmp",
+		Embedder: &fakeEmbedder{imgVec: []float32{1, 0}},
+		Index: &fakeIndex{
+			similarHits: []vectorindex.SearchHit{{ImageID: 2, ModelID: 1, Distance: 0.1}},
+			debug: vectorindex.SearchDebug{
+				Backend:   "sqlite-vector",
+				Strategy:  "quantize_scan",
+				Quantized: true,
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar?image_id=1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Debug == nil {
+		t.Fatalf("expected debug metadata in similar search response")
+	}
+	if resp.Debug.IndexBackend != "sqlite-vector" {
+		t.Fatalf("expected index backend sqlite-vector, got %q", resp.Debug.IndexBackend)
+	}
+	if resp.Debug.IndexStrategy != "quantize_scan" {
+		t.Fatalf("expected strategy quantize_scan, got %q", resp.Debug.IndexStrategy)
+	}
+	if resp.Debug.Quantization != "on" {
+		t.Fatalf("expected quantization on, got %q", resp.Debug.Quantization)
+	}
+	if resp.Debug.DurationMS < 0 {
+		t.Fatalf("expected non-negative duration_ms, got %d", resp.Debug.DurationMS)
 	}
 }
 

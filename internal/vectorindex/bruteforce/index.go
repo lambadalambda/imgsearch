@@ -109,6 +109,7 @@ WHERE model_id = ?
 	if len(hits) > limit {
 		hits = hits[:limit]
 	}
+	vectorindex.SetSearchDebug(ctx, vectorindex.SearchDebug{Backend: "bruteforce", Strategy: "full_scan", Quantized: false})
 	return hits, nil
 }
 

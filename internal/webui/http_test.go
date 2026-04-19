@@ -188,6 +188,12 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "fetch(`/api/search/tag-cloud?${params.toString()}`)") {
 		t.Fatalf("expected javascript autocomplete lookups for tag suggestions")
 	}
+	if !strings.Contains(rr.Body.String(), "function formatSearchDebugSuffix(debug)") {
+		t.Fatalf("expected javascript helper for rendering search debug suffix text")
+	}
+	if !strings.Contains(rr.Body.String(), "Similar search returned ${state.results.length} result(s).${formatSearchDebugSuffix(payload.debug)}") {
+		t.Fatalf("expected similar-search success status to include backend debug suffix")
+	}
 	if !strings.Contains(rr.Body.String(), "tag-chip-button") {
 		t.Fatalf("expected javascript card rendering support for clickable tag buttons")
 	}
