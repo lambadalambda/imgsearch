@@ -120,6 +120,54 @@ func TestListVideosRejectsInvalidMethod(t *testing.T) {
 	}
 }
 
+func TestListVideosNSFWFiltering(t *testing.T) {
+	dbConn := setupVideosDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images
+SET tags_json = '["clip","nsfw"]'
+WHERE id = 12
+`); err != nil {
+		t.Fatalf("seed nsfw frame tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/api/videos?limit=10&offset=0", nil)
+	defaultRR := httptest.NewRecorder()
+	h.ServeHTTP(defaultRR, defaultReq)
+
+	if defaultRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", defaultRR.Code, defaultRR.Body.String())
+	}
+
+	var defaultResp ListResponse
+	if err := json.Unmarshal(defaultRR.Body.Bytes(), &defaultResp); err != nil {
+		t.Fatalf("decode default response: %v", err)
+	}
+	if defaultResp.Total != 1 {
+		t.Fatalf("expected total=1 with nsfw hidden by default, got %d", defaultResp.Total)
+	}
+	if len(defaultResp.Videos) != 1 || defaultResp.Videos[0].VideoID != 1 {
+		t.Fatalf("expected only non-nsfw video in default list, got %+v", defaultResp.Videos)
+	}
+
+	includeReq := httptest.NewRequest(http.MethodGet, "/api/videos?limit=10&offset=0&include_nsfw=1", nil)
+	includeRR := httptest.NewRecorder()
+	h.ServeHTTP(includeRR, includeReq)
+
+	if includeRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", includeRR.Code, includeRR.Body.String())
+	}
+
+	var includeResp ListResponse
+	if err := json.Unmarshal(includeRR.Body.Bytes(), &includeResp); err != nil {
+		t.Fatalf("decode include response: %v", err)
+	}
+	if includeResp.Total != 2 {
+		t.Fatalf("expected total=2 with include_nsfw=1, got %d", includeResp.Total)
+	}
+}
+
 func TestDeleteVideoRemovesVideoFramesTranscriptAndOrphanFiles(t *testing.T) {
 	dbConn := setupVideosDB(t)
 	dataDir := t.TempDir()

@@ -62,6 +62,9 @@ func TestRootServesIndexPage(t *testing.T) {
 	if !strings.Contains(body, "id=\"results-prev\"") || !strings.Contains(body, "id=\"results-next\"") || !strings.Contains(body, "id=\"results-page-label\"") {
 		t.Fatalf("expected results pagination controls in results toolbar")
 	}
+	if !strings.Contains(body, "id=\"show-nsfw\"") {
+		t.Fatalf("expected nsfw visibility toggle in workspace controls")
+	}
 	if !strings.Contains(body, "id=\"search-tag-input\"") || !strings.Contains(body, "id=\"search-tag-suggestions\"") {
 		t.Fatalf("expected advanced search tag filter controls with autocomplete shell")
 	}
@@ -80,10 +83,10 @@ func TestAssetsAreServed(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusOK, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "fetch('/api/images'") {
+	if !strings.Contains(rr.Body.String(), "fetch(`/api/images?${params.toString()}`)") {
 		t.Fatalf("expected app javascript payload")
 	}
-	if !strings.Contains(rr.Body.String(), "fetch('/api/videos'") {
+	if !strings.Contains(rr.Body.String(), "fetch(`/api/videos?${params.toString()}`)") {
 		t.Fatalf("expected videos javascript payload")
 	}
 	if !strings.Contains(rr.Body.String(), "openLightbox") {
@@ -161,8 +164,8 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "const tagsTabButton = document.getElementById('tab-tags');") {
 		t.Fatalf("expected javascript hook for tags tab button")
 	}
-	if !strings.Contains(rr.Body.String(), "fetch('/api/search/tag-cloud?limit=80')") {
-		t.Fatalf("expected javascript to lazily load tag cloud data")
+	if !strings.Contains(rr.Body.String(), "applyNSFWQuery(new URLSearchParams({ limit: '80' }))") {
+		t.Fatalf("expected javascript to apply nsfw filter params when loading tag cloud")
 	}
 	if !strings.Contains(rr.Body.String(), "setActiveTab('tags')") {
 		t.Fatalf("expected tags tab activation handler in javascript")
@@ -190,6 +193,15 @@ func TestAssetsAreServed(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "resultsPrevButton") || !strings.Contains(rr.Body.String(), "resultsNextButton") {
 		t.Fatalf("expected javascript handlers for results pagination controls")
+	}
+	if !strings.Contains(rr.Body.String(), "const showNSFWToggle = document.getElementById('show-nsfw');") {
+		t.Fatalf("expected javascript hook for nsfw visibility toggle")
+	}
+	if !strings.Contains(rr.Body.String(), "function applyNSFWQuery(params)") || !strings.Contains(rr.Body.String(), "params.set('include_nsfw', '1');") {
+		t.Fatalf("expected javascript to attach include_nsfw query params for backend filtering")
+	}
+	if !strings.Contains(rr.Body.String(), "restartLiveUpdates();") {
+		t.Fatalf("expected nsfw toggle changes to restart live updates with updated filters")
 	}
 	if !strings.Contains(rr.Body.String(), "if (event.target.closest('.thumb-actions'))") {
 		t.Fatalf("expected lightbox handler to ignore taps on thumbnail action controls")
@@ -291,6 +303,9 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	}
 	if !strings.Contains(body, "@media (hover: none) and (pointer: coarse)") {
 		t.Fatalf("expected touch-specific card interaction overrides")
+	}
+	if !strings.Contains(body, ".nsfw-toggle") {
+		t.Fatalf("expected nsfw toggle styling rules")
 	}
 	if !strings.Contains(body, ".card-detail-overlay {") || !strings.Contains(body, "display: none;") {
 		t.Fatalf("expected touch mode to suppress hover-only detail overlay")

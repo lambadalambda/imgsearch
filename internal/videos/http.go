@@ -41,7 +41,7 @@ type ListResponse struct {
 	Total  int64       `json:"total"`
 }
 
-func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int) (ListResponse, error) {
+func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool) (ListResponse, error) {
 	if db == nil {
 		return ListResponse{}, fmt.Errorf("videos database unavailable")
 	}
@@ -51,9 +51,24 @@ func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int)
 	if offset < 0 {
 		offset = 0
 	}
+	includeNSFWInt := boolToInt(includeNSFW)
 
 	var total int64
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM videos`).Scan(&total); err != nil {
+	if err := db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM videos v
+WHERE (
+  ? = 1
+  OR NOT EXISTS (
+    SELECT 1
+    FROM video_frames vf
+    JOIN images i ON i.id = vf.image_id
+    JOIN json_each(COALESCE(i.tags_json, '[]')) tag
+      ON lower(trim(COALESCE(tag.value, ''))) = 'nsfw'
+    WHERE vf.video_id = v.id
+  )
+)
+`, includeNSFWInt).Scan(&total); err != nil {
 		return ListResponse{}, fmt.Errorf("count videos: %w", err)
 	}
 
@@ -112,9 +127,20 @@ FROM videos v
 LEFT JOIN frame_jobs f ON f.video_id = v.id
 LEFT JOIN transcript_jobs tj ON tj.video_id = v.id
 LEFT JOIN preview_frames p ON p.video_id = v.id AND p.rn = 1
+WHERE (
+  ? = 1
+  OR NOT EXISTS (
+    SELECT 1
+    FROM video_frames vf_nsfw
+    JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
+    JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) tag_nsfw
+      ON lower(trim(COALESCE(tag_nsfw.value, ''))) = 'nsfw'
+    WHERE vf_nsfw.video_id = v.id
+  )
+)
 ORDER BY v.id DESC
 LIMIT ? OFFSET ?
-`, modelID, modelID, limit, offset)
+`, modelID, modelID, includeNSFWInt, limit, offset)
 	if err != nil {
 		return ListResponse{}, fmt.Errorf("query videos: %w", err)
 	}
@@ -156,8 +182,9 @@ func NewHandler(h *Handler) http.Handler {
 		case http.MethodGet:
 			limit := parseLimit(r, 50)
 			offset := parseOffset(r)
+			includeNSFW := parseIncludeNSFW(r)
 
-			resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset)
+			resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset, includeNSFW)
 			if err != nil {
 				httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
 				return
@@ -326,4 +353,23 @@ func parseOffset(r *http.Request) int {
 		return 0
 	}
 	return n
+}
+
+func parseIncludeNSFW(r *http.Request) bool {
+	v := strings.TrimSpace(r.URL.Query().Get("include_nsfw"))
+	if v == "" {
+		return false
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return false
+	}
+	return parsed
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }

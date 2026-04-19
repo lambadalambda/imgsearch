@@ -87,6 +87,7 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 	tagFilters := parseExplicitTagFilters(r)
 	tagMode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tag_mode")))
 	tagMatchAll := tagMode != "any"
+	includeNSFW := parseIncludeNSFW(r)
 
 	vec, err := h.embedQueryVector(r.Context(), q, neg)
 	if err != nil {
@@ -100,7 +101,7 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 
 	limit := parseLimit(r, 20)
 	searchLimit := limit
-	if len(tagFilters) > 0 {
+	if len(tagFilters) > 0 || !includeNSFW {
 		searchLimit = limit * 8
 		if searchLimit > 200 {
 			searchLimit = 200
@@ -112,12 +113,12 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	frameResults, err := h.enrich(r.Context(), hits)
+	frameResults, err := h.enrich(r.Context(), hits, includeNSFW)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "result enrich failed")
 		return
 	}
-	transcriptResults, err := h.searchTranscriptEmbeddings(r.Context(), vec, searchLimit)
+	transcriptResults, err := h.searchTranscriptEmbeddings(r.Context(), vec, searchLimit, includeNSFW)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "transcript search failed")
 		return
@@ -203,9 +204,17 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image_id")
 		return
 	}
+	includeNSFW := parseIncludeNSFW(r)
 
 	limit := parseLimit(r, 20)
-	hits, err := h.Index.SearchByImageID(r.Context(), h.ModelID, imageID, limit)
+	searchLimit := limit
+	if !includeNSFW {
+		searchLimit = limit * 8
+		if searchLimit > 200 {
+			searchLimit = 200
+		}
+	}
+	hits, err := h.Index.SearchByImageID(r.Context(), h.ModelID, imageID, searchLimit)
 	if err != nil {
 		if errors.Is(err, vectorindex.ErrNotFound) {
 			httputil.WriteJSONError(w, http.StatusNotFound, "image not indexed")
@@ -215,10 +224,13 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := h.enrich(r.Context(), hits)
+	results, err := h.enrich(r.Context(), hits, includeNSFW)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "result enrich failed")
 		return
+	}
+	if len(results) > limit {
+		results = results[:limit]
 	}
 
 	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: int64(len(results))})
@@ -240,8 +252,9 @@ func (h *Handler) handleTagSearch(w http.ResponseWriter, r *http.Request) {
 	offset := parseOffset(r)
 	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
 	matchAll := mode == "all"
+	includeNSFW := parseIncludeNSFW(r)
 
-	results, total, err := h.searchByTags(r.Context(), tags, limit, offset, matchAll)
+	results, total, err := h.searchByTags(r.Context(), tags, limit, offset, matchAll, includeNSFW)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "tag search failed")
 		return
@@ -262,8 +275,9 @@ func (h *Handler) handleTagCloud(w http.ResponseWriter, r *http.Request) {
 	}
 	minCount := parseMinCount(r, 1)
 	prefix := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	includeNSFW := parseIncludeNSFW(r)
 
-	tags, err := h.tagCloud(r.Context(), limit, minCount, prefix)
+	tags, err := h.tagCloud(r.Context(), limit, minCount, prefix, includeNSFW)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "tag cloud failed")
 		return
@@ -272,7 +286,7 @@ func (h *Handler) handleTagCloud(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, TagCloudResponse{Tags: tags})
 }
 
-func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]SearchResult, error) {
+func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, includeNSFW bool) ([]SearchResult, error) {
 	if len(hits) == 0 {
 		return []SearchResult{}, nil
 	}
@@ -288,11 +302,12 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]S
 	}
 
 	placeholders := make([]string, len(ids))
-	args := make([]any, 0, len(ids))
+	args := make([]any, 0, len(ids)+1)
 	for i, id := range ids {
 		placeholders[i] = "?"
 		args = append(args, id)
 	}
+	args = append(args, boolToInt(includeNSFW))
 
 	rows, err := h.DB.QueryContext(ctx, fmt.Sprintf(`
 	SELECT i.id,
@@ -311,6 +326,30 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]S
 	LEFT JOIN video_frames vf ON vf.image_id = i.id
 	LEFT JOIN videos v ON v.id = vf.video_id
 	WHERE i.id IN (%s)
+	  AND (
+	    ? = 1
+	    OR (
+	      (
+	        vf.video_id IS NULL
+	        AND NOT EXISTS (
+	          SELECT 1
+	          FROM json_each(COALESCE(i.tags_json, '[]')) tag
+	          WHERE lower(trim(COALESCE(tag.value, ''))) = 'nsfw'
+	        )
+	      )
+	      OR (
+	        vf.video_id IS NOT NULL
+	        AND NOT EXISTS (
+	          SELECT 1
+	          FROM video_frames vf_nsfw
+	          JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
+	          JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) tag_nsfw
+	            ON lower(trim(COALESCE(tag_nsfw.value, ''))) = 'nsfw'
+	          WHERE vf_nsfw.video_id = vf.video_id
+	        )
+	      )
+	    )
+	  )
 	`, strings.Join(placeholders, ",")), args...)
 	if err != nil {
 		return nil, fmt.Errorf("load images for enrich: %w", err)
@@ -354,7 +393,7 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]S
 	for _, hit := range hits {
 		rowsForImage, ok := byID[hit.ImageID]
 		if !ok || len(rowsForImage) == 0 {
-			return nil, fmt.Errorf("load image %d: %w", hit.ImageID, sql.ErrNoRows)
+			continue
 		}
 		for _, row := range rowsForImage {
 			if row.videoID.Valid {
@@ -392,7 +431,7 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit) ([]S
 	return results, nil
 }
 
-func (h *Handler) searchByTags(ctx context.Context, tags []string, limit int, offset int, matchAll bool) ([]SearchResult, int64, error) {
+func (h *Handler) searchByTags(ctx context.Context, tags []string, limit int, offset int, matchAll bool, includeNSFW bool) ([]SearchResult, int64, error) {
 	if len(tags) == 0 {
 		return []SearchResult{}, 0, nil
 	}
@@ -407,9 +446,10 @@ func (h *Handler) searchByTags(ctx context.Context, tags []string, limit int, of
 	if matchAll {
 		requiredCount = len(tags)
 	}
+	includeNSFWInt := boolToInt(includeNSFW)
 
 	countArgs := append([]any{}, args...)
-	countArgs = append(countArgs, requiredCount, requiredCount)
+	countArgs = append(countArgs, requiredCount, requiredCount, includeNSFWInt)
 
 	var total int64
 	if err := h.DB.QueryRowContext(ctx, fmt.Sprintf(`
@@ -429,6 +469,23 @@ WITH requested_tags(tag) AS (
   SELECT
     CASE WHEN vf.video_id IS NULL THEN 'image' ELSE 'video' END AS media_type,
     COALESCE(vf.video_id, i.id) AS unit_id,
+    CASE
+      WHEN vf.video_id IS NULL THEN CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM json_each(COALESCE(i.tags_json, '[]')) nsfw_tag
+          WHERE lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
+        ) THEN 1 ELSE 0 END
+      ELSE CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM video_frames vf_nsfw
+          JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
+          JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
+            ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
+          WHERE vf_nsfw.video_id = vf.video_id
+        ) THEN 1 ELSE 0 END
+    END AS is_nsfw,
     ROW_NUMBER() OVER (
       PARTITION BY CASE WHEN vf.video_id IS NULL THEN 'image:' || i.id ELSE 'video:' || vf.video_id END
       ORDER BY itm.matched_count DESC, i.id DESC
@@ -440,6 +497,7 @@ WITH requested_tags(tag) AS (
 SELECT COUNT(*)
 FROM media_units
 WHERE rn = 1
+  AND (? = 1 OR is_nsfw = 0)
 `, strings.Join(placeholders, " UNION ALL SELECT ")), countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count tag matches: %w", err)
 	}
@@ -447,7 +505,7 @@ WHERE rn = 1
 		return []SearchResult{}, 0, nil
 	}
 
-	args = append(args, requiredCount, requiredCount, limit, offset)
+	args = append(args, requiredCount, requiredCount, includeNSFWInt, limit, offset)
 
 	rows, err := h.DB.QueryContext(ctx, fmt.Sprintf(`
 WITH requested_tags(tag) AS (
@@ -479,6 +537,23 @@ WITH requested_tags(tag) AS (
     COALESCE(v.transcript_text, '') AS video_transcript_text,
     vf.timestamp_ms AS timestamp_ms,
     itm.matched_count AS matched_count,
+    CASE
+      WHEN vf.video_id IS NULL THEN CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM json_each(COALESCE(i.tags_json, '[]')) nsfw_tag
+          WHERE lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
+        ) THEN 1 ELSE 0 END
+      ELSE CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM video_frames vf_nsfw
+          JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
+          JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
+            ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
+          WHERE vf_nsfw.video_id = vf.video_id
+        ) THEN 1 ELSE 0 END
+    END AS is_nsfw,
     ROW_NUMBER() OVER (
       PARTITION BY CASE WHEN vf.video_id IS NULL THEN 'image:' || i.id ELSE 'video:' || vf.video_id END
       ORDER BY itm.matched_count DESC, i.id DESC
@@ -505,6 +580,7 @@ SELECT media_type,
        matched_count
 FROM media_units
 WHERE rn = 1
+  AND (? = 1 OR is_nsfw = 0)
 ORDER BY matched_count DESC, unit_id DESC
 LIMIT ?
 OFFSET ?
@@ -578,12 +654,30 @@ OFFSET ?
 	return results, total, nil
 }
 
-func (h *Handler) tagCloud(ctx context.Context, limit int, minCount int, prefix string) ([]TagCount, error) {
+func (h *Handler) tagCloud(ctx context.Context, limit int, minCount int, prefix string, includeNSFW bool) ([]TagCount, error) {
+	includeNSFWInt := boolToInt(includeNSFW)
 	rows, err := h.DB.QueryContext(ctx, `
 WITH unit_tags AS (
   SELECT DISTINCT
          CASE WHEN vf.video_id IS NULL THEN 'image:' || i.id ELSE 'video:' || vf.video_id END AS media_unit,
-         lower(trim(j.value)) AS tag
+         lower(trim(j.value)) AS tag,
+         CASE
+           WHEN vf.video_id IS NULL THEN CASE
+             WHEN EXISTS (
+               SELECT 1
+               FROM json_each(COALESCE(i.tags_json, '[]')) nsfw_tag
+               WHERE lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
+             ) THEN 1 ELSE 0 END
+           ELSE CASE
+             WHEN EXISTS (
+               SELECT 1
+               FROM video_frames vf_nsfw
+               JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
+               JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
+                 ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
+               WHERE vf_nsfw.video_id = vf.video_id
+             ) THEN 1 ELSE 0 END
+         END AS is_nsfw
   FROM images i
   JOIN json_each(COALESCE(i.tags_json, '[]')) j
     ON trim(COALESCE(j.value, '')) <> ''
@@ -592,12 +686,13 @@ WITH unit_tags AS (
 SELECT tag,
        COUNT(*) AS count
 FROM unit_tags
-WHERE (? = '' OR tag LIKE ? || '%')
+WHERE (? = 1 OR is_nsfw = 0)
+  AND (? = '' OR tag LIKE ? || '%')
 GROUP BY tag
 HAVING COUNT(*) >= ?
 ORDER BY count DESC, tag ASC
 LIMIT ?
-`, prefix, prefix, minCount, limit)
+`, includeNSFWInt, prefix, prefix, minCount, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query tag cloud: %w", err)
 	}
@@ -617,7 +712,8 @@ LIMIT ?
 	return tags, nil
 }
 
-func (h *Handler) searchTranscriptEmbeddings(ctx context.Context, query []float32, limit int) ([]SearchResult, error) {
+func (h *Handler) searchTranscriptEmbeddings(ctx context.Context, query []float32, limit int, includeNSFW bool) ([]SearchResult, error) {
+	includeNSFWInt := boolToInt(includeNSFW)
 	rows, err := h.DB.QueryContext(ctx, `
 WITH preview_frames AS (
   SELECT vf.video_id,
@@ -639,7 +735,18 @@ FROM video_transcript_embeddings vte
 JOIN videos v ON v.id = vte.video_id
 LEFT JOIN preview_frames p ON p.video_id = v.id AND p.rn = 1
 WHERE vte.model_id = ?
-`, h.ModelID)
+  AND (
+    ? = 1
+    OR NOT EXISTS (
+      SELECT 1
+      FROM video_frames vf_nsfw
+      JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
+      JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
+        ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
+      WHERE vf_nsfw.video_id = v.id
+    )
+  )
+`, h.ModelID, includeNSFWInt)
 	if err != nil {
 		return nil, fmt.Errorf("query transcript embeddings: %w", err)
 	}
@@ -789,6 +896,25 @@ func parseMinCount(r *http.Request, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func parseIncludeNSFW(r *http.Request) bool {
+	v := strings.TrimSpace(r.URL.Query().Get("include_nsfw"))
+	if v == "" {
+		return false
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return false
+	}
+	return parsed
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 func parseTagFilters(r *http.Request) []string {

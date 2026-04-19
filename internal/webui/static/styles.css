@@ -296,6 +296,26 @@ input[type="search"]::placeholder {
   flex-wrap: wrap;
 }
 
+.nsfw-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid color-mix(in oklab, var(--line) 82%, white 18%);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, var(--surface-strong) 86%, white 14%);
+  color: var(--muted-strong);
+  padding: 7px 10px;
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+.nsfw-toggle input {
+  margin: 0;
+  inline-size: 16px;
+  block-size: 16px;
+  accent-color: var(--accent);
+}
+
 button {
   border: 0;
   border-radius: var(--radius-control);

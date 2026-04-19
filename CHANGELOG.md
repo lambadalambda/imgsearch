@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(ui): hide NSFW-tagged media by default with a workspace-level `Show NSFW` toggle, persisting preference and applying backend `include_nsfw` filtering across gallery/video/search/tag-cloud APIs so pagination totals stay correct.
 - fix(ui): use touch-first card interactions on coarse-pointer devices by showing thumbnail actions without hover, suppressing hover-only detail overlays, and preventing tap collisions between action controls and media-open handlers.
 - fix(ui): prevent slight mobile horizontal scrolling by tightening small-screen shell/popover widths, clamping tab button shrink behavior, and adding a horizontal overflow guard.
 - feat: extend `scripts/import_images.sh` to accept 4chan thread URLs and import full-size thread pictures plus `.webm` from `i.4cdn.org` (skipping thumbnails and unsupported thread files), with browser-like 4chan media headers, HTTP 429 retry handling, and paced per-file 4chan download timing with jitter.

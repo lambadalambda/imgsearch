@@ -265,6 +265,66 @@ VALUES (9, 3, 0, 500)
 	}
 }
 
+func TestListImagesNSFWFiltering(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images
+SET tags_json = '["portrait","nsfw"]'
+WHERE id = 2
+`); err != nil {
+		t.Fatalf("seed nsfw tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/api/images?limit=10&offset=0", nil)
+	defaultRR := httptest.NewRecorder()
+	h.ServeHTTP(defaultRR, defaultReq)
+
+	if defaultRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", defaultRR.Code, defaultRR.Body.String())
+	}
+
+	var defaultResp ListResponse
+	if err := json.Unmarshal(defaultRR.Body.Bytes(), &defaultResp); err != nil {
+		t.Fatalf("decode default response: %v", err)
+	}
+	if defaultResp.Total != 2 {
+		t.Fatalf("expected total=2 with nsfw hidden by default, got %d", defaultResp.Total)
+	}
+	for _, item := range defaultResp.Images {
+		if item.ImageID == 2 {
+			t.Fatalf("expected nsfw image 2 excluded by default, got %+v", defaultResp.Images)
+		}
+	}
+
+	includeReq := httptest.NewRequest(http.MethodGet, "/api/images?limit=10&offset=0&include_nsfw=1", nil)
+	includeRR := httptest.NewRecorder()
+	h.ServeHTTP(includeRR, includeReq)
+
+	if includeRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", includeRR.Code, includeRR.Body.String())
+	}
+
+	var includeResp ListResponse
+	if err := json.Unmarshal(includeRR.Body.Bytes(), &includeResp); err != nil {
+		t.Fatalf("decode include response: %v", err)
+	}
+	if includeResp.Total != 3 {
+		t.Fatalf("expected total=3 with include_nsfw=1, got %d", includeResp.Total)
+	}
+	foundNSFW := false
+	for _, item := range includeResp.Images {
+		if item.ImageID == 2 {
+			foundNSFW = true
+			break
+		}
+	}
+	if !foundNSFW {
+		t.Fatalf("expected nsfw image 2 returned with include_nsfw=1, got %+v", includeResp.Images)
+	}
+}
+
 func TestDeleteImageRemovesRowJobsEmbeddingsAndFile(t *testing.T) {
 	dbConn := setupImagesDB(t)
 	dataDir := t.TempDir()

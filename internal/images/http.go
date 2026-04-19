@@ -39,7 +39,7 @@ type ListResponse struct {
 	Total  int64       `json:"total"`
 }
 
-func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int) (ListResponse, error) {
+func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool) (ListResponse, error) {
 	if db == nil {
 		return ListResponse{}, fmt.Errorf("images database unavailable")
 	}
@@ -49,6 +49,7 @@ func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int)
 	if offset < 0 {
 		offset = 0
 	}
+	includeNSFWInt := boolToInt(includeNSFW)
 
 	var total int64
 	if err := db.QueryRowContext(ctx, `
@@ -59,7 +60,15 @@ WHERE NOT EXISTS (
   FROM video_frames vf
   WHERE vf.image_id = i.id
 )
-`).Scan(&total); err != nil {
+  AND (
+    ? = 1
+    OR NOT EXISTS (
+      SELECT 1
+      FROM json_each(COALESCE(i.tags_json, '[]')) tag
+      WHERE lower(trim(COALESCE(tag.value, ''))) = 'nsfw'
+    )
+  )
+`, includeNSFWInt).Scan(&total); err != nil {
 		return ListResponse{}, fmt.Errorf("count images: %w", err)
 	}
 
@@ -78,9 +87,17 @@ WHERE NOT EXISTS (
 	FROM video_frames vf
 	WHERE vf.image_id = i.id
 )
+	AND (
+		? = 1
+		OR NOT EXISTS (
+			SELECT 1
+			FROM json_each(COALESCE(i.tags_json, '[]')) tag
+			WHERE lower(trim(COALESCE(tag.value, ''))) = 'nsfw'
+		)
+	)
 ORDER BY i.id DESC
 LIMIT ? OFFSET ?
-`, modelID, limit, offset)
+`, modelID, includeNSFWInt, limit, offset)
 	if err != nil {
 		return ListResponse{}, fmt.Errorf("query images: %w", err)
 	}
@@ -140,8 +157,9 @@ func NewHandler(h *Handler) http.Handler {
 		case http.MethodGet:
 			limit := parseLimit(r, 50)
 			offset := parseOffset(r)
+			includeNSFW := parseIncludeNSFW(r)
 
-			resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset)
+			resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset, includeNSFW)
 			if err != nil {
 				httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
 				return
@@ -262,6 +280,25 @@ func parseOffset(r *http.Request) int {
 		return 0
 	}
 	return n
+}
+
+func parseIncludeNSFW(r *http.Request) bool {
+	v := strings.TrimSpace(r.URL.Query().Get("include_nsfw"))
+	if v == "" {
+		return false
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return false
+	}
+	return parsed
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 func (h *Handler) String() string {

@@ -17,6 +17,7 @@ const state = {
   activeTagFilters: [],
   activeTagMode: 'any',
   searchTagFilters: [],
+  showNSFW: false,
   activeTab: 'gallery',
 };
 
@@ -69,6 +70,7 @@ const searchTagMode = document.getElementById('search-tag-mode');
 
 const refreshImagesButton = document.getElementById('refresh-images');
 const clearResultsButton = document.getElementById('clear-results');
+const showNSFWToggle = document.getElementById('show-nsfw');
 const refreshStatsButton = document.getElementById('refresh-stats');
 const retryFailedButton = document.getElementById('retry-failed');
 const opsBar = document.getElementById('ops-bar');
@@ -106,6 +108,7 @@ let tagSuggestionRequestToken = 0;
 let tagSuggestionDebounceTimer = null;
 const liveReconnectDelayMaxMs = 30000;
 const touchOptimizedCards = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+const nsfwPreferenceStorageKey = 'imgsearch.showNSFW';
 
 function setStatus(target, message, kind) {
   if (!target) {
@@ -219,6 +222,18 @@ function parseTagTerms(input) {
   return normalizeTagTerms(input.split(','));
 }
 
+function applyNSFWQuery(params) {
+  if (!(params instanceof URLSearchParams)) {
+    return params;
+  }
+  if (state.showNSFW) {
+    params.set('include_nsfw', '1');
+  } else {
+    params.delete('include_nsfw');
+  }
+  return params;
+}
+
 function renderSearchTagFilters() {
   if (!searchTagChips) {
     return;
@@ -299,7 +314,7 @@ function scheduleTagSuggestions(query) {
   tagSuggestionDebounceTimer = window.setTimeout(async () => {
     const requestToken = ++tagSuggestionRequestToken;
     try {
-      const params = new URLSearchParams({ limit: '8', min_count: '1', q: normalizedQuery });
+      const params = applyNSFWQuery(new URLSearchParams({ limit: '8', min_count: '1', q: normalizedQuery }));
       const response = await fetch(`/api/search/tag-cloud?${params.toString()}`);
       const payload = await response.json();
       if (requestToken !== tagSuggestionRequestToken) {
@@ -442,6 +457,13 @@ function setActiveTab(name) {
   }
   updateTabCounts();
   clearResultsButton.disabled = state.results.length === 0;
+}
+
+function applyNSFWPreference(nextValue) {
+  state.showNSFW = Boolean(nextValue);
+  if (showNSFWToggle) {
+    showNSFWToggle.checked = state.showNSFW;
+  }
 }
 
 function normalizeText(value) {
@@ -597,7 +619,9 @@ function renderGallery() {
   updateTabCounts();
   renderPagination();
 
-  if (state.images.length === 0) {
+  const galleryItems = Array.isArray(state.images) ? state.images : [];
+
+  if (galleryItems.length === 0) {
     if (state.imagesTotal > 0) {
       galleryGrid.innerHTML = '<p class="empty">No images are visible on this page yet. Move back toward newer pages.</p>';
     } else {
@@ -606,14 +630,16 @@ function renderGallery() {
     return;
   }
 
-  galleryGrid.innerHTML = state.images.map((item) => cardMarkup(item, 'gallery')).join('');
+  galleryGrid.innerHTML = galleryItems.map((item) => cardMarkup(item, 'gallery')).join('');
 }
 
 function renderVideos() {
   updateTabCounts();
   renderPagination();
 
-  if (state.videos.length === 0) {
+  const videoItems = Array.isArray(state.videos) ? state.videos : [];
+
+  if (videoItems.length === 0) {
     if (state.videosTotal > 0) {
       videosGrid.innerHTML = '<p class="empty">No videos are visible on this page yet. Move back toward newer pages.</p>';
     } else {
@@ -622,20 +648,21 @@ function renderVideos() {
     return;
   }
 
-  videosGrid.innerHTML = state.videos.map((item) => cardMarkup(item, 'videos')).join('');
+  videosGrid.innerHTML = videoItems.map((item) => cardMarkup(item, 'videos')).join('');
 }
 
 function renderResults() {
   updateTabCounts();
   renderPagination();
-  clearResultsButton.disabled = state.results.length === 0;
+  const resultItems = Array.isArray(state.results) ? state.results : [];
+  clearResultsButton.disabled = resultItems.length === 0;
 
-  if (state.results.length === 0) {
+  if (resultItems.length === 0) {
     resultsGrid.innerHTML = '<p class="empty">Run a text search or similar-image search to populate this view with image or video matches.</p>';
     return;
   }
 
-  resultsGrid.innerHTML = state.results.map((item) => cardMarkup(item, 'result')).join('');
+  resultsGrid.innerHTML = resultItems.map((item) => cardMarkup(item, 'result')).join('');
 }
 
 function renderTagCloud() {
@@ -670,7 +697,8 @@ async function loadTagCloud() {
   if (!tagCloud) {
     return;
   }
-  const response = await fetch('/api/search/tag-cloud?limit=80');
+  const params = applyNSFWQuery(new URLSearchParams({ limit: '80' }));
+  const response = await fetch(`/api/search/tag-cloud?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok) {
     throw new Error(payload.error || 'Could not load tag cloud');
@@ -688,7 +716,7 @@ async function runTagSearch(tags, mode, page) {
 
   const safeMode = mode === 'all' ? 'all' : 'any';
   const safePage = Number.isFinite(Number(page)) ? Math.max(0, Number(page)) : 0;
-  const params = new URLSearchParams({ limit: String(state.resultsPageSize), offset: String(safePage * state.resultsPageSize) });
+  const params = applyNSFWQuery(new URLSearchParams({ limit: String(state.resultsPageSize), offset: String(safePage * state.resultsPageSize) }));
   params.set('mode', safeMode);
   normalizedTags.forEach((tag) => params.append('tag', tag));
 
@@ -1058,7 +1086,8 @@ async function loadImages() {
   const requestToken = ++imagesRequestToken;
   setStatus(galleryStatus, 'Loading gallery...', 'info');
 
-  const response = await fetch('/api/images' + `?limit=${state.galleryPageSize}&offset=${offset}`);
+  const params = applyNSFWQuery(new URLSearchParams({ limit: String(state.galleryPageSize), offset: String(offset) }));
+  const response = await fetch(`/api/images?${params.toString()}`);
   const payload = await response.json();
   if (requestToken !== imagesRequestToken) {
     return;
@@ -1088,7 +1117,8 @@ async function loadVideos() {
   const offset = state.videosPage * state.videosPageSize;
   setStatus(videosStatus, 'Loading videos...', 'info');
 
-  const response = await fetch('/api/videos' + `?limit=${state.videosPageSize}&offset=${offset}`);
+  const params = applyNSFWQuery(new URLSearchParams({ limit: String(state.videosPageSize), offset: String(offset) }));
+  const response = await fetch(`/api/videos?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok) {
     throw new Error(payload.error || 'Could not load videos');
@@ -1112,7 +1142,7 @@ async function loadVideos() {
 }
 
 async function runTextSearch(query, negative, tagFilters, tagMode) {
-  const params = new URLSearchParams({ q: query, limit: '24' });
+  const params = applyNSFWQuery(new URLSearchParams({ q: query, limit: '24' }));
   if (negative) {
     params.set('neg', negative);
   }
@@ -1147,7 +1177,7 @@ async function runTextSearch(query, negative, tagFilters, tagMode) {
 }
 
 async function runSimilarSearch(imageID, anchorHint) {
-  const params = new URLSearchParams({ image_id: String(imageID), limit: '24' });
+  const params = applyNSFWQuery(new URLSearchParams({ image_id: String(imageID), limit: '24' }));
   const response = await fetch(`/api/search/similar?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok) {
@@ -1339,7 +1369,10 @@ function connectLiveUpdates() {
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const socket = new WebSocket(`${protocol}://${window.location.host}/api/live`);
+  const params = applyNSFWQuery(new URLSearchParams());
+  const query = params.toString();
+  const wsPath = query ? `/api/live?${query}` : '/api/live';
+  const socket = new WebSocket(`${protocol}://${window.location.host}${wsPath}`);
   liveSocket = socket;
 
   socket.addEventListener('open', () => {
@@ -1367,9 +1400,10 @@ function connectLiveUpdates() {
   });
 
   socket.addEventListener('close', () => {
-    if (liveSocket === socket) {
-      liveSocket = null;
+    if (liveSocket !== socket) {
+      return;
     }
+    liveSocket = null;
     setLiveConnectionState('reconnecting', 'Live connection lost. Reconnecting...');
     startPollingFallback();
     clearLiveReconnectTimer();
@@ -1380,6 +1414,17 @@ function connectLiveUpdates() {
       connectLiveUpdates();
     }, reconnectDelay);
   });
+}
+
+function restartLiveUpdates() {
+  clearLiveReconnectTimer();
+  stopPollingFallback();
+  if (liveSocket) {
+    const socket = liveSocket;
+    liveSocket = null;
+    socket.close();
+  }
+  connectLiveUpdates();
 }
 
 async function retryFailedJobs() {
@@ -1527,6 +1572,41 @@ function attachTagChipSearchHandler(target) {
       await runTagSearch([tag], 'any', 0);
     } catch (err) {
       setStatus(searchStatus, err.message || 'Tag search failed', 'error');
+    }
+  });
+}
+
+if (showNSFWToggle) {
+  let storedPreference = '';
+  try {
+    storedPreference = window.localStorage.getItem(nsfwPreferenceStorageKey) || '';
+  } catch {
+    storedPreference = '';
+  }
+  applyNSFWPreference(storedPreference === '1');
+
+  showNSFWToggle.addEventListener('change', async () => {
+    applyNSFWPreference(showNSFWToggle.checked);
+    try {
+      window.localStorage.setItem(nsfwPreferenceStorageKey, state.showNSFW ? '1' : '0');
+    } catch {}
+
+    restartLiveUpdates();
+
+    const refreshTagResults = state.resultsMode === 'tag' && Array.isArray(state.activeTagFilters) && state.activeTagFilters.length > 0;
+    try {
+      await Promise.all([loadImages(), loadVideos()]);
+      if (tagCloudLoaded) {
+        await loadTagCloud();
+        setStatus(tagsStatus, `Showing ${state.tagCloud.length} tag(s), ranked by frequency.`, 'success');
+      }
+      if (refreshTagResults) {
+        await runTagSearch(state.activeTagFilters, state.activeTagMode, state.resultsPage);
+      } else if (state.resultsMode !== 'none') {
+        setStatus(searchStatus, 'NSFW visibility updated. Run search again to refresh non-tag results.', 'info');
+      }
+    } catch (err) {
+      setStatus(galleryStatus, err.message || 'Could not refresh NSFW filter', 'error');
     }
   });
 }

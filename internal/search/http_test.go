@@ -345,6 +345,110 @@ func TestSimilarSearchReturnsNotFoundWhenImageNotIndexed(t *testing.T) {
 	}
 }
 
+func TestTextSearchNSFWFiltering(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET tags_json = '["portrait","nsfw"]' WHERE id = 2;
+`); err != nil {
+		t.Fatalf("seed nsfw tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{
+		DB:       dbConn,
+		ModelID:  1,
+		DataDir:  "/tmp",
+		Embedder: &fakeEmbedder{textVec: []float32{1, 0}},
+		Index: &fakeIndex{hits: []vectorindex.SearchHit{
+			{ImageID: 2, ModelID: 1, Distance: 0.1},
+			{ImageID: 1, ModelID: 1, Distance: 0.2},
+		}},
+	})
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/api/search/text?q=portrait", nil)
+	defaultRR := httptest.NewRecorder()
+	h.ServeHTTP(defaultRR, defaultReq)
+
+	if defaultRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", defaultRR.Code, defaultRR.Body.String())
+	}
+
+	var defaultResp SearchResponse
+	if err := json.Unmarshal(defaultRR.Body.Bytes(), &defaultResp); err != nil {
+		t.Fatalf("decode default response: %v", err)
+	}
+	if len(defaultResp.Results) != 1 || defaultResp.Results[0].ImageID != 1 {
+		t.Fatalf("expected nsfw image hidden by default, got %+v", defaultResp.Results)
+	}
+
+	includeReq := httptest.NewRequest(http.MethodGet, "/api/search/text?q=portrait&include_nsfw=1", nil)
+	includeRR := httptest.NewRecorder()
+	h.ServeHTTP(includeRR, includeReq)
+
+	if includeRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", includeRR.Code, includeRR.Body.String())
+	}
+
+	var includeResp SearchResponse
+	if err := json.Unmarshal(includeRR.Body.Bytes(), &includeResp); err != nil {
+		t.Fatalf("decode include response: %v", err)
+	}
+	if len(includeResp.Results) != 2 {
+		t.Fatalf("expected nsfw image restored with include_nsfw=1, got %+v", includeResp.Results)
+	}
+}
+
+func TestSimilarSearchNSFWFiltering(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET tags_json = '["portrait","nsfw"]' WHERE id = 2;
+`); err != nil {
+		t.Fatalf("seed nsfw tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{
+		DB:       dbConn,
+		ModelID:  1,
+		DataDir:  "/tmp",
+		Embedder: &fakeEmbedder{imgVec: []float32{1, 0}},
+		Index: &fakeIndex{similarHits: []vectorindex.SearchHit{
+			{ImageID: 2, ModelID: 1, Distance: 0.1},
+			{ImageID: 1, ModelID: 1, Distance: 0.2},
+		}},
+	})
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/api/search/similar?image_id=1", nil)
+	defaultRR := httptest.NewRecorder()
+	h.ServeHTTP(defaultRR, defaultReq)
+
+	if defaultRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", defaultRR.Code, defaultRR.Body.String())
+	}
+
+	var defaultResp SearchResponse
+	if err := json.Unmarshal(defaultRR.Body.Bytes(), &defaultResp); err != nil {
+		t.Fatalf("decode default response: %v", err)
+	}
+	if len(defaultResp.Results) != 1 || defaultResp.Results[0].ImageID != 1 {
+		t.Fatalf("expected nsfw similar result hidden by default, got %+v", defaultResp.Results)
+	}
+
+	includeReq := httptest.NewRequest(http.MethodGet, "/api/search/similar?image_id=1&include_nsfw=1", nil)
+	includeRR := httptest.NewRecorder()
+	h.ServeHTTP(includeRR, includeReq)
+
+	if includeRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", includeRR.Code, includeRR.Body.String())
+	}
+
+	var includeResp SearchResponse
+	if err := json.Unmarshal(includeRR.Body.Bytes(), &includeResp); err != nil {
+		t.Fatalf("decode include response: %v", err)
+	}
+	if len(includeResp.Results) != 2 {
+		t.Fatalf("expected nsfw similar result restored with include_nsfw=1, got %+v", includeResp.Results)
+	}
+}
+
 func TestTagSearchReturnsMatchingResults(t *testing.T) {
 	dbConn := setupSearchDB(t)
 	if _, err := dbConn.Exec(`
@@ -508,6 +612,53 @@ func TestTagSearchRejectsMissingTag(t *testing.T) {
 	}
 }
 
+func TestTagSearchNSFWFilteringWithPaginationTotals(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET tags_json = '["outdoors"]' WHERE id = 1;
+UPDATE images SET tags_json = '["outdoors","nsfw"]' WHERE id = 2;
+`); err != nil {
+		t.Fatalf("seed nsfw tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/api/search/tags?tag=outdoors&limit=10", nil)
+	defaultRR := httptest.NewRecorder()
+	h.ServeHTTP(defaultRR, defaultReq)
+
+	if defaultRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", defaultRR.Code, defaultRR.Body.String())
+	}
+
+	var defaultResp SearchResponse
+	if err := json.Unmarshal(defaultRR.Body.Bytes(), &defaultResp); err != nil {
+		t.Fatalf("decode default response: %v", err)
+	}
+	if defaultResp.Total != 1 {
+		t.Fatalf("expected total=1 with nsfw hidden by default, got %d", defaultResp.Total)
+	}
+	if len(defaultResp.Results) != 1 || defaultResp.Results[0].ImageID != 1 {
+		t.Fatalf("expected only non-nsfw tag result by default, got %+v", defaultResp.Results)
+	}
+
+	includeReq := httptest.NewRequest(http.MethodGet, "/api/search/tags?tag=outdoors&limit=10&include_nsfw=1", nil)
+	includeRR := httptest.NewRecorder()
+	h.ServeHTTP(includeRR, includeReq)
+
+	if includeRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", includeRR.Code, includeRR.Body.String())
+	}
+
+	var includeResp SearchResponse
+	if err := json.Unmarshal(includeRR.Body.Bytes(), &includeResp); err != nil {
+		t.Fatalf("decode include response: %v", err)
+	}
+	if includeResp.Total != 2 {
+		t.Fatalf("expected total=2 with include_nsfw=1, got %d", includeResp.Total)
+	}
+}
+
 func TestTagCloudReturnsRankedTags(t *testing.T) {
 	dbConn := setupSearchDB(t)
 	if _, err := dbConn.Exec(`
@@ -567,6 +718,64 @@ UPDATE images SET tags_json = '["cat","indoor"]' WHERE id = 2;
 	}
 	if resp.Tags[0].Tag != "dog" {
 		t.Fatalf("expected prefix query to return dog, got %+v", resp.Tags[0])
+	}
+}
+
+func TestTagCloudNSFWFiltering(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET tags_json = '["dog"]' WHERE id = 1;
+UPDATE images SET tags_json = '["dog","nsfw"]' WHERE id = 2;
+`); err != nil {
+		t.Fatalf("seed nsfw tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/api/search/tag-cloud?limit=10", nil)
+	defaultRR := httptest.NewRecorder()
+	h.ServeHTTP(defaultRR, defaultReq)
+
+	if defaultRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", defaultRR.Code, defaultRR.Body.String())
+	}
+
+	var defaultResp TagCloudResponse
+	if err := json.Unmarshal(defaultRR.Body.Bytes(), &defaultResp); err != nil {
+		t.Fatalf("decode default response: %v", err)
+	}
+	defaultCounts := make(map[string]int64, len(defaultResp.Tags))
+	for _, item := range defaultResp.Tags {
+		defaultCounts[item.Tag] = item.Count
+	}
+	if defaultCounts["dog"] != 1 {
+		t.Fatalf("expected dog count=1 with nsfw hidden by default, got %+v", defaultResp.Tags)
+	}
+	if _, hasNSFW := defaultCounts["nsfw"]; hasNSFW {
+		t.Fatalf("expected nsfw tag hidden by default, got %+v", defaultResp.Tags)
+	}
+
+	includeReq := httptest.NewRequest(http.MethodGet, "/api/search/tag-cloud?limit=10&include_nsfw=1", nil)
+	includeRR := httptest.NewRecorder()
+	h.ServeHTTP(includeRR, includeReq)
+
+	if includeRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", includeRR.Code, includeRR.Body.String())
+	}
+
+	var includeResp TagCloudResponse
+	if err := json.Unmarshal(includeRR.Body.Bytes(), &includeResp); err != nil {
+		t.Fatalf("decode include response: %v", err)
+	}
+	includeCounts := make(map[string]int64, len(includeResp.Tags))
+	for _, item := range includeResp.Tags {
+		includeCounts[item.Tag] = item.Count
+	}
+	if includeCounts["dog"] != 2 {
+		t.Fatalf("expected dog count=2 with include_nsfw=1, got %+v", includeResp.Tags)
+	}
+	if includeCounts["nsfw"] != 1 {
+		t.Fatalf("expected nsfw tag count=1 with include_nsfw=1, got %+v", includeResp.Tags)
 	}
 }
 
@@ -743,7 +952,7 @@ func TestEnrichPreservesHitOrderAndDuplicates(t *testing.T) {
 		{ImageID: 2, ModelID: 1, Distance: 0.3},
 	}
 
-	results, err := h.enrich(context.Background(), hits)
+	results, err := h.enrich(context.Background(), hits, true)
 	if err != nil {
 		t.Fatalf("enrich: %v", err)
 	}
@@ -762,7 +971,7 @@ func TestEnrichReturnsEmptyForNoHits(t *testing.T) {
 	dbConn := setupSearchDB(t)
 	h := &Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp"}
 
-	results, err := h.enrich(context.Background(), nil)
+	results, err := h.enrich(context.Background(), nil, true)
 	if err != nil {
 		t.Fatalf("enrich: %v", err)
 	}

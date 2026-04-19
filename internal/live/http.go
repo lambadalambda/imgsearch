@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -101,6 +102,7 @@ func NewHandler(h *Handler) http.Handler {
 		if imagesOffset < 0 {
 			imagesOffset = 0
 		}
+		includeNSFW := parseIncludeNSFW(r)
 
 		closed := make(chan struct{})
 		go func() {
@@ -129,7 +131,7 @@ func NewHandler(h *Handler) http.Handler {
 			}
 		}()
 
-		if err := writeSnapshot(r.Context(), conn, h.DB, h.ModelID, imagesLimit, imagesOffset); err != nil {
+		if err := writeSnapshot(r.Context(), conn, h.DB, h.ModelID, imagesLimit, imagesOffset, includeNSFW); err != nil {
 			return
 		}
 
@@ -143,7 +145,7 @@ func NewHandler(h *Handler) http.Handler {
 			case <-closed:
 				return
 			case <-ticker.C:
-				if err := writeSnapshot(r.Context(), conn, h.DB, h.ModelID, imagesLimit, imagesOffset); err != nil {
+				if err := writeSnapshot(r.Context(), conn, h.DB, h.ModelID, imagesLimit, imagesOffset, includeNSFW); err != nil {
 					return
 				}
 			}
@@ -151,8 +153,8 @@ func NewHandler(h *Handler) http.Handler {
 	})
 }
 
-func writeSnapshot(ctx context.Context, conn *websocket.Conn, db *sql.DB, modelID int64, limit int, offset int) error {
-	imagesResp, err := images.List(ctx, db, modelID, limit, offset)
+func writeSnapshot(ctx context.Context, conn *websocket.Conn, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool) error {
+	imagesResp, err := images.List(ctx, db, modelID, limit, offset, includeNSFW)
 	if err != nil {
 		return err
 	}
@@ -217,4 +219,16 @@ func defaultPortForScheme(scheme string) string {
 	default:
 		return "80"
 	}
+}
+
+func parseIncludeNSFW(r *http.Request) bool {
+	v := strings.TrimSpace(r.URL.Query().Get("include_nsfw"))
+	if v == "" {
+		return false
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return false
+	}
+	return parsed
 }
