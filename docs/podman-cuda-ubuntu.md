@@ -10,6 +10,9 @@ This document describes running `imgsearch` on a CUDA-capable Linux host with Po
 
 ```bash
 podman run --rm --gpus=all nvidia/cuda:12.8.1-runtime-ubuntu24.04 nvidia-smi
+
+# if your Podman is configured without short-name aliases, use:
+podman run --rm --gpus=all docker.io/nvidia/cuda:12.8.1-runtime-ubuntu24.04 nvidia-smi
 ```
 
 - `deps/llama.cpp` submodule initialized in your checkout:
