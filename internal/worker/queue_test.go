@@ -649,6 +649,80 @@ VALUES (30, 'annotate_video', NULL, 9, 1, 'pending')
 	}
 }
 
+func TestProcessOneAnnotateVideoWithMissingFrameAnnotationsSingleConn(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+
+	if _, err := sqlDB.Exec(`DELETE FROM index_jobs WHERE id = 1`); err != nil {
+		t.Fatalf("delete default embed job: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, transcript_text)
+VALUES (10, 'vid10', 'clip.mp4', 'videos/vid10', 'video/mp4', 5000, 1280, 720, 1, 'hello crowd')
+`); err != nil {
+		t.Fatalf("insert video: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (10, 1, 0, 1000)
+`); err != nil {
+		t.Fatalf("insert video frame: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, video_id, model_id, state)
+VALUES (31, 'annotate_video', NULL, 10, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate_video job: %v", err)
+	}
+
+	annotator := &fakeAnnotator{
+		annotation: embedder.ImageAnnotation{
+			Description: "A frame showing a cheering crowd.",
+			Tags:        []string{"crowd", "stage"},
+		},
+		videoAnnotation: embedder.VideoAnnotation{
+			Description: "A concert clip with a lively crowd and stage lights.",
+			Tags:        []string{"concert", "crowd", "stage"},
+		},
+	}
+	q.Annotator = annotator
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	processed, err := q.ProcessOne(ctx, "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+	if annotator.optsCalls != 1 {
+		t.Fatalf("expected one frame annotate_image call, got %d", annotator.optsCalls)
+	}
+	if annotator.videoCalls != 1 {
+		t.Fatalf("expected one video annotation call, got %d", annotator.videoCalls)
+	}
+
+	var frameDescription string
+	var frameTagsJSON string
+	if err := sqlDB.QueryRow(`SELECT description, tags_json FROM images WHERE id = 1`).Scan(&frameDescription, &frameTagsJSON); err != nil {
+		t.Fatalf("load frame annotations: %v", err)
+	}
+	if frameDescription == "" {
+		t.Fatalf("expected frame description to be stored")
+	}
+
+	var jobState string
+	if err := sqlDB.QueryRow(`SELECT state FROM index_jobs WHERE id = 31`).Scan(&jobState); err != nil {
+		t.Fatalf("load annotate_video state: %v", err)
+	}
+	if jobState != "done" {
+		t.Fatalf("expected annotate_video job done, got %s", jobState)
+	}
+}
+
 func TestProcessOneRetriesAnnotateJobOnFailure(t *testing.T) {
 	q, sqlDB := setupQueueTest(t)
 	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE id = 1`); err != nil {

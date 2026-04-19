@@ -943,6 +943,17 @@ input:focus-visible {
   overflow: visible;
 }
 
+.supporting-stack,
+.overlay-supporting-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.supporting-stack .supporting-text {
+  min-height: 0;
+  -webkit-line-clamp: 1;
+}
+
 .overlay-video-meta .timestamp {
   white-space: normal;
   overflow: visible;

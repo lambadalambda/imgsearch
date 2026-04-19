@@ -122,6 +122,9 @@ func TestBuildVideoAnnotationUserPromptIncludesFrameEvidence(t *testing.T) {
 	if !strings.Contains(prompt, "hello from the stage") {
 		t.Fatalf("expected prompt to include transcript context")
 	}
+	if !strings.Contains(strings.ToLower(prompt), "meme") || !strings.Contains(strings.ToLower(prompt), "music video") || !strings.Contains(strings.ToLower(prompt), "clip from a show") {
+		t.Fatalf("expected prompt to include filename-based media type inference guidance")
+	}
 	if !strings.Contains(strings.ToLower(prompt), "500 words") {
 		t.Fatalf("expected video prompt to allow up to 500 words")
 	}

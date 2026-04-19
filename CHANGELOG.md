@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(deploy): add Ubuntu-based `Containerfile.cuda` for Podman GPU deployments (`--gpus=all`), plus container entrypoint defaults for sqlite-vector/model paths and a deployment guide (`docs/podman-cuda-ubuntu.md`).
 - feat(annotations): upgrade image annotation prompts for richer retrieval detail (including explicit people-focused descriptors and translation of non-English visible text), allow longer descriptions when useful (up to ~500 words), and pass original filenames into annotation context only when they appear semantically meaningful.
 - feat(video): add model-driven `annotate_video` jobs that synthesize video-level descriptions/tags from sampled frame annotations plus transcript context, persist them on `videos`, and surface them in `/api/videos` and search results.
 - ux(search): include search debug details in success status text (duration, index backend/strategy, and quantization on/off) for text and similar-search responses.

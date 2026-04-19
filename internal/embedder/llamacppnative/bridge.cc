@@ -66,7 +66,13 @@ bool should_drop_log(ggml_log_level level, const char * text) {
            std::strstr(text, "add_text:") != nullptr ||
            std::strstr(text, "image_tokens->nx =") != nullptr ||
            std::strstr(text, "image_tokens->ny =") != nullptr ||
-           std::strstr(text, "batch_f32 size =") != nullptr;
+           std::strstr(text, "batch_f32 size =") != nullptr ||
+           std::strstr(text, "decoding image batch") != nullptr ||
+           std::strstr(text, "sched_reserve:") != nullptr ||
+           std::strstr(text, "image decoded (batch") != nullptr ||
+           std::strstr(text, "encoding image slice") != nullptr ||
+           std::strstr(text, "image slice encoded in") != nullptr ||
+           std::strstr(text, "common_chat_try_specialized_template: detected an outdated gemma4 chat template") != nullptr;
 }
 
 void native_log_callback(ggml_log_level level, const char * text, void *) {

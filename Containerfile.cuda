@@ -1,0 +1,103 @@
+# syntax=docker/dockerfile:1.7
+
+ARG UBUNTU_VERSION=24.04
+ARG CUDA_VERSION=12.8.1
+ARG GO_VERSION=1.24.2
+
+FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS build
+
+ARG GO_VERSION
+ARG CUDA_DOCKER_ARCH=default
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    ca-certificates \
+    cmake \
+    curl \
+    ffmpeg \
+    git \
+    libvips-dev \
+    pkg-config \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz \
+    && rm -rf /usr/local/go \
+    && tar -C /usr/local -xzf /tmp/go.tgz \
+    && rm -f /tmp/go.tgz
+
+ENV PATH=/usr/local/go/bin:${PATH}
+ENV CGO_ENABLED=1
+
+WORKDIR /src
+COPY . .
+
+RUN if [ ! -f "deps/llama.cpp/CMakeLists.txt" ]; then \
+      echo "missing deps/llama.cpp submodule; run: git submodule update --init --recursive deps/llama.cpp" >&2; \
+      exit 1; \
+    fi
+
+RUN if [ "${CUDA_DOCKER_ARCH}" = "default" ]; then \
+      cmake_arch_args=""; \
+    else \
+      cmake_arch_args="-DCMAKE_CUDA_ARCHITECTURES=${CUDA_DOCKER_ARCH}"; \
+    fi && \
+    cmake -S deps/llama.cpp -B deps/llama.cpp/build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DGGML_NATIVE=OFF \
+      -DGGML_CUDA=ON \
+      -DGGML_BACKEND_DL=ON \
+      -DGGML_CPU_ALL_VARIANTS=ON \
+      -DLLAMA_BUILD_TESTS=OFF \
+      ${cmake_arch_args} && \
+    cmake --build deps/llama.cpp/build --target llama-server -j"$(nproc)"
+
+RUN ./scripts/setup_sqlite_vector.sh
+
+RUN go build -trimpath -ldflags="-s -w" -o /out/imgsearch ./cmd/imgsearch
+
+RUN mkdir -p /out/bin /out/lib /out/tools/sqlite-vector && \
+    cp -a deps/llama.cpp/build/bin/lib*.so* /out/lib/ && \
+    cp -a tools/sqlite-vector/* /out/tools/sqlite-vector/ && \
+    ln -s ../lib /out/bin/lib && \
+    cp -a scripts/run_imgsearch_cuda_container.sh /out/bin/run.sh
+
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    ffmpeg \
+    libgomp1 \
+    libvips42 \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/imgsearch
+
+COPY --from=build /out/imgsearch /opt/imgsearch/bin/imgsearch
+COPY --from=build /out/lib /opt/imgsearch/lib
+COPY --from=build /out/bin/run.sh /opt/imgsearch/bin/run.sh
+COPY --from=build /out/tools/sqlite-vector /opt/imgsearch/tools/sqlite-vector
+
+RUN chmod +x /opt/imgsearch/bin/run.sh && \
+    mkdir -p /data /models
+
+ENV LD_LIBRARY_PATH=/opt/imgsearch/lib
+ENV SQLITE_VECTOR_PATH=/opt/imgsearch/tools/sqlite-vector/vector
+ENV IMGSEARCH_DATA_DIR=/data
+ENV IMGSEARCH_ADDR=0.0.0.0:8080
+ENV IMGSEARCH_MODE=all
+
+VOLUME ["/data", "/models"]
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/imgsearch/bin/run.sh"]

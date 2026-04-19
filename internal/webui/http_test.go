@@ -122,11 +122,14 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "delete-action") {
 		t.Fatalf("expected delete action class in card rendering")
 	}
-	if !strings.Contains(rr.Body.String(), "const supportText =") {
-		t.Fatalf("expected card rendering to choose a single support text slot")
+	if !strings.Contains(rr.Body.String(), "const supportEntries = supportEntriesForItem(item, mode);") {
+		t.Fatalf("expected card rendering to derive supporting text entries")
 	}
 	if !strings.Contains(rr.Body.String(), "supporting-text") {
 		t.Fatalf("expected compact supporting text class in card rendering")
+	}
+	if !strings.Contains(rr.Body.String(), "overlay-supporting-stack") {
+		t.Fatalf("expected card rendering to support stacked description/transcript text")
 	}
 	if !strings.Contains(rr.Body.String(), "tag-chip-more") {
 		t.Fatalf("expected compact tag overflow chip support in card rendering")
@@ -240,6 +243,9 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	}
 	if !strings.Contains(body, ".supporting-text") {
 		t.Fatalf("expected dedicated supporting text clamping rules")
+	}
+	if !strings.Contains(body, ".supporting-stack") || !strings.Contains(body, ".overlay-supporting-stack") {
+		t.Fatalf("expected stacked supporting-text layout rules for description plus transcript")
 	}
 	if !strings.Contains(body, "max-height: 1.8em;") {
 		t.Fatalf("expected tag row to clamp at rest")

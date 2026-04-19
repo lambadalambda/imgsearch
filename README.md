@@ -65,6 +65,22 @@ Cross-platform note:
 - Keep host-native llama.cpp artifacts in `./deps/llama.cpp/build` only.
 - If you build Linux artifacts from Docker on macOS, write them to an explicit separate directory such as `./build-artifacts/llama.cpp/linux-cuda13/` and pass `IMGSEARCH_LLAMA_LIB_DIR=/absolute/path/to/.../bin` when packaging.
 
+### Podman + CUDA (Ubuntu Container)
+
+If you want to run on a CUDA host through Podman while keeping an Ubuntu userspace, use `Containerfile.cuda`.
+
+Quick path:
+
+```bash
+podman build -f Containerfile.cuda -t imgsearch:cuda .
+podman run -d --name imgsearch --replace --gpus=all -p 8080:8080 \
+  -v "$HOME/imgsearch-data:/data" \
+  -v "$HOME/imgsearch-models:/models" \
+  imgsearch:cuda
+```
+
+Full instructions are in `docs/podman-cuda-ubuntu.md`.
+
 ## Notes
 
 - The app binds to `127.0.0.1:8080` by default.

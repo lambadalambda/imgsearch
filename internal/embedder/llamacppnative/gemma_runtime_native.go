@@ -34,7 +34,7 @@ const gemmaVideoAnnotationSystemPrompt = "You are annotating a private video col
 const gemmaVideoAnnotationRetrySystemPrompt = "Return exactly one valid JSON object and nothing else. Do not use markdown code fences, prose, or comments."
 
 const gemmaAppAnnotationRetryUserPrompt = "Retry with compact output. Keep details that matter for retrieval, but stay concise unless the scene is complex. Description may be up to 220 words. If there is text in the image, describe it and translate non-English text. Return 3 to 10 unique lowercase tags, set is_nsfw accurately, and return JSON only."
-const gemmaVideoAnnotationRetryUserPrompt = "Retry with compact output. Keep details that matter for retrieval, but stay concise unless the video evidence is complex. Description may be up to 260 words. If there is text, describe it and translate non-English text. Return 5 to 12 unique lowercase tags, set is_nsfw accurately, and return JSON only."
+const gemmaVideoAnnotationRetryUserPrompt = "Retry with compact output. Keep details that matter for retrieval, but stay concise unless the video evidence is complex. Description may be up to 260 words. If there is text, describe it and translate non-English text. If a meaningful filename is provided, you may infer likely media context (meme, music video, show clip) when it does not conflict with frame evidence. Return 5 to 12 unique lowercase tags, set is_nsfw accurately, and return JSON only."
 
 const gemmaAppAnnotationMaxTokens = 1024
 const gemmaRetryAnnotationMaxTokens = 512
@@ -136,8 +136,9 @@ func buildVideoAnnotationUserPrompt(input coreembedder.VideoAnnotationInput) (st
 	b.WriteString("If people are the focus, include concrete visible details such as perceived age range, perceived ethnicity, body shape/build, facial features, hairstyle, clothing, accessories, posture, and activity. ")
 	b.WriteString("If there is text in frames, describe it, and if non-English also translate it. ")
 	b.WriteString("Use transcript as supporting context only when it matches visual evidence. ")
+	b.WriteString("When a filename looks meaningful, feel free to infer likely media type or source context from it (for example a meme, a music video, or a clip from a show) as long as it does not conflict with frame evidence. ")
 	b.WriteString("Return 5 to 12 unique lowercase tags that capture persistent high-signal content. Include nsfw if and only if is_nsfw is true. ")
-	b.WriteString("Avoid speculation and avoid one-off details that are not central. Output JSON only.\n")
+	b.WriteString("Avoid unsupported specifics and avoid one-off details that are not central. Output JSON only.\n")
 	if filenameHint := meaningfulFilenameHint(input.OriginalName); filenameHint != "" {
 		b.WriteString("Original filename: \"")
 		b.WriteString(filenameHint)

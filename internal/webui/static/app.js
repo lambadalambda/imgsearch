@@ -491,31 +491,48 @@ function normalizeText(value) {
   return value.trim().replace(/\s+/g, ' ');
 }
 
-function supportTextForItem(item, mode) {
+function supportEntriesForItem(item, mode) {
   const description = normalizeText(item.description);
   const transcriptText = normalizeText(item.transcript_text);
   const mediaType = item.media_type || 'image';
+  const entries = [];
 
   if (mediaType === 'video' || mode === 'videos') {
-    return transcriptText || description;
+    if (description) {
+      entries.push({
+        text: description,
+        className: 'supporting-text',
+      });
+    }
+    if (transcriptText && transcriptText !== description) {
+      entries.push({
+        text: transcriptText,
+        className: 'supporting-text supporting-transcript',
+      });
+    }
+    if (entries.length > 0) {
+      return entries;
+    }
   }
 
   if (mode === 'result' && transcriptText) {
-    return transcriptText;
+    return [{
+      text: transcriptText,
+      className: 'supporting-text supporting-transcript',
+    }];
   }
 
-  return description || transcriptText;
-}
+  const fallback = description || transcriptText;
+  if (!fallback) {
+    return [];
+  }
 
-function supportTextClass(item, supportText) {
-  if (!supportText) {
-    return '';
-  }
-  const transcriptText = normalizeText(item.transcript_text);
-  if (transcriptText && supportText === transcriptText) {
-    return 'supporting-text supporting-transcript';
-  }
-  return 'supporting-text';
+  return [{
+    text: fallback,
+    className: transcriptText && fallback === transcriptText
+      ? 'supporting-text supporting-transcript'
+      : 'supporting-text',
+  }];
 }
 
 function tagsMarkup(tags, includeOverflowChip, clickable) {
@@ -545,8 +562,7 @@ function cardMarkup(item, mode) {
   const thumbPath = mediaType === 'video' && item.preview_path ? item.preview_path : item.storage_path;
   const thumbURL = escapeHTML(toMediaURL(thumbPath));
   const mediaURL = escapeHTML(toMediaURL(item.storage_path));
-  const supportText = supportTextForItem(item, mode);
-  const supportClass = supportTextClass(item, supportText);
+  const supportEntries = supportEntriesForItem(item, mode);
   const tags = Array.isArray(item.tags)
     ? item.tags
         .filter((tag) => typeof tag === 'string' && tag.trim() !== '')
@@ -569,13 +585,17 @@ function cardMarkup(item, mode) {
     : mode === 'videos'
       ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}">Delete</button>`
       : '';
-  const supportMarkup = supportText
-    ? `<p class="${supportClass}">${escapeHTML(supportText)}</p>`
+  const supportMarkup = supportEntries.length > 0
+    ? `<div class="supporting-stack">${supportEntries
+      .map((entry) => `<p class="${entry.className}">${escapeHTML(entry.text)}</p>`)
+      .join('')}</div>`
     : '';
   const compactTagsMarkup = tagsMarkup(tags, !touchOptimizedCards, true);
   const overlayTagsMarkup = tagsMarkup(tags, false, true);
-  const overlaySupportMarkup = supportText
-    ? `<p class="${supportClass} overlay-supporting-text">${escapeHTML(supportText)}</p>`
+  const overlaySupportMarkup = supportEntries.length > 0
+    ? `<div class="overlay-supporting-stack">${supportEntries
+      .map((entry) => `<p class="${entry.className} overlay-supporting-text">${escapeHTML(entry.text)}</p>`)
+      .join('')}</div>`
     : '';
   const overlayVideoMeta = videoMeta
     ? `<div class="overlay-video-meta">${videoMeta}</div>`
