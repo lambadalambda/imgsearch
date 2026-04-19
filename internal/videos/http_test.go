@@ -41,6 +41,14 @@ VALUES
 		t.Fatalf("seed transcript text: %v", err)
 	}
 	if _, err := dbConn.Exec(`
+UPDATE videos
+SET description = 'A vocalist performs on stage while a crowd gathers near the front.',
+    tags_json = '["concert","music","stage"]'
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed video annotations: %v", err)
+	}
+	if _, err := dbConn.Exec(`
 INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
 VALUES
 	(10, 'f1', 'frame1.jpg', 'images/f1', 'image/jpeg', 100, 100),
@@ -104,6 +112,12 @@ func TestListVideosReturnsResults(t *testing.T) {
 	}
 	if resp.Videos[1].TranscriptText != "tis better to remain silent" {
 		t.Fatalf("expected transcript text in video list, got %+v", resp.Videos[1])
+	}
+	if resp.Videos[1].Description == "" {
+		t.Fatalf("expected video description in video list, got %+v", resp.Videos[1])
+	}
+	if len(resp.Videos[1].Tags) != 3 || resp.Videos[1].Tags[0] != "concert" {
+		t.Fatalf("expected video tags in video list, got %+v", resp.Videos[1])
 	}
 }
 

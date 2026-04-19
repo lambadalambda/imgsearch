@@ -358,6 +358,8 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 	       v.original_name,
 	       v.storage_path,
 	       v.mime_type,
+	       COALESCE(v.description, ''),
+	       COALESCE(v.tags_json, '[]'),
 	       COALESCE(v.transcript_text, ''),
 	       vf.timestamp_ms
 	FROM images i
@@ -385,6 +387,11 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 	            ON lower(trim(COALESCE(tag_nsfw.value, ''))) = 'nsfw'
 	          WHERE vf_nsfw.video_id = vf.video_id
 	        )
+	        AND NOT EXISTS (
+	          SELECT 1
+	          FROM json_each(COALESCE(v.tags_json, '[]')) video_tag_nsfw
+	          WHERE lower(trim(COALESCE(video_tag_nsfw.value, ''))) = 'nsfw'
+	        )
 	      )
 	    )
 	  )
@@ -405,6 +412,8 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 		videoOriginalName   sql.NullString
 		videoStoragePath    sql.NullString
 		videoMimeType       sql.NullString
+		videoDescription    sql.NullString
+		videoTags           []string
 		videoTranscriptText sql.NullString
 		timestampMS         sql.NullInt64
 	}
@@ -412,7 +421,8 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 	for rows.Next() {
 		var row mediaRow
 		var tagsJSON string
-		if err := rows.Scan(&row.imageID, &row.originalName, &row.storagePath, &row.mimeType, &row.description, &tagsJSON, &row.videoID, &row.videoOriginalName, &row.videoStoragePath, &row.videoMimeType, &row.videoTranscriptText, &row.timestampMS); err != nil {
+		var videoTagsJSON string
+		if err := rows.Scan(&row.imageID, &row.originalName, &row.storagePath, &row.mimeType, &row.description, &tagsJSON, &row.videoID, &row.videoOriginalName, &row.videoStoragePath, &row.videoMimeType, &row.videoDescription, &videoTagsJSON, &row.videoTranscriptText, &row.timestampMS); err != nil {
 			return nil, fmt.Errorf("scan enriched image row: %w", err)
 		}
 		tags, err := decodeTagsJSON(tagsJSON)
@@ -420,6 +430,13 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 			return nil, fmt.Errorf("decode image %d tags: %w", row.imageID, err)
 		}
 		row.tags = tags
+		if row.videoID.Valid {
+			videoTags, err := decodeTagsJSON(videoTagsJSON)
+			if err != nil {
+				return nil, fmt.Errorf("decode video %d tags: %w", row.videoID.Int64, err)
+			}
+			row.videoTags = videoTags
+		}
 		byID[row.imageID] = append(byID[row.imageID], row)
 	}
 	if err := rows.Err(); err != nil {
@@ -456,6 +473,12 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 				result.OriginalName = row.videoOriginalName.String
 				result.StoragePath = filepath.ToSlash(row.videoStoragePath.String)
 				result.MimeType = row.videoMimeType.String
+				if desc := strings.TrimSpace(row.videoDescription.String); desc != "" {
+					result.Description = desc
+				}
+				if len(row.videoTags) > 0 {
+					result.Tags = row.videoTags
+				}
 				result.TranscriptText = row.videoTranscriptText.String
 				result.PreviewPath = filepath.ToSlash(row.storagePath)
 				result.MatchTimestampMS = row.timestampMS.Int64
@@ -522,6 +545,10 @@ WITH requested_tags(tag) AS (
           JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
             ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
           WHERE vf_nsfw.video_id = vf.video_id
+        ) OR EXISTS (
+          SELECT 1
+          FROM json_each(COALESCE(v.tags_json, '[]')) nsfw_tag_video
+          WHERE lower(trim(COALESCE(nsfw_tag_video.value, ''))) = 'nsfw'
         ) THEN 1 ELSE 0 END
     END AS is_nsfw,
     ROW_NUMBER() OVER (
@@ -531,6 +558,7 @@ WITH requested_tags(tag) AS (
   FROM image_tag_matches itm
   JOIN images i ON i.id = itm.image_id
   LEFT JOIN video_frames vf ON vf.image_id = i.id
+  LEFT JOIN videos v ON v.id = vf.video_id
 )
 SELECT COUNT(*)
 FROM media_units
@@ -569,12 +597,14 @@ WITH requested_tags(tag) AS (
     COALESCE(i.description, '') AS image_description,
     COALESCE(i.tags_json, '[]') AS image_tags_json,
     vf.video_id AS video_id,
-    v.original_name AS video_original_name,
-    v.storage_path AS video_storage_path,
-    v.mime_type AS video_mime_type,
-    COALESCE(v.transcript_text, '') AS video_transcript_text,
-    vf.timestamp_ms AS timestamp_ms,
-    itm.matched_count AS matched_count,
+	    v.original_name AS video_original_name,
+	    v.storage_path AS video_storage_path,
+	    v.mime_type AS video_mime_type,
+	    COALESCE(v.description, '') AS video_description,
+	    COALESCE(v.tags_json, '[]') AS video_tags_json,
+	    COALESCE(v.transcript_text, '') AS video_transcript_text,
+	    vf.timestamp_ms AS timestamp_ms,
+	    itm.matched_count AS matched_count,
     CASE
       WHEN vf.video_id IS NULL THEN CASE
         WHEN EXISTS (
@@ -590,6 +620,10 @@ WITH requested_tags(tag) AS (
           JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
             ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
           WHERE vf_nsfw.video_id = vf.video_id
+        ) OR EXISTS (
+          SELECT 1
+          FROM json_each(COALESCE(v.tags_json, '[]')) nsfw_tag_video
+          WHERE lower(trim(COALESCE(nsfw_tag_video.value, ''))) = 'nsfw'
         ) THEN 1 ELSE 0 END
     END AS is_nsfw,
     ROW_NUMBER() OVER (
@@ -613,6 +647,8 @@ SELECT media_type,
        video_original_name,
        video_storage_path,
        video_mime_type,
+       video_description,
+       video_tags_json,
        video_transcript_text,
        timestamp_ms,
        matched_count
@@ -639,6 +675,8 @@ OFFSET ?
 		var videoOriginalName sql.NullString
 		var videoStoragePath sql.NullString
 		var videoMimeType sql.NullString
+		var videoDescription sql.NullString
+		var videoTagsJSON sql.NullString
 		var videoTranscriptText sql.NullString
 		var timestampMS sql.NullInt64
 		var matchedCount int64
@@ -655,6 +693,8 @@ OFFSET ?
 			&videoOriginalName,
 			&videoStoragePath,
 			&videoMimeType,
+			&videoDescription,
+			&videoTagsJSON,
 			&videoTranscriptText,
 			&timestampMS,
 			&matchedCount,
@@ -670,10 +710,20 @@ OFFSET ?
 		result.MediaType = mediaType
 		result.StoragePath = filepath.ToSlash(imageStoragePath)
 		if mediaType == "video" && videoID.Valid {
+			videoTags, err := decodeTagsJSON(videoTagsJSON.String)
+			if err != nil {
+				return nil, 0, fmt.Errorf("decode video %d tags: %w", videoID.Int64, err)
+			}
 			result.VideoID = videoID.Int64
 			result.OriginalName = videoOriginalName.String
 			result.StoragePath = filepath.ToSlash(videoStoragePath.String)
 			result.MimeType = videoMimeType.String
+			if desc := strings.TrimSpace(videoDescription.String); desc != "" {
+				result.Description = desc
+			}
+			if len(videoTags) > 0 {
+				result.Tags = videoTags
+			}
 			result.TranscriptText = videoTranscriptText.String
 			result.PreviewPath = filepath.ToSlash(imageStoragePath)
 			if timestampMS.Valid {
@@ -714,12 +764,17 @@ WITH unit_tags AS (
                JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
                  ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
                WHERE vf_nsfw.video_id = vf.video_id
-             ) THEN 1 ELSE 0 END
-         END AS is_nsfw
+              ) OR EXISTS (
+                SELECT 1
+                FROM json_each(COALESCE(v.tags_json, '[]')) nsfw_tag_video
+                WHERE lower(trim(COALESCE(nsfw_tag_video.value, ''))) = 'nsfw'
+              ) THEN 1 ELSE 0 END
+          END AS is_nsfw
   FROM images i
   JOIN json_each(COALESCE(i.tags_json, '[]')) j
     ON trim(COALESCE(j.value, '')) <> ''
   LEFT JOIN video_frames vf ON vf.image_id = i.id
+  LEFT JOIN videos v ON v.id = vf.video_id
 )
 SELECT tag,
        COUNT(*) AS count
@@ -765,6 +820,8 @@ SELECT v.id,
        v.original_name,
        v.storage_path,
        v.mime_type,
+       COALESCE(v.description, ''),
+       COALESCE(v.tags_json, '[]'),
        COALESCE(v.transcript_text, ''),
        COALESCE(p.image_id, 0),
        COALESCE(p.storage_path, ''),
@@ -775,13 +832,20 @@ LEFT JOIN preview_frames p ON p.video_id = v.id AND p.rn = 1
 WHERE vte.model_id = ?
   AND (
     ? = 1
-    OR NOT EXISTS (
-      SELECT 1
-      FROM video_frames vf_nsfw
-      JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
-      JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
-        ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
-      WHERE vf_nsfw.video_id = v.id
+    OR (
+      NOT EXISTS (
+        SELECT 1
+        FROM video_frames vf_nsfw
+        JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
+        JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
+          ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
+        WHERE vf_nsfw.video_id = v.id
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM json_each(COALESCE(v.tags_json, '[]')) nsfw_tag_video
+        WHERE lower(trim(COALESCE(nsfw_tag_video.value, ''))) = 'nsfw'
+      )
     )
   )
 `, h.ModelID, includeNSFWInt)
@@ -794,9 +858,15 @@ WHERE vte.model_id = ?
 	for rows.Next() {
 		var result SearchResult
 		var blob []byte
-		if err := rows.Scan(&result.VideoID, &result.OriginalName, &result.StoragePath, &result.MimeType, &result.TranscriptText, &result.ImageID, &result.PreviewPath, &blob); err != nil {
+		var tagsJSON string
+		if err := rows.Scan(&result.VideoID, &result.OriginalName, &result.StoragePath, &result.MimeType, &result.Description, &tagsJSON, &result.TranscriptText, &result.ImageID, &result.PreviewPath, &blob); err != nil {
 			return nil, fmt.Errorf("scan transcript embedding row: %w", err)
 		}
+		tags, err := decodeTagsJSON(tagsJSON)
+		if err != nil {
+			return nil, fmt.Errorf("decode transcript video %d tags: %w", result.VideoID, err)
+		}
+		result.Tags = tags
 		vec := vectorindex.BlobToFloats(blob)
 		if len(vec) == 0 {
 			continue

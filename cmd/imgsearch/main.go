@@ -240,6 +240,13 @@ func main() {
 	if enqueuedAnnotationJobs > 0 {
 		log.Printf("enqueued %d annotation jobs for model_id=%d", enqueuedAnnotationJobs, modelID)
 	}
+	enqueuedVideoAnnotationJobs, err := db.EnsureVideoAnnotationJobsForModel(context.Background(), sqlDB, modelID)
+	if err != nil {
+		log.Fatalf("ensure video annotation jobs: %v", err)
+	}
+	if enqueuedVideoAnnotationJobs > 0 {
+		log.Printf("enqueued %d video annotation jobs for model_id=%d", enqueuedVideoAnnotationJobs, modelID)
+	}
 
 	activeEmbedder, err := newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
 		ModelPath:          *llamaNativeModelPath,

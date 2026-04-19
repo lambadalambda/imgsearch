@@ -373,6 +373,14 @@ func TestStoreCreatesVideoFramesAndEmbedJobs(t *testing.T) {
 		t.Fatalf("expected 1 transcribe job for video, got %d", transcribeCount)
 	}
 
+	var annotateVideoCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_video'`).Scan(&annotateVideoCount); err != nil {
+		t.Fatalf("count annotate video jobs: %v", err)
+	}
+	if annotateVideoCount != 1 {
+		t.Fatalf("expected 1 annotate_video job for video, got %d", annotateVideoCount)
+	}
+
 	abs := filepath.Join(svc.DataDir, out.StoragePath)
 	if _, err := os.Stat(abs); err != nil {
 		t.Fatalf("expected stored video at %s: %v", abs, err)

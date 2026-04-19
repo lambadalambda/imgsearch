@@ -88,3 +88,11 @@ func (a *Annotator) Close() error { return nil }
 func (a *Annotator) AnnotateImage(context.Context, string) (coreembedder.ImageAnnotation, error) {
 	return coreembedder.ImageAnnotation{}, fmt.Errorf("llama-cpp-native annotator is unavailable in this build")
 }
+
+func (a *Annotator) AnnotateImageWithOptions(context.Context, string, coreembedder.ImageAnnotationOptions) (coreembedder.ImageAnnotation, error) {
+	return coreembedder.ImageAnnotation{}, fmt.Errorf("llama-cpp-native annotator is unavailable in this build")
+}
+
+func (a *Annotator) AnnotateVideo(context.Context, coreembedder.VideoAnnotationInput) (coreembedder.VideoAnnotation, error) {
+	return coreembedder.VideoAnnotation{}, fmt.Errorf("llama-cpp-native annotator is unavailable in this build")
+}

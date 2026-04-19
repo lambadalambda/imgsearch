@@ -193,10 +193,26 @@ VALUES
 		t.Fatalf("seed frame images: %v", err)
 	}
 	if _, err := dbConn.Exec(`
+UPDATE images
+SET description = 'A close-up frame with stage lights and movement blur.',
+    tags_json = '["frame","lights"]'
+WHERE id IN (10, 11)
+`); err != nil {
+		t.Fatalf("seed frame annotations: %v", err)
+	}
+	if _, err := dbConn.Exec(`
 INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
 VALUES (7, 'vid', 'clip.mp4', 'videos/vid', 'video/mp4', 12000, 1920, 1080, 2)
 `); err != nil {
 		t.Fatalf("seed video: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+UPDATE videos
+SET description = 'A singer performs on a brightly lit stage as the crowd reacts.',
+    tags_json = '["concert","stage","crowd"]'
+WHERE id = 7
+`); err != nil {
+		t.Fatalf("seed video annotations: %v", err)
 	}
 	if _, err := dbConn.Exec(`
 INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
@@ -243,6 +259,12 @@ VALUES
 	if resp.Results[0].PreviewPath != "images/vf2" || resp.Results[0].MatchTimestampMS != 7000 {
 		t.Fatalf("unexpected video preview/timestamp: %+v", resp.Results[0])
 	}
+	if resp.Results[0].Description != "A singer performs on a brightly lit stage as the crowd reacts." {
+		t.Fatalf("expected grouped video result to use video-level description, got %+v", resp.Results[0])
+	}
+	if len(resp.Results[0].Tags) != 3 || resp.Results[0].Tags[0] != "concert" {
+		t.Fatalf("expected grouped video result to use video-level tags, got %+v", resp.Results[0])
+	}
 	if resp.Results[1].MediaType != "image" || resp.Results[1].ImageID != 2 {
 		t.Fatalf("expected second result to stay as image 2, got %+v", resp.Results[1])
 	}
@@ -261,6 +283,14 @@ INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_
 VALUES (8, 'vid8', 'speech.mp4', 'videos/vid8', 'video/mp4', 4000, 1280, 720, 1, 'tis better to remain silent and be thought a fool')
 `); err != nil {
 		t.Fatalf("seed video: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+UPDATE videos
+SET description = 'A speaker delivers a short stage speech to an audience.',
+    tags_json = '["speech","podium","audience"]'
+WHERE id = 8
+`); err != nil {
+		t.Fatalf("seed video annotation: %v", err)
 	}
 	if _, err := dbConn.Exec(`
 INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
@@ -303,6 +333,88 @@ VALUES (8, 1, 2, ?)
 	}
 	if !strings.Contains(resp.Results[0].TranscriptText, "remain silent") {
 		t.Fatalf("expected transcript text on result, got %+v", resp.Results[0])
+	}
+	if resp.Results[0].Description != "A speaker delivers a short stage speech to an audience." {
+		t.Fatalf("expected transcript result to include video description, got %+v", resp.Results[0])
+	}
+	if len(resp.Results[0].Tags) != 3 || resp.Results[0].Tags[0] != "speech" {
+		t.Fatalf("expected transcript result to include video tags, got %+v", resp.Results[0])
+	}
+}
+
+func TestTextSearchTranscriptRespectsVideoTagNSFWFiltering(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES (21, 'vf21', 'frame.jpg', 'images/vf21', 'image/jpeg', 100, 100)
+`); err != nil {
+		t.Fatalf("seed frame image: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, transcript_text)
+VALUES (9, 'vid9', 'sensitive.mp4', 'videos/vid9', 'video/mp4', 4000, 1280, 720, 1, 'this transcript should be hidden by default')
+`); err != nil {
+		t.Fatalf("seed video: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+UPDATE videos
+SET description = 'A sensitive scene with mature themes.',
+    tags_json = '["nsfw","speech"]'
+WHERE id = 9
+`); err != nil {
+		t.Fatalf("seed video annotation: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (9, 21, 0, 1000)
+`); err != nil {
+		t.Fatalf("seed preview frame: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_transcript_embeddings(video_id, model_id, dim, vector_blob)
+VALUES (9, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 0})); err != nil {
+		t.Fatalf("seed transcript embedding: %v", err)
+	}
+
+	h := NewHandler(&Handler{
+		DB:       dbConn,
+		ModelID:  1,
+		DataDir:  "/tmp",
+		Embedder: &fakeEmbedder{textVec: []float32{1, 0}},
+		Index:    &fakeIndex{hits: nil},
+	})
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/api/search/text?q=sensitive", nil)
+	defaultRR := httptest.NewRecorder()
+	h.ServeHTTP(defaultRR, defaultReq)
+
+	if defaultRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", defaultRR.Code, defaultRR.Body.String())
+	}
+
+	var defaultResp SearchResponse
+	if err := json.Unmarshal(defaultRR.Body.Bytes(), &defaultResp); err != nil {
+		t.Fatalf("decode default response: %v", err)
+	}
+	if len(defaultResp.Results) != 0 {
+		t.Fatalf("expected transcript result hidden by default for video nsfw tag, got %+v", defaultResp.Results)
+	}
+
+	includeReq := httptest.NewRequest(http.MethodGet, "/api/search/text?q=sensitive&include_nsfw=1", nil)
+	includeRR := httptest.NewRecorder()
+	h.ServeHTTP(includeRR, includeReq)
+
+	if includeRR.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", includeRR.Code, includeRR.Body.String())
+	}
+
+	var includeResp SearchResponse
+	if err := json.Unmarshal(includeRR.Body.Bytes(), &includeResp); err != nil {
+		t.Fatalf("decode include response: %v", err)
+	}
+	if len(includeResp.Results) != 1 || includeResp.Results[0].VideoID != 9 {
+		t.Fatalf("expected transcript result restored with include_nsfw=1, got %+v", includeResp.Results)
 	}
 }
 

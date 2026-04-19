@@ -370,6 +370,14 @@ ON CONFLICT DO NOTHING
 			return StoreResult{}, fmt.Errorf("insert transcribe job: %w", err)
 		}
 	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO index_jobs(kind, image_id, video_id, model_id, state)
+VALUES('annotate_video', NULL, ?, ?, 'pending')
+ON CONFLICT DO NOTHING
+`, out.VideoID, s.ModelID); err != nil {
+		_ = tx.Rollback()
+		return StoreResult{}, fmt.Errorf("insert video annotation job: %w", err)
+	}
 
 	if err := os.Rename(tmpPath, storageAbs); err != nil {
 		_ = tx.Rollback()

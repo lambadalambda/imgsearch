@@ -83,8 +83,14 @@ type fakeIndex struct {
 }
 
 type fakeAnnotator struct {
-	annotation embedder.ImageAnnotation
-	err        error
+	annotation      embedder.ImageAnnotation
+	err             error
+	lastOpts        embedder.ImageAnnotationOptions
+	optsCalls       int
+	videoAnnotation embedder.VideoAnnotation
+	videoErr        error
+	lastVideoInput  embedder.VideoAnnotationInput
+	videoCalls      int
 }
 
 type fakeVideoTranscriber struct {
@@ -104,6 +110,24 @@ func (f *fakeAnnotator) AnnotateImage(context.Context, string) (embedder.ImageAn
 		return embedder.ImageAnnotation{}, f.err
 	}
 	return f.annotation, nil
+}
+
+func (f *fakeAnnotator) AnnotateImageWithOptions(_ context.Context, _ string, opts embedder.ImageAnnotationOptions) (embedder.ImageAnnotation, error) {
+	f.optsCalls++
+	f.lastOpts = opts
+	if f.err != nil {
+		return embedder.ImageAnnotation{}, f.err
+	}
+	return f.annotation, nil
+}
+
+func (f *fakeAnnotator) AnnotateVideo(_ context.Context, input embedder.VideoAnnotationInput) (embedder.VideoAnnotation, error) {
+	f.videoCalls++
+	f.lastVideoInput = input
+	if f.videoErr != nil {
+		return embedder.VideoAnnotation{}, f.videoErr
+	}
+	return f.videoAnnotation, nil
 }
 
 func (f *fakeIndex) Upsert(_ context.Context, imageID int64, modelID int64, vec []float32) error {
@@ -495,10 +519,11 @@ VALUES (2, 'annotate_image', 1, 1, 'pending')
 `); err != nil {
 		t.Fatalf("insert annotate job: %v", err)
 	}
-	q.Annotator = &fakeAnnotator{annotation: embedder.ImageAnnotation{
+	annotator := &fakeAnnotator{annotation: embedder.ImageAnnotation{
 		Description: "A calm test image.",
 		Tags:        []string{"test", "sample", "nsfw"},
 	}}
+	q.Annotator = annotator
 
 	processed, err := q.ProcessOne(context.Background(), "worker-1")
 	if err != nil {
@@ -530,6 +555,97 @@ VALUES (2, 'annotate_image', 1, 1, 'pending')
 	}
 	if annotateState != "done" {
 		t.Fatalf("expected annotate job done, got %s", annotateState)
+	}
+	if annotator.optsCalls != 1 {
+		t.Fatalf("expected annotate_image to use options-aware call once, got %d", annotator.optsCalls)
+	}
+	if annotator.lastOpts.OriginalName != "a.jpg" {
+		t.Fatalf("expected annotate options to include original filename, got %q", annotator.lastOpts.OriginalName)
+	}
+}
+
+func TestProcessOneProcessesAnnotateVideoJobAndStoresVideoAnnotations(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`DELETE FROM index_jobs WHERE id = 1`); err != nil {
+		t.Fatalf("delete default embed job: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+UPDATE images
+SET description = 'A singer on stage under bright lights.',
+    tags_json = '["frame","stage"]'
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed frame annotations: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, transcript_text)
+VALUES (9, 'vid9', 'concert_clip.mp4', 'videos/vid9', 'video/mp4', 9000, 1280, 720, 1, 'crowd cheering loudly')
+`); err != nil {
+		t.Fatalf("insert video: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (9, 1, 0, 1000)
+`); err != nil {
+		t.Fatalf("insert video frame: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, video_id, model_id, state)
+VALUES (30, 'annotate_video', NULL, 9, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate_video job: %v", err)
+	}
+
+	annotator := &fakeAnnotator{videoAnnotation: embedder.VideoAnnotation{
+		Description: "A live concert performance with energetic stage lighting and crowd movement.",
+		Tags:        []string{"concert", "music", "crowd"},
+		IsNSFW:      false,
+	}}
+	q.Annotator = annotator
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+
+	if annotator.videoCalls != 1 {
+		t.Fatalf("expected one video annotation call, got %d", annotator.videoCalls)
+	}
+	if annotator.lastVideoInput.OriginalName != "concert_clip.mp4" {
+		t.Fatalf("expected video input original name, got %q", annotator.lastVideoInput.OriginalName)
+	}
+	if annotator.lastVideoInput.RepresentativeFramePath != filepath.Join(q.DataDir, filepath.FromSlash("images/abc")) {
+		t.Fatalf("expected representative frame path %q, got %q", filepath.Join(q.DataDir, filepath.FromSlash("images/abc")), annotator.lastVideoInput.RepresentativeFramePath)
+	}
+	if len(annotator.lastVideoInput.Frames) != 1 {
+		t.Fatalf("expected one frame annotation in video input, got %d", len(annotator.lastVideoInput.Frames))
+	}
+
+	var storedDescription string
+	var storedTagsJSON string
+	if err := sqlDB.QueryRow(`SELECT description, tags_json FROM videos WHERE id = 9`).Scan(&storedDescription, &storedTagsJSON); err != nil {
+		t.Fatalf("load stored video annotations: %v", err)
+	}
+	if storedDescription != "A live concert performance with energetic stage lighting and crowd movement." {
+		t.Fatalf("unexpected stored video description: %q", storedDescription)
+	}
+	var storedTags []string
+	if err := json.Unmarshal([]byte(storedTagsJSON), &storedTags); err != nil {
+		t.Fatalf("decode stored video tags: %v", err)
+	}
+	if len(storedTags) != 3 || storedTags[0] != "concert" {
+		t.Fatalf("unexpected stored video tags: %v", storedTags)
+	}
+
+	var jobState string
+	if err := sqlDB.QueryRow(`SELECT state FROM index_jobs WHERE id = 30`).Scan(&jobState); err != nil {
+		t.Fatalf("load annotate_video state: %v", err)
+	}
+	if jobState != "done" {
+		t.Fatalf("expected annotate_video job done, got %s", jobState)
 	}
 }
 

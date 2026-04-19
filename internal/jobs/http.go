@@ -68,7 +68,12 @@ WHERE model_id = ?
 			httputil.WriteJSONError(w, http.StatusInternalServerError, "retry failed")
 			return
 		}
+		videoAnnotationJobs, err := db.EnsureVideoAnnotationJobsForModel(r.Context(), h.DB, h.ModelID)
+		if err != nil {
+			httputil.WriteJSONError(w, http.StatusInternalServerError, "retry failed")
+			return
+		}
 
-		httputil.WriteJSON(w, http.StatusOK, RetryFailedResponse{Retried: rows, Enqueued: requeuedAnnotations + enqueued + annotationJobs})
+		httputil.WriteJSON(w, http.StatusOK, RetryFailedResponse{Retried: rows, Enqueued: requeuedAnnotations + enqueued + annotationJobs + videoAnnotationJobs})
 	})
 }

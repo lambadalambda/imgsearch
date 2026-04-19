@@ -93,6 +93,33 @@ WHERE trim(COALESCE(v.transcript_text, '')) = ''
 	return rows, nil
 }
 
+func EnsureVideoAnnotationJobsForModel(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
+	if db == nil {
+		return 0, fmt.Errorf("db is nil")
+	}
+	if modelID <= 0 {
+		return 0, fmt.Errorf("invalid model id")
+	}
+
+	res, err := db.ExecContext(ctx, `
+INSERT OR IGNORE INTO index_jobs(kind, image_id, video_id, model_id, state)
+SELECT 'annotate_video', NULL, v.id, ?, 'pending'
+FROM videos v
+WHERE trim(COALESCE(v.description, '')) = ''
+   OR COALESCE(v.tags_json, '') = ''
+   OR COALESCE(v.tags_json, '[]') = '[]'
+`, modelID)
+	if err != nil {
+		return 0, fmt.Errorf("ensure video annotation jobs for model %d: %w", modelID, err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected for video annotation jobs model %d: %w", modelID, err)
+	}
+	return rows, nil
+}
+
 func RequeueDoneJobsMissingAnnotations(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
 	if db == nil {
 		return 0, fmt.Errorf("db is nil")

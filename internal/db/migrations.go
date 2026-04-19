@@ -177,6 +177,14 @@ ON index_jobs(kind, video_id, model_id)
 WHERE video_id IS NOT NULL AND image_id IS NULL;
 `,
 	},
+	{
+		version: 6,
+		sql: `
+ALTER TABLE videos ADD COLUMN description TEXT NOT NULL DEFAULT '';
+ALTER TABLE videos ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE videos ADD COLUMN annotation_updated_at TEXT;
+`,
+	},
 }
 
 func LatestVersion() int {

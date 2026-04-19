@@ -223,3 +223,48 @@ VALUES (5, 2, 0, 500)
 		t.Fatalf("expected no annotation job for video frame, got %d", count)
 	}
 }
+
+func TestEnsureVideoAnnotationJobsForModelEnqueuesMissingVideoRows(t *testing.T) {
+	dbConn := openIndexJobsDB(t)
+
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES
+	(5, 'v1', 'one.mp4', 'videos/one', 'video/mp4', 1000, 640, 360, 1),
+	(6, 'v2', 'two.mp4', 'videos/two', 'video/mp4', 2000, 640, 360, 1)
+`); err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+UPDATE videos
+SET description = 'already annotated',
+    tags_json = '["done"]'
+WHERE id = 6
+`); err != nil {
+		t.Fatalf("seed existing video annotation: %v", err)
+	}
+
+	inserted, err := EnsureVideoAnnotationJobsForModel(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("ensure video annotation jobs: %v", err)
+	}
+	if inserted != 1 {
+		t.Fatalf("inserted: got=%d want=1", inserted)
+	}
+
+	var pendingCount int
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_video' AND model_id = 1 AND state = 'pending'`).Scan(&pendingCount); err != nil {
+		t.Fatalf("count annotate_video jobs: %v", err)
+	}
+	if pendingCount != 1 {
+		t.Fatalf("expected 1 pending annotate_video job, got %d", pendingCount)
+	}
+
+	insertedAgain, err := EnsureVideoAnnotationJobsForModel(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("ensure video annotation jobs second run: %v", err)
+	}
+	if insertedAgain != 0 {
+		t.Fatalf("inserted second run: got=%d want=0", insertedAgain)
+	}
+}
