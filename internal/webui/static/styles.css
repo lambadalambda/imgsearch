@@ -1239,6 +1239,43 @@ input:focus-visible {
   }
 }
 
+@media (hover: none) and (pointer: coarse) {
+  .thumb-actions {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+    transition: none;
+  }
+
+  .thumb-action.ghost {
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 0.78rem;
+  }
+
+  .card-detail-overlay {
+    display: none;
+  }
+
+  .card:hover,
+  .card:focus-within {
+    z-index: 0;
+    border-color: color-mix(in oklab, var(--line) 86%, white 14%);
+    box-shadow: var(--shadow-card-rest);
+  }
+
+  .path {
+    opacity: 0.9;
+  }
+
+  .tag-list {
+    flex-wrap: wrap;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
 @media (max-width: 980px) {
   .masthead {
     flex-wrap: wrap;

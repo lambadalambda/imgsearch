@@ -191,6 +191,9 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "resultsPrevButton") || !strings.Contains(rr.Body.String(), "resultsNextButton") {
 		t.Fatalf("expected javascript handlers for results pagination controls")
 	}
+	if !strings.Contains(rr.Body.String(), "if (event.target.closest('.thumb-actions'))") {
+		t.Fatalf("expected lightbox handler to ignore taps on thumbnail action controls")
+	}
 }
 
 func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
@@ -285,6 +288,15 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	}
 	if !strings.Contains(body, "grid-template-columns: repeat(4, minmax(0, 1fr));") {
 		t.Fatalf("expected compact mobile tab grid to prevent horizontal scroll")
+	}
+	if !strings.Contains(body, "@media (hover: none) and (pointer: coarse)") {
+		t.Fatalf("expected touch-specific card interaction overrides")
+	}
+	if !strings.Contains(body, ".card-detail-overlay {") || !strings.Contains(body, "display: none;") {
+		t.Fatalf("expected touch mode to suppress hover-only detail overlay")
+	}
+	if !strings.Contains(body, ".thumb-actions {") || !strings.Contains(body, "opacity: 1;") {
+		t.Fatalf("expected touch mode to keep thumbnail actions visible")
 	}
 }
 

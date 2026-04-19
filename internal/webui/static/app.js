@@ -105,6 +105,7 @@ let tagCloudLoaded = false;
 let tagSuggestionRequestToken = 0;
 let tagSuggestionDebounceTimer = null;
 const liveReconnectDelayMaxMs = 30000;
+const touchOptimizedCards = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 
 function setStatus(target, message, kind) {
   if (!target) {
@@ -531,7 +532,7 @@ function cardMarkup(item, mode) {
   const supportMarkup = supportText
     ? `<p class="${supportClass}">${escapeHTML(supportText)}</p>`
     : '';
-  const compactTagsMarkup = tagsMarkup(tags, true, true);
+  const compactTagsMarkup = tagsMarkup(tags, !touchOptimizedCards, true);
   const overlayTagsMarkup = tagsMarkup(tags, false, true);
   const overlaySupportMarkup = supportText
     ? `<p class="${supportClass} overlay-supporting-text">${escapeHTML(supportText)}</p>`
@@ -1443,6 +1444,10 @@ function attachSimilarHandler(target) {
 
 function attachLightboxHandler(target) {
   target.addEventListener('click', (event) => {
+    if (event.target.closest('.thumb-actions')) {
+      return;
+    }
+
     const trigger = event.target.closest('.thumb-button');
     if (!trigger || !target.contains(trigger)) {
       return;
