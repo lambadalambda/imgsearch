@@ -19,11 +19,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     curl \
     ffmpeg \
+    g++-13 \
+    gcc-13 \
     git \
     libvips-dev \
     pkg-config \
     python3 \
     && rm -rf /var/lib/apt/lists/*
+
+ENV CC=gcc-13
+ENV CXX=g++-13
+ENV CUDAHOSTCXX=g++-13
 
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz \
     && rm -rf /usr/local/go \
@@ -48,6 +54,8 @@ RUN if [ "${CUDA_DOCKER_ARCH}" = "default" ]; then \
     fi && \
     cmake -S deps/llama.cpp -B deps/llama.cpp/build \
       -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_C_COMPILER=gcc-13 \
+      -DCMAKE_CXX_COMPILER=g++-13 \
       -DGGML_NATIVE=OFF \
       -DGGML_CUDA=ON \
       -DGGML_BACKEND_DL=ON \
