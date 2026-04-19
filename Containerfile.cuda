@@ -4,12 +4,17 @@ ARG UBUNTU_VERSION=24.04
 ARG CUDA_VERSION=12.8.1
 ARG GO_VERSION=1.24.2
 ARG LLAMA_BUILD_JOBS=8
+ARG GCC_VERSION=12
+ARG VIPS_VERSION=8.18.0
 
 FROM docker.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS build
 
 ARG GO_VERSION
 ARG CUDA_DOCKER_ARCH=default
 ARG LLAMA_BUILD_JOBS
+ARG GGML_CPU_ALL_VARIANTS=OFF
+ARG GCC_VERSION
+ARG VIPS_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,17 +24,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     curl \
     ffmpeg \
-    g++-13 \
-    gcc-13 \
+    g++-${GCC_VERSION} \
+    gcc-${GCC_VERSION} \
     git \
-    libvips-dev \
+    libexpat1-dev \
+    libglib2.0-dev \
+    libheif-dev \
+    libimagequant-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libwebp-dev \
+    meson \
+    ninja-build \
     pkg-config \
     python3 \
     && rm -rf /var/lib/apt/lists/*
 
-ENV CC=gcc-13
-ENV CXX=g++-13
-ENV CUDAHOSTCXX=g++-13
+ENV CC=gcc-${GCC_VERSION}
+ENV CXX=g++-${GCC_VERSION}
+ENV CUDAHOSTCXX=g++-${GCC_VERSION}
 
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz \
     && rm -rf /usr/local/go \
@@ -38,6 +51,7 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go
 
 ENV PATH=/usr/local/go/bin:${PATH}
 ENV CGO_ENABLED=1
+ENV PKG_CONFIG_PATH=/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig:/usr/local/share/pkgconfig
 
 WORKDIR /src
 COPY . .
@@ -54,15 +68,27 @@ RUN if [ "${CUDA_DOCKER_ARCH}" = "default" ]; then \
     fi && \
     cmake -S deps/llama.cpp -B deps/llama.cpp/build \
       -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_C_COMPILER=gcc-13 \
-      -DCMAKE_CXX_COMPILER=g++-13 \
+      -DCMAKE_C_COMPILER=${CC} \
+      -DCMAKE_CXX_COMPILER=${CXX} \
       -DGGML_NATIVE=OFF \
       -DGGML_CUDA=ON \
       -DGGML_BACKEND_DL=ON \
-      -DGGML_CPU_ALL_VARIANTS=ON \
+      -DGGML_CPU_ALL_VARIANTS=${GGML_CPU_ALL_VARIANTS} \
       -DLLAMA_BUILD_TESTS=OFF \
       ${cmake_arch_args} && \
     cmake --build deps/llama.cpp/build --target llama-server -j"${LLAMA_BUILD_JOBS}"
+
+RUN curl -fsSL "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.xz" -o /tmp/vips.tar.xz && \
+    tar -xf /tmp/vips.tar.xz -C /tmp && \
+    meson setup /tmp/vips-${VIPS_VERSION}/build /tmp/vips-${VIPS_VERSION} \
+      --buildtype=release \
+      --prefix=/usr/local \
+      -Dintrospection=disabled \
+      -Dmodules=disabled && \
+    meson compile -C /tmp/vips-${VIPS_VERSION}/build && \
+    meson install -C /tmp/vips-${VIPS_VERSION}/build && \
+    ldconfig && \
+    rm -rf /tmp/vips.tar.xz /tmp/vips-${VIPS_VERSION}
 
 RUN ./scripts/setup_sqlite_vector.sh
 
@@ -70,6 +96,7 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/imgsearch ./cmd/imgsearch
 
 RUN mkdir -p /out/bin /out/lib /out/tools/sqlite-vector && \
     cp -a deps/llama.cpp/build/bin/lib*.so* /out/lib/ && \
+    cp -a /usr/local/lib/x86_64-linux-gnu/libvips*.so* /out/lib/ && \
     cp -a tools/sqlite-vector/* /out/tools/sqlite-vector/ && \
     ln -s ../lib /out/bin/lib && \
     cp -a scripts/run_imgsearch_cuda_container.sh /out/bin/run.sh
@@ -96,6 +123,7 @@ COPY --from=build /out/bin/run.sh /opt/imgsearch/bin/run.sh
 COPY --from=build /out/tools/sqlite-vector /opt/imgsearch/tools/sqlite-vector
 
 RUN chmod +x /opt/imgsearch/bin/run.sh && \
+    ln -s ../lib /opt/imgsearch/bin/lib && \
     mkdir -p /data /models
 
 ENV LD_LIBRARY_PATH=/opt/imgsearch/lib
