@@ -44,6 +44,16 @@ podman build \
 
 (`CUDA_DOCKER_ARCH=default` is the default and builds for a broader target set.)
 
+If your host compiler crashes during the llama.cpp CUDA build (for example an intermittent GCC internal compiler error), lower parallelism:
+
+```bash
+podman build \
+  -f Containerfile.cuda \
+  -t imgsearch:cuda \
+  --build-arg LLAMA_BUILD_JOBS=4 \
+  .
+```
+
 ## Run With Podman
 
 Create persistent host directories first:

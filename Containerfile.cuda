@@ -3,11 +3,13 @@
 ARG UBUNTU_VERSION=24.04
 ARG CUDA_VERSION=12.8.1
 ARG GO_VERSION=1.24.2
+ARG LLAMA_BUILD_JOBS=8
 
 FROM docker.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS build
 
 ARG GO_VERSION
 ARG CUDA_DOCKER_ARCH=default
+ARG LLAMA_BUILD_JOBS
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -52,7 +54,7 @@ RUN if [ "${CUDA_DOCKER_ARCH}" = "default" ]; then \
       -DGGML_CPU_ALL_VARIANTS=ON \
       -DLLAMA_BUILD_TESTS=OFF \
       ${cmake_arch_args} && \
-    cmake --build deps/llama.cpp/build --target llama-server -j"$(nproc)"
+    cmake --build deps/llama.cpp/build --target llama-server -j"${LLAMA_BUILD_JOBS}"
 
 RUN ./scripts/setup_sqlite_vector.sh
 
