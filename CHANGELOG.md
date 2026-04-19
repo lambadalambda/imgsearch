@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(runtime): add a llama model switchboard that keeps only one native model resident at a time when a separate annotator is configured, unloading the active model before loading the other so 24GB GPUs can run embed + annotation workloads without co-resident VRAM pressure.
 - feat(deploy): add Ubuntu-based `Containerfile.cuda` for Podman GPU deployments (`--gpus=all`), plus container entrypoint defaults for sqlite-vector/model paths and a deployment guide (`docs/podman-cuda-ubuntu.md`).
 - feat(annotations): upgrade image annotation prompts for richer retrieval detail (including explicit people-focused descriptors and translation of non-English visible text), allow longer descriptions when useful (up to ~500 words), and pass original filenames into annotation context only when they appear semantically meaningful.
 - feat(video): add model-driven `annotate_video` jobs that synthesize video-level descriptions/tags from sampled frame annotations plus transcript context, persist them on `videos`, and surface them in `/api/videos` and search results.

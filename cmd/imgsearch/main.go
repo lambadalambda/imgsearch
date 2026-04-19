@@ -248,7 +248,7 @@ func main() {
 		log.Printf("enqueued %d video annotation jobs for model_id=%d", enqueuedVideoAnnotationJobs, modelID)
 	}
 
-	activeEmbedder, err := newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
+	embedderOpts := llamaCPPNativeEmbedderOptions{
 		ModelPath:          *llamaNativeModelPath,
 		VisionModelPath:    *llamaNativeMMProjPath,
 		Dimensions:         modelSpec.Dimensions,
@@ -265,12 +265,10 @@ func main() {
 		FlashAttnType:      *llamaNativeFlashAttnType,
 		CacheTypeK:         *llamaNativeCacheTypeK,
 		CacheTypeV:         *llamaNativeCacheTypeV,
-	})
+	}
+	activeEmbedder, err := newLlamaCPPNativeEmbedder(embedderOpts)
 	if err != nil {
 		log.Fatalf("configure embedder: %v", err)
-	}
-	if closer, ok := activeEmbedder.(interface{ Close() error }); ok {
-		defer func() { _ = closer.Close() }()
 	}
 
 	var videoTranscriber transcribe.VideoTranscriber
@@ -306,6 +304,7 @@ func main() {
 	canAnnotateImages := false
 	annotatorModelPath := strings.TrimSpace(*llamaNativeAnnotatorModelPath)
 	annotatorVisionPath := strings.TrimSpace(*llamaNativeAnnotatorMMProjPath)
+	var modelSwitchboard *llamaModelSwitchboard
 	if loadAnnotator {
 		imageAnnotator, canAnnotateImages = activeEmbedder.(embedder.ImageAnnotator)
 	}
@@ -313,7 +312,7 @@ func main() {
 		if annotatorModelPath == "" || annotatorVisionPath == "" {
 			log.Fatalf("configure annotator: both -llama-native-annotator-model-path and -llama-native-annotator-mmproj-path must be set together")
 		}
-		imageAnnotator, err = newLlamaCPPNativeAnnotator(llamaCPPNativeAnnotatorOptions{
+		annotatorOpts := llamaCPPNativeAnnotatorOptions{
 			ModelPath:       annotatorModelPath,
 			VisionModelPath: annotatorVisionPath,
 			GPULayers:       *llamaNativeAnnotatorGPULayers,
@@ -326,19 +325,31 @@ func main() {
 			FlashAttnType:   *llamaNativeAnnotatorFlashAttnType,
 			CacheTypeK:      *llamaNativeAnnotatorCacheTypeK,
 			CacheTypeV:      *llamaNativeAnnotatorCacheTypeV,
-		})
-		if err != nil {
-			log.Fatalf("configure annotator: %v", err)
 		}
-		if closer, ok := imageAnnotator.(interface{ Close() error }); ok {
-			defer func() { _ = closer.Close() }()
-		}
+		modelSwitchboard = newLlamaModelSwitchboard(
+			activeEmbedder,
+			func(context.Context) (embedder.Embedder, error) {
+				return newLlamaCPPNativeEmbedder(embedderOpts)
+			},
+			func(context.Context) (embedder.ImageAnnotator, error) {
+				return newLlamaCPPNativeAnnotator(annotatorOpts)
+			},
+			true,
+		)
+		activeEmbedder = modelSwitchboard.Embedder()
+		imageAnnotator = modelSwitchboard.Annotator()
 		canAnnotateImages = true
 		log.Printf("image annotations enabled via separate native annotator model %s", annotatorModelPath)
 	} else if loadAnnotator && canAnnotateImages {
 		log.Printf("image annotations enabled via active embedder model")
 	} else {
 		log.Printf("image annotations disabled")
+	}
+
+	if modelSwitchboard != nil {
+		defer func() { _ = modelSwitchboard.Close() }()
+	} else if closer, ok := activeEmbedder.(interface{ Close() error }); ok {
+		defer func() { _ = closer.Close() }()
 	}
 
 	uploadSvc := &upload.Service{
