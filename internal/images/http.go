@@ -3,7 +3,6 @@ package images
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"strings"
 
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/tagutil"
 )
 
 type Handler struct {
@@ -123,7 +123,7 @@ LIMIT ? OFFSET ?
 		); err != nil {
 			return ListResponse{}, fmt.Errorf("decode image row: %w", err)
 		}
-		if tags, err := decodeTagsJSON(tagsJSON); err != nil {
+		if tags, err := tagutil.DecodeJSON(tagsJSON); err != nil {
 			return ListResponse{}, fmt.Errorf("decode image tags: %w", err)
 		} else {
 			item.Tags = tags
@@ -138,17 +138,6 @@ LIMIT ? OFFSET ?
 	}
 
 	return ListResponse{Images: items, Total: total}, nil
-}
-
-func decodeTagsJSON(raw string) ([]string, error) {
-	if raw == "" {
-		return nil, nil
-	}
-	var tags []string
-	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
-		return nil, err
-	}
-	return tags, nil
 }
 
 func NewHandler(h *Handler) http.Handler {

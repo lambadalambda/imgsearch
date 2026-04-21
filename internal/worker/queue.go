@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/tagutil"
 	"imgsearch/internal/transcribe"
 	"imgsearch/internal/vectorindex"
 )
@@ -1009,7 +1010,7 @@ WHERE id = ?
 		return embedder.VideoAnnotationInput{}, false, fmt.Errorf("load video annotation task data: %w", err)
 	}
 
-	existingTags, err := decodeTagsJSON(existingTagsJSON)
+	existingTags, err := tagutil.DecodeJSON(existingTagsJSON)
 	if err != nil {
 		return embedder.VideoAnnotationInput{}, false, fmt.Errorf("decode existing video %d tags: %w", videoID, err)
 	}
@@ -1052,7 +1053,7 @@ ORDER BY vf.frame_index ASC
 		if err := rows.Scan(&row.imageID, &row.originalName, &row.storagePath, &row.frameIndex, &row.timestampMS, &row.description, &frameTagsJSON); err != nil {
 			return embedder.VideoAnnotationInput{}, false, fmt.Errorf("scan video frame for annotation %d: %w", videoID, err)
 		}
-		frameTags, err := decodeTagsJSON(frameTagsJSON)
+		frameTags, err := tagutil.DecodeJSON(frameTagsJSON)
 		if err != nil {
 			return embedder.VideoAnnotationInput{}, false, fmt.Errorf("decode frame tags for image %d: %w", row.imageID, err)
 		}
@@ -1115,17 +1116,6 @@ WHERE id = ?
 		return fmt.Errorf("update image annotations: %w", err)
 	}
 	return nil
-}
-
-func decodeTagsJSON(raw string) ([]string, error) {
-	if raw == "" {
-		return nil, nil
-	}
-	var tags []string
-	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
-		return nil, err
-	}
-	return tags, nil
 }
 
 func (q *Queue) completeJob(ctx context.Context, job claimedJob, annotation *embedder.ImageAnnotation) error {

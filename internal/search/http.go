@@ -3,7 +3,6 @@ package search
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -16,6 +15,7 @@ import (
 
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/tagutil"
 	"imgsearch/internal/vectorindex"
 )
 
@@ -425,13 +425,13 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 		if err := rows.Scan(&row.imageID, &row.originalName, &row.storagePath, &row.mimeType, &row.description, &tagsJSON, &row.videoID, &row.videoOriginalName, &row.videoStoragePath, &row.videoMimeType, &row.videoDescription, &videoTagsJSON, &row.videoTranscriptText, &row.timestampMS); err != nil {
 			return nil, fmt.Errorf("scan enriched image row: %w", err)
 		}
-		tags, err := decodeTagsJSON(tagsJSON)
+		tags, err := tagutil.DecodeJSON(tagsJSON)
 		if err != nil {
 			return nil, fmt.Errorf("decode image %d tags: %w", row.imageID, err)
 		}
 		row.tags = tags
 		if row.videoID.Valid {
-			videoTags, err := decodeTagsJSON(videoTagsJSON)
+			videoTags, err := tagutil.DecodeJSON(videoTagsJSON)
 			if err != nil {
 				return nil, fmt.Errorf("decode video %d tags: %w", row.videoID.Int64, err)
 			}
@@ -701,7 +701,7 @@ OFFSET ?
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan tag match row: %w", err)
 		}
-		decodedTags, err := decodeTagsJSON(imageTagsJSON)
+		decodedTags, err := tagutil.DecodeJSON(imageTagsJSON)
 		if err != nil {
 			return nil, 0, fmt.Errorf("decode image %d tags: %w", result.ImageID, err)
 		}
@@ -710,7 +710,7 @@ OFFSET ?
 		result.MediaType = mediaType
 		result.StoragePath = filepath.ToSlash(imageStoragePath)
 		if mediaType == "video" && videoID.Valid {
-			videoTags, err := decodeTagsJSON(videoTagsJSON.String)
+			videoTags, err := tagutil.DecodeJSON(videoTagsJSON.String)
 			if err != nil {
 				return nil, 0, fmt.Errorf("decode video %d tags: %w", videoID.Int64, err)
 			}
@@ -862,7 +862,7 @@ WHERE vte.model_id = ?
 		if err := rows.Scan(&result.VideoID, &result.OriginalName, &result.StoragePath, &result.MimeType, &result.Description, &tagsJSON, &result.TranscriptText, &result.ImageID, &result.PreviewPath, &blob); err != nil {
 			return nil, fmt.Errorf("scan transcript embedding row: %w", err)
 		}
-		tags, err := decodeTagsJSON(tagsJSON)
+		tags, err := tagutil.DecodeJSON(tagsJSON)
 		if err != nil {
 			return nil, fmt.Errorf("decode transcript video %d tags: %w", result.VideoID, err)
 		}
@@ -957,17 +957,6 @@ func cosine(a, b []float32) float64 {
 		return 0
 	}
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
-}
-
-func decodeTagsJSON(raw string) ([]string, error) {
-	if raw == "" {
-		return nil, nil
-	}
-	var tags []string
-	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
-		return nil, err
-	}
-	return tags, nil
 }
 
 func parseMinCount(r *http.Request, fallback int) int {

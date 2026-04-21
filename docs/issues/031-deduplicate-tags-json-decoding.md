@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -28,10 +28,10 @@ Duplicate copies exist in:
 
 ## Acceptance Criteria
 
-- [ ] Move tag JSON decoding to a single shared helper.
-- [ ] Replace package-local duplicates with shared usage.
-- [ ] Keep behavior for empty values and malformed JSON consistent.
-- [ ] Add tests for shared helper edge cases.
+- [x] Move tag JSON decoding to a single shared helper.
+- [x] Replace package-local duplicates with shared usage.
+- [x] Keep behavior for empty values and malformed JSON consistent.
+- [x] Add tests for shared helper edge cases.
 
 ## Related Files
 
@@ -39,3 +39,5 @@ Duplicate copies exist in:
 - `internal/videos/http.go`
 - `internal/search/http.go`
 - `internal/worker/queue.go`
+- `internal/tagutil/tags.go`
+- `internal/tagutil/tags_test.go`

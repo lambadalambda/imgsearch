@@ -3,7 +3,6 @@ package videos
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"strings"
 
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/tagutil"
 )
 
 type Handler struct {
@@ -201,7 +201,7 @@ LIMIT ? OFFSET ?
 		); err != nil {
 			return ListResponse{}, fmt.Errorf("decode video row: %w", err)
 		}
-		tags, err := decodeTagsJSON(tagsJSON)
+		tags, err := tagutil.DecodeJSON(tagsJSON)
 		if err != nil {
 			return ListResponse{}, fmt.Errorf("decode video %d tags: %w", item.VideoID, err)
 		}
@@ -376,15 +376,4 @@ func boolToInt(v bool) int {
 		return 1
 	}
 	return 0
-}
-
-func decodeTagsJSON(raw string) ([]string, error) {
-	if raw == "" {
-		return nil, nil
-	}
-	var tags []string
-	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
-		return nil, err
-	}
-	return tags, nil
 }
