@@ -293,6 +293,86 @@ WHERE id = 1
 	}
 }
 
+func TestToggleVideoNSFWTag(t *testing.T) {
+	dbConn := setupVideosDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE videos
+SET tags_json = '["concert","music"]'
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed video tags: %v", err)
+	}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/videos/1/toggle-nsfw", nil)
+	firstRR := httptest.NewRecorder()
+	h.ServeHTTP(firstRR, firstReq)
+
+	if firstRR.Code != http.StatusOK {
+		t.Fatalf("first toggle status: got=%d body=%s", firstRR.Code, firstRR.Body.String())
+	}
+
+	var firstPayload struct {
+		IsNSFW bool `json:"is_nsfw"`
+	}
+	if err := json.Unmarshal(firstRR.Body.Bytes(), &firstPayload); err != nil {
+		t.Fatalf("decode first toggle response: %v", err)
+	}
+	if !firstPayload.IsNSFW {
+		t.Fatalf("expected first toggle to enable nsfw, got %+v", firstPayload)
+	}
+
+	var firstTagsJSON string
+	if err := dbConn.QueryRow(`
+SELECT COALESCE(tags_json, '[]')
+FROM videos
+WHERE id = 1
+`).Scan(&firstTagsJSON); err != nil {
+		t.Fatalf("load first tags_json: %v", err)
+	}
+	firstTags, err := decodeTags(firstTagsJSON)
+	if err != nil {
+		t.Fatalf("decode first tags_json: %v", err)
+	}
+	if !hasTag(firstTags, "nsfw") {
+		t.Fatalf("expected nsfw tag after first toggle, got %v", firstTags)
+	}
+
+	secondReq := httptest.NewRequest(http.MethodPost, "/api/videos/1/toggle-nsfw", nil)
+	secondRR := httptest.NewRecorder()
+	h.ServeHTTP(secondRR, secondReq)
+
+	if secondRR.Code != http.StatusOK {
+		t.Fatalf("second toggle status: got=%d body=%s", secondRR.Code, secondRR.Body.String())
+	}
+
+	var secondPayload struct {
+		IsNSFW bool `json:"is_nsfw"`
+	}
+	if err := json.Unmarshal(secondRR.Body.Bytes(), &secondPayload); err != nil {
+		t.Fatalf("decode second toggle response: %v", err)
+	}
+	if secondPayload.IsNSFW {
+		t.Fatalf("expected second toggle to disable nsfw, got %+v", secondPayload)
+	}
+
+	var secondTagsJSON string
+	if err := dbConn.QueryRow(`
+SELECT COALESCE(tags_json, '[]')
+FROM videos
+WHERE id = 1
+`).Scan(&secondTagsJSON); err != nil {
+		t.Fatalf("load second tags_json: %v", err)
+	}
+	secondTags, err := decodeTags(secondTagsJSON)
+	if err != nil {
+		t.Fatalf("decode second tags_json: %v", err)
+	}
+	if hasTag(secondTags, "nsfw") {
+		t.Fatalf("expected nsfw tag removed after second toggle, got %v", secondTags)
+	}
+}
+
 func TestDeleteVideoRemovesVideoFramesTranscriptAndOrphanFiles(t *testing.T) {
 	dbConn := setupVideosDB(t)
 	dataDir := t.TempDir()
@@ -396,4 +476,24 @@ func assertCount(t *testing.T, dbConn *sql.DB, query string, want int) {
 	if got != want {
 		t.Fatalf("count for %q: got=%d want=%d", query, got, want)
 	}
+}
+
+func decodeTags(raw string) ([]string, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var tags []string
+	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
+		return nil, err
+	}
+	return tags, nil
+}
+
+func hasTag(tags []string, target string) bool {
+	for _, tag := range tags {
+		if tag == target {
+			return true
+		}
+	}
+	return false
 }

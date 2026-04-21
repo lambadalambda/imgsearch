@@ -569,6 +569,7 @@ function cardMarkup(item, mode) {
         .map((tag) => tag.trim())
         .slice(0, 8)
     : [];
+  const isNSFWTagged = tags.some((tag) => tag.toLowerCase() === 'nsfw');
   const status = item.index_state || 'done';
   const safeStatus = escapeHTML(humanizeIndexState(status));
   const scoreLabel = item.search_source === 'tag' ? '' : formatMatch(item.distance);
@@ -584,6 +585,11 @@ function cardMarkup(item, mode) {
     ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="image" data-delete-id="${item.image_id}" data-delete-name="${safeName}">Delete</button>`
     : mode === 'videos'
       ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}">Delete</button>`
+      : '';
+  const nsfwToggleButton = mode === 'gallery'
+    ? `<button class="ghost thumb-action nsfw-toggle-action${isNSFWTagged ? ' danger' : ''}" data-nsfw-kind="image" data-nsfw-id="${item.image_id}" data-nsfw-name="${safeName}" data-nsfw-current="${isNSFWTagged ? '1' : '0'}">${isNSFWTagged ? 'Unflag NSFW' : 'Flag NSFW'}</button>`
+    : mode === 'videos'
+      ? `<button class="ghost thumb-action nsfw-toggle-action${isNSFWTagged ? ' danger' : ''}" data-nsfw-kind="video" data-nsfw-id="${item.video_id}" data-nsfw-name="${safeName}" data-nsfw-current="${isNSFWTagged ? '1' : '0'}">${isNSFWTagged ? 'Unflag NSFW' : 'Flag NSFW'}</button>`
       : '';
   const reannotateButton = mode === 'gallery'
     ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="image" data-reannotate-id="${item.image_id}" data-reannotate-name="${safeName}">Re-annotate</button>`
@@ -627,6 +633,7 @@ function cardMarkup(item, mode) {
         </button>
         <div class="thumb-actions" role="group" aria-label="Card actions for ${safeName}">
           <button class="ghost thumb-action similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
+          ${nsfwToggleButton}
           ${reannotateButton}
           ${deleteButton}
         </div>
@@ -1522,6 +1529,22 @@ async function reannotateMedia(kind, id) {
   throw new Error(message);
 }
 
+async function toggleMediaNSFW(kind, id) {
+  const path = kind === 'video' ? 'videos' : 'images';
+  const label = kind === 'video' ? 'video' : 'image';
+  const response = await fetch(`/api/${path}/${id}/toggle-nsfw`, { method: 'POST' });
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    throw new Error((payload && payload.error) || `Could not toggle NSFW for ${label}`);
+  }
+  return Boolean(payload && payload.is_nsfw);
+}
+
 function attachSimilarHandler(target) {
   target.addEventListener('click', async (event) => {
     const button = event.target.closest('.similar-action');
@@ -1642,6 +1665,47 @@ function attachReannotateHandler(target) {
       setStatus(statusTarget, `Queued ${label} re-annotation for "${name || `${label} #${id}`}".`, 'success');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Re-annotation failed';
+      setStatus(statusTarget, message, 'error');
+    } finally {
+      trigger.disabled = false;
+    }
+  });
+}
+
+function attachNSFWToggleHandler(target) {
+  target.addEventListener('click', async (event) => {
+    const trigger = event.target.closest('.nsfw-toggle-action');
+    if (!trigger || !target.contains(trigger) || trigger.disabled) {
+      return;
+    }
+
+    const kind = trigger.dataset.nsfwKind || 'image';
+    const id = Number(trigger.dataset.nsfwId || 0);
+    const name = trigger.dataset.nsfwName || '';
+    const wasNSFW = trigger.dataset.nsfwCurrent === '1';
+    if (!Number.isFinite(id) || id <= 0) {
+      return;
+    }
+
+    trigger.disabled = true;
+    const statusTarget = kind === 'video' ? videosStatus : galleryStatus;
+    const label = kind === 'video' ? 'video' : 'image';
+    setStatus(statusTarget, `${wasNSFW ? 'Removing' : 'Applying'} NSFW tag for "${name || `${label} #${id}`}"...`, 'info');
+
+    try {
+      const isNSFW = await toggleMediaNSFW(kind, id);
+      const refreshTasks = [loadImages(), loadVideos(), loadStats()];
+      if (tagCloudLoaded) {
+        refreshTasks.push(loadTagCloud());
+      }
+      await Promise.all(refreshTasks);
+      if (isNSFW) {
+        setStatus(statusTarget, `Marked ${label} "${name || `${label} #${id}`}" as NSFW.`, 'success');
+      } else {
+        setStatus(statusTarget, `Removed NSFW tag from ${label} "${name || `${label} #${id}`}".`, 'success');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'NSFW toggle failed';
       setStatus(statusTarget, message, 'error');
     } finally {
       trigger.disabled = false;
@@ -2042,6 +2106,8 @@ attachTagChipSearchHandler(videosGrid);
 attachTagChipSearchHandler(resultsGrid);
 attachDeleteHandler(galleryGrid);
 attachDeleteHandler(videosGrid);
+attachNSFWToggleHandler(galleryGrid);
+attachNSFWToggleHandler(videosGrid);
 attachReannotateHandler(galleryGrid);
 attachReannotateHandler(videosGrid);
 attachLightboxHandler(galleryGrid);

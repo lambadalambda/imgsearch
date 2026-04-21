@@ -3,6 +3,7 @@ package videos
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -213,24 +214,44 @@ func NewHandler(h *Handler) http.Handler {
 			}
 			w.WriteHeader(http.StatusNoContent)
 		case http.MethodPost:
-			if !strings.HasSuffix(r.URL.Path, "/reannotate") {
-				httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-				return
-			}
-			videoID, err := parseReannotateVideoIDPath(r.URL.Path)
-			if err != nil {
-				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid video id")
-				return
-			}
-			if err := Reannotate(r.Context(), h.DB, h.ModelID, videoID); err != nil {
-				if err == sql.ErrNoRows {
-					httputil.WriteJSONError(w, http.StatusNotFound, "video not found")
+			if strings.HasSuffix(r.URL.Path, "/reannotate") {
+				videoID, err := parseReannotateVideoIDPath(r.URL.Path)
+				if err != nil {
+					httputil.WriteJSONError(w, http.StatusBadRequest, "invalid video id")
 					return
 				}
-				httputil.WriteJSONError(w, http.StatusInternalServerError, "re-annotate failed")
+				if err := Reannotate(r.Context(), h.DB, h.ModelID, videoID); err != nil {
+					if err == sql.ErrNoRows {
+						httputil.WriteJSONError(w, http.StatusNotFound, "video not found")
+						return
+					}
+					httputil.WriteJSONError(w, http.StatusInternalServerError, "re-annotate failed")
+					return
+				}
+				w.WriteHeader(http.StatusAccepted)
 				return
 			}
-			w.WriteHeader(http.StatusAccepted)
+			if strings.HasSuffix(r.URL.Path, "/toggle-nsfw") {
+				videoID, err := parseToggleNSFWVideoIDPath(r.URL.Path)
+				if err != nil {
+					httputil.WriteJSONError(w, http.StatusBadRequest, "invalid video id")
+					return
+				}
+				isNSFW, err := ToggleNSFW(r.Context(), h.DB, videoID)
+				if err != nil {
+					if err == sql.ErrNoRows {
+						httputil.WriteJSONError(w, http.StatusNotFound, "video not found")
+						return
+					}
+					httputil.WriteJSONError(w, http.StatusInternalServerError, "toggle nsfw failed")
+					return
+				}
+				httputil.WriteJSON(w, http.StatusOK, struct {
+					IsNSFW bool `json:"is_nsfw"`
+				}{IsNSFW: isNSFW})
+				return
+			}
+			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		default:
 			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
@@ -241,6 +262,15 @@ func parseReannotateVideoIDPath(path string) (int64, error) {
 	const suffix = "/reannotate"
 	if !strings.HasSuffix(path, suffix) {
 		return 0, fmt.Errorf("missing reannotate suffix")
+	}
+	idPath := strings.TrimSuffix(path, suffix)
+	return httputil.ParseItemIDPath(idPath, "/api/videos/")
+}
+
+func parseToggleNSFWVideoIDPath(path string) (int64, error) {
+	const suffix = "/toggle-nsfw"
+	if !strings.HasSuffix(path, suffix) {
+		return 0, fmt.Errorf("missing toggle nsfw suffix")
 	}
 	idPath := strings.TrimSuffix(path, suffix)
 	return httputil.ParseItemIDPath(idPath, "/api/videos/")
@@ -307,6 +337,57 @@ WHERE kind = 'annotate_video'
 		return fmt.Errorf("commit reannotate video tx: %w", err)
 	}
 	return nil
+}
+
+func ToggleNSFW(ctx context.Context, db *sql.DB, videoID int64) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("videos database unavailable")
+	}
+	if videoID <= 0 {
+		return false, fmt.Errorf("invalid video id")
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin toggle video nsfw tx: %w", err)
+	}
+
+	var tagsJSON string
+	if err := tx.QueryRowContext(ctx, `
+SELECT COALESCE(tags_json, '[]')
+FROM videos
+WHERE id = ?
+`, videoID).Scan(&tagsJSON); err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+
+	tags, err := tagutil.DecodeJSON(tagsJSON)
+	if err != nil {
+		_ = tx.Rollback()
+		return false, fmt.Errorf("decode video tags: %w", err)
+	}
+	updatedTags, isNSFW := tagutil.ToggleTag(tags, "nsfw")
+	encodedTags, err := json.Marshal(updatedTags)
+	if err != nil {
+		_ = tx.Rollback()
+		return false, fmt.Errorf("encode video tags: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE videos
+SET tags_json = ?
+WHERE id = ?
+`, string(encodedTags), videoID); err != nil {
+		_ = tx.Rollback()
+		return false, fmt.Errorf("update video tags: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit toggle video nsfw tx: %w", err)
+	}
+
+	return isNSFW, nil
 }
 
 func Delete(ctx context.Context, db *sql.DB, dataDir string, videoID int64) error {

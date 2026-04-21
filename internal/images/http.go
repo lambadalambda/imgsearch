@@ -3,6 +3,7 @@ package images
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -159,24 +160,44 @@ func NewHandler(h *Handler) http.Handler {
 			}
 			w.WriteHeader(http.StatusNoContent)
 		case http.MethodPost:
-			if !strings.HasSuffix(r.URL.Path, "/reannotate") {
-				httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-				return
-			}
-			imageID, err := parseReannotateImageIDPath(r.URL.Path)
-			if err != nil {
-				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image id")
-				return
-			}
-			if err := Reannotate(r.Context(), h.DB, h.ModelID, imageID); err != nil {
-				if err == sql.ErrNoRows {
-					httputil.WriteJSONError(w, http.StatusNotFound, "image not found")
+			if strings.HasSuffix(r.URL.Path, "/reannotate") {
+				imageID, err := parseReannotateImageIDPath(r.URL.Path)
+				if err != nil {
+					httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image id")
 					return
 				}
-				httputil.WriteJSONError(w, http.StatusInternalServerError, "re-annotate failed")
+				if err := Reannotate(r.Context(), h.DB, h.ModelID, imageID); err != nil {
+					if err == sql.ErrNoRows {
+						httputil.WriteJSONError(w, http.StatusNotFound, "image not found")
+						return
+					}
+					httputil.WriteJSONError(w, http.StatusInternalServerError, "re-annotate failed")
+					return
+				}
+				w.WriteHeader(http.StatusAccepted)
 				return
 			}
-			w.WriteHeader(http.StatusAccepted)
+			if strings.HasSuffix(r.URL.Path, "/toggle-nsfw") {
+				imageID, err := parseToggleNSFWImageIDPath(r.URL.Path)
+				if err != nil {
+					httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image id")
+					return
+				}
+				isNSFW, err := ToggleNSFW(r.Context(), h.DB, imageID)
+				if err != nil {
+					if err == sql.ErrNoRows {
+						httputil.WriteJSONError(w, http.StatusNotFound, "image not found")
+						return
+					}
+					httputil.WriteJSONError(w, http.StatusInternalServerError, "toggle nsfw failed")
+					return
+				}
+				httputil.WriteJSON(w, http.StatusOK, struct {
+					IsNSFW bool `json:"is_nsfw"`
+				}{IsNSFW: isNSFW})
+				return
+			}
+			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		default:
 			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
@@ -187,6 +208,15 @@ func parseReannotateImageIDPath(path string) (int64, error) {
 	const suffix = "/reannotate"
 	if !strings.HasSuffix(path, suffix) {
 		return 0, fmt.Errorf("missing reannotate suffix")
+	}
+	idPath := strings.TrimSuffix(path, suffix)
+	return httputil.ParseItemIDPath(idPath, "/api/images/")
+}
+
+func parseToggleNSFWImageIDPath(path string) (int64, error) {
+	const suffix = "/toggle-nsfw"
+	if !strings.HasSuffix(path, suffix) {
+		return 0, fmt.Errorf("missing toggle nsfw suffix")
 	}
 	idPath := strings.TrimSuffix(path, suffix)
 	return httputil.ParseItemIDPath(idPath, "/api/images/")
@@ -253,6 +283,57 @@ WHERE kind = 'annotate_image'
 		return fmt.Errorf("commit reannotate image tx: %w", err)
 	}
 	return nil
+}
+
+func ToggleNSFW(ctx context.Context, db *sql.DB, imageID int64) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("images database unavailable")
+	}
+	if imageID <= 0 {
+		return false, fmt.Errorf("invalid image id")
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin toggle image nsfw tx: %w", err)
+	}
+
+	var tagsJSON string
+	if err := tx.QueryRowContext(ctx, `
+SELECT COALESCE(tags_json, '[]')
+FROM images
+WHERE id = ?
+`, imageID).Scan(&tagsJSON); err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+
+	tags, err := tagutil.DecodeJSON(tagsJSON)
+	if err != nil {
+		_ = tx.Rollback()
+		return false, fmt.Errorf("decode image tags: %w", err)
+	}
+	updatedTags, isNSFW := tagutil.ToggleTag(tags, "nsfw")
+	encodedTags, err := json.Marshal(updatedTags)
+	if err != nil {
+		_ = tx.Rollback()
+		return false, fmt.Errorf("encode image tags: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE images
+SET tags_json = ?
+WHERE id = ?
+`, string(encodedTags), imageID); err != nil {
+		_ = tx.Rollback()
+		return false, fmt.Errorf("update image tags: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit toggle image nsfw tx: %w", err)
+	}
+
+	return isNSFW, nil
 }
 
 func Delete(ctx context.Context, db *sql.DB, dataDir string, imageID int64) error {
