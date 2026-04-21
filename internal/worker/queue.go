@@ -891,6 +891,19 @@ WHERE id = ?
 	return nil
 }
 
+// markJobDoneTx marks a leased index job as done inside the provided transaction.
+// Callers are responsible for rolling back tx if this returns an error.
+func markJobDoneTx(ctx context.Context, tx *sql.Tx, jobID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+UPDATE index_jobs
+SET state = 'done', leased_until = NULL, lease_owner = NULL, last_error = NULL, updated_at = datetime('now')
+WHERE id = ?
+`, jobID); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (q *Queue) completeJob(ctx context.Context, job claimedJob, annotation *embedder.ImageAnnotation) error {
 	tx, err := q.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -913,11 +926,7 @@ WHERE id = ?
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-UPDATE index_jobs
-SET state = 'done', leased_until = NULL, lease_owner = NULL, last_error = NULL, updated_at = datetime('now')
-WHERE id = ?
-`, job.ID); err != nil {
+	if err := markJobDoneTx(ctx, tx, job.ID); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("mark job done: %w", err)
 	}
@@ -953,11 +962,7 @@ WHERE id = ?
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-UPDATE index_jobs
-SET state = 'done', leased_until = NULL, lease_owner = NULL, last_error = NULL, updated_at = datetime('now')
-WHERE id = ?
-`, job.ID); err != nil {
+	if err := markJobDoneTx(ctx, tx, job.ID); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("mark video annotation job done: %w", err)
 	}
@@ -1002,11 +1007,7 @@ DO UPDATE SET dim = excluded.dim, vector_blob = excluded.vector_blob, updated_at
 		_ = tx.Rollback()
 		return fmt.Errorf("upsert video transcript embedding: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `
-UPDATE index_jobs
-SET state = 'done', leased_until = NULL, lease_owner = NULL, last_error = NULL, updated_at = datetime('now')
-WHERE id = ?
-`, job.ID); err != nil {
+	if err := markJobDoneTx(ctx, tx, job.ID); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("mark transcript job done: %w", err)
 	}

@@ -6,7 +6,7 @@ P3
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -29,10 +29,10 @@ all under `internal/worker/queue.go`.
 
 ## Acceptance Criteria
 
-- [ ] Introduce a shared helper for marking a job done inside a transaction.
-- [ ] Replace duplicated SQL blocks with helper calls.
-- [ ] Preserve current transactional behavior and error handling.
-- [ ] Keep worker tests passing without behavior regressions.
+- [x] Introduce a shared helper for marking a job done inside a transaction.
+- [x] Replace duplicated SQL blocks with helper calls.
+- [x] Preserve current transactional behavior and error handling.
+- [x] Keep worker tests passing without behavior regressions.
 
 ## Related Files
 
