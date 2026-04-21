@@ -61,9 +61,61 @@ Maintain two slots: one being processed by GPU, one being filled by CPU prefetch
 
 - [ ] `EmbedImage` split into prepare + execute phases
 - [x] Prefetch goroutine overlaps CPU preprocessing with GPU inference
-- [ ] Measure wall-clock improvement on a batch of 50 images
+- [x] Measure wall-clock improvement on a batch of 50 images
 - [ ] Error handling for prefetch failures (fall back to serial)
 - [x] Clean shutdown of prefetch goroutine on context cancellation
+
+## Benchmark Results (50-image workload)
+
+Dataset and setup:
+
+- Dataset path: `/tmp/imgsearch-bench-data-50-issue015` (50 symlinked images from `~/old`).
+- Model: `Qwen3-VL-Embedding-8B-Q4_K_M.gguf` + `mmproj-Qwen3-VL-Embedding-8B-f16.gguf`.
+- Runtime config: `LLAMA_NATIVE_CONTEXT_SIZE=512`, `LLAMA_NATIVE_BATCH_SIZE=512`, `LLAMA_NATIVE_IMAGE_MAX_SIDE=384`.
+- Comparison points:
+  - Baseline (before overlap): commit `cd5e024`
+  - Current (with overlap): commit `33d84e2`
+
+Benchmark commands:
+
+```bash
+RUN_LLAMACPP_NATIVE_INTEGRATION=1 \
+LLAMA_NATIVE_MODEL_PATH="/Users/lainsoykaf/repos/imgsearch/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf" \
+LLAMA_NATIVE_MMPROJ_PATH="/Users/lainsoykaf/repos/imgsearch/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf" \
+LLAMA_NATIVE_DIMS=4096 \
+LLAMA_NATIVE_CONTEXT_SIZE=512 \
+LLAMA_NATIVE_BATCH_SIZE=512 \
+LLAMA_NATIVE_IMAGE_MAX_SIDE=384 \
+LLAMA_NATIVE_BENCH_IMAGE_DIR="/tmp/imgsearch-bench-data-50-issue015" \
+LLAMA_NATIVE_BENCH_IMAGE_LIMIT=50 \
+go test ./internal/embedder/llamacppnative -run '^$' -bench 'BenchmarkNativeEmbedImage/batch-4$' -benchtime=13x -count=3 -benchmem
+
+RUN_LLAMACPP_NATIVE_INTEGRATION=1 \
+LLAMA_NATIVE_MODEL_PATH="/Users/lainsoykaf/repos/imgsearch/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf" \
+LLAMA_NATIVE_MMPROJ_PATH="/Users/lainsoykaf/repos/imgsearch/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf" \
+LLAMA_NATIVE_DIMS=4096 \
+LLAMA_NATIVE_CONTEXT_SIZE=512 \
+LLAMA_NATIVE_BATCH_SIZE=512 \
+LLAMA_NATIVE_IMAGE_MAX_SIDE=384 \
+LLAMA_NATIVE_BENCH_IMAGE_DIR="/tmp/imgsearch-bench-data-50-issue015" \
+LLAMA_NATIVE_BENCH_IMAGE_LIMIT=50 \
+go test ./internal/embedder/llamacppnative -run '^$' -bench 'BenchmarkNativeEmbedImage/batch-2$' -benchtime=25x -count=3 -benchmem
+```
+
+Observed results (mean across 3 runs):
+
+- `batch-4`: `3,264,976,235 ns/op` -> `2,922,153,066 ns/op` (**10.5% faster**)
+- `batch-2`: `1,471,853,436 ns/op` -> `1,407,293,460 ns/op` (**4.4% faster**)
+
+Estimated 50-image wall-clock from benchmark means:
+
+- `batch-4` equivalent: ~`40.8s` -> ~`36.5s` (about `4.3s` faster)
+- `batch-2` equivalent: ~`36.8s` -> ~`35.2s` (about `1.6s` faster)
+
+Conclusion:
+
+- The overlap change shows a measurable throughput gain on this 50-image workload.
+- Keep issue 015 open for remaining acceptance items (`prepare/execute` split and explicit serial fallback behavior).
 
 ## Priority
 
