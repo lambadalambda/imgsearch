@@ -73,6 +73,7 @@ int32_t imgsearch_llama_generate_image(
     int32_t max_tokens,
     float temperature,
     float top_p,
+    int64_t seed,
     char * out,
     int32_t out_len);
 

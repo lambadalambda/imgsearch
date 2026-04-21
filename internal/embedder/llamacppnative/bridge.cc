@@ -19,6 +19,7 @@
 #include <cstring>
 #include <exception>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -486,6 +487,7 @@ int32_t generate_image(
     int32_t max_tokens,
     float temperature,
     float top_p,
+    int64_t seed,
     char * out,
     int32_t out_len) {
     if (handle == nullptr || handle->mctx == nullptr || handle->lctx == nullptr) {
@@ -499,6 +501,9 @@ int32_t generate_image(
     }
     if (max_tokens <= 0) {
         return set_error(handle, "max_tokens must be positive");
+    }
+    if (seed > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) {
+        return set_error(handle, "seed must be <= 4294967295");
     }
     if (!ensure_chat_templates(handle)) {
         return -1;
@@ -579,6 +584,11 @@ int32_t generate_image(
     sampling.top_k = 64;
     sampling.top_p = top_p > 0.0f ? top_p : 1.0f;
     sampling.temp = temperature;
+    if (seed < 0) {
+        sampling.seed = LLAMA_DEFAULT_SEED;
+    } else {
+        sampling.seed = static_cast<uint32_t>(seed);
+    }
 
     std::string response_grammar = chat_params.grammar;
     if (!json_schema.empty()) {
@@ -871,6 +881,7 @@ int32_t imgsearch_llama_generate_image(
     int32_t max_tokens,
     float temperature,
     float top_p,
+    int64_t seed,
     char * out,
     int32_t out_len) {
     return generate_image(
@@ -882,6 +893,7 @@ int32_t imgsearch_llama_generate_image(
         max_tokens,
         temperature,
         top_p,
+        seed,
         out,
         out_len);
 }
@@ -964,6 +976,7 @@ int32_t imgsearch_llama_generate_image(
     int32_t,
     float,
     float,
+    int64_t,
     char *,
     int32_t) {
     return -1;

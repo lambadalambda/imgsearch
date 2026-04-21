@@ -158,10 +158,101 @@ func NewHandler(h *Handler) http.Handler {
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
+		case http.MethodPost:
+			if !strings.HasSuffix(r.URL.Path, "/reannotate") {
+				httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			imageID, err := parseReannotateImageIDPath(r.URL.Path)
+			if err != nil {
+				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image id")
+				return
+			}
+			if err := Reannotate(r.Context(), h.DB, h.ModelID, imageID); err != nil {
+				if err == sql.ErrNoRows {
+					httputil.WriteJSONError(w, http.StatusNotFound, "image not found")
+					return
+				}
+				httputil.WriteJSONError(w, http.StatusInternalServerError, "re-annotate failed")
+				return
+			}
+			w.WriteHeader(http.StatusAccepted)
 		default:
 			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
 	})
+}
+
+func parseReannotateImageIDPath(path string) (int64, error) {
+	const suffix = "/reannotate"
+	if !strings.HasSuffix(path, suffix) {
+		return 0, fmt.Errorf("missing reannotate suffix")
+	}
+	idPath := strings.TrimSuffix(path, suffix)
+	return httputil.ParseItemIDPath(idPath, "/api/images/")
+}
+
+func Reannotate(ctx context.Context, db *sql.DB, modelID int64, imageID int64) error {
+	if db == nil {
+		return fmt.Errorf("images database unavailable")
+	}
+	if modelID <= 0 {
+		return fmt.Errorf("invalid model id")
+	}
+	if imageID <= 0 {
+		return fmt.Errorf("invalid image id")
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin reannotate image tx: %w", err)
+	}
+
+	var existingID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM images WHERE id = ?`, imageID).Scan(&existingID); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE images
+SET description = '', tags_json = '[]'
+WHERE id = ?
+`, imageID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("clear image annotations: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO index_jobs(kind, image_id, model_id, state)
+VALUES('annotate_image', ?, ?, 'pending')
+ON CONFLICT DO NOTHING
+`, imageID, modelID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("insert image annotation job: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE index_jobs
+SET state = 'pending',
+    attempts = 0,
+    run_after = NULL,
+    leased_until = NULL,
+    lease_owner = NULL,
+    last_error = NULL,
+    updated_at = datetime('now')
+WHERE kind = 'annotate_image'
+  AND image_id = ?
+  AND model_id = ?
+  AND state <> 'leased'
+`, imageID, modelID); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("reset image annotation job: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit reannotate image tx: %w", err)
+	}
+	return nil
 }
 
 func Delete(ctx context.Context, db *sql.DB, dataDir string, imageID int64) error {

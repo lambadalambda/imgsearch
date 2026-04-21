@@ -585,6 +585,11 @@ function cardMarkup(item, mode) {
     : mode === 'videos'
       ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}">Delete</button>`
       : '';
+  const reannotateButton = mode === 'gallery'
+    ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="image" data-reannotate-id="${item.image_id}" data-reannotate-name="${safeName}">Re-annotate</button>`
+    : mode === 'videos'
+      ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="video" data-reannotate-id="${item.video_id}" data-reannotate-name="${safeName}">Re-annotate</button>`
+      : '';
   const supportMarkup = supportEntries.length > 0
     ? `<div class="supporting-stack">${supportEntries
       .map((entry) => `<p class="${entry.className}">${escapeHTML(entry.text)}</p>`)
@@ -622,6 +627,7 @@ function cardMarkup(item, mode) {
         </button>
         <div class="thumb-actions" role="group" aria-label="Card actions for ${safeName}">
           <button class="ghost thumb-action similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
+          ${reannotateButton}
           ${deleteButton}
         </div>
         ${scoreBadge}
@@ -1498,6 +1504,24 @@ async function deleteMedia(kind, id, name) {
   throw new Error(message);
 }
 
+async function reannotateMedia(kind, id) {
+  const path = kind === 'video' ? 'videos' : 'images';
+  const response = await fetch(`/api/${path}/${id}/reannotate`, { method: 'POST' });
+  if (response.status === 202) {
+    return true;
+  }
+  let message = `Could not re-annotate ${kind === 'video' ? 'video' : 'image'}`;
+  try {
+    const payload = await response.json();
+    if (payload && payload.error) {
+      message = payload.error;
+    }
+  } catch {
+    // fall back to generic message
+  }
+  throw new Error(message);
+}
+
 function attachSimilarHandler(target) {
   target.addEventListener('click', async (event) => {
     const button = event.target.closest('.similar-action');
@@ -1589,6 +1613,38 @@ function attachDeleteHandler(target) {
       } else {
         setStatus(galleryStatus, message, 'error');
       }
+    }
+  });
+}
+
+function attachReannotateHandler(target) {
+  target.addEventListener('click', async (event) => {
+    const trigger = event.target.closest('.reannotate-action');
+    if (!trigger || !target.contains(trigger) || trigger.disabled) {
+      return;
+    }
+
+    const kind = trigger.dataset.reannotateKind || 'image';
+    const id = Number(trigger.dataset.reannotateId || 0);
+    const name = trigger.dataset.reannotateName || '';
+    if (!Number.isFinite(id) || id <= 0) {
+      return;
+    }
+
+    trigger.disabled = true;
+    const statusTarget = kind === 'video' ? videosStatus : galleryStatus;
+    const label = kind === 'video' ? 'video' : 'image';
+    setStatus(statusTarget, `Queueing ${label} re-annotation for "${name || `${label} #${id}`}"...`, 'info');
+
+    try {
+      await reannotateMedia(kind, id);
+      await Promise.all([loadImages(), loadVideos(), loadStats()]);
+      setStatus(statusTarget, `Queued ${label} re-annotation for "${name || `${label} #${id}`}".`, 'success');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Re-annotation failed';
+      setStatus(statusTarget, message, 'error');
+    } finally {
+      trigger.disabled = false;
     }
   });
 }
@@ -1986,6 +2042,8 @@ attachTagChipSearchHandler(videosGrid);
 attachTagChipSearchHandler(resultsGrid);
 attachDeleteHandler(galleryGrid);
 attachDeleteHandler(videosGrid);
+attachReannotateHandler(galleryGrid);
+attachReannotateHandler(videosGrid);
 attachLightboxHandler(galleryGrid);
 attachLightboxHandler(videosGrid);
 attachLightboxHandler(resultsGrid);

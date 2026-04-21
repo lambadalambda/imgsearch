@@ -36,32 +36,36 @@ const (
 )
 
 type Config struct {
-	ModelPath          string
-	VisionModelPath    string
-	Dimensions         int
-	GPULayers          int
-	UseGPU             bool
-	ContextSize        int
-	BatchSize          int
-	MaxSequences       int
-	Threads            int
-	ImageMaxSide       int
-	ImageMaxTokens     int
-	QueryInstruction   string
-	PassageInstruction string
-	FlashAttnType      int
-	CacheTypeK         int
-	CacheTypeV         int
+	ModelPath             string
+	VisionModelPath       string
+	Dimensions            int
+	GPULayers             int
+	UseGPU                bool
+	ContextSize           int
+	BatchSize             int
+	MaxSequences          int
+	Threads               int
+	ImageMaxSide          int
+	ImageMaxTokens        int
+	AnnotationTemperature float32
+	AnnotationSeed        int64
+	QueryInstruction      string
+	PassageInstruction    string
+	FlashAttnType         int
+	CacheTypeK            int
+	CacheTypeV            int
 }
 
 type Embedder struct {
-	mu                 sync.Mutex
-	handle             *C.imgsearch_llama_handle
-	dimensions         int
-	maxSequences       int
-	imageMaxSide       int
-	queryInstruction   string
-	passageInstruction string
+	mu                    sync.Mutex
+	handle                *C.imgsearch_llama_handle
+	dimensions            int
+	maxSequences          int
+	imageMaxSide          int
+	annotationTemperature float32
+	annotationSeed        int64
+	queryInstruction      string
+	passageInstruction    string
 }
 
 type EmbedInspect struct {
@@ -133,6 +137,11 @@ func New(cfg Config) (*Embedder, error) {
 		passageInstruction = defaultPassageInstruction
 	}
 
+	annotationTemperature, annotationSeed, err := normalizeAnnotationSampling(cfg.AnnotationTemperature, cfg.AnnotationSeed)
+	if err != nil {
+		return nil, err
+	}
+
 	cModelPath := C.CString(modelPath)
 	defer C.free(unsafe.Pointer(cModelPath))
 	cVisionPath := C.CString(visionPath)
@@ -195,12 +204,14 @@ func New(cfg Config) (*Embedder, error) {
 	}
 
 	return &Embedder{
-		handle:             h,
-		dimensions:         actualDims,
-		maxSequences:       maxSequences,
-		imageMaxSide:       imageMaxSide,
-		queryInstruction:   queryInstruction,
-		passageInstruction: passageInstruction,
+		handle:                h,
+		dimensions:            actualDims,
+		maxSequences:          maxSequences,
+		imageMaxSide:          imageMaxSide,
+		annotationTemperature: annotationTemperature,
+		annotationSeed:        annotationSeed,
+		queryInstruction:      queryInstruction,
+		passageInstruction:    passageInstruction,
 	}, nil
 }
 

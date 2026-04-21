@@ -9,18 +9,20 @@ import (
 )
 
 type llamaCPPNativeAnnotatorOptions struct {
-	ModelPath       string
-	VisionModelPath string
-	GPULayers       int
-	UseGPU          bool
-	ContextSize     int
-	BatchSize       int
-	Threads         int
-	ImageMaxSide    int
-	ImageMaxTokens  int
-	FlashAttnType   int
-	CacheTypeK      int
-	CacheTypeV      int
+	ModelPath             string
+	VisionModelPath       string
+	GPULayers             int
+	UseGPU                bool
+	ContextSize           int
+	BatchSize             int
+	Threads               int
+	ImageMaxSide          int
+	ImageMaxTokens        int
+	AnnotationTemperature float64
+	AnnotationSeed        int64
+	FlashAttnType         int
+	CacheTypeK            int
+	CacheTypeV            int
 }
 
 func newLlamaCPPNativeAnnotator(opts llamaCPPNativeAnnotatorOptions) (embedder.ImageAnnotator, error) {
@@ -51,19 +53,25 @@ func newLlamaCPPNativeAnnotator(opts llamaCPPNativeAnnotatorOptions) (embedder.I
 	if err != nil {
 		return nil, err
 	}
+	annotationTemperature, annotationSeed, err := resolveLlamaNativeAnnotationSampling(opts.AnnotationTemperature, opts.AnnotationSeed)
+	if err != nil {
+		return nil, err
+	}
 
 	return llamacppnative.NewAnnotator(llamacppnative.AnnotatorConfig{
-		ModelPath:       modelPath,
-		VisionModelPath: visionPath,
-		GPULayers:       opts.GPULayers,
-		UseGPU:          opts.UseGPU,
-		ContextSize:     opts.ContextSize,
-		BatchSize:       opts.BatchSize,
-		Threads:         opts.Threads,
-		ImageMaxSide:    imageMaxSide,
-		ImageMaxTokens:  imageMaxTokens,
-		FlashAttnType:   opts.FlashAttnType,
-		CacheTypeK:      opts.CacheTypeK,
-		CacheTypeV:      opts.CacheTypeV,
+		ModelPath:             modelPath,
+		VisionModelPath:       visionPath,
+		GPULayers:             opts.GPULayers,
+		UseGPU:                opts.UseGPU,
+		ContextSize:           opts.ContextSize,
+		BatchSize:             opts.BatchSize,
+		Threads:               opts.Threads,
+		ImageMaxSide:          imageMaxSide,
+		ImageMaxTokens:        imageMaxTokens,
+		AnnotationTemperature: annotationTemperature,
+		AnnotationSeed:        annotationSeed,
+		FlashAttnType:         opts.FlashAttnType,
+		CacheTypeK:            opts.CacheTypeK,
+		CacheTypeV:            opts.CacheTypeV,
 	})
 }

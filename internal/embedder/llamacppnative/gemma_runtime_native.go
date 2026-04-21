@@ -41,6 +41,7 @@ const gemmaRetryAnnotationMaxTokens = 512
 const gemmaVideoAnnotationMaxTokens = 1200
 const gemmaRetryVideoAnnotationMaxTokens = 640
 const gemmaGenerationOutputBufferSize = 32 * 1024
+const gemmaAnnotationTopP = 0.95
 
 var noisyFilenamePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)^[0-9a-f]{16,}$`),
@@ -214,26 +215,30 @@ func sanitizePromptSnippet(input string, maxLen int) string {
 }
 
 type nativeGemmaRuntimeConfig struct {
-	ModelPath       string
-	VisionModelPath string
-	GPULayers       int
-	UseGPU          bool
-	ContextSize     int
-	BatchSize       int
-	Threads         int
-	ImageMaxSide    int
-	ImageMaxTokens  int
-	FlashAttnType   int
-	CacheTypeK      int
-	CacheTypeV      int
+	ModelPath             string
+	VisionModelPath       string
+	GPULayers             int
+	UseGPU                bool
+	ContextSize           int
+	BatchSize             int
+	Threads               int
+	ImageMaxSide          int
+	ImageMaxTokens        int
+	AnnotationTemperature float32
+	AnnotationSeed        int64
+	FlashAttnType         int
+	CacheTypeK            int
+	CacheTypeV            int
 }
 
 type AnnotatorConfig = nativeGemmaRuntimeConfig
 
 type nativeGemmaRuntime struct {
-	mu           sync.Mutex
-	handle       *C.imgsearch_llama_handle
-	imageMaxSide int
+	mu                    sync.Mutex
+	handle                *C.imgsearch_llama_handle
+	imageMaxSide          int
+	annotationTemperature float32
+	annotationSeed        int64
 }
 
 type Annotator = nativeGemmaRuntime
@@ -257,6 +262,8 @@ func (e *Embedder) AnnotateImageWithOptions(ctx context.Context, imagePath strin
 		ctx,
 		e.handle,
 		e.imageMaxSide,
+		e.annotationTemperature,
+		e.annotationSeed,
 		imagePath,
 		gemmaAppAnnotationSystemPrompt,
 		buildImageAnnotationUserPrompt(opts.OriginalName),
@@ -298,6 +305,8 @@ func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAn
 		ctx,
 		e.handle,
 		e.imageMaxSide,
+		e.annotationTemperature,
+		e.annotationSeed,
 		representativeFramePath,
 		gemmaVideoAnnotationSystemPrompt,
 		userPrompt,
@@ -331,6 +340,10 @@ func newGemmaNativeRuntime(cfg nativeGemmaRuntimeConfig) (*nativeGemmaRuntime, e
 	imageMaxSide := cfg.ImageMaxSide
 	if imageMaxSide <= 0 {
 		imageMaxSide = defaultImageMaxSide
+	}
+	annotationTemperature, annotationSeed, err := normalizeAnnotationSampling(cfg.AnnotationTemperature, cfg.AnnotationSeed)
+	if err != nil {
+		return nil, err
 	}
 
 	cModelPath := C.CString(modelPath)
@@ -375,7 +388,12 @@ func newGemmaNativeRuntime(cfg nativeGemmaRuntimeConfig) (*nativeGemmaRuntime, e
 		return nil, fmt.Errorf("%s", msg)
 	}
 
-	return &nativeGemmaRuntime{handle: h, imageMaxSide: imageMaxSide}, nil
+	return &nativeGemmaRuntime{
+		handle:                h,
+		imageMaxSide:          imageMaxSide,
+		annotationTemperature: annotationTemperature,
+		annotationSeed:        annotationSeed,
+	}, nil
 }
 
 func (r *nativeGemmaRuntime) Close() error {
@@ -417,6 +435,8 @@ func (r *nativeGemmaRuntime) AnnotateImageWithOptions(ctx context.Context, image
 		ctx,
 		r.handle,
 		r.imageMaxSide,
+		r.annotationTemperature,
+		r.annotationSeed,
 		imagePath,
 		gemmaAppAnnotationSystemPrompt,
 		buildImageAnnotationUserPrompt(opts.OriginalName),
@@ -462,6 +482,8 @@ func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedd
 		ctx,
 		r.handle,
 		r.imageMaxSide,
+		r.annotationTemperature,
+		r.annotationSeed,
 		representativeFramePath,
 		gemmaVideoAnnotationSystemPrompt,
 		userPrompt,
@@ -563,6 +585,8 @@ func describeAndTagImageWithHandle(
 	ctx context.Context,
 	handle *C.imgsearch_llama_handle,
 	imageMaxSide int,
+	annotationTemperature float32,
+	annotationSeed int64,
 	imagePath string,
 	systemPrompt string,
 	userPrompt string,
@@ -572,14 +596,14 @@ func describeAndTagImageWithHandle(
 	retryUserPrompt string,
 	retryMaxTokens int,
 ) (gemmaAppAnnotation, string, error) {
-	raw, err := generateImageJSONForHandle(ctx, handle, imageMaxSide, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
+	raw, err := generateImageJSONForHandle(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
 	if err != nil {
 		return gemmaAppAnnotation{}, "", err
 	}
 
 	var result gemmaAppAnnotation
 	if err := decodeGemmaJSONObject(raw, &result, "description+tags"); err != nil {
-		retryRaw, retryErr := generateImageJSONForHandle(ctx, handle, imageMaxSide, imagePath, retrySystemPrompt, retryUserPrompt, jsonSchema, retryMaxTokens)
+		retryRaw, retryErr := generateImageJSONForHandle(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, retrySystemPrompt, retryUserPrompt, jsonSchema, retryMaxTokens)
 		if retryErr != nil {
 			return gemmaAppAnnotation{}, raw, fmt.Errorf("%v; retry failed: %w", err, retryErr)
 		}
@@ -611,10 +635,10 @@ func (r *nativeGemmaRuntime) generateImageJSON(ctx context.Context, imagePath st
 	if r.handle == nil {
 		return "", fmt.Errorf("native Gemma runtime is closed")
 	}
-	return generateImageJSONForHandle(ctx, r.handle, r.imageMaxSide, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
+	return generateImageJSONForHandle(ctx, r.handle, r.imageMaxSide, r.annotationTemperature, r.annotationSeed, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
 }
 
-func generateImageJSONForHandle(ctx context.Context, handle *C.imgsearch_llama_handle, imageMaxSide int, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (string, error) {
+func generateImageJSONForHandle(ctx context.Context, handle *C.imgsearch_llama_handle, imageMaxSide int, annotationTemperature float32, annotationSeed int64, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (string, error) {
 	if err := ensureContextActive(ctx); err != nil {
 		return "", err
 	}
@@ -648,8 +672,9 @@ func generateImageJSONForHandle(ctx context.Context, handle *C.imgsearch_llama_h
 		cUserPrompt,
 		cSchema,
 		C.int32_t(maxTokens),
-		C.float(0),
-		C.float(1),
+		C.float(annotationTemperature),
+		C.float(gemmaAnnotationTopP),
+		C.int64_t(annotationSeed),
 		(*C.char)(unsafe.Pointer(&buf[0])),
 		C.int32_t(len(buf)),
 	)

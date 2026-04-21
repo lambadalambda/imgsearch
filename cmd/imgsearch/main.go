@@ -62,6 +62,8 @@ func main() {
 	llamaNativeCacheTypeV := flag.Int("llama-native-cache-type-v", defaultLlamaNativeCacheTypeV, "V cache type for llama-cpp-native (-1=default, 0=f32, 1=f16, 8=q8_0)")
 	llamaNativeImageMaxSide := flag.Int("llama-native-image-max-side", 384, "maximum image side length used before llama-cpp-native embedding")
 	llamaNativeImageMaxTokens := flag.Int("llama-native-image-max-tokens", 0, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
+	llamaNativeAnnotationTemperature := flag.Float64("llama-native-annotation-temperature", defaultLlamaNativeAnnotationTemperature, "sampling temperature for llama-cpp-native image/video annotation generation (0 for deterministic greedy decode)")
+	llamaNativeAnnotationSeed := flag.Int64("llama-native-annotation-seed", defaultLlamaNativeAnnotationSeed, "RNG seed for llama-cpp-native image/video annotation generation (-1 uses random seed per request)")
 	llamaNativeQueryInstruction := flag.String("llama-native-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp-native text query embeddings")
 	llamaNativePassageInstruction := flag.String("llama-native-passage-instruction", "Represent this image or text for retrieval.", "instruction used for llama-cpp-native image/document embeddings")
 	parakeetBundleDefault := strings.TrimSpace(os.Getenv("PARAKEET_ONNX_BUNDLE_DIR"))
@@ -271,22 +273,24 @@ func main() {
 	}
 
 	embedderOpts := llamaCPPNativeEmbedderOptions{
-		ModelPath:          *llamaNativeModelPath,
-		VisionModelPath:    *llamaNativeMMProjPath,
-		Dimensions:         modelSpec.Dimensions,
-		GPULayers:          *llamaNativeGPULayers,
-		UseGPU:             *llamaNativeUseGPU,
-		ContextSize:        *llamaNativeContextSize,
-		BatchSize:          *llamaNativeBatchSize,
-		MaxSequences:       *llamaNativeMaxSequences,
-		Threads:            *llamaNativeThreads,
-		ImageMaxSide:       resolvedLlamaNativeImageMaxSide,
-		ImageMaxTokens:     resolvedLlamaNativeImageMaxTokens,
-		QueryInstruction:   *llamaNativeQueryInstruction,
-		PassageInstruction: *llamaNativePassageInstruction,
-		FlashAttnType:      *llamaNativeFlashAttnType,
-		CacheTypeK:         *llamaNativeCacheTypeK,
-		CacheTypeV:         *llamaNativeCacheTypeV,
+		ModelPath:             *llamaNativeModelPath,
+		VisionModelPath:       *llamaNativeMMProjPath,
+		Dimensions:            modelSpec.Dimensions,
+		GPULayers:             *llamaNativeGPULayers,
+		UseGPU:                *llamaNativeUseGPU,
+		ContextSize:           *llamaNativeContextSize,
+		BatchSize:             *llamaNativeBatchSize,
+		MaxSequences:          *llamaNativeMaxSequences,
+		Threads:               *llamaNativeThreads,
+		ImageMaxSide:          resolvedLlamaNativeImageMaxSide,
+		ImageMaxTokens:        resolvedLlamaNativeImageMaxTokens,
+		AnnotationTemperature: *llamaNativeAnnotationTemperature,
+		AnnotationSeed:        *llamaNativeAnnotationSeed,
+		QueryInstruction:      *llamaNativeQueryInstruction,
+		PassageInstruction:    *llamaNativePassageInstruction,
+		FlashAttnType:         *llamaNativeFlashAttnType,
+		CacheTypeK:            *llamaNativeCacheTypeK,
+		CacheTypeV:            *llamaNativeCacheTypeV,
 	}
 	activeEmbedder, err := newLlamaCPPNativeEmbedder(embedderOpts)
 	if err != nil {
@@ -335,18 +339,20 @@ func main() {
 			log.Fatalf("configure annotator: both -llama-native-annotator-model-path and -llama-native-annotator-mmproj-path must be set together")
 		}
 		annotatorOpts := llamaCPPNativeAnnotatorOptions{
-			ModelPath:       annotatorModelPath,
-			VisionModelPath: annotatorVisionPath,
-			GPULayers:       *llamaNativeAnnotatorGPULayers,
-			UseGPU:          *llamaNativeAnnotatorUseGPU,
-			ContextSize:     *llamaNativeAnnotatorContextSize,
-			BatchSize:       *llamaNativeAnnotatorBatchSize,
-			Threads:         *llamaNativeAnnotatorThreads,
-			ImageMaxSide:    *llamaNativeAnnotatorImageMaxSide,
-			ImageMaxTokens:  *llamaNativeAnnotatorImageMaxTokens,
-			FlashAttnType:   *llamaNativeAnnotatorFlashAttnType,
-			CacheTypeK:      *llamaNativeAnnotatorCacheTypeK,
-			CacheTypeV:      *llamaNativeAnnotatorCacheTypeV,
+			ModelPath:             annotatorModelPath,
+			VisionModelPath:       annotatorVisionPath,
+			GPULayers:             *llamaNativeAnnotatorGPULayers,
+			UseGPU:                *llamaNativeAnnotatorUseGPU,
+			ContextSize:           *llamaNativeAnnotatorContextSize,
+			BatchSize:             *llamaNativeAnnotatorBatchSize,
+			Threads:               *llamaNativeAnnotatorThreads,
+			ImageMaxSide:          *llamaNativeAnnotatorImageMaxSide,
+			ImageMaxTokens:        *llamaNativeAnnotatorImageMaxTokens,
+			AnnotationTemperature: *llamaNativeAnnotationTemperature,
+			AnnotationSeed:        *llamaNativeAnnotationSeed,
+			FlashAttnType:         *llamaNativeAnnotatorFlashAttnType,
+			CacheTypeK:            *llamaNativeAnnotatorCacheTypeK,
+			CacheTypeV:            *llamaNativeAnnotatorCacheTypeV,
 		}
 		modelSwitchboard = newLlamaModelSwitchboard(
 			activeEmbedder,

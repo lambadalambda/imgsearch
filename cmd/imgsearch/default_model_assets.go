@@ -13,33 +13,36 @@ import (
 )
 
 const (
-	defaultLlamaNativeModelPath              = "./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
-	defaultLlamaNativeMMProjPath             = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
-	defaultLlamaNativeDimensions             = 4096
-	defaultLlamaNativeEmbedderContextSize    = 512
-	defaultLlamaNativeFlashAttnType          = -1
-	defaultLlamaNativeCacheTypeK             = -1
-	defaultLlamaNativeCacheTypeV             = -1
-	defaultLlamaNativeModelURL               = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
-	defaultLlamaNativeMMProjURL              = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
-	defaultLlamaNativeAnnotatorVariant       = "e4b"
-	llamaNativeAnnotatorVariant26B           = "26b"
-	defaultLlamaNativeAnnotatorModelPath     = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
-	defaultLlamaNativeAnnotatorMMProjPath    = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"
-	defaultLlamaNativeAnnotatorModelURL      = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
-	defaultLlamaNativeAnnotatorMMProjURL     = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"
-	defaultLlamaNativeAnnotator26BModelPath  = "./models/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/gemma-4-26b-a4b-it-heretic.q4_k_m.gguf"
-	defaultLlamaNativeAnnotator26BMMProjPath = "./models/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf"
-	defaultLlamaNativeAnnotator26BModelURL   = "https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26b-a4b-it-heretic.q4_k_m.gguf"
-	defaultLlamaNativeAnnotator26BMMProjURL  = "https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf"
-	defaultParakeetOnnxBundleDir             = "./models/Parakeet/parakeet-tdt-0.6b-v3-onnx"
-	defaultParakeetOnnxConfigURL             = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/config.json"
-	defaultParakeetOnnxVocabURL              = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt"
-	defaultParakeetOnnxDecoderURL            = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.int8.onnx"
-	defaultParakeetOnnxEncoderURL            = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.int8.onnx"
-	defaultDownloadUserAgent                 = "imgsearch/1.0"
-	defaultDownloadTimeout                   = 30 * time.Minute
-	defaultDownloadProgressPeriod            = 5 * time.Second
+	defaultLlamaNativeModelPath                    = "./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
+	defaultLlamaNativeMMProjPath                   = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
+	defaultLlamaNativeDimensions                   = 4096
+	defaultLlamaNativeEmbedderContextSize          = 512
+	defaultLlamaNativeAnnotationTemperature        = 1.0
+	defaultLlamaNativeAnnotationSeed         int64 = -1
+	defaultLlamaNativeMaxAnnotationSeed      int64 = 4294967295
+	defaultLlamaNativeFlashAttnType                = -1
+	defaultLlamaNativeCacheTypeK                   = -1
+	defaultLlamaNativeCacheTypeV                   = -1
+	defaultLlamaNativeModelURL                     = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
+	defaultLlamaNativeMMProjURL                    = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
+	defaultLlamaNativeAnnotatorVariant             = "e4b"
+	llamaNativeAnnotatorVariant26B                 = "26b"
+	defaultLlamaNativeAnnotatorModelPath           = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
+	defaultLlamaNativeAnnotatorMMProjPath          = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"
+	defaultLlamaNativeAnnotatorModelURL            = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
+	defaultLlamaNativeAnnotatorMMProjURL           = "https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf"
+	defaultLlamaNativeAnnotator26BModelPath        = "./models/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/gemma-4-26b-a4b-it-heretic.q4_k_m.gguf"
+	defaultLlamaNativeAnnotator26BMMProjPath       = "./models/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf"
+	defaultLlamaNativeAnnotator26BModelURL         = "https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26b-a4b-it-heretic.q4_k_m.gguf"
+	defaultLlamaNativeAnnotator26BMMProjURL        = "https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf"
+	defaultParakeetOnnxBundleDir                   = "./models/Parakeet/parakeet-tdt-0.6b-v3-onnx"
+	defaultParakeetOnnxConfigURL                   = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/config.json"
+	defaultParakeetOnnxVocabURL                    = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt"
+	defaultParakeetOnnxDecoderURL                  = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.int8.onnx"
+	defaultParakeetOnnxEncoderURL                  = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.int8.onnx"
+	defaultDownloadUserAgent                       = "imgsearch/1.0"
+	defaultDownloadTimeout                         = 30 * time.Minute
+	defaultDownloadProgressPeriod                  = 5 * time.Second
 )
 
 func ensureDefaultLlamaNativeAssets(ctx context.Context, modelPath string, mmprojPath string) (string, string, error) {

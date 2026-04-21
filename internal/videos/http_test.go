@@ -182,6 +182,117 @@ WHERE id = 12
 	}
 }
 
+func TestReannotateVideoCreatesAnnotationJob(t *testing.T) {
+	dbConn := setupVideosDB(t)
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/videos/2/reannotate", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var state string
+	var attempts int
+	var lastError sql.NullString
+	if err := dbConn.QueryRow(`
+SELECT state, attempts, last_error
+FROM index_jobs
+WHERE kind = 'annotate_video' AND video_id = 2 AND model_id = 1
+`).Scan(&state, &attempts, &lastError); err != nil {
+		t.Fatalf("load annotate job: %v", err)
+	}
+	if state != "pending" {
+		t.Fatalf("expected pending state, got %s", state)
+	}
+	if attempts != 0 {
+		t.Fatalf("expected attempts reset to 0, got %d", attempts)
+	}
+	if lastError.Valid {
+		t.Fatalf("expected last_error cleared, got %q", lastError.String)
+	}
+}
+
+func TestReannotateVideoResetsCompletedJobToPending(t *testing.T) {
+	dbConn := setupVideosDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE videos
+SET annotation_updated_at = datetime('now')
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed annotation timestamp: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO index_jobs(kind, image_id, video_id, model_id, state, attempts, run_after, leased_until, lease_owner, last_error)
+VALUES ('annotate_video', NULL, 1, 1, 'done', 2, datetime('now', '+2 minutes'), datetime('now', '+3 minutes'), 'worker-1', 'timeout')
+`); err != nil {
+		t.Fatalf("seed done annotate job: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+	req := httptest.NewRequest(http.MethodPost, "/api/videos/1/reannotate", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var state string
+	var attempts int
+	var runAfter sql.NullString
+	var leasedUntil sql.NullString
+	var leaseOwner sql.NullString
+	var lastError sql.NullString
+	if err := dbConn.QueryRow(`
+SELECT state, attempts, run_after, leased_until, lease_owner, last_error
+FROM index_jobs
+WHERE kind = 'annotate_video' AND video_id = 1 AND model_id = 1
+`).Scan(&state, &attempts, &runAfter, &leasedUntil, &leaseOwner, &lastError); err != nil {
+		t.Fatalf("load annotate job: %v", err)
+	}
+	if state != "pending" {
+		t.Fatalf("expected pending state, got %s", state)
+	}
+	if attempts != 0 {
+		t.Fatalf("expected attempts reset to 0, got %d", attempts)
+	}
+	if runAfter.Valid {
+		t.Fatalf("expected run_after cleared, got %q", runAfter.String)
+	}
+	if leasedUntil.Valid {
+		t.Fatalf("expected leased_until cleared, got %q", leasedUntil.String)
+	}
+	if leaseOwner.Valid {
+		t.Fatalf("expected lease_owner cleared, got %q", leaseOwner.String)
+	}
+	if lastError.Valid {
+		t.Fatalf("expected last_error cleared, got %q", lastError.String)
+	}
+
+	var description string
+	var tagsJSON string
+	var annotationUpdatedAt sql.NullString
+	if err := dbConn.QueryRow(`
+SELECT description, tags_json, annotation_updated_at
+FROM videos
+WHERE id = 1
+`).Scan(&description, &tagsJSON, &annotationUpdatedAt); err != nil {
+		t.Fatalf("load video annotations: %v", err)
+	}
+	if description != "" {
+		t.Fatalf("expected video description cleared, got %q", description)
+	}
+	if tagsJSON != "[]" {
+		t.Fatalf("expected video tags_json reset to [], got %q", tagsJSON)
+	}
+	if annotationUpdatedAt.Valid {
+		t.Fatalf("expected annotation_updated_at cleared, got %q", annotationUpdatedAt.String)
+	}
+}
+
 func TestDeleteVideoRemovesVideoFramesTranscriptAndOrphanFiles(t *testing.T) {
 	dbConn := setupVideosDB(t)
 	dataDir := t.TempDir()

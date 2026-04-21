@@ -325,6 +325,113 @@ WHERE id = 2
 	}
 }
 
+func TestReannotateImageCreatesAnnotationJob(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/images/2/reannotate", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var state string
+	var attempts int
+	var lastError sql.NullString
+	if err := dbConn.QueryRow(`
+SELECT state, attempts, last_error
+FROM index_jobs
+WHERE kind = 'annotate_image' AND image_id = 2 AND model_id = 1
+`).Scan(&state, &attempts, &lastError); err != nil {
+		t.Fatalf("load annotate job: %v", err)
+	}
+	if state != "pending" {
+		t.Fatalf("expected pending state, got %s", state)
+	}
+	if attempts != 0 {
+		t.Fatalf("expected attempts reset to 0, got %d", attempts)
+	}
+	if lastError.Valid {
+		t.Fatalf("expected last_error cleared, got %q", lastError.String)
+	}
+}
+
+func TestReannotateImageResetsCompletedJobToPending(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images
+SET description = 'old annotation', tags_json = '["old","tags"]'
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed image annotations: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO index_jobs(kind, image_id, model_id, state, attempts, run_after, leased_until, lease_owner, last_error)
+VALUES ('annotate_image', 1, 1, 'done', 2, datetime('now', '+2 minutes'), datetime('now', '+3 minutes'), 'worker-1', 'timeout')
+`); err != nil {
+		t.Fatalf("seed done annotate job: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+	req := httptest.NewRequest(http.MethodPost, "/api/images/1/reannotate", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var state string
+	var attempts int
+	var runAfter sql.NullString
+	var leasedUntil sql.NullString
+	var leaseOwner sql.NullString
+	var lastError sql.NullString
+	if err := dbConn.QueryRow(`
+SELECT state, attempts, run_after, leased_until, lease_owner, last_error
+FROM index_jobs
+WHERE kind = 'annotate_image' AND image_id = 1 AND model_id = 1
+`).Scan(&state, &attempts, &runAfter, &leasedUntil, &leaseOwner, &lastError); err != nil {
+		t.Fatalf("load annotate job: %v", err)
+	}
+	if state != "pending" {
+		t.Fatalf("expected pending state, got %s", state)
+	}
+	if attempts != 0 {
+		t.Fatalf("expected attempts reset to 0, got %d", attempts)
+	}
+	if runAfter.Valid {
+		t.Fatalf("expected run_after cleared, got %q", runAfter.String)
+	}
+	if leasedUntil.Valid {
+		t.Fatalf("expected leased_until cleared, got %q", leasedUntil.String)
+	}
+	if leaseOwner.Valid {
+		t.Fatalf("expected lease_owner cleared, got %q", leaseOwner.String)
+	}
+	if lastError.Valid {
+		t.Fatalf("expected last_error cleared, got %q", lastError.String)
+	}
+
+	var description string
+	var tagsJSON string
+	if err := dbConn.QueryRow(`
+SELECT description, tags_json
+FROM images
+WHERE id = 1
+`).Scan(&description, &tagsJSON); err != nil {
+		t.Fatalf("load image annotations: %v", err)
+	}
+	if description != "" {
+		t.Fatalf("expected image description cleared, got %q", description)
+	}
+	if tagsJSON != "[]" {
+		t.Fatalf("expected image tags_json reset to [], got %q", tagsJSON)
+	}
+}
+
 func TestDeleteImageRemovesRowJobsEmbeddingsAndFile(t *testing.T) {
 	dbConn := setupImagesDB(t)
 	dataDir := t.TempDir()

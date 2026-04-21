@@ -5,6 +5,10 @@ All notable changes to this project are tracked in this file.
 ## Unreleased
 - security(api): add API-key route guarding for `/api/*` with header (`X-Imgsearch-API-Key`/Bearer) and HttpOnly same-site cookie auth for the built-in UI, default to a built-in development key on loopback when unset, reject that default key on non-loopback binds, and log a startup warning when the default key is active.
 - fix(import): make `scripts/import_images.sh` / `mise run import-images` send `X-Imgsearch-API-Key` on local health/upload requests using `IMGSEARCH_IMPORT_API_KEY`, `IMGSEARCH_API_KEY`, or the same built-in development default key when both are unset.
+- feat(ui): add per-card `Re-annotate` actions for images and videos that queue annotation jobs (`annotate_image` / `annotate_video`) so existing media can be re-described without re-uploading.
+- fix(annotations): make image/video re-annotate clear stored descriptions/tags (and video annotation timestamp) before re-queueing so worker `NeedsAnnotation` checks run native annotation instead of completing no-op jobs.
+- feat(annotations): add `-llama-native-annotation-temperature` and `-llama-native-annotation-seed` controls, and propagate both through llama.cpp-native image/video annotation generation so re-annotate can produce controlled variation.
+- tweak(annotations): align native annotation sampling defaults with Gemma guidance by using `temperature=1.0` and `top_p=0.95` (with existing `top_k=64`) while keeping seed configurable (`-1` random per request).
 - security(webui): restrict `/media/*` serving to explicit `images/` and `videos/` subdirectories so database and other non-media files under `dataDir` are no longer exposed through the web file server.
 - fix(upload): harden multipart handling with lower request limits, separate in-memory parse threshold, explicit temp-file cleanup (`RemoveAll`), and a per-request file-count cap.
 - security(server): replace bare `ListenAndServe` with an explicit `http.Server` that sets read/header/write/idle timeouts and a bounded max-header size, and log active limits at startup.
