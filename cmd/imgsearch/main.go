@@ -35,6 +35,7 @@ import (
 const (
 	defaultHTTPReadHeaderTimeout = 5 * time.Second
 	defaultHTTPReadTimeout       = 30 * time.Second
+	defaultAPIKey                = "imgsearch-dev-default-api-key"
 	// WebSocket handlers manage per-message deadlines after upgrade.
 	defaultHTTPWriteTimeout   = 60 * time.Second
 	defaultHTTPIdleTimeout    = 120 * time.Second
@@ -44,7 +45,7 @@ const (
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
-	apiKey := flag.String("api-key", strings.TrimSpace(os.Getenv("IMGSEARCH_API_KEY")), "optional API key required for /api/* requests")
+	apiKey := flag.String("api-key", strings.TrimSpace(os.Getenv("IMGSEARCH_API_KEY")), "API key required for /api/* requests (falls back to built-in development default when unset)")
 	modeFlag := flag.String("mode", string(runtimeModeAll), "process mode: all, api, or worker")
 	workerBatchSize := flag.Int("worker-batch-size", 1, "number of jobs to claim per batch (1 disables batching)")
 	llamaNativeModelPath := flag.String("llama-native-model-path", defaultLlamaNativeModelPath, "path to the llama.cpp GGUF embedding model")
@@ -92,10 +93,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("configure mode: %v", err)
 	}
-	resolvedAPIKey := strings.TrimSpace(*apiKey)
+	resolvedAPIKey, usingDefaultAPIKey := resolveAPIKey(*apiKey)
 	if mode.startsHTTP() {
-		if err := validateHTTPExposure(*addr, resolvedAPIKey); err != nil {
+		if err := validateHTTPExposure(*addr, resolvedAPIKey, usingDefaultAPIKey); err != nil {
 			log.Fatalf("configure api security: %v", err)
+		}
+		if usingDefaultAPIKey {
+			log.Printf("WARNING: using built-in default API key; set -api-key or IMGSEARCH_API_KEY for non-development use")
 		}
 	}
 	if warning := annotationModeWarning(mode, *enableAnnotations, *llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath); warning != "" {
@@ -420,6 +424,14 @@ func main() {
 	}
 }
 
+func resolveAPIKey(raw string) (string, bool) {
+	apiKey := strings.TrimSpace(raw)
+	if apiKey != "" {
+		return apiKey, false
+	}
+	return defaultAPIKey, true
+}
+
 func configuredHTTPServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              addr,
@@ -438,11 +450,14 @@ func withAPISecurity(handler http.Handler, apiKey string) http.Handler {
 	return h
 }
 
-func validateHTTPExposure(addr string, apiKey string) error {
-	if strings.TrimSpace(apiKey) != "" || isLoopbackListenAddress(addr) {
+func validateHTTPExposure(addr string, apiKey string, usingDefaultAPIKey bool) error {
+	if isLoopbackListenAddress(addr) {
 		return nil
 	}
-	return fmt.Errorf("non-loopback listen address %q requires -api-key (or IMGSEARCH_API_KEY)", addr)
+	if strings.TrimSpace(apiKey) == "" || usingDefaultAPIKey {
+		return fmt.Errorf("non-loopback listen address %q requires an explicit -api-key (or IMGSEARCH_API_KEY); built-in development key is not allowed", addr)
+	}
+	return nil
 }
 
 func isLoopbackListenAddress(addr string) bool {

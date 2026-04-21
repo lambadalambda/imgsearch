@@ -10,6 +10,9 @@ usage() {
   echo "  scripts/import_images.sh https://boards.4chan.org/v/thread/737156945"
   echo ""
   echo "optional env:"
+  echo "  IMGSEARCH_IMPORT_API_KEY=<token> (uses X-Imgsearch-API-Key for local API requests)"
+  echo "  IMGSEARCH_API_KEY=<token> (fallback if IMGSEARCH_IMPORT_API_KEY is unset)"
+  echo "  (if both are unset, importer uses built-in development key: imgsearch-dev-default-api-key)"
   echo "  IMGSEARCH_IMPORT_CONVERT=auto|never|vips (default: auto)"
   echo "  IMGSEARCH_IMPORT_MAX_VIDEO_BYTES=<bytes> (default: 20971520, 20 MB)"
   echo "  IMGSEARCH_IMPORT_HTTP_MAX_ATTEMPTS=<n> (default: 6)"
@@ -27,6 +30,7 @@ fi
 source_spec="$1"
 api_base_url="${2:-${IMGSEARCH_API_URL:-http://127.0.0.1:8080}}"
 upload_url="${api_base_url%/}/api/upload"
+import_api_key="${IMGSEARCH_IMPORT_API_KEY:-${IMGSEARCH_API_KEY:-imgsearch-dev-default-api-key}}"
 convert_mode="${IMGSEARCH_IMPORT_CONVERT:-auto}"
 max_video_bytes="${IMGSEARCH_IMPORT_MAX_VIDEO_BYTES:-20971520}"
 http_max_attempts="${IMGSEARCH_IMPORT_HTTP_MAX_ATTEMPTS:-6}"
@@ -94,7 +98,12 @@ if [[ "$convert_mode" == "vips" && "$has_vips" -ne 1 ]]; then
   exit 1
 fi
 
-if ! curl -sS -f -o /dev/null "${api_base_url%/}/healthz"; then
+api_auth_args=()
+if [[ -n "${import_api_key//[[:space:]]/}" ]]; then
+  api_auth_args=(-H "X-Imgsearch-API-Key: ${import_api_key}")
+fi
+
+if ! curl -sS -f -o /dev/null "${api_auth_args[@]}" "${api_base_url%/}/healthz"; then
   echo "imgsearch API is not reachable at ${api_base_url%/} (healthz failed)" >&2
   exit 1
 fi
@@ -277,7 +286,7 @@ upload_once() {
   local escaped_src="${src//\\/\\\\}"
   escaped_src="${escaped_src//\"/\\\"}"
   : > "$resp_file"
-  curl -sS -o "$resp_file" -w "%{http_code}" -F "file=@\"${escaped_src}\"" "$upload_url"
+  curl -sS -o "$resp_file" -w "%{http_code}" "${api_auth_args[@]}" -F "file=@\"${escaped_src}\"" "$upload_url"
 }
 
 total=0

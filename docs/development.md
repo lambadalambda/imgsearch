@@ -82,6 +82,8 @@ Optional arguments and behavior:
 
 - `mise run import-images -- ./photos http://127.0.0.1:8080`
 - `mise run import-images -- https://boards.4chan.org/v/thread/737156945`
+- Import requests include `X-Imgsearch-API-Key` by default using the built-in development key.
+- `IMGSEARCH_IMPORT_API_KEY='<token>' mise run import-images -- ./photos` overrides the importer key (falls back to `IMGSEARCH_API_KEY` when unset).
 - `IMGSEARCH_IMPORT_CONVERT=auto` tries direct upload first, then auto-converts WEBP/AVIF with `vips` on failure.
 - `IMGSEARCH_IMPORT_CONVERT=vips` always converts WEBP/AVIF via `vips` before upload.
 - `IMGSEARCH_IMPORT_CONVERT=never` never converts and uploads files as-is.

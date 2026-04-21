@@ -3,7 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
-- security(api): add API-key route guarding for `/api/*` with header (`X-Imgsearch-API-Key`/Bearer) and HttpOnly same-site cookie auth for the built-in UI, plus startup protection that requires `-api-key` when binding HTTP on non-loopback addresses.
+- security(api): add API-key route guarding for `/api/*` with header (`X-Imgsearch-API-Key`/Bearer) and HttpOnly same-site cookie auth for the built-in UI, default to a built-in development key on loopback when unset, reject that default key on non-loopback binds, and log a startup warning when the default key is active.
+- fix(import): make `scripts/import_images.sh` / `mise run import-images` send `X-Imgsearch-API-Key` on local health/upload requests using `IMGSEARCH_IMPORT_API_KEY`, `IMGSEARCH_API_KEY`, or the same built-in development default key when both are unset.
 - security(webui): restrict `/media/*` serving to explicit `images/` and `videos/` subdirectories so database and other non-media files under `dataDir` are no longer exposed through the web file server.
 - fix(upload): harden multipart handling with lower request limits, separate in-memory parse threshold, explicit temp-file cleanup (`RemoveAll`), and a per-request file-count cap.
 - security(server): replace bare `ListenAndServe` with an explicit `http.Server` that sets read/header/write/idle timeouts and a bounded max-header size, and log active limits at startup.

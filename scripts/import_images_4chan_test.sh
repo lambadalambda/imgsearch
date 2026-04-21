@@ -187,6 +187,24 @@ if [[ "$(grep -c "https://i.4cdn.org/v/1111111111111.jpg" "$mock_log" || true)" 
   exit 1
 fi
 
+if ! grep -q "X-Imgsearch-API-Key: imgsearch-dev-default-api-key.*http://127.0.0.1:8080/api/upload" "$mock_log"; then
+  echo "expected upload request to include default API key header" >&2
+  cat "$mock_log" >&2
+  exit 1
+fi
+
+if ! grep -q "X-Imgsearch-API-Key: imgsearch-dev-default-api-key.*http://127.0.0.1:8080/healthz" "$mock_log"; then
+  echo "expected healthz request to include default API key header" >&2
+  cat "$mock_log" >&2
+  exit 1
+fi
+
+if grep -q "X-Imgsearch-API-Key: imgsearch-dev-default-api-key.*4cdn.org" "$mock_log"; then
+  echo "did not expect API key header to be sent to 4cdn URLs" >&2
+  cat "$mock_log" >&2
+  exit 1
+fi
+
 if [[ ! -s "$sleep_log" ]]; then
   echo "expected pacing sleeps between media downloads" >&2
   cat "$mock_log" >&2

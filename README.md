@@ -46,6 +46,8 @@ For 4chan thread imports, the script pulls full files from `i.4cdn.org` (not thu
 If 4chan rate-limits requests (`HTTP 429`), the importer retries with `Retry-After` support.
 If needed, tune retry behavior with `IMGSEARCH_IMPORT_HTTP_MAX_ATTEMPTS` and `IMGSEARCH_IMPORT_HTTP_RETRY_DELAY_SECONDS`.
 By default, 4chan media downloads are paced (about every 5 seconds with jitter) to reduce rate-limit spikes.
+`scripts/import_images.sh` / `mise run import-images` now sends an API key header by default.
+Set `IMGSEARCH_IMPORT_API_KEY` (or `IMGSEARCH_API_KEY`) to override the built-in development key.
 
 ### Build From Source
 
@@ -94,8 +96,9 @@ Full instructions are in `docs/podman-cuda-ubuntu.md`.
 - The default Qwen embedding files and the default Gemma annotator files are downloaded automatically on first run when missing.
 - Add `-enable-annotations=false` if you want to run the API without loading the Gemma annotation model.
 - Add `-mode=api` or `-mode=worker` if you want to split the HTTP server and background worker into separate processes.
-- Use `-api-key <token>` (or `IMGSEARCH_API_KEY`) to require authentication on `/api/*` routes.
-- If you bind to a non-loopback address (for example `-addr 0.0.0.0:8080`), an API key is required at startup.
+- `/api/*` routes are authenticated by default.
+- Set `-api-key <token>` (or `IMGSEARCH_API_KEY`) to use your own key; when unset, the server falls back to a built-in development key and logs a startup warning.
+- If you bind to a non-loopback address (for example `-addr 0.0.0.0:8080`), startup requires an explicit strong API key; the built-in development key is rejected.
 - API clients can authenticate with `X-Imgsearch-API-Key: <token>` or `Authorization: Bearer <token>`.
 - Data is stored in `./data` by default.
 - The UI includes uploads, indexing status, gallery browsing, text search, and similar-image search.

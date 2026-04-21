@@ -129,27 +129,50 @@ func TestServerMuxDoesNotRequireTokenWhenNotConfigured(t *testing.T) {
 	}
 }
 
+func TestServerMuxDefaultAPIKeyAuthenticatesWhenConfigured(t *testing.T) {
+	dataDir := t.TempDir()
+	h := withAPISecurity(newServerMux(nil, dataDir, 0, nil, nil, nil), defaultAPIKey)
+
+	unauthReq := httptest.NewRequest(http.MethodGet, "/api/live", nil)
+	unauthRR := httptest.NewRecorder()
+	h.ServeHTTP(unauthRR, unauthReq)
+	if unauthRR.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthorized without header: got=%d", unauthRR.Code)
+	}
+
+	authReq := httptest.NewRequest(http.MethodGet, "/api/live", nil)
+	authReq.Header.Set("X-Imgsearch-API-Key", defaultAPIKey)
+	authRR := httptest.NewRecorder()
+	h.ServeHTTP(authRR, authReq)
+	if authRR.Code != http.StatusInternalServerError {
+		t.Fatalf("expected handler reached with default key: got=%d want=%d", authRR.Code, http.StatusInternalServerError)
+	}
+}
+
 func TestValidateHTTPExposure(t *testing.T) {
-	if err := validateHTTPExposure("127.0.0.1:8080", ""); err != nil {
+	if err := validateHTTPExposure("127.0.0.1:8080", "", true); err != nil {
 		t.Fatalf("loopback address should not require api key: %v", err)
 	}
-	if err := validateHTTPExposure("localhost:8080", ""); err != nil {
+	if err := validateHTTPExposure("localhost:8080", "", false); err != nil {
 		t.Fatalf("localhost should not require api key: %v", err)
 	}
-	if err := validateHTTPExposure("0.0.0.0:8080", ""); err == nil {
+	if err := validateHTTPExposure("0.0.0.0:8080", "", false); err == nil {
 		t.Fatalf("non-loopback address should require api key")
 	}
-	if err := validateHTTPExposure("0.0.0.0:8080", "secret-token"); err != nil {
+	if err := validateHTTPExposure("0.0.0.0:8080", "secret-token", false); err != nil {
 		t.Fatalf("non-loopback address with api key should be allowed: %v", err)
 	}
-	if err := validateHTTPExposure(":8080", ""); err == nil {
+	if err := validateHTTPExposure(":8080", "", false); err == nil {
 		t.Fatalf("all-interface shorthand should require api key")
 	}
-	if err := validateHTTPExposure("[::1]:8080", ""); err != nil {
+	if err := validateHTTPExposure("[::1]:8080", "", false); err != nil {
 		t.Fatalf("ipv6 loopback should not require api key: %v", err)
 	}
-	if err := validateHTTPExposure("[::]:8080", ""); err == nil {
+	if err := validateHTTPExposure("[::]:8080", "", false); err == nil {
 		t.Fatalf("ipv6 all-interface address should require api key")
+	}
+	if err := validateHTTPExposure("0.0.0.0:8080", defaultAPIKey, true); err == nil {
+		t.Fatalf("non-loopback address should reject built-in development api key")
 	}
 }
 
@@ -198,5 +221,25 @@ func TestHTTPServerTimeoutConstantsAreSane(t *testing.T) {
 	}
 	if defaultHTTPMaxHeaderBytes <= 0 {
 		t.Fatalf("max header bytes must be positive: got=%d", defaultHTTPMaxHeaderBytes)
+	}
+}
+
+func TestResolveAPIKeyUsesDefaultWhenUnset(t *testing.T) {
+	apiKey, usingDefault := resolveAPIKey("   ")
+	if apiKey != defaultAPIKey {
+		t.Fatalf("api key: got=%q want=%q", apiKey, defaultAPIKey)
+	}
+	if !usingDefault {
+		t.Fatalf("expected usingDefault=true when api key unset")
+	}
+}
+
+func TestResolveAPIKeyKeepsExplicitValue(t *testing.T) {
+	apiKey, usingDefault := resolveAPIKey("secret-token")
+	if apiKey != "secret-token" {
+		t.Fatalf("api key: got=%q want=%q", apiKey, "secret-token")
+	}
+	if usingDefault {
+		t.Fatalf("expected usingDefault=false for explicit api key")
 	}
 }
