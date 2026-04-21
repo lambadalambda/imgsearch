@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -24,13 +24,14 @@ Video transcription currently buffers ffmpeg PCM output in memory and then alloc
 
 ## Acceptance Criteria
 
-- [ ] Add explicit max-duration or max-sample guardrails before feature extraction.
-- [ ] Avoid full-output buffering when extracting PCM (stream or bounded read strategy).
-- [ ] Return a deterministic, user-visible error when limits are exceeded.
-- [ ] Add tests covering over-limit inputs.
+- [x] Add explicit max-duration or max-sample guardrails before feature extraction.
+- [x] Avoid full-output buffering when extracting PCM (stream or bounded read strategy).
+- [x] Return a deterministic, user-visible error when limits are exceeded.
+- [x] Add tests covering over-limit inputs.
 
 ## Related Files
 
 - `internal/transcribe/parakeetonnx/audio.go`
+- `internal/transcribe/parakeetonnx/audio_test.go`
 - `internal/transcribe/parakeetonnx/features.go`
-- `internal/transcribe/parakeetonnx/recognizer.go`
+- `internal/transcribe/transcribe.go`

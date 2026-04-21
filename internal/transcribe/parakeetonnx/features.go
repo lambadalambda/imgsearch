@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 
+	"imgsearch/internal/transcribe"
+
 	"gonum.org/v1/gonum/dsp/fourier"
 )
 
@@ -24,6 +26,14 @@ type Features struct {
 func BuildFeatures(samples []float32) (Features, error) {
 	if len(samples) == 0 {
 		return Features{}, fmt.Errorf("audio samples are empty")
+	}
+	if len(samples) > maxTranscriptionSamples {
+		return Features{}, fmt.Errorf(
+			"%w: sample count %d exceeds max %d",
+			transcribe.ErrAudioTooLong,
+			len(samples),
+			maxTranscriptionSamples,
+		)
 	}
 	processed := preemphasize(samples)
 	padded := zeroPadCenter(processed, NFFT/2)

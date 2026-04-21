@@ -6,6 +6,7 @@ import (
 )
 
 var ErrNoAudio = errors.New("video has no audio")
+var ErrAudioTooLong = errors.New("audio exceeds maximum duration")
 
 type Transcript struct {
 	Text string
