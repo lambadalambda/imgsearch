@@ -1056,6 +1056,88 @@ func TestProcessBatchProcessesMultipleJobs(t *testing.T) {
 	}
 }
 
+func TestProcessBatchProcessesAnnotateImageJob(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE id = 1`); err != nil {
+		t.Fatalf("mark embed job done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, model_id, state)
+VALUES (2, 'annotate_image', 1, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate job: %v", err)
+	}
+	annotator := &fakeAnnotator{annotation: embedder.ImageAnnotation{
+		Description: "Batch-annotated description.",
+		Tags:        []string{"batch", "annotated"},
+	}}
+	q.Annotator = annotator
+
+	count, err := q.ProcessBatch(context.Background(), "worker-1", 1)
+	if err != nil {
+		t.Fatalf("process batch: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 processed annotate job, got %d", count)
+	}
+
+	var description string
+	var tagsJSON string
+	if err := sqlDB.QueryRow(`SELECT description, tags_json FROM images WHERE id = 1`).Scan(&description, &tagsJSON); err != nil {
+		t.Fatalf("load stored annotations: %v", err)
+	}
+	if description != "Batch-annotated description." {
+		t.Fatalf("unexpected description: %q", description)
+	}
+	var tags []string
+	if err := json.Unmarshal([]byte(tagsJSON), &tags); err != nil {
+		t.Fatalf("decode stored tags: %v", err)
+	}
+	if len(tags) != 2 || tags[0] != "batch" {
+		t.Fatalf("unexpected tags: %v", tags)
+	}
+}
+
+func TestProcessBatchTranscribeVideoWithoutAudioMarksDone(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	q.Transcriber = &fakeVideoTranscriber{err: transcribe.ErrNoAudio}
+	q.TextEmbedder = &fakeEmbedder{err: errors.New("text embedder should not be called when video has no audio")}
+
+	modelID := seedVideoTranscribeJob(t, q, sqlDB, 8, 18)
+
+	count, err := q.ProcessBatch(context.Background(), "worker-1", 1)
+	if err != nil {
+		t.Fatalf("process batch: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 processed transcribe job, got %d", count)
+	}
+
+	var transcriptText string
+	if err := sqlDB.QueryRow(`SELECT transcript_text FROM videos WHERE id = 8`).Scan(&transcriptText); err != nil {
+		t.Fatalf("select transcript: %v", err)
+	}
+	if transcriptText != "" {
+		t.Fatalf("expected empty transcript text for no-audio video, got %q", transcriptText)
+	}
+
+	var jobState string
+	if err := sqlDB.QueryRow(`SELECT state FROM index_jobs WHERE id = 18`).Scan(&jobState); err != nil {
+		t.Fatalf("select transcribe job state: %v", err)
+	}
+	if jobState != "done" {
+		t.Fatalf("expected transcribe job done for no-audio video, got %s", jobState)
+	}
+
+	var transcriptEmbeddings int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM video_transcript_embeddings WHERE video_id = 8 AND model_id = ?`, modelID).Scan(&transcriptEmbeddings); err != nil {
+		t.Fatalf("count transcript embeddings: %v", err)
+	}
+	if transcriptEmbeddings != 0 {
+		t.Fatalf("expected no transcript embeddings for no-audio video, got %d", transcriptEmbeddings)
+	}
+}
+
 func TestProcessBatchReturnsZeroWhenEmpty(t *testing.T) {
 	q, _ := setupMultiImageQueue(t, 0)
 

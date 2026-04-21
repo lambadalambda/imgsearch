@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -25,10 +25,10 @@ Open.
 
 ## Acceptance Criteria
 
-- [ ] Collapse job execution into a single shared implementation.
-- [ ] Keep existing semantics for claim/fail/retry/complete behavior.
-- [ ] Preserve logging and metrics expectations.
-- [ ] Update tests to cover both single and batched execution paths through the shared logic.
+- [x] Collapse job execution into a single shared implementation.
+- [x] Keep existing semantics for claim/fail/retry/complete behavior.
+- [x] Preserve logging and metrics expectations.
+- [x] Update tests to cover both single and batched execution paths through the shared logic.
 
 ## Related Files
 
