@@ -236,6 +236,31 @@ func TestNativeBatchEmbeddingsMatchSequential(t *testing.T) {
 	}
 }
 
+func TestNativeInspectReportsConfiguredMaxSequences(t *testing.T) {
+	if os.Getenv("RUN_LLAMACPP_NATIVE_INTEGRATION") != "1" {
+		t.Skip("set RUN_LLAMACPP_NATIVE_INTEGRATION=1 with LLAMA_NATIVE_MODEL_PATH and LLAMA_NATIVE_MMPROJ_PATH")
+	}
+
+	paths := integrationContextBudgetPaths(t)
+	if len(paths) == 0 {
+		t.Fatal("need at least one image for inspect")
+	}
+
+	for _, configuredMaxSequences := range []int{defaultMaxSequences, 4} {
+		configuredMaxSequences := configuredMaxSequences
+		t.Run(fmt.Sprintf("n_seq_max_%d", configuredMaxSequences), func(t *testing.T) {
+			embedder := newNativeEmbedderForIntegrationWithMaxSequences(t, configuredMaxSequences)
+			inspect, err := embedder.InspectImageEmbedding(context.Background(), paths[0])
+			if err != nil {
+				t.Fatalf("inspect image: %v", err)
+			}
+			if inspect.NSeqMax != configuredMaxSequences {
+				t.Fatalf("inspect max sequences: got=%d want=%d", inspect.NSeqMax, configuredMaxSequences)
+			}
+		})
+	}
+}
+
 func TestNativeImageEmbeddingContextBudgetReport(t *testing.T) {
 	if os.Getenv("RUN_LLAMACPP_NATIVE_INTEGRATION") != "1" {
 		t.Skip("set RUN_LLAMACPP_NATIVE_INTEGRATION=1 with LLAMA_NATIVE_MODEL_PATH and LLAMA_NATIVE_MMPROJ_PATH")

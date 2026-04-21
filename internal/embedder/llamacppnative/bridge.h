@@ -31,6 +31,7 @@ imgsearch_llama_handle * imgsearch_llama_new(
     int32_t n_gpu_layers,
     int32_t n_ctx,
     int32_t n_batch,
+    int32_t n_seq_max,
     int32_t n_threads,
     int32_t use_gpu,
     int32_t image_max_side,

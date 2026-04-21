@@ -357,6 +357,8 @@ func newGemmaNativeRuntime(cfg nativeGemmaRuntimeConfig) (*nativeGemmaRuntime, e
 		C.int32_t(cfg.GPULayers),
 		C.int32_t(cfg.ContextSize),
 		C.int32_t(cfg.BatchSize),
+		// Annotator runs single-sequence generation on seq_id=0.
+		C.int32_t(defaultMaxSequences),
 		C.int32_t(cfg.Threads),
 		boolToCInt32(cfg.UseGPU),
 		C.int32_t(imageMaxSide),

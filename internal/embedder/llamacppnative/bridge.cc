@@ -653,6 +653,7 @@ imgsearch_llama_handle * imgsearch_llama_new(
     int32_t n_gpu_layers,
     int32_t n_ctx,
     int32_t n_batch,
+    int32_t n_seq_max,
     int32_t n_threads,
     int32_t use_gpu,
     int32_t image_max_side,
@@ -695,7 +696,7 @@ imgsearch_llama_handle * imgsearch_llama_new(
     cparams.n_ctx = n_ctx > 0 ? static_cast<uint32_t>(n_ctx) : 8192;
     cparams.n_batch = n_batch > 0 ? static_cast<uint32_t>(n_batch) : 512;
     cparams.n_ubatch = cparams.n_batch;
-    cparams.n_seq_max = 1;
+    cparams.n_seq_max = n_seq_max > 0 ? static_cast<uint32_t>(n_seq_max) : 1;
     cparams.pooling_type = LLAMA_POOLING_TYPE_NONE;
     cparams.embeddings = true;
     if (n_threads > 0) {
@@ -908,6 +909,7 @@ std::string g_last_error = "llama-cpp-native requires build tag 'llamacpp_native
 imgsearch_llama_handle * imgsearch_llama_new(
     const char *,
     const char *,
+    int32_t,
     int32_t,
     int32_t,
     int32_t,

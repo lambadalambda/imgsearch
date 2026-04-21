@@ -151,6 +151,7 @@ func New(cfg Config) (*Embedder, error) {
 		C.int32_t(cfg.GPULayers),
 		C.int32_t(cfg.ContextSize),
 		C.int32_t(cfg.BatchSize),
+		C.int32_t(maxSequences),
 		C.int32_t(cfg.Threads),
 		C.int32_t(useGPU),
 		C.int32_t(imageMaxSide),

@@ -7,6 +7,7 @@
 - Added `embedder.BatchImageEmbedder` with `EmbedImages(ctx, paths)` so the worker can hand multiple image paths to an embedder in one call.
 - Updated the worker to use `EmbedImages` when multiple `embed_image` jobs are claimed.
 - Added `-llama-native-max-sequences` as a Go-side chunking control for `EmbedImages`.
+- Wired `-llama-native-max-sequences` through to the native llama.cpp runtime (`n_seq_max`) and added integration coverage that `InspectImageEmbedding` reports the configured sequence count.
 - Added a native correctness test that verifies `EmbedImages` returns embeddings matching `EmbedImage` within cosine similarity `>= 0.999`.
 - Extended `BenchmarkNativeEmbedImage` with `sequential`, `batch-2`, and `batch-4` sub-benchmarks.
 
@@ -107,7 +108,7 @@ Conclusion: two independent contexts in parallel were flat to slightly worse tha
 
 ## Acceptance Criteria
 
-- [ ] `n_seq_max` configurable via CLI flag for the native embedder runtime itself
+- [x] `n_seq_max` configurable via CLI flag for the native embedder runtime itself
 - [ ] New C function processes 2-4 images in one forward pass
 - [x] New Go method `EmbedImages` on the embedder interface
 - [x] Worker uses batched embedding entrypoint when multiple `embed_image` jobs are claimed
