@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/nsfwsql"
 	"imgsearch/internal/tagutil"
 )
 
@@ -47,9 +48,10 @@ func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int,
 		offset = 0
 	}
 	includeNSFWInt := boolToInt(includeNSFW)
+	imageHasNSFWExpr := nsfwsql.TagsJSONHasNSFW("i.tags_json", "tag")
 
 	var total int64
-	if err := db.QueryRowContext(ctx, `
+	if err := db.QueryRowContext(ctx, fmt.Sprintf(`
 SELECT COUNT(*)
 FROM images i
 WHERE NOT EXISTS (
@@ -57,19 +59,12 @@ WHERE NOT EXISTS (
   FROM video_frames vf
   WHERE vf.image_id = i.id
 )
-  AND (
-    ? = 1
-    OR NOT EXISTS (
-      SELECT 1
-      FROM json_each(COALESCE(i.tags_json, '[]')) tag
-      WHERE lower(trim(COALESCE(tag.value, ''))) = 'nsfw'
-    )
-  )
-`, includeNSFWInt).Scan(&total); err != nil {
+  AND (? = 1 OR NOT (%s))
+`, imageHasNSFWExpr), includeNSFWInt).Scan(&total); err != nil {
 		return ListResponse{}, fmt.Errorf("count images: %w", err)
 	}
 
-	rows, err := db.QueryContext(ctx, `
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 SELECT i.id, i.original_name, i.storage_path, i.thumbnail_path, i.mime_type, i.width, i.height,
 	COALESCE(i.description, ''), COALESCE(i.tags_json, '[]'),
 	COALESCE(j.state, 'pending') AS state,
@@ -84,17 +79,10 @@ WHERE NOT EXISTS (
 	FROM video_frames vf
 	WHERE vf.image_id = i.id
 )
-	AND (
-		? = 1
-		OR NOT EXISTS (
-			SELECT 1
-			FROM json_each(COALESCE(i.tags_json, '[]')) tag
-			WHERE lower(trim(COALESCE(tag.value, ''))) = 'nsfw'
-		)
-	)
+	AND (? = 1 OR NOT (%s))
 ORDER BY i.id DESC
 LIMIT ? OFFSET ?
-`, modelID, includeNSFWInt, limit, offset)
+`, imageHasNSFWExpr), modelID, includeNSFWInt, limit, offset)
 	if err != nil {
 		return ListResponse{}, fmt.Errorf("query images: %w", err)
 	}

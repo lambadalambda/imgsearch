@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/nsfwsql"
 	"imgsearch/internal/tagutil"
 )
 
@@ -51,34 +52,19 @@ func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int,
 		offset = 0
 	}
 	includeNSFWInt := boolToInt(includeNSFW)
+	videoHasNSFWCountExpr := nsfwsql.VideoHasNSFW("v.id", "v.tags_json", "tag", "vtag")
+	videoHasNSFWListExpr := nsfwsql.VideoHasNSFW("v.id", "v.tags_json", "tag_nsfw", "vtag_nsfw")
 
 	var total int64
-	if err := db.QueryRowContext(ctx, `
+	if err := db.QueryRowContext(ctx, fmt.Sprintf(`
 SELECT COUNT(*)
 FROM videos v
-WHERE (
-  ? = 1
-  OR NOT (
-    EXISTS (
-      SELECT 1
-      FROM video_frames vf
-      JOIN images i ON i.id = vf.image_id
-      JOIN json_each(COALESCE(i.tags_json, '[]')) tag
-        ON lower(trim(COALESCE(tag.value, ''))) = 'nsfw'
-      WHERE vf.video_id = v.id
-    )
-    OR EXISTS (
-      SELECT 1
-      FROM json_each(COALESCE(v.tags_json, '[]')) vtag
-      WHERE lower(trim(COALESCE(vtag.value, ''))) = 'nsfw'
-    )
-  )
-)
-`, includeNSFWInt).Scan(&total); err != nil {
+WHERE (? = 1 OR NOT (%s))
+`, videoHasNSFWCountExpr), includeNSFWInt).Scan(&total); err != nil {
 		return ListResponse{}, fmt.Errorf("count videos: %w", err)
 	}
 
-	rows, err := db.QueryContext(ctx, `
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 WITH frame_jobs AS (
   SELECT vf.video_id,
          SUM(CASE WHEN j.state = 'failed' THEN 1 ELSE 0 END) AS failed_jobs,
@@ -148,27 +134,10 @@ LEFT JOIN frame_jobs f ON f.video_id = v.id
 LEFT JOIN transcript_jobs tj ON tj.video_id = v.id
 LEFT JOIN annotation_jobs aj ON aj.video_id = v.id
 LEFT JOIN preview_frames p ON p.video_id = v.id AND p.rn = 1
-WHERE (
-  ? = 1
-  OR NOT (
-    EXISTS (
-      SELECT 1
-      FROM video_frames vf_nsfw
-      JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
-      JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) tag_nsfw
-        ON lower(trim(COALESCE(tag_nsfw.value, ''))) = 'nsfw'
-      WHERE vf_nsfw.video_id = v.id
-    )
-    OR EXISTS (
-      SELECT 1
-      FROM json_each(COALESCE(v.tags_json, '[]')) vtag_nsfw
-      WHERE lower(trim(COALESCE(vtag_nsfw.value, ''))) = 'nsfw'
-    )
-  )
-)
+WHERE (? = 1 OR NOT (%s))
 ORDER BY v.id DESC
 LIMIT ? OFFSET ?
-`, modelID, modelID, modelID, includeNSFWInt, limit, offset)
+`, videoHasNSFWListExpr), modelID, modelID, modelID, includeNSFWInt, limit, offset)
 	if err != nil {
 		return ListResponse{}, fmt.Errorf("query videos: %w", err)
 	}

@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -27,13 +27,15 @@ The same `json_each(...)= 'nsfw'` checks and video-frame NSFW joins are duplicat
 
 ## Acceptance Criteria
 
-- [ ] Define shared SQL fragment constants or builders for NSFW checks.
-- [ ] Reuse shared NSFW logic in image/video/search count and data queries.
-- [ ] Preserve existing filtering semantics (including grouped video behavior).
-- [ ] Add regression tests to ensure equivalent filtering across endpoints.
+- [x] Define shared SQL fragment constants or builders for NSFW checks.
+- [x] Reuse shared NSFW logic in image/video/search count and data queries.
+- [x] Preserve existing filtering semantics (including grouped video behavior).
+- [x] Add regression tests to ensure equivalent filtering across endpoints.
 
 ## Related Files
 
 - `internal/images/http.go`
 - `internal/videos/http.go`
 - `internal/search/http.go`
+- `internal/nsfwsql/sql.go`
+- `internal/nsfwsql/sql_test.go`

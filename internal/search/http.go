@@ -15,6 +15,7 @@ import (
 
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/nsfwsql"
 	"imgsearch/internal/tagutil"
 	"imgsearch/internal/vectorindex"
 )
@@ -346,6 +347,8 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 		args = append(args, id)
 	}
 	args = append(args, boolToInt(includeNSFW))
+	imageHasNSFWExpr := nsfwsql.TagsJSONHasNSFW("i.tags_json", "tag")
+	videoHasNSFWExpr := nsfwsql.VideoHasNSFW("vf.video_id", "v.tags_json", "tag_nsfw", "video_tag_nsfw")
 
 	rows, err := h.DB.QueryContext(ctx, fmt.Sprintf(`
 	SELECT i.id,
@@ -371,31 +374,15 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 	    OR (
 	      (
 	        vf.video_id IS NULL
-	        AND NOT EXISTS (
-	          SELECT 1
-	          FROM json_each(COALESCE(i.tags_json, '[]')) tag
-	          WHERE lower(trim(COALESCE(tag.value, ''))) = 'nsfw'
-	        )
+	        AND NOT (%s)
 	      )
 	      OR (
 	        vf.video_id IS NOT NULL
-	        AND NOT EXISTS (
-	          SELECT 1
-	          FROM video_frames vf_nsfw
-	          JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
-	          JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) tag_nsfw
-	            ON lower(trim(COALESCE(tag_nsfw.value, ''))) = 'nsfw'
-	          WHERE vf_nsfw.video_id = vf.video_id
-	        )
-	        AND NOT EXISTS (
-	          SELECT 1
-	          FROM json_each(COALESCE(v.tags_json, '[]')) video_tag_nsfw
-	          WHERE lower(trim(COALESCE(video_tag_nsfw.value, ''))) = 'nsfw'
-	        )
+	        AND NOT (%s)
 	      )
 	    )
 	  )
-	`, strings.Join(placeholders, ",")), args...)
+	`, strings.Join(placeholders, ","), imageHasNSFWExpr, videoHasNSFWExpr), args...)
 	if err != nil {
 		return nil, fmt.Errorf("load images for enrich: %w", err)
 	}
@@ -508,6 +495,8 @@ func (h *Handler) searchByTags(ctx context.Context, tags []string, limit int, of
 		requiredCount = len(tags)
 	}
 	includeNSFWInt := boolToInt(includeNSFW)
+	imageHasNSFWExpr := nsfwsql.TagsJSONHasNSFW("i.tags_json", "nsfw_tag")
+	videoHasNSFWExpr := nsfwsql.VideoHasNSFW("vf.video_id", "v.tags_json", "nsfw_tag", "nsfw_tag_video")
 
 	countArgs := append([]any{}, args...)
 	countArgs = append(countArgs, requiredCount, requiredCount, includeNSFWInt)
@@ -532,24 +521,9 @@ WITH requested_tags(tag) AS (
     COALESCE(vf.video_id, i.id) AS unit_id,
     CASE
       WHEN vf.video_id IS NULL THEN CASE
-        WHEN EXISTS (
-          SELECT 1
-          FROM json_each(COALESCE(i.tags_json, '[]')) nsfw_tag
-          WHERE lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
-        ) THEN 1 ELSE 0 END
+		WHEN %s THEN 1 ELSE 0 END
       ELSE CASE
-        WHEN EXISTS (
-          SELECT 1
-          FROM video_frames vf_nsfw
-          JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
-          JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
-            ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
-          WHERE vf_nsfw.video_id = vf.video_id
-        ) OR EXISTS (
-          SELECT 1
-          FROM json_each(COALESCE(v.tags_json, '[]')) nsfw_tag_video
-          WHERE lower(trim(COALESCE(nsfw_tag_video.value, ''))) = 'nsfw'
-        ) THEN 1 ELSE 0 END
+		WHEN %s THEN 1 ELSE 0 END
     END AS is_nsfw,
     ROW_NUMBER() OVER (
       PARTITION BY CASE WHEN vf.video_id IS NULL THEN 'image:' || i.id ELSE 'video:' || vf.video_id END
@@ -564,7 +538,7 @@ SELECT COUNT(*)
 FROM media_units
 WHERE rn = 1
   AND (? = 1 OR is_nsfw = 0)
-`, strings.Join(placeholders, " UNION ALL SELECT ")), countArgs...).Scan(&total); err != nil {
+`, strings.Join(placeholders, " UNION ALL SELECT "), imageHasNSFWExpr, videoHasNSFWExpr), countArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count tag matches: %w", err)
 	}
 	if total == 0 {
@@ -607,24 +581,9 @@ WITH requested_tags(tag) AS (
 	    itm.matched_count AS matched_count,
     CASE
       WHEN vf.video_id IS NULL THEN CASE
-        WHEN EXISTS (
-          SELECT 1
-          FROM json_each(COALESCE(i.tags_json, '[]')) nsfw_tag
-          WHERE lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
-        ) THEN 1 ELSE 0 END
+		WHEN %s THEN 1 ELSE 0 END
       ELSE CASE
-        WHEN EXISTS (
-          SELECT 1
-          FROM video_frames vf_nsfw
-          JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
-          JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
-            ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
-          WHERE vf_nsfw.video_id = vf.video_id
-        ) OR EXISTS (
-          SELECT 1
-          FROM json_each(COALESCE(v.tags_json, '[]')) nsfw_tag_video
-          WHERE lower(trim(COALESCE(nsfw_tag_video.value, ''))) = 'nsfw'
-        ) THEN 1 ELSE 0 END
+		WHEN %s THEN 1 ELSE 0 END
     END AS is_nsfw,
     ROW_NUMBER() OVER (
       PARTITION BY CASE WHEN vf.video_id IS NULL THEN 'image:' || i.id ELSE 'video:' || vf.video_id END
@@ -658,7 +617,7 @@ WHERE rn = 1
 ORDER BY matched_count DESC, unit_id DESC
 LIMIT ?
 OFFSET ?
-`, strings.Join(placeholders, " UNION ALL SELECT ")), args...)
+`, strings.Join(placeholders, " UNION ALL SELECT "), imageHasNSFWExpr, videoHasNSFWExpr), args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("query tag matches: %w", err)
 	}
@@ -744,32 +703,19 @@ OFFSET ?
 
 func (h *Handler) tagCloud(ctx context.Context, limit int, minCount int, prefix string, includeNSFW bool) ([]TagCount, error) {
 	includeNSFWInt := boolToInt(includeNSFW)
-	rows, err := h.DB.QueryContext(ctx, `
+	imageHasNSFWExpr := nsfwsql.TagsJSONHasNSFW("i.tags_json", "nsfw_tag")
+	videoHasNSFWExpr := nsfwsql.VideoHasNSFW("vf.video_id", "v.tags_json", "nsfw_tag", "nsfw_tag_video")
+	rows, err := h.DB.QueryContext(ctx, fmt.Sprintf(`
 WITH unit_tags AS (
   SELECT DISTINCT
          CASE WHEN vf.video_id IS NULL THEN 'image:' || i.id ELSE 'video:' || vf.video_id END AS media_unit,
          lower(trim(j.value)) AS tag,
          CASE
-           WHEN vf.video_id IS NULL THEN CASE
-             WHEN EXISTS (
-               SELECT 1
-               FROM json_each(COALESCE(i.tags_json, '[]')) nsfw_tag
-               WHERE lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
-             ) THEN 1 ELSE 0 END
-           ELSE CASE
-             WHEN EXISTS (
-               SELECT 1
-               FROM video_frames vf_nsfw
-               JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
-               JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
-                 ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
-               WHERE vf_nsfw.video_id = vf.video_id
-              ) OR EXISTS (
-                SELECT 1
-                FROM json_each(COALESCE(v.tags_json, '[]')) nsfw_tag_video
-                WHERE lower(trim(COALESCE(nsfw_tag_video.value, ''))) = 'nsfw'
-              ) THEN 1 ELSE 0 END
-          END AS is_nsfw
+            WHEN vf.video_id IS NULL THEN CASE
+			  WHEN %s THEN 1 ELSE 0 END
+            ELSE CASE
+			  WHEN %s THEN 1 ELSE 0 END
+           END AS is_nsfw
   FROM images i
   JOIN json_each(COALESCE(i.tags_json, '[]')) j
     ON trim(COALESCE(j.value, '')) <> ''
@@ -780,12 +726,12 @@ SELECT tag,
        COUNT(*) AS count
 FROM unit_tags
 WHERE (? = 1 OR is_nsfw = 0)
-  AND (? = '' OR tag LIKE ? || '%')
+  AND (? = '' OR tag LIKE ? || '%%')
 GROUP BY tag
 HAVING COUNT(*) >= ?
 ORDER BY count DESC, tag ASC
 LIMIT ?
-`, includeNSFWInt, prefix, prefix, minCount, limit)
+`, imageHasNSFWExpr, videoHasNSFWExpr), includeNSFWInt, prefix, prefix, minCount, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query tag cloud: %w", err)
 	}
@@ -807,7 +753,8 @@ LIMIT ?
 
 func (h *Handler) searchTranscriptEmbeddings(ctx context.Context, query []float32, limit int, includeNSFW bool) ([]SearchResult, error) {
 	includeNSFWInt := boolToInt(includeNSFW)
-	rows, err := h.DB.QueryContext(ctx, `
+	videoHasNSFWExpr := nsfwsql.VideoHasNSFW("v.id", "v.tags_json", "nsfw_tag", "nsfw_tag_video")
+	rows, err := h.DB.QueryContext(ctx, fmt.Sprintf(`
 WITH preview_frames AS (
   SELECT vf.video_id,
          vf.image_id,
@@ -830,25 +777,8 @@ FROM video_transcript_embeddings vte
 JOIN videos v ON v.id = vte.video_id
 LEFT JOIN preview_frames p ON p.video_id = v.id AND p.rn = 1
 WHERE vte.model_id = ?
-  AND (
-    ? = 1
-    OR (
-      NOT EXISTS (
-        SELECT 1
-        FROM video_frames vf_nsfw
-        JOIN images i_nsfw ON i_nsfw.id = vf_nsfw.image_id
-        JOIN json_each(COALESCE(i_nsfw.tags_json, '[]')) nsfw_tag
-          ON lower(trim(COALESCE(nsfw_tag.value, ''))) = 'nsfw'
-        WHERE vf_nsfw.video_id = v.id
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM json_each(COALESCE(v.tags_json, '[]')) nsfw_tag_video
-        WHERE lower(trim(COALESCE(nsfw_tag_video.value, ''))) = 'nsfw'
-      )
-    )
-  )
-`, h.ModelID, includeNSFWInt)
+  AND (? = 1 OR NOT (%s))
+`, videoHasNSFWExpr), h.ModelID, includeNSFWInt)
 	if err != nil {
 		return nil, fmt.Errorf("query transcript embeddings: %w", err)
 	}
