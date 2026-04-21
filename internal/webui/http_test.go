@@ -217,6 +217,64 @@ func TestAssetsAreServed(t *testing.T) {
 	}
 }
 
+func TestMediaServingIsRestrictedToMediaSubdirectories(t *testing.T) {
+	dataDir := t.TempDir()
+	imagesDir := filepath.Join(dataDir, "images")
+	videosDir := filepath.Join(dataDir, "videos")
+	if err := os.MkdirAll(imagesDir, 0o755); err != nil {
+		t.Fatalf("mkdir images dir: %v", err)
+	}
+	if err := os.MkdirAll(videosDir, 0o755); err != nil {
+		t.Fatalf("mkdir videos dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(imagesDir, "probe.txt"), []byte("img"), 0o644); err != nil {
+		t.Fatalf("write image probe: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(videosDir, "clip.txt"), []byte("vid"), 0o644); err != nil {
+		t.Fatalf("write video probe: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "imgsearch.sqlite"), []byte("db"), 0o644); err != nil {
+		t.Fatalf("write db probe: %v", err)
+	}
+
+	h := NewHandler(dataDir)
+
+	allowedImageReq := httptest.NewRequest(http.MethodGet, "/media/images/probe.txt", nil)
+	allowedImageRR := httptest.NewRecorder()
+	h.ServeHTTP(allowedImageRR, allowedImageReq)
+	if allowedImageRR.Code != http.StatusOK || allowedImageRR.Body.String() != "img" {
+		t.Fatalf("image media status: got=%d body=%q", allowedImageRR.Code, allowedImageRR.Body.String())
+	}
+
+	allowedVideoReq := httptest.NewRequest(http.MethodGet, "/media/videos/clip.txt", nil)
+	allowedVideoRR := httptest.NewRecorder()
+	h.ServeHTTP(allowedVideoRR, allowedVideoReq)
+	if allowedVideoRR.Code != http.StatusOK || allowedVideoRR.Body.String() != "vid" {
+		t.Fatalf("video media status: got=%d body=%q", allowedVideoRR.Code, allowedVideoRR.Body.String())
+	}
+
+	blockedReq := httptest.NewRequest(http.MethodGet, "/media/imgsearch.sqlite", nil)
+	blockedRR := httptest.NewRecorder()
+	h.ServeHTTP(blockedRR, blockedReq)
+	if blockedRR.Code != http.StatusNotFound {
+		t.Fatalf("non-media path should be blocked: got=%d want=%d body=%s", blockedRR.Code, http.StatusNotFound, blockedRR.Body.String())
+	}
+
+	unknownSubdirReq := httptest.NewRequest(http.MethodGet, "/media/audio/song.mp3", nil)
+	unknownSubdirRR := httptest.NewRecorder()
+	h.ServeHTTP(unknownSubdirRR, unknownSubdirReq)
+	if unknownSubdirRR.Code != http.StatusNotFound {
+		t.Fatalf("unknown media subdirectory should be blocked: got=%d want=%d", unknownSubdirRR.Code, http.StatusNotFound)
+	}
+
+	traversalReq := httptest.NewRequest(http.MethodGet, "/media/images/../imgsearch.sqlite", nil)
+	traversalRR := httptest.NewRecorder()
+	h.ServeHTTP(traversalRR, traversalReq)
+	if traversalRR.Code == http.StatusOK {
+		t.Fatalf("traversal request must not succeed: got=%d body=%q", traversalRR.Code, traversalRR.Body.String())
+	}
+}
+
 func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	h := NewHandler(t.TempDir())
 

@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 )
 
 //go:embed static/*
@@ -24,11 +25,15 @@ func NewHandler(dataDir string) http.Handler {
 		panic("webui index unavailable: " + err.Error())
 	}
 
-	mediaRoot := dataDir
+	imagesRoot := filepath.Join(dataDir, "images")
+	videosRoot := filepath.Join(dataDir, "videos")
+	mediaMux := http.NewServeMux()
+	mediaMux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(imagesRoot))))
+	mediaMux.Handle("/videos/", http.StripPrefix("/videos/", http.FileServer(http.Dir(videosRoot))))
 
 	mux := http.NewServeMux()
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assets))))
-	mux.Handle("/media/", http.StripPrefix("/media/", http.FileServer(http.Dir(mediaRoot))))
+	mux.Handle("/media/", http.StripPrefix("/media", mediaMux))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" && r.URL.Path != "/index.html" {
 			http.NotFound(w, r)

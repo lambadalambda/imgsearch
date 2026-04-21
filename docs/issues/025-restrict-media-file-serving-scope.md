@@ -6,7 +6,7 @@ P0
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -26,10 +26,10 @@ The web UI currently mounts `/media/` to the full `dataDir`, which can expose no
 
 ## Acceptance Criteria
 
-- [ ] `/media/` serves only explicit media subdirectories (at minimum `images/` and `videos/`).
-- [ ] Requests for non-media paths (DB, WAL, tmp, etc.) return `404`.
-- [ ] Existing UI media rendering continues to work.
-- [ ] Add regression tests for allowed and denied paths.
+- [x] `/media/` serves only explicit media subdirectories (at minimum `images/` and `videos/`).
+- [x] Requests for non-media paths (DB, WAL, tmp, etc.) return `404`.
+- [x] Existing UI media rendering continues to work.
+- [x] Add regression tests for allowed and denied paths.
 
 ## Related Files
 
