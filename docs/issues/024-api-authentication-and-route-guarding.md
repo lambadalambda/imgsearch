@@ -6,7 +6,7 @@ P0
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -29,10 +29,10 @@ All `/api/*` routes are currently exposed without authentication. This includes 
 
 ## Acceptance Criteria
 
-- [ ] Introduce auth middleware for `/api/*` routes (token or equivalent).
-- [ ] Unauthorized requests return `401` and perform no side effects.
-- [ ] `healthz` and static web UI routes remain accessible without auth by default.
-- [ ] Configuration and usage are documented for local and networked deployments.
+- [x] Introduce auth middleware for `/api/*` routes (token or equivalent).
+- [x] Unauthorized requests return `401` and perform no side effects.
+- [x] `healthz` and static web UI routes remain accessible without auth by default.
+- [x] Configuration and usage are documented for local and networked deployments.
 
 ## Related Files
 

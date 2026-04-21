@@ -89,6 +89,9 @@ Full instructions are in `docs/podman-cuda-ubuntu.md`.
 - The default Qwen embedding files and the default Gemma annotator files are downloaded automatically on first run when missing.
 - Add `-enable-annotations=false` if you want to run the API without loading the Gemma annotation model.
 - Add `-mode=api` or `-mode=worker` if you want to split the HTTP server and background worker into separate processes.
+- Use `-api-key <token>` (or `IMGSEARCH_API_KEY`) to require authentication on `/api/*` routes.
+- If you bind to a non-loopback address (for example `-addr 0.0.0.0:8080`), an API key is required at startup.
+- API clients can authenticate with `X-Imgsearch-API-Key: <token>` or `Authorization: Bearer <token>`.
 - Data is stored in `./data` by default.
 - The UI includes uploads, indexing status, gallery browsing, text search, and similar-image search.
 

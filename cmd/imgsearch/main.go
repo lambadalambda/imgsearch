@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"imgsearch/internal/app"
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/httputil"
 	"imgsearch/internal/images"
 	"imgsearch/internal/jobs"
 	"imgsearch/internal/live"
@@ -33,6 +35,7 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
+	apiKey := flag.String("api-key", strings.TrimSpace(os.Getenv("IMGSEARCH_API_KEY")), "optional API key required for /api/* requests")
 	modeFlag := flag.String("mode", string(runtimeModeAll), "process mode: all, api, or worker")
 	workerBatchSize := flag.Int("worker-batch-size", 1, "number of jobs to claim per batch (1 disables batching)")
 	llamaNativeModelPath := flag.String("llama-native-model-path", defaultLlamaNativeModelPath, "path to the llama.cpp GGUF embedding model")
@@ -79,6 +82,12 @@ func main() {
 	mode, err := resolveRuntimeMode(*modeFlag)
 	if err != nil {
 		log.Fatalf("configure mode: %v", err)
+	}
+	resolvedAPIKey := strings.TrimSpace(*apiKey)
+	if mode.startsHTTP() {
+		if err := validateHTTPExposure(*addr, resolvedAPIKey); err != nil {
+			log.Fatalf("configure api security: %v", err)
+		}
 	}
 	if warning := annotationModeWarning(mode, *enableAnnotations, *llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath); warning != "" {
 		log.Printf("%s", warning)
@@ -385,11 +394,51 @@ func main() {
 
 	if mode.startsHTTP() {
 		mux := newServerMux(sqlDB, *dataDir, modelID, activeEmbedder, index, uploadSvc)
+		handler := withAPISecurity(mux, resolvedAPIKey)
 		log.Printf("listening on http://%s", *addr)
-		if err := http.ListenAndServe(*addr, mux); err != nil {
+		if err := http.ListenAndServe(*addr, handler); err != nil {
 			log.Fatalf("serve http: %v", err)
 		}
 	}
+}
+
+func withAPISecurity(handler http.Handler, apiKey string) http.Handler {
+	h := httputil.NewAPIAuthMiddleware(apiKey)(handler)
+	h = httputil.NewAPIKeyCookieMiddleware(apiKey)(h)
+	return h
+}
+
+func validateHTTPExposure(addr string, apiKey string) error {
+	if strings.TrimSpace(apiKey) != "" || isLoopbackListenAddress(addr) {
+		return nil
+	}
+	return fmt.Errorf("non-loopback listen address %q requires -api-key (or IMGSEARCH_API_KEY)", addr)
+}
+
+func isLoopbackListenAddress(addr string) bool {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return false
+	}
+
+	host := addr
+	if strings.HasPrefix(addr, ":") {
+		host = ""
+	} else if parsedHost, _, err := net.SplitHostPort(addr); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
 }
 
 func newServerMux(
