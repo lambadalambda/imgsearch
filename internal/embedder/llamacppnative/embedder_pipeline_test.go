@@ -16,7 +16,7 @@ func TestRunEmbedPipelinePreservesOrderAndCleansUp(t *testing.T) {
 	var mu sync.Mutex
 	cleanupCount := make(map[string]int, len(paths))
 
-	preprocess := func(path string) (preparedEmbedPath, error) {
+	preprocess := func(_ context.Context, path string) (preparedEmbedPath, error) {
 		return preparedEmbedPath{
 			path: path,
 			cleanup: func() {
@@ -70,7 +70,7 @@ func TestRunEmbedPipelineOverlapsPreprocessAndEmbed(t *testing.T) {
 	preprocessSecondStarted := make(chan struct{})
 	allowEmbedFirstFinish := make(chan struct{})
 
-	preprocess := func(path string) (preparedEmbedPath, error) {
+	preprocess := func(_ context.Context, path string) (preparedEmbedPath, error) {
 		if path == "p2" {
 			close(preprocessSecondStarted)
 		}
@@ -124,7 +124,7 @@ func TestRunEmbedPipelineCancelsPendingPreprocessedItemOnEmbedError(t *testing.T
 	cleanupCount := map[string]int{"p1": 0, "p2": 0}
 	preprocessSecondReady := make(chan struct{})
 
-	preprocess := func(path string) (preparedEmbedPath, error) {
+	preprocess := func(_ context.Context, path string) (preparedEmbedPath, error) {
 		if path == "p2" {
 			close(preprocessSecondReady)
 		}
@@ -166,7 +166,7 @@ func TestRunEmbedPipelineReturnsPreprocessError(t *testing.T) {
 	errPreprocess := errors.New("preprocess failed")
 
 	embedStarted := make(chan struct{})
-	preprocess := func(path string) (preparedEmbedPath, error) {
+	preprocess := func(_ context.Context, path string) (preparedEmbedPath, error) {
 		if path == "p2" {
 			return preparedEmbedPath{}, errPreprocess
 		}
@@ -197,7 +197,7 @@ func TestRunEmbedPipelineReturnsContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	paths := []string{"p1", "p2"}
 
-	preprocess := func(path string) (preparedEmbedPath, error) {
+	preprocess := func(_ context.Context, path string) (preparedEmbedPath, error) {
 		return preparedEmbedPath{path: path, cleanup: func() {}}, nil
 	}
 	embed := func(_ context.Context, prepared preparedEmbedPath) ([]float32, error) {
@@ -223,7 +223,7 @@ func TestRunEmbedChunkFallsBackToSerialOnPreprocessError(t *testing.T) {
 	embedCalls := 0
 	failedP2Once := false
 
-	preprocess := func(path string) (preparedEmbedPath, error) {
+	preprocess := func(_ context.Context, path string) (preparedEmbedPath, error) {
 		preprocessCalls++
 		if path == "p2" && !failedP2Once {
 			failedP2Once = true
@@ -282,7 +282,7 @@ func TestRunEmbedChunkReturnsEmbedErrorWithoutFallback(t *testing.T) {
 	preprocessCalls := 0
 	embedCalls := 0
 
-	preprocess := func(path string) (preparedEmbedPath, error) {
+	preprocess := func(_ context.Context, path string) (preparedEmbedPath, error) {
 		preprocessCalls++
 		return preparedEmbedPath{path: path, cleanup: func() {}}, nil
 	}
@@ -313,7 +313,7 @@ func TestRunEmbedSerialReturnsContextCanceled(t *testing.T) {
 	_, err := runEmbedSerial(
 		ctx,
 		[]string{"p1"},
-		func(path string) (preparedEmbedPath, error) {
+		func(_ context.Context, path string) (preparedEmbedPath, error) {
 			return preparedEmbedPath{path: path, cleanup: func() {}}, nil
 		},
 		func(_ context.Context, prepared preparedEmbedPath) ([]float32, error) {

@@ -249,14 +249,29 @@ func (e *Embedder) EmbedText(ctx context.Context, text string) ([]float32, error
 }
 
 func (e *Embedder) EmbedImage(ctx context.Context, path string) ([]float32, error) {
-	vecs, err := e.EmbedImages(ctx, []string{path})
+	if err := ensureContextActive(ctx); err != nil {
+		return nil, err
+	}
+
+	// Fast-fail before preprocessing when the embedder is already closed.
+	// executePreparedImageLocked performs the authoritative handle check.
+	e.mu.Lock()
+	isClosed := e.handle == nil
+	e.mu.Unlock()
+	if isClosed {
+		return nil, fmt.Errorf("llama-cpp-native embedder is closed")
+	}
+
+	prepared, err := e.prepareImageForEmbedding(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	if len(vecs) != 1 {
-		return nil, fmt.Errorf("llama-cpp-native batch image embedding count mismatch: got %d want 1", len(vecs))
+	if prepared.cleanup == nil {
+		prepared.cleanup = func() {}
 	}
-	return vecs[0], nil
+	defer prepared.cleanup()
+
+	return e.executePreparedImage(ctx, prepared)
 }
 
 func (e *Embedder) EmbedImages(ctx context.Context, paths []string) ([][]float32, error) {
@@ -286,23 +301,10 @@ func (e *Embedder) EmbedImages(ctx context.Context, paths []string) ([][]float32
 		chunkOut, err := runEmbedChunk(
 			ctx,
 			paths[start:end],
-			func(path string) (preparedEmbedPath, error) {
-				preprocessedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(path, e.imageMaxSide)
-				if err != nil {
-					return preparedEmbedPath{}, err
-				}
-				return preparedEmbedPath{path: preprocessedPath, cleanup: cleanup}, nil
+			func(preprocessCtx context.Context, path string) (preparedEmbedPath, error) {
+				return e.prepareImageForEmbedding(preprocessCtx, path)
 			},
-			func(embedCtx context.Context, prepared preparedEmbedPath) ([]float32, error) {
-				if err := ensureContextActive(embedCtx); err != nil {
-					return nil, err
-				}
-				vec := make([]float32, e.dimensions)
-				if err := e.embedImagePathLocked(prepared.path, vec); err != nil {
-					return nil, err
-				}
-				return vec, nil
-			},
+			e.executePreparedImageLocked,
 		)
 		e.mu.Unlock()
 		if err != nil {
@@ -314,10 +316,41 @@ func (e *Embedder) EmbedImages(ctx context.Context, paths []string) ([][]float32
 	return results, nil
 }
 
+func (e *Embedder) prepareImageForEmbedding(ctx context.Context, path string) (preparedEmbedPath, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return preparedEmbedPath{}, err
+	}
+	preparedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(path, e.imageMaxSide)
+	if err != nil {
+		return preparedEmbedPath{}, err
+	}
+	return preparedEmbedPath{path: preparedPath, cleanup: cleanup}, nil
+}
+
+func (e *Embedder) executePreparedImage(ctx context.Context, prepared preparedEmbedPath) ([]float32, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.executePreparedImageLocked(ctx, prepared)
+}
+
+func (e *Embedder) executePreparedImageLocked(ctx context.Context, prepared preparedEmbedPath) ([]float32, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return nil, err
+	}
+	if e.handle == nil {
+		return nil, fmt.Errorf("llama-cpp-native embedder is closed")
+	}
+	vec := make([]float32, e.dimensions)
+	if err := e.embedImagePathLocked(prepared.path, vec); err != nil {
+		return nil, err
+	}
+	return vec, nil
+}
+
 func runEmbedChunk(
 	ctx context.Context,
 	paths []string,
-	preprocess func(string) (preparedEmbedPath, error),
+	preprocess func(context.Context, string) (preparedEmbedPath, error),
 	embed func(context.Context, preparedEmbedPath) ([]float32, error),
 ) ([][]float32, error) {
 	chunkOut, err := runEmbedPipeline(ctx, paths, preprocess, embed)
@@ -336,7 +369,7 @@ func runEmbedChunk(
 func runEmbedSerial(
 	ctx context.Context,
 	paths []string,
-	preprocess func(string) (preparedEmbedPath, error),
+	preprocess func(context.Context, string) (preparedEmbedPath, error),
 	embed func(context.Context, preparedEmbedPath) ([]float32, error),
 ) ([][]float32, error) {
 	if len(paths) == 0 {
@@ -348,7 +381,7 @@ func runEmbedSerial(
 		if err := ensureContextActive(ctx); err != nil {
 			return nil, err
 		}
-		prepared, err := preprocess(path)
+		prepared, err := preprocess(ctx, path)
 		if err != nil {
 			return nil, err
 		}
@@ -373,7 +406,7 @@ func runEmbedSerial(
 func runEmbedPipeline(
 	ctx context.Context,
 	paths []string,
-	preprocess func(string) (preparedEmbedPath, error),
+	preprocess func(context.Context, string) (preparedEmbedPath, error),
 	embed func(context.Context, preparedEmbedPath) ([]float32, error),
 ) ([][]float32, error) {
 	if len(paths) == 0 {
@@ -394,7 +427,7 @@ func runEmbedPipeline(
 				producerErrCh <- err
 				return
 			}
-			prepared, err := preprocess(path)
+			prepared, err := preprocess(runCtx, path)
 			if err != nil {
 				producerErrCh <- pipelinePreprocessError{err: err}
 				return
@@ -456,11 +489,11 @@ func (e *Embedder) InspectImageEmbedding(ctx context.Context, path string) (Embe
 		return out, err
 	}
 
-	preprocessedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(path, e.imageMaxSide)
+	prepared, err := e.prepareImageForEmbedding(ctx, path)
 	if err != nil {
 		return out, err
 	}
-	defer cleanup()
+	defer prepared.cleanup()
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -469,7 +502,7 @@ func (e *Embedder) InspectImageEmbedding(ctx context.Context, path string) (Embe
 		return out, fmt.Errorf("llama-cpp-native embedder is closed")
 	}
 
-	cPath := C.CString(preprocessedPath)
+	cPath := C.CString(prepared.path)
 	defer C.free(unsafe.Pointer(cPath))
 	cInstruction := C.CString(e.passageInstruction)
 	defer C.free(unsafe.Pointer(cInstruction))
