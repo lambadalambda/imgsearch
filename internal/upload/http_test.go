@@ -3,6 +3,7 @@ package upload
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -245,6 +246,89 @@ func TestUploadHandlerRejectsPayloadTooLarge(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+}
+
+func TestUploadHandlerRejectsTooManyFilesInSingleRequest(t *testing.T) {
+	svc, _ := setupService(t)
+	h := NewHandler(svc)
+
+	files := make([]struct {
+		filename string
+		content  []byte
+	}, 0, maxUploadFilesPerRequest+1)
+	for i := 0; i < maxUploadFilesPerRequest+1; i++ {
+		files = append(files, struct {
+			filename string
+			content  []byte
+		}{
+			filename: fmt.Sprintf("file-%d.png", i),
+			content:  pngBytes(t),
+		})
+	}
+
+	body, contentType := multipartBodyWithFiles(t, files)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "too many files") {
+		t.Fatalf("expected too-many-files error, got %s", rr.Body.String())
+	}
+}
+
+func TestUploadHandlerAcceptsMaxFilesPerRequest(t *testing.T) {
+	svc, _ := setupService(t)
+	h := NewHandler(svc)
+
+	files := make([]struct {
+		filename string
+		content  []byte
+	}, 0, maxUploadFilesPerRequest)
+	for i := 0; i < maxUploadFilesPerRequest; i++ {
+		files = append(files, struct {
+			filename string
+			content  []byte
+		}{
+			filename: fmt.Sprintf("file-%d.png", i),
+			content:  pngBytes(t),
+		})
+	}
+
+	body, contentType := multipartBodyWithFiles(t, files)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusCreated, rr.Body.String())
+	}
+
+	var resp UploadBatchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Uploads) != maxUploadFilesPerRequest {
+		t.Fatalf("upload count: got=%d want=%d", len(resp.Uploads), maxUploadFilesPerRequest)
+	}
+}
+
+func TestUploadHandlerRejectsNonMultipartContentType(t *testing.T) {
+	svc, _ := setupService(t)
+	h := NewHandler(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", strings.NewReader("raw body"))
+	req.Header.Set("Content-Type", "application/octet-stream")
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 

@@ -8,7 +8,11 @@ import (
 	"imgsearch/internal/httputil"
 )
 
-const maxUploadBytes = 500 << 20
+const (
+	maxUploadBytes           = 64 << 20
+	maxUploadMemoryBytes     = 8 << 20
+	maxUploadFilesPerRequest = 32
+)
 
 type UploadResponse struct {
 	MediaType string `json:"media_type,omitempty"`
@@ -33,14 +37,23 @@ func NewHandler(svc *Service) http.Handler {
 
 		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 
-		if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
+		if err := r.ParseMultipartForm(maxUploadMemoryBytes); err != nil {
 			httputil.WriteJSONError(w, http.StatusBadRequest, "invalid multipart upload")
 			return
 		}
+		defer func() {
+			if r.MultipartForm != nil {
+				_ = r.MultipartForm.RemoveAll()
+			}
+		}()
 
 		files := r.MultipartForm.File["file"]
 		if len(files) == 0 {
 			httputil.WriteJSONError(w, http.StatusBadRequest, "missing file")
+			return
+		}
+		if len(files) > maxUploadFilesPerRequest {
+			httputil.WriteJSONError(w, http.StatusBadRequest, "too many files in single request")
 			return
 		}
 
