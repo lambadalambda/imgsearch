@@ -39,7 +39,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P0 Require API authentication and route guarding for `/api/*`: `docs/issues/024-api-authentication-and-route-guarding.md`
 - [x] P0 Restrict `/media/` to explicit media subdirectories only: `docs/issues/025-restrict-media-file-serving-scope.md`
 - [x] P1 Harden multipart upload resource limits and cleanup: `docs/issues/026-harden-multipart-upload-resource-usage.md`
-- [ ] P1 Add explicit HTTP server timeouts and header limits: `docs/issues/027-add-http-server-timeouts-and-limits.md`
+- [x] P1 Add explicit HTTP server timeouts and header limits: `docs/issues/027-add-http-server-timeouts-and-limits.md`
 - [ ] P1 Bound transcription audio memory and feature allocation: `docs/issues/028-bound-transcription-audio-memory.md`
 - [ ] P1 Default container bind address to loopback and require opt-in exposure: `docs/issues/029-safe-network-bind-defaults-for-container.md`
 - [ ] P2 Deduplicate HTTP query parsing helpers: `docs/issues/030-deduplicate-http-query-parsing-helpers.md`

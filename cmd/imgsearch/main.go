@@ -32,6 +32,15 @@ import (
 	"imgsearch/internal/worker"
 )
 
+const (
+	defaultHTTPReadHeaderTimeout = 5 * time.Second
+	defaultHTTPReadTimeout       = 30 * time.Second
+	// WebSocket handlers manage per-message deadlines after upgrade.
+	defaultHTTPWriteTimeout   = 60 * time.Second
+	defaultHTTPIdleTimeout    = 120 * time.Second
+	defaultHTTPMaxHeaderBytes = 1 << 20
+)
+
 func main() {
 	dataDir := flag.String("data-dir", "./data", "data directory")
 	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
@@ -395,10 +404,31 @@ func main() {
 	if mode.startsHTTP() {
 		mux := newServerMux(sqlDB, *dataDir, modelID, activeEmbedder, index, uploadSvc)
 		handler := withAPISecurity(mux, resolvedAPIKey)
+		server := configuredHTTPServer(*addr, handler)
+		log.Printf(
+			"http limits read_header_timeout=%s read_timeout=%s write_timeout=%s idle_timeout=%s max_header_bytes=%d",
+			server.ReadHeaderTimeout,
+			server.ReadTimeout,
+			server.WriteTimeout,
+			server.IdleTimeout,
+			server.MaxHeaderBytes,
+		)
 		log.Printf("listening on http://%s", *addr)
-		if err := http.ListenAndServe(*addr, handler); err != nil {
+		if err := server.ListenAndServe(); err != nil {
 			log.Fatalf("serve http: %v", err)
 		}
+	}
+}
+
+func configuredHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: defaultHTTPReadHeaderTimeout,
+		ReadTimeout:       defaultHTTPReadTimeout,
+		WriteTimeout:      defaultHTTPWriteTimeout,
+		IdleTimeout:       defaultHTTPIdleTimeout,
+		MaxHeaderBytes:    defaultHTTPMaxHeaderBytes,
 	}
 }
 

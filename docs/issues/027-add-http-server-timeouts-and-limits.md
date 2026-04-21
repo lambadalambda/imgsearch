@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -24,10 +24,10 @@ The server currently uses `http.ListenAndServe` directly without explicit timeou
 
 ## Acceptance Criteria
 
-- [ ] Replace `http.ListenAndServe` with explicit `http.Server` configuration.
-- [ ] Set sane defaults for read/write/header/idle timeout values.
-- [ ] Set `MaxHeaderBytes` to a bounded value.
-- [ ] Add startup logging of active HTTP limits.
+- [x] Replace `http.ListenAndServe` with explicit `http.Server` configuration.
+- [x] Set sane defaults for read/write/header/idle timeout values.
+- [x] Set `MaxHeaderBytes` to a bounded value.
+- [x] Add startup logging of active HTTP limits.
 
 ## Related Files
 

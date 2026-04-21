@@ -152,3 +152,51 @@ func TestValidateHTTPExposure(t *testing.T) {
 		t.Fatalf("ipv6 all-interface address should require api key")
 	}
 }
+
+func TestConfiguredHTTPServerUsesSafeTimeoutDefaults(t *testing.T) {
+	h := http.NewServeMux()
+	server := configuredHTTPServer("127.0.0.1:8080", h)
+
+	if server.Addr != "127.0.0.1:8080" {
+		t.Fatalf("addr: got=%q", server.Addr)
+	}
+	if server.Handler != h {
+		t.Fatalf("expected configured handler to be installed")
+	}
+	if server.ReadHeaderTimeout != defaultHTTPReadHeaderTimeout {
+		t.Fatalf("read header timeout: got=%s want=%s", server.ReadHeaderTimeout, defaultHTTPReadHeaderTimeout)
+	}
+	if server.ReadTimeout != defaultHTTPReadTimeout {
+		t.Fatalf("read timeout: got=%s want=%s", server.ReadTimeout, defaultHTTPReadTimeout)
+	}
+	if server.WriteTimeout != defaultHTTPWriteTimeout {
+		t.Fatalf("write timeout: got=%s want=%s", server.WriteTimeout, defaultHTTPWriteTimeout)
+	}
+	if server.IdleTimeout != defaultHTTPIdleTimeout {
+		t.Fatalf("idle timeout: got=%s want=%s", server.IdleTimeout, defaultHTTPIdleTimeout)
+	}
+	if server.MaxHeaderBytes != defaultHTTPMaxHeaderBytes {
+		t.Fatalf("max header bytes: got=%d want=%d", server.MaxHeaderBytes, defaultHTTPMaxHeaderBytes)
+	}
+}
+
+func TestHTTPServerTimeoutConstantsAreSane(t *testing.T) {
+	if defaultHTTPReadHeaderTimeout <= 0 {
+		t.Fatalf("read header timeout must be positive: got=%s", defaultHTTPReadHeaderTimeout)
+	}
+	if defaultHTTPReadTimeout <= 0 {
+		t.Fatalf("read timeout must be positive: got=%s", defaultHTTPReadTimeout)
+	}
+	if defaultHTTPReadTimeout < defaultHTTPReadHeaderTimeout {
+		t.Fatalf("read timeout must be >= read header timeout: read=%s readHeader=%s", defaultHTTPReadTimeout, defaultHTTPReadHeaderTimeout)
+	}
+	if defaultHTTPWriteTimeout <= 0 {
+		t.Fatalf("write timeout must be positive: got=%s", defaultHTTPWriteTimeout)
+	}
+	if defaultHTTPIdleTimeout <= 0 {
+		t.Fatalf("idle timeout must be positive: got=%s", defaultHTTPIdleTimeout)
+	}
+	if defaultHTTPMaxHeaderBytes <= 0 {
+		t.Fatalf("max header bytes must be positive: got=%d", defaultHTTPMaxHeaderBytes)
+	}
+}
