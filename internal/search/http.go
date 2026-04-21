@@ -97,7 +97,7 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 	tagFilters := parseExplicitTagFilters(r)
 	tagMode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tag_mode")))
 	tagMatchAll := tagMode != "any"
-	includeNSFW := parseIncludeNSFW(r)
+	includeNSFW := httputil.ParseIncludeNSFWQuery(r)
 
 	vec, err := h.embedQueryVector(r.Context(), q, neg)
 	if err != nil {
@@ -109,7 +109,7 @@ func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parseLimit(r, 20)
+	limit := httputil.ParseLimitQuery(r, 20)
 	searchLimit := limit
 	if len(tagFilters) > 0 || !includeNSFW {
 		searchLimit = limit * 8
@@ -217,9 +217,9 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image_id")
 		return
 	}
-	includeNSFW := parseIncludeNSFW(r)
+	includeNSFW := httputil.ParseIncludeNSFWQuery(r)
 
-	limit := parseLimit(r, 20)
+	limit := httputil.ParseLimitQuery(r, 20)
 	searchLimit := limit
 	if !includeNSFW {
 		searchLimit = limit * 8
@@ -286,11 +286,11 @@ func (h *Handler) handleTagSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parseLimit(r, 24)
-	offset := parseOffset(r)
+	limit := httputil.ParseLimitQuery(r, 24)
+	offset := httputil.ParseOffsetQuery(r, 1000000)
 	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
 	matchAll := mode == "all"
-	includeNSFW := parseIncludeNSFW(r)
+	includeNSFW := httputil.ParseIncludeNSFWQuery(r)
 
 	results, total, err := h.searchByTags(r.Context(), tags, limit, offset, matchAll, includeNSFW)
 	if err != nil {
@@ -307,13 +307,13 @@ func (h *Handler) handleTagCloud(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	limit := parseLimit(r, 60)
+	limit := httputil.ParseLimitQuery(r, 60)
 	if limit > 120 {
 		limit = 120
 	}
 	minCount := parseMinCount(r, 1)
 	prefix := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
-	includeNSFW := parseIncludeNSFW(r)
+	includeNSFW := httputil.ParseIncludeNSFWQuery(r)
 
 	tags, err := h.tagCloud(r.Context(), limit, minCount, prefix, includeNSFW)
 	if err != nil {
@@ -970,30 +970,6 @@ func decodeTagsJSON(raw string) ([]string, error) {
 	return tags, nil
 }
 
-func parseLimit(r *http.Request, fallback int) int {
-	v := r.URL.Query().Get("limit")
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n <= 0 || n > 200 {
-		return fallback
-	}
-	return n
-}
-
-func parseOffset(r *http.Request) int {
-	v := r.URL.Query().Get("offset")
-	if v == "" {
-		return 0
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 0 || n > 1000000 {
-		return 0
-	}
-	return n
-}
-
 func parseMinCount(r *http.Request, fallback int) int {
 	v := r.URL.Query().Get("min_count")
 	if v == "" {
@@ -1004,18 +980,6 @@ func parseMinCount(r *http.Request, fallback int) int {
 		return fallback
 	}
 	return n
-}
-
-func parseIncludeNSFW(r *http.Request) bool {
-	v := strings.TrimSpace(r.URL.Query().Get("include_nsfw"))
-	if v == "" {
-		return false
-	}
-	parsed, err := strconv.ParseBool(v)
-	if err != nil {
-		return false
-	}
-	return parsed
 }
 
 func boolToInt(v bool) int {

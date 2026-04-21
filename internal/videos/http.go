@@ -220,9 +220,9 @@ func NewHandler(h *Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			limit := parseLimit(r, 50)
-			offset := parseOffset(r)
-			includeNSFW := parseIncludeNSFW(r)
+			limit := httputil.ParseLimitQuery(r, 50)
+			offset := httputil.ParseOffsetQuery(r, 0)
+			includeNSFW := httputil.ParseIncludeNSFWQuery(r)
 
 			resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset, includeNSFW)
 			if err != nil {
@@ -369,42 +369,6 @@ func removeStoredPath(dataDir string, rel string) {
 		return
 	}
 	_ = os.Remove(filepath.Join(dataDir, filepath.FromSlash(rel)))
-}
-
-func parseLimit(r *http.Request, fallback int) int {
-	v := r.URL.Query().Get("limit")
-	if v == "" {
-		return fallback
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n <= 0 || n > 200 {
-		return fallback
-	}
-	return n
-}
-
-func parseOffset(r *http.Request) int {
-	v := r.URL.Query().Get("offset")
-	if v == "" {
-		return 0
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 0 {
-		return 0
-	}
-	return n
-}
-
-func parseIncludeNSFW(r *http.Request) bool {
-	v := strings.TrimSpace(r.URL.Query().Get("include_nsfw"))
-	if v == "" {
-		return false
-	}
-	parsed, err := strconv.ParseBool(v)
-	if err != nil {
-		return false
-	}
-	return parsed
 }
 
 func boolToInt(v bool) int {

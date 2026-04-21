@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -102,7 +101,7 @@ func NewHandler(h *Handler) http.Handler {
 		if imagesOffset < 0 {
 			imagesOffset = 0
 		}
-		includeNSFW := parseIncludeNSFW(r)
+		includeNSFW := httputil.ParseIncludeNSFWQuery(r)
 
 		closed := make(chan struct{})
 		go func() {
@@ -219,16 +218,4 @@ func defaultPortForScheme(scheme string) string {
 	default:
 		return "80"
 	}
-}
-
-func parseIncludeNSFW(r *http.Request) bool {
-	v := strings.TrimSpace(r.URL.Query().Get("include_nsfw"))
-	if v == "" {
-		return false
-	}
-	parsed, err := strconv.ParseBool(v)
-	if err != nil {
-		return false
-	}
-	return parsed
 }

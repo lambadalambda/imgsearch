@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -28,10 +28,10 @@ Duplicate helper sets currently exist in:
 
 ## Acceptance Criteria
 
-- [ ] Introduce shared query parsing helpers in a common package.
-- [ ] Remove duplicate implementations from handler files.
-- [ ] Preserve existing endpoint behavior and bounds.
-- [ ] Add/update tests for shared helper behavior.
+- [x] Introduce shared query parsing helpers in a common package.
+- [x] Remove duplicate implementations from handler files.
+- [x] Preserve existing endpoint behavior and bounds.
+- [x] Add/update tests for shared helper behavior.
 
 ## Related Files
 
@@ -40,3 +40,5 @@ Duplicate helper sets currently exist in:
 - `internal/search/http.go`
 - `internal/live/http.go`
 - `internal/httputil/`
+- `internal/httputil/query.go`
+- `internal/httputil/query_test.go`
