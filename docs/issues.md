@@ -34,6 +34,21 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P2 Shift to a search-first masthead and quiet ops controls: `docs/issues/022-search-first-masthead-and-quiet-ops.md`
 - [x] P2 Add tag cloud and explicit tag search flow: `docs/issues/023-tag-cloud-and-tag-search.md`
 
+## Security & Maintainability
+
+- [ ] P0 Require API authentication and route guarding for `/api/*`: `docs/issues/024-api-authentication-and-route-guarding.md`
+- [ ] P0 Restrict `/media/` to explicit media subdirectories only: `docs/issues/025-restrict-media-file-serving-scope.md`
+- [ ] P1 Harden multipart upload resource limits and cleanup: `docs/issues/026-harden-multipart-upload-resource-usage.md`
+- [ ] P1 Add explicit HTTP server timeouts and header limits: `docs/issues/027-add-http-server-timeouts-and-limits.md`
+- [ ] P1 Bound transcription audio memory and feature allocation: `docs/issues/028-bound-transcription-audio-memory.md`
+- [ ] P1 Default container bind address to loopback and require opt-in exposure: `docs/issues/029-safe-network-bind-defaults-for-container.md`
+- [ ] P2 Deduplicate HTTP query parsing helpers: `docs/issues/030-deduplicate-http-query-parsing-helpers.md`
+- [ ] P2 Deduplicate tag JSON decoding helpers: `docs/issues/031-deduplicate-tags-json-decoding.md`
+- [ ] P2 Unify item ID parsing and safe stored-path removal helpers: `docs/issues/032-unify-item-id-and-storage-path-helpers.md`
+- [ ] P2 Merge duplicate worker job processing paths: `docs/issues/033-merge-duplicate-worker-job-processing-paths.md`
+- [ ] P3 Extract shared `mark job done` SQL helper: `docs/issues/034-extract-shared-mark-job-done-sql.md`
+- [ ] P2 Centralize NSFW SQL fragments used by list/search queries: `docs/issues/035-centralize-nsfw-sql-fragments.md`
+
 ## Notes
 
 - The most important pre-performance fixes are the read-path requeue loop, the split ownership of embedding persistence, and the sqlite-vector multi-model story.
