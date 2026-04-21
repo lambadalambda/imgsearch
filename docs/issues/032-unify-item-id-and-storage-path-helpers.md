@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -26,13 +26,15 @@ Duplicated helper implementations currently live in:
 
 ## Acceptance Criteria
 
-- [ ] Introduce shared helper(s) for item ID parsing and stored-path removal.
-- [ ] Enforce safe path resolution before file deletion.
-- [ ] Replace duplicate helper implementations in both handlers.
-- [ ] Add tests for invalid ID paths and deletion path containment.
+- [x] Introduce shared helper(s) for item ID parsing and stored-path removal.
+- [x] Enforce safe path resolution before file deletion.
+- [x] Replace duplicate helper implementations in both handlers.
+- [x] Add tests for invalid ID paths and deletion path containment.
 
 ## Related Files
 
 - `internal/images/http.go`
 - `internal/videos/http.go`
 - `internal/httputil/`
+- `internal/httputil/path.go`
+- `internal/httputil/path_test.go`

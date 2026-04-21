@@ -5,10 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 
 	"imgsearch/internal/httputil"
 	"imgsearch/internal/tagutil"
@@ -232,7 +228,7 @@ func NewHandler(h *Handler) http.Handler {
 
 			httputil.WriteJSON(w, http.StatusOK, resp)
 		case http.MethodDelete:
-			videoID, err := parseItemID(r.URL.Path, "/api/videos/")
+			videoID, err := httputil.ParseItemIDPath(r.URL.Path, "/api/videos/")
 			if err != nil {
 				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid video id")
 				return
@@ -348,27 +344,12 @@ WHERE vf.video_id = ?
 		return fmt.Errorf("commit delete video tx: %w", err)
 	}
 	for _, path := range pathsToDelete {
-		removeStoredPath(dataDir, path)
+		_ = httputil.RemoveStoredPath(dataDir, path)
 	}
 	for _, thumb := range thumbsToDelete {
-		removeStoredPath(dataDir, thumb)
+		_ = httputil.RemoveStoredPath(dataDir, thumb)
 	}
 	return nil
-}
-
-func parseItemID(path string, prefix string) (int64, error) {
-	idText := strings.TrimPrefix(path, prefix)
-	if idText == path || idText == "" || strings.ContainsRune(idText, '/') {
-		return 0, fmt.Errorf("invalid id path")
-	}
-	return strconv.ParseInt(idText, 10, 64)
-}
-
-func removeStoredPath(dataDir string, rel string) {
-	if strings.TrimSpace(dataDir) == "" || strings.TrimSpace(rel) == "" {
-		return
-	}
-	_ = os.Remove(filepath.Join(dataDir, filepath.FromSlash(rel)))
 }
 
 func boolToInt(v bool) int {
