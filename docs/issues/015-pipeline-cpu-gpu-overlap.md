@@ -1,5 +1,13 @@
 # 015: Pipeline CPU Preprocessing with GPU Inference
 
+## Status: Partially Landed, Issue Still Open
+
+## What Landed
+
+- `EmbedImages` now pipelines preprocessing and embedding within each claimed chunk so preprocessing for item N+1 can run while item N is embedding.
+- Added cancellation-safe producer/consumer cleanup in the native embedder pipeline.
+- Added focused pipeline tests for ordering, overlap behavior, cleanup on embed failure, preprocess-error propagation, and context cancellation.
+
 ## Context
 
 The current pipeline is strictly serial within each job:
@@ -52,10 +60,10 @@ Maintain two slots: one being processed by GPU, one being filled by CPU prefetch
 ## Acceptance Criteria
 
 - [ ] `EmbedImage` split into prepare + execute phases
-- [ ] Prefetch goroutine overlaps CPU preprocessing with GPU inference
+- [x] Prefetch goroutine overlaps CPU preprocessing with GPU inference
 - [ ] Measure wall-clock improvement on a batch of 50 images
 - [ ] Error handling for prefetch failures (fall back to serial)
-- [ ] Clean shutdown of prefetch goroutine on context cancellation
+- [x] Clean shutdown of prefetch goroutine on context cancellation
 
 ## Priority
 

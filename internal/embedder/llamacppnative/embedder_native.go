@@ -251,42 +251,44 @@ func (e *Embedder) EmbedImages(ctx context.Context, paths []string) ([][]float32
 		return nil, fmt.Errorf("image path batch is empty")
 	}
 
-	prepared := make([]preparedEmbedPath, 0, len(paths))
-	for _, path := range paths {
-		preprocessedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(path, e.imageMaxSide)
-		if err != nil {
-			for _, item := range prepared {
-				item.cleanup()
-			}
-			return nil, err
-		}
-		prepared = append(prepared, preparedEmbedPath{path: preprocessedPath, cleanup: cleanup})
-	}
-	defer func() {
-		for _, item := range prepared {
-			item.cleanup()
-		}
-	}()
-
-	if err := ensureContextActive(ctx); err != nil {
-		return nil, err
+	chunkSize := e.maxSequences
+	if chunkSize <= 0 {
+		chunkSize = 1
 	}
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if e.handle == nil {
-		return nil, fmt.Errorf("llama-cpp-native embedder is closed")
-	}
-
-	results := make([][]float32, 0, len(prepared))
-	for start := 0; start < len(prepared); start += e.maxSequences {
-		end := start + e.maxSequences
-		if end > len(prepared) {
-			end = len(prepared)
+	results := make([][]float32, 0, len(paths))
+	for start := 0; start < len(paths); start += chunkSize {
+		end := start + chunkSize
+		if end > len(paths) {
+			end = len(paths)
 		}
-		chunk := prepared[start:end]
-		chunkOut, err := e.embedPreparedPathsLocked(ctx, chunk)
+		e.mu.Lock()
+		if e.handle == nil {
+			e.mu.Unlock()
+			return nil, fmt.Errorf("llama-cpp-native embedder is closed")
+		}
+		chunkOut, err := runEmbedPipeline(
+			ctx,
+			paths[start:end],
+			func(path string) (preparedEmbedPath, error) {
+				preprocessedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(path, e.imageMaxSide)
+				if err != nil {
+					return preparedEmbedPath{}, err
+				}
+				return preparedEmbedPath{path: preprocessedPath, cleanup: cleanup}, nil
+			},
+			func(embedCtx context.Context, prepared preparedEmbedPath) ([]float32, error) {
+				if err := ensureContextActive(embedCtx); err != nil {
+					return nil, err
+				}
+				vec := make([]float32, e.dimensions)
+				if err := e.embedImagePathLocked(prepared.path, vec); err != nil {
+					return nil, err
+				}
+				return vec, nil
+			},
+		)
+		e.mu.Unlock()
 		if err != nil {
 			return nil, err
 		}
@@ -296,22 +298,83 @@ func (e *Embedder) EmbedImages(ctx context.Context, paths []string) ([][]float32
 	return results, nil
 }
 
-func (e *Embedder) embedPreparedPathsLocked(ctx context.Context, paths []preparedEmbedPath) ([][]float32, error) {
+func runEmbedPipeline(
+	ctx context.Context,
+	paths []string,
+	preprocess func(string) (preparedEmbedPath, error),
+	embed func(context.Context, preparedEmbedPath) ([]float32, error),
+) ([][]float32, error) {
 	if len(paths) == 0 {
-		return nil, nil
+		return [][]float32{}, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	preparedCh := make(chan preparedEmbedPath)
+	producerErrCh := make(chan error, 1)
+	go func() {
+		defer close(preparedCh)
+		for _, path := range paths {
+			if err := ensureContextActive(runCtx); err != nil {
+				producerErrCh <- err
+				return
+			}
+			prepared, err := preprocess(path)
+			if err != nil {
+				producerErrCh <- err
+				return
+			}
+			if prepared.cleanup == nil {
+				prepared.cleanup = func() {}
+			}
+			select {
+			case preparedCh <- prepared:
+			case <-runCtx.Done():
+				prepared.cleanup()
+				producerErrCh <- runCtx.Err()
+				return
+			}
+		}
+		producerErrCh <- nil
+	}()
+
+	producerDone := false
+	waitProducer := func() error {
+		if producerDone {
+			return nil
+		}
+		producerDone = true
+		return <-producerErrCh
 	}
 
-	results := make([][]float32, len(paths))
-	for i := range paths {
-		vec := make([]float32, e.dimensions)
-		if err := ensureContextActive(ctx); err != nil {
+	results := make([][]float32, 0, len(paths))
+	for prepared := range preparedCh {
+		if err := ensureContextActive(runCtx); err != nil {
+			prepared.cleanup()
+			cancel()
+			_ = waitProducer()
 			return nil, err
 		}
-		if err := e.embedImagePathLocked(paths[i].path, vec); err != nil {
+		vec, err := embed(runCtx, prepared)
+		prepared.cleanup()
+		if err != nil {
+			cancel()
+			_ = waitProducer()
 			return nil, err
 		}
-		results[i] = vec
+		results = append(results, vec)
 	}
+
+	if err := waitProducer(); err != nil {
+		if ctxErr := ensureContextActive(ctx); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, err
+	}
+
 	return results, nil
 }
 
