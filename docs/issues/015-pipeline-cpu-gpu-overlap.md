@@ -6,6 +6,7 @@
 
 - `EmbedImages` now pipelines preprocessing and embedding within each claimed chunk so preprocessing for item N+1 can run while item N is embedding.
 - Added cancellation-safe producer/consumer cleanup in the native embedder pipeline.
+- Added serial fallback for chunk processing when pipeline preprocessing fails, so prefetch-path failures can degrade gracefully instead of aborting immediately.
 - Added focused pipeline tests for ordering, overlap behavior, cleanup on embed failure, preprocess-error propagation, and context cancellation.
 
 ## Context
@@ -62,7 +63,7 @@ Maintain two slots: one being processed by GPU, one being filled by CPU prefetch
 - [ ] `EmbedImage` split into prepare + execute phases
 - [x] Prefetch goroutine overlaps CPU preprocessing with GPU inference
 - [x] Measure wall-clock improvement on a batch of 50 images
-- [ ] Error handling for prefetch failures (fall back to serial)
+- [x] Error handling for prefetch failures (fall back to serial)
 - [x] Clean shutdown of prefetch goroutine on context cancellation
 
 ## Benchmark Results (50-image workload)
@@ -115,7 +116,7 @@ Estimated 50-image wall-clock from benchmark means:
 Conclusion:
 
 - The overlap change shows a measurable throughput gain on this 50-image workload.
-- Keep issue 015 open for remaining acceptance items (`prepare/execute` split and explicit serial fallback behavior).
+- Keep issue 015 open for the remaining acceptance item (`prepare/execute` split).
 
 ## Priority
 

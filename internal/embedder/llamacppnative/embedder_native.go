@@ -19,6 +19,7 @@ import "C"
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -82,6 +83,21 @@ type EmbedInspect struct {
 type preparedEmbedPath struct {
 	path    string
 	cleanup func()
+}
+
+type pipelinePreprocessError struct {
+	err error
+}
+
+func (e pipelinePreprocessError) Error() string {
+	if e.err == nil {
+		return "pipeline preprocess failed"
+	}
+	return fmt.Sprintf("pipeline preprocess failed: %v", e.err)
+}
+
+func (e pipelinePreprocessError) Unwrap() error {
+	return e.err
 }
 
 func New(cfg Config) (*Embedder, error) {
@@ -267,7 +283,7 @@ func (e *Embedder) EmbedImages(ctx context.Context, paths []string) ([][]float32
 			e.mu.Unlock()
 			return nil, fmt.Errorf("llama-cpp-native embedder is closed")
 		}
-		chunkOut, err := runEmbedPipeline(
+		chunkOut, err := runEmbedChunk(
 			ctx,
 			paths[start:end],
 			func(path string) (preparedEmbedPath, error) {
@@ -293,6 +309,62 @@ func (e *Embedder) EmbedImages(ctx context.Context, paths []string) ([][]float32
 			return nil, err
 		}
 		results = append(results, chunkOut...)
+	}
+
+	return results, nil
+}
+
+func runEmbedChunk(
+	ctx context.Context,
+	paths []string,
+	preprocess func(string) (preparedEmbedPath, error),
+	embed func(context.Context, preparedEmbedPath) ([]float32, error),
+) ([][]float32, error) {
+	chunkOut, err := runEmbedPipeline(ctx, paths, preprocess, embed)
+	if err == nil {
+		return chunkOut, nil
+	}
+
+	var preprocessErr pipelinePreprocessError
+	if !errors.As(err, &preprocessErr) {
+		return nil, err
+	}
+
+	return runEmbedSerial(ctx, paths, preprocess, embed)
+}
+
+func runEmbedSerial(
+	ctx context.Context,
+	paths []string,
+	preprocess func(string) (preparedEmbedPath, error),
+	embed func(context.Context, preparedEmbedPath) ([]float32, error),
+) ([][]float32, error) {
+	if len(paths) == 0 {
+		return [][]float32{}, nil
+	}
+
+	results := make([][]float32, 0, len(paths))
+	for _, path := range paths {
+		if err := ensureContextActive(ctx); err != nil {
+			return nil, err
+		}
+		prepared, err := preprocess(path)
+		if err != nil {
+			return nil, err
+		}
+		if prepared.cleanup == nil {
+			prepared.cleanup = func() {}
+		}
+		if err := ensureContextActive(ctx); err != nil {
+			prepared.cleanup()
+			return nil, err
+		}
+		vec, err := embed(ctx, prepared)
+		prepared.cleanup()
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, vec)
 	}
 
 	return results, nil
@@ -324,7 +396,7 @@ func runEmbedPipeline(
 			}
 			prepared, err := preprocess(path)
 			if err != nil {
-				producerErrCh <- err
+				producerErrCh <- pipelinePreprocessError{err: err}
 				return
 			}
 			if prepared.cleanup == nil {

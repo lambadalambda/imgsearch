@@ -212,3 +212,115 @@ func TestRunEmbedPipelineReturnsContextCanceled(t *testing.T) {
 		t.Fatalf("run pipeline error: got=%v want=%v", err, context.Canceled)
 	}
 }
+
+func TestRunEmbedChunkFallsBackToSerialOnPreprocessError(t *testing.T) {
+	paths := []string{"p1", "p2"}
+	errPrefetch := errors.New("prefetch failed")
+
+	var mu sync.Mutex
+	cleanupCount := map[string]int{"p1": 0, "p2": 0}
+	preprocessCalls := 0
+	embedCalls := 0
+	failedP2Once := false
+
+	preprocess := func(path string) (preparedEmbedPath, error) {
+		preprocessCalls++
+		if path == "p2" && !failedP2Once {
+			failedP2Once = true
+			return preparedEmbedPath{}, errPrefetch
+		}
+		return preparedEmbedPath{
+			path: path,
+			cleanup: func() {
+				mu.Lock()
+				cleanupCount[path]++
+				mu.Unlock()
+			},
+		}, nil
+	}
+	embed := func(_ context.Context, prepared preparedEmbedPath) ([]float32, error) {
+		embedCalls++
+		switch prepared.path {
+		case "p1":
+			return []float32{1}, nil
+		case "p2":
+			return []float32{2}, nil
+		default:
+			t.Fatalf("unexpected path %q", prepared.path)
+			return nil, nil
+		}
+	}
+
+	vecs, err := runEmbedChunk(context.Background(), paths, preprocess, embed)
+	if err != nil {
+		t.Fatalf("run embed chunk: %v", err)
+	}
+	if len(vecs) != 2 || len(vecs[0]) != 1 || len(vecs[1]) != 1 || vecs[0][0] != 1 || vecs[1][0] != 2 {
+		t.Fatalf("unexpected vectors: %v", vecs)
+	}
+	if preprocessCalls != 4 {
+		t.Fatalf("preprocess calls: got=%d want=4", preprocessCalls)
+	}
+	if embedCalls != 3 {
+		t.Fatalf("embed calls: got=%d want=3", embedCalls)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if cleanupCount["p1"] != 2 {
+		t.Fatalf("cleanup count for p1: got=%d want=2", cleanupCount["p1"])
+	}
+	if cleanupCount["p2"] != 1 {
+		t.Fatalf("cleanup count for p2: got=%d want=1", cleanupCount["p2"])
+	}
+}
+
+func TestRunEmbedChunkReturnsEmbedErrorWithoutFallback(t *testing.T) {
+	paths := []string{"p1", "p2"}
+	errEmbed := errors.New("embed failed")
+
+	preprocessCalls := 0
+	embedCalls := 0
+
+	preprocess := func(path string) (preparedEmbedPath, error) {
+		preprocessCalls++
+		return preparedEmbedPath{path: path, cleanup: func() {}}, nil
+	}
+	embed := func(_ context.Context, prepared preparedEmbedPath) ([]float32, error) {
+		embedCalls++
+		if prepared.path == "p1" {
+			return nil, errEmbed
+		}
+		return []float32{2}, nil
+	}
+
+	_, err := runEmbedChunk(context.Background(), paths, preprocess, embed)
+	if !errors.Is(err, errEmbed) {
+		t.Fatalf("run embed chunk error: got=%v want=%v", err, errEmbed)
+	}
+	if preprocessCalls < 1 || preprocessCalls > 2 {
+		t.Fatalf("preprocess calls: got=%d want in [1,2]", preprocessCalls)
+	}
+	if embedCalls != 1 {
+		t.Fatalf("embed calls: got=%d want=1", embedCalls)
+	}
+}
+
+func TestRunEmbedSerialReturnsContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := runEmbedSerial(
+		ctx,
+		[]string{"p1"},
+		func(path string) (preparedEmbedPath, error) {
+			return preparedEmbedPath{path: path, cleanup: func() {}}, nil
+		},
+		func(_ context.Context, prepared preparedEmbedPath) ([]float32, error) {
+			return []float32{1}, nil
+		},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("run embed serial error: got=%v want=%v", err, context.Canceled)
+	}
+}

@@ -21,7 +21,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P1 Eliminate double image preprocessing round-trip: `docs/issues/012-eliminate-double-preprocessing.md` (cancelled: benchmarked 36% slower on M2 Max, raw pixels 16x larger than JPEG)
 - [x] P2 Batch job claiming at the queue level: `docs/issues/013-batch-job-claiming.md`
 - [ ] P2 Batched embedding inference via multi-sequence llama.cpp: `docs/issues/014-batched-embedding-inference.md` (partial groundwork landed: `EmbedImages` API + worker wiring + runtime `n_seq_max` wiring, but no stable native throughput win yet)
-- [ ] P3 Pipeline CPU preprocessing with GPU inference: `docs/issues/015-pipeline-cpu-gpu-overlap.md` (partial groundwork landed: pipelined preprocess/embed overlap with cancellation-safe cleanup and a benchmarked ~4-10.5% gain on a 50-image workload, but `prepare/execute` split and serial fallback criteria remain open)
+- [ ] P3 Pipeline CPU preprocessing with GPU inference: `docs/issues/015-pipeline-cpu-gpu-overlap.md` (partial groundwork landed: pipelined preprocess/embed overlap with cancellation-safe cleanup, serial fallback on prefetch failure, and a benchmarked ~4-10.5% gain on a 50-image workload; only the `prepare/execute` split remains open)
 
 ## Features
 
