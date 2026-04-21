@@ -129,7 +129,7 @@ RUN chmod +x /opt/imgsearch/bin/run.sh && \
 ENV LD_LIBRARY_PATH=/opt/imgsearch/lib
 ENV SQLITE_VECTOR_PATH=/opt/imgsearch/tools/sqlite-vector/vector
 ENV IMGSEARCH_DATA_DIR=/data
-ENV IMGSEARCH_ADDR=0.0.0.0:8080
+ENV IMGSEARCH_ADDR=127.0.0.1:8080
 ENV IMGSEARCH_MODE=all
 
 VOLUME ["/data", "/models"]

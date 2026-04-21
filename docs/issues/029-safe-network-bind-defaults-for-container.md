@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -24,11 +24,13 @@ The container startup script defaults to binding the HTTP server on `0.0.0.0:808
 
 ## Acceptance Criteria
 
-- [ ] Default container bind address is loopback-only.
-- [ ] Public binding requires explicit user opt-in.
-- [ ] Deployment docs call out auth/reverse-proxy requirements when exposed.
+- [x] Default container bind address is loopback-only.
+- [x] Public binding requires explicit user opt-in.
+- [x] Deployment docs call out auth/reverse-proxy requirements when exposed.
 
 ## Related Files
 
 - `scripts/run_imgsearch_cuda_container.sh`
+- `Containerfile.cuda`
 - `README.md`
+- `docs/podman-cuda-ubuntu.md`

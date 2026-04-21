@@ -41,7 +41,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P1 Harden multipart upload resource limits and cleanup: `docs/issues/026-harden-multipart-upload-resource-usage.md`
 - [x] P1 Add explicit HTTP server timeouts and header limits: `docs/issues/027-add-http-server-timeouts-and-limits.md`
 - [x] P1 Bound transcription audio memory and feature allocation: `docs/issues/028-bound-transcription-audio-memory.md`
-- [ ] P1 Default container bind address to loopback and require opt-in exposure: `docs/issues/029-safe-network-bind-defaults-for-container.md`
+- [x] P1 Default container bind address to loopback and require opt-in exposure: `docs/issues/029-safe-network-bind-defaults-for-container.md`
 - [ ] P2 Deduplicate HTTP query parsing helpers: `docs/issues/030-deduplicate-http-query-parsing-helpers.md`
 - [ ] P2 Deduplicate tag JSON decoding helpers: `docs/issues/031-deduplicate-tags-json-decoding.md`
 - [ ] P2 Unify item ID parsing and safe stored-path removal helpers: `docs/issues/032-unify-item-id-and-storage-path-helpers.md`

@@ -69,15 +69,20 @@ Cross-platform note:
 
 If you want to run on a CUDA host through Podman while keeping an Ubuntu userspace, use `Containerfile.cuda`.
 
-Quick path:
+Quick path (host-accessible):
 
 ```bash
 podman build -f Containerfile.cuda -t imgsearch:cuda .
 podman run -d --name imgsearch --replace --gpus=all -p 8080:8080 \
+  -e IMGSEARCH_ADDR=0.0.0.0:8080 \
+  -e IMGSEARCH_API_KEY='replace-with-a-strong-token' \
   -v "$HOME/imgsearch-data:/data" \
   -v "$HOME/imgsearch-models:/models" \
   imgsearch:cuda
 ```
+
+The container defaults to loopback-only bind (`127.0.0.1:8080`) for safer startup.
+Set `IMGSEARCH_ADDR=0.0.0.0:8080` only when you intentionally want remote access, keep `IMGSEARCH_API_KEY` set, and place the service behind a trusted reverse proxy/TLS boundary.
 
 Full instructions are in `docs/podman-cuda-ubuntu.md`.
 

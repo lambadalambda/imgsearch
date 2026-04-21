@@ -82,10 +82,16 @@ podman run -d \
   --replace \
   --gpus=all \
   -p 8080:8080 \
+  -e IMGSEARCH_ADDR=0.0.0.0:8080 \
+  -e IMGSEARCH_API_KEY='replace-with-a-strong-token' \
   -v "$HOME/imgsearch-data:/data" \
   -v "$HOME/imgsearch-models:/models" \
   imgsearch:cuda
 ```
+
+The container image defaults to loopback-only bind (`IMGSEARCH_ADDR=127.0.0.1:8080`).
+Setting `IMGSEARCH_ADDR=0.0.0.0:8080` is an explicit opt-in to network exposure.
+When exposed, keep `IMGSEARCH_API_KEY` configured and run behind a trusted reverse proxy/TLS boundary.
 
 Then open:
 
@@ -123,6 +129,8 @@ podman run -d \
   --replace \
   --gpus=all \
   -p 8080:8080 \
+  -e IMGSEARCH_ADDR=0.0.0.0:8080 \
+  -e IMGSEARCH_API_KEY='replace-with-a-strong-token' \
   -v "$HOME/imgsearch-data:/data" \
   -v "$HOME/imgsearch-models:/models" \
   -e IMGSEARCH_ENABLE_ANNOTATIONS=false \
@@ -147,6 +155,8 @@ Pass direct app flags (appended to entrypoint command):
 podman run --rm \
   --gpus=all \
   -p 8080:8080 \
+  -e IMGSEARCH_ADDR=0.0.0.0:8080 \
+  -e IMGSEARCH_API_KEY='replace-with-a-strong-token' \
   -v "$HOME/imgsearch-data:/data" \
   -v "$HOME/imgsearch-models:/models" \
   imgsearch:cuda \
