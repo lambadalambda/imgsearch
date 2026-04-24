@@ -31,6 +31,12 @@ One-command startup:
 - `mise run "serve:8b"`
 - `mise run "serve:smoke"` for a local startup smoke check that waits for `/healthz`
 
+Browser UI smoke tests:
+- `npm install` if Node dependencies are not installed yet.
+- `npm run playwright:install` if Chromium is not installed for Playwright yet.
+- `mise run "test:ui"` (or `npm test`) runs the browser smoke suite against a local mocked server.
+- Browser tests are intentionally separate from `mise run test`, which remains the fast Go test suite.
+
 Optional native tuning env vars for `mise run serve`:
 - `LLAMA_NATIVE_IMAGE_MAX_SIDE` default `512`
 - `LLAMA_NATIVE_IMAGE_MAX_TOKENS` default `0`

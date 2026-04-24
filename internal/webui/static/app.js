@@ -1783,6 +1783,47 @@ videosTabButton.addEventListener('click', () => setActiveTab('videos'));
 tagsTabButton.addEventListener('click', () => setActiveTab('tags'));
 resultsTabButton.addEventListener('click', () => setActiveTab('results'));
 
+const tabButtons = [galleryTabButton, videosTabButton, tagsTabButton, resultsTabButton];
+tabButtons.forEach((button, index) => {
+  button.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    let nextIndex = index;
+    if (event.key === 'ArrowLeft') {
+      nextIndex = (index - 1 + tabButtons.length) % tabButtons.length;
+    } else if (event.key === 'ArrowRight') {
+      nextIndex = (index + 1) % tabButtons.length;
+    } else if (event.key === 'Home') {
+      nextIndex = 0;
+    } else if (event.key === 'End') {
+      nextIndex = tabButtons.length - 1;
+    }
+    while (tabButtons[nextIndex].disabled && nextIndex !== index) {
+      if (event.key === 'ArrowLeft' || event.key === 'End') {
+        nextIndex = (nextIndex - 1 + tabButtons.length) % tabButtons.length;
+      } else {
+        nextIndex = (nextIndex + 1) % tabButtons.length;
+      }
+    }
+    const nextButton = tabButtons[nextIndex];
+    if (nextButton.disabled) {
+      return;
+    }
+    nextButton.focus();
+    if (nextButton === galleryTabButton) {
+      setActiveTab('gallery');
+    } else if (nextButton === videosTabButton) {
+      setActiveTab('videos');
+    } else if (nextButton === tagsTabButton) {
+      setActiveTab('tags');
+    } else {
+      setActiveTab('results');
+    }
+  });
+});
+
 galleryPrevButton.addEventListener('click', async () => {
   if (state.galleryPage <= 0) {
     return;

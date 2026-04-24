@@ -6,6 +6,10 @@ node = "lts"
 description = "Run Go tests"
 run = "go test ./..."
 
+[tasks."test:ui"]
+description = "Run browser-level UI smoke tests"
+run = "npm test"
+
 [tasks.sqlite-vector-setup]
 description = "Download sqlite-vector extension for local platform"
 run = "scripts/setup_sqlite_vector.sh"

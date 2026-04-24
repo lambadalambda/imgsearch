@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "description": "Development tooling for imgsearch.",
   "scripts": {
+    "test": "node scripts/ui_smoke_test.mjs",
+    "test:ui": "node scripts/ui_smoke_test.mjs",
     "playwright:install": "playwright install chromium",
     "playwright:screenshot": "playwright screenshot"
   },
