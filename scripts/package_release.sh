@@ -190,7 +190,11 @@ case "$(uname -s)" in
     done < <(find "${pkg_root}/lib" -type f -name '*.dylib')
     ;;
   Linux)
-    bundle_linux_runtime_deps "${pkg_root}/.linux-runtime-seen" "${pkg_root}/imgsearch" $(find "${pkg_root}/lib" -type f -name '*.so*' -print)
+    linux_runtime_roots=("${pkg_root}/imgsearch")
+    while IFS= read -r sofile; do
+      linux_runtime_roots+=("${sofile}")
+    done < <(find "${pkg_root}/lib" -type f -name '*.so*' -print)
+    bundle_linux_runtime_deps "${pkg_root}/.linux-runtime-seen" "${linux_runtime_roots[@]}"
     rm -f "${pkg_root}/.linux-runtime-seen"
     patchelf --set-rpath '$ORIGIN/lib' "${pkg_root}/imgsearch"
     while IFS= read -r sofile; do

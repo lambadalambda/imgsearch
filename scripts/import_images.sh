@@ -289,6 +289,10 @@ upload_once() {
   curl -sS -o "$resp_file" -w "%{http_code}" "${api_auth_args[@]}" -F "file=@\"${escaped_src}\"" "$upload_url"
 }
 
+file_size_bytes() {
+  wc -c < "$1" | tr -d '[:space:]'
+}
+
 total=0
 created=0
 duplicates=0
@@ -311,7 +315,7 @@ while IFS= read -r -d '' path; do
   fi
 
   if [[ "$is_video" -eq 1 ]]; then
-    file_size="$(stat -f %z "$path")"
+    file_size="$(file_size_bytes "$path")"
     if [[ "$file_size" -gt "$max_video_bytes" ]]; then
       echo "SKIP $path (video exceeds max size ${max_video_bytes} bytes)"
       continue

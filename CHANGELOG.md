@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(scripts): improve shell tooling portability with cross-platform file sizing, OS/arch-aware ONNX Runtime resolution, safe release dependency path handling, and `mise run test:scripts` / `test:full` tasks (issue 047).
 - refactor(ui): share image/video collection loading, pagination rendering, empty-state rendering, and card action markup while preserving static asset behavior (issue 051).
 - test(ui): add a standalone Playwright browser smoke suite for core UI flows and keyboard-safe ARIA tab navigation, exposed through `npm test` and `mise run test:ui` (issue 046).
 - refactor(media): extract shared image/video action-path parsing, bool SQL conversion, NSFW tag toggling, and annotation job reset helpers while preserving media delete transaction behavior (issue 045).

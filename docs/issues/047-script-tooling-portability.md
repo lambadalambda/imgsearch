@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -27,11 +27,19 @@ Several helper scripts assume specific host tools or architectures, and existing
 
 ## Acceptance Criteria
 
-- [ ] Add a portable file-size helper for Darwin and Linux in `import_images.sh`.
-- [ ] Resolve ONNX Runtime library paths based on both OS and architecture.
-- [ ] Remove path-splitting hazards from release packaging scripts.
-- [ ] Add a `mise` task for script tests.
-- [ ] Decide whether `mise run test` should include script tests or add a documented full-test task.
+- [x] Add a portable file-size helper for Darwin and Linux in `import_images.sh`.
+- [x] Resolve ONNX Runtime library paths based on both OS and architecture.
+- [x] Remove path-splitting hazards from release packaging scripts.
+- [x] Add a `mise` task for script tests.
+- [x] Decide whether `mise run test` should include script tests or add a documented full-test task.
+
+## Resolution
+
+- Replaced BSD-only `stat -f %z` video sizing with a portable `wc -c` helper.
+- Made ONNX Runtime library resolution explicit by OS/architecture and fail clearly when the pinned dependency does not ship a matching test library.
+- Replaced unquoted Linux release `find` command substitution with array accumulation to preserve paths containing spaces.
+- Added `scripts/resolve_onnxruntime_lib_test.sh`, `mise run test:scripts`, and `mise run test:full`.
+- Kept `mise run test` as the fast Go-only suite and documented script/full test commands in `docs/development.md`.
 
 ## Related Files
 

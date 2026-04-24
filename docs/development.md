@@ -37,6 +37,10 @@ Browser UI smoke tests:
 - `mise run "test:ui"` (or `npm test`) runs the browser smoke suite against a local mocked server.
 - Browser tests are intentionally separate from `mise run test`, which remains the fast Go test suite.
 
+Script regression tests:
+- `mise run "test:scripts"` runs shell-script portability tests for imports, CUDA container entrypoint defaults, and ONNX Runtime library resolution.
+- `mise run "test:full"` runs Go tests, script tests, and browser smoke tests.
+
 Optional native tuning env vars for `mise run serve`:
 - `LLAMA_NATIVE_IMAGE_MAX_SIDE` default `512`
 - `LLAMA_NATIVE_IMAGE_MAX_TOKENS` default `0`
