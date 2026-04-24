@@ -20,12 +20,12 @@ type RetryFailedResponse struct {
 
 func NewRetryFailedHandler(h *RetryFailedHandler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h == nil || h.DB == nil {
-			httputil.WriteJSONError(w, http.StatusInternalServerError, "jobs backend unavailable")
+		if r.Method != http.MethodPost {
+			httputil.WriteMethodNotAllowed(w, http.MethodPost)
 			return
 		}
-		if r.Method != http.MethodPost {
-			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		if h == nil || h.DB == nil {
+			httputil.WriteJSONError(w, http.StatusServiceUnavailable, "jobs backend unavailable")
 			return
 		}
 

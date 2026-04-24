@@ -38,3 +38,15 @@ func TestWriteJSONErrorWrapsMessage(t *testing.T) {
 		t.Fatalf("unexpected payload: %+v", payload)
 	}
 }
+
+func TestWriteMethodNotAllowedSetsAllowHeader(t *testing.T) {
+	rr := httptest.NewRecorder()
+	WriteMethodNotAllowed(rr, http.MethodGet, http.MethodPost)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusMethodNotAllowed)
+	}
+	if rr.Header().Get("Allow") != "GET, POST" {
+		t.Fatalf("allow: got=%q want=%q", rr.Header().Get("Allow"), "GET, POST")
+	}
+}

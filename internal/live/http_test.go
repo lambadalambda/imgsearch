@@ -150,6 +150,9 @@ func TestLiveHandlerRejectsInvalidMethod(t *testing.T) {
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusMethodNotAllowed)
 	}
+	if rr.Header().Get("Allow") != http.MethodGet {
+		t.Fatalf("allow: got=%q want=%q", rr.Header().Get("Allow"), http.MethodGet)
+	}
 }
 
 func TestLiveHandlerRequiresDB(t *testing.T) {
@@ -159,7 +162,7 @@ func TestLiveHandlerRequiresDB(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusInternalServerError)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusServiceUnavailable)
 	}
 }

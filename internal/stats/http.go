@@ -244,13 +244,12 @@ ORDER BY kind
 
 func NewHandler(h *Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h == nil || h.DB == nil {
-			httputil.WriteJSONError(w, http.StatusInternalServerError, "stats backend unavailable")
+		if r.Method != http.MethodGet {
+			httputil.WriteMethodNotAllowed(w, http.MethodGet)
 			return
 		}
-
-		if r.Method != http.MethodGet {
-			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		if h == nil || h.DB == nil {
+			httputil.WriteJSONError(w, http.StatusServiceUnavailable, "stats backend unavailable")
 			return
 		}
 

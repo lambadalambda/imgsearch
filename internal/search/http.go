@@ -82,7 +82,11 @@ func NewHandler(h *Handler) http.Handler {
 func (h *Handler) handleTextSearch(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if r.Method != http.MethodGet {
-		httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httputil.WriteMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if h == nil || h.DB == nil || h.Embedder == nil || h.Index == nil {
+		httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
 		return
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
@@ -205,7 +209,11 @@ func combineQueryWithNegative(query []float32, negative []float32) ([]float32, e
 func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if r.Method != http.MethodGet {
-		httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httputil.WriteMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if h == nil || h.DB == nil || h.Index == nil {
+		httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
 		return
 	}
 	imageIDStr := r.URL.Query().Get("image_id")
@@ -277,7 +285,11 @@ func buildSearchDebugResponse(start time.Time, info vectorindex.SearchDebug) *Se
 
 func (h *Handler) handleTagSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httputil.WriteMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if h == nil || h.DB == nil {
+		httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
 		return
 	}
 
@@ -304,7 +316,11 @@ func (h *Handler) handleTagSearch(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleTagCloud(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httputil.WriteMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if h == nil || h.DB == nil {
+		httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
 		return
 	}
 

@@ -130,6 +130,14 @@ func NewHandler(h *Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
+			if h == nil || h.DB == nil {
+				httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
+				return
+			}
+			if r.URL.Path != "/api/images" {
+				httputil.WriteJSONError(w, http.StatusNotFound, "not found")
+				return
+			}
 			limit := httputil.ParseLimitQuery(r, 50)
 			offset := httputil.ParseOffsetQuery(r, 0)
 			includeNSFW := httputil.ParseIncludeNSFWQuery(r)
@@ -142,6 +150,10 @@ func NewHandler(h *Handler) http.Handler {
 
 			httputil.WriteJSON(w, http.StatusOK, resp)
 		case http.MethodDelete:
+			if h == nil || h.DB == nil {
+				httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
+				return
+			}
 			imageID, err := httputil.ParseItemIDPath(r.URL.Path, "/api/images/")
 			if err != nil {
 				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image id")
@@ -160,7 +172,15 @@ func NewHandler(h *Handler) http.Handler {
 			}
 			w.WriteHeader(http.StatusNoContent)
 		case http.MethodPost:
+			if r.URL.Path == "/api/images" {
+				httputil.WriteMethodNotAllowed(w, http.MethodGet)
+				return
+			}
 			if strings.HasSuffix(r.URL.Path, "/reannotate") {
+				if h == nil || h.DB == nil {
+					httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
+					return
+				}
 				imageID, err := parseReannotateImageIDPath(r.URL.Path)
 				if err != nil {
 					httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image id")
@@ -178,6 +198,10 @@ func NewHandler(h *Handler) http.Handler {
 				return
 			}
 			if strings.HasSuffix(r.URL.Path, "/toggle-nsfw") {
+				if h == nil || h.DB == nil {
+					httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
+					return
+				}
 				imageID, err := parseToggleNSFWImageIDPath(r.URL.Path)
 				if err != nil {
 					httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image id")
@@ -197,9 +221,13 @@ func NewHandler(h *Handler) http.Handler {
 				}{IsNSFW: isNSFW})
 				return
 			}
-			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			httputil.WriteJSONError(w, http.StatusNotFound, "not found")
 		default:
-			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			if r.URL.Path == "/api/images" {
+				httputil.WriteMethodNotAllowed(w, http.MethodGet)
+				return
+			}
+			httputil.WriteMethodNotAllowed(w, http.MethodDelete, http.MethodPost)
 		}
 	})
 }

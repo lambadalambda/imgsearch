@@ -224,6 +224,21 @@ func TestUploadHandlerRejectsInvalidMethod(t *testing.T) {
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusMethodNotAllowed)
 	}
+	if rr.Header().Get("Allow") != http.MethodPost {
+		t.Fatalf("allow: got=%q want=%q", rr.Header().Get("Allow"), http.MethodPost)
+	}
+}
+
+func TestUploadHandlerRejectsMissingDependencies(t *testing.T) {
+	h := NewHandler(nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+	}
 }
 
 func TestUploadHandlerRejectsPayloadTooLarge(t *testing.T) {

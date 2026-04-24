@@ -57,8 +57,8 @@ func TestServerMuxServesUIAndMedia(t *testing.T) {
 	liveReq := httptest.NewRequest(http.MethodGet, "/api/live", nil)
 	liveRR := httptest.NewRecorder()
 	mux.ServeHTTP(liveRR, liveReq)
-	if liveRR.Code != http.StatusInternalServerError {
-		t.Fatalf("live status: got=%d want=%d", liveRR.Code, http.StatusInternalServerError)
+	if liveRR.Code != http.StatusServiceUnavailable {
+		t.Fatalf("live status: got=%d want=%d", liveRR.Code, http.StatusServiceUnavailable)
 	}
 }
 
@@ -88,8 +88,8 @@ func TestServerMuxAPIRoutesRequireTokenWhenConfigured(t *testing.T) {
 	authReq.Header.Set("X-Imgsearch-API-Key", "secret-token")
 	authRR := httptest.NewRecorder()
 	h.ServeHTTP(authRR, authReq)
-	if authRR.Code != http.StatusInternalServerError {
-		t.Fatalf("authorized status should reach handler: got=%d want=%d body=%s", authRR.Code, http.StatusInternalServerError, authRR.Body.String())
+	if authRR.Code != http.StatusServiceUnavailable {
+		t.Fatalf("authorized status should reach handler: got=%d want=%d body=%s", authRR.Code, http.StatusServiceUnavailable, authRR.Body.String())
 	}
 }
 
@@ -114,8 +114,8 @@ func TestServerMuxWebRequestsSetAuthCookieWhenConfigured(t *testing.T) {
 	}
 	apiRR := httptest.NewRecorder()
 	h.ServeHTTP(apiRR, apiReq)
-	if apiRR.Code != http.StatusInternalServerError {
-		t.Fatalf("cookie-auth status should reach handler: got=%d want=%d body=%s", apiRR.Code, http.StatusInternalServerError, apiRR.Body.String())
+	if apiRR.Code != http.StatusServiceUnavailable {
+		t.Fatalf("cookie-auth status should reach handler: got=%d want=%d body=%s", apiRR.Code, http.StatusServiceUnavailable, apiRR.Body.String())
 	}
 }
 
@@ -127,8 +127,8 @@ func TestServerMuxDoesNotRequireTokenWhenNotConfigured(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("status should reach handler without auth configured: got=%d want=%d body=%s", rr.Code, http.StatusInternalServerError, rr.Body.String())
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status should reach handler without auth configured: got=%d want=%d body=%s", rr.Code, http.StatusServiceUnavailable, rr.Body.String())
 	}
 }
 
@@ -147,8 +147,8 @@ func TestServerMuxDefaultAPIKeyAuthenticatesWhenConfigured(t *testing.T) {
 	authReq.Header.Set("X-Imgsearch-API-Key", defaultAPIKey)
 	authRR := httptest.NewRecorder()
 	h.ServeHTTP(authRR, authReq)
-	if authRR.Code != http.StatusInternalServerError {
-		t.Fatalf("expected handler reached with default key: got=%d want=%d", authRR.Code, http.StatusInternalServerError)
+	if authRR.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected handler reached with default key: got=%d want=%d", authRR.Code, http.StatusServiceUnavailable)
 	}
 }
 

@@ -112,6 +112,34 @@ func TestListImagesRejectsInvalidMethod(t *testing.T) {
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusMethodNotAllowed)
 	}
+	if rr.Header().Get("Allow") != http.MethodGet {
+		t.Fatalf("allow: got=%q want=%q", rr.Header().Get("Allow"), http.MethodGet)
+	}
+}
+
+func TestListImagesRequiresExactCollectionPath(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/images/1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
+	}
+}
+
+func TestImagesHandlerRejectsMissingDependencies(t *testing.T) {
+	h := NewHandler(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/images", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+	}
 }
 
 func TestListImagesUsesFallbacksForBadPagination(t *testing.T) {

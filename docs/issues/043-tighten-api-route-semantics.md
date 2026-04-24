@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -27,11 +27,18 @@ API handlers should reject unsupported item/action paths consistently, set metho
 
 ## Acceptance Criteria
 
-- [ ] Require exact collection paths for image and video list GETs.
-- [ ] Return `404` or `405` consistently for unsupported item/action paths.
-- [ ] Add a shared method-not-allowed helper that sets `Allow`.
-- [ ] Standardize constructor or request-time nil dependency validation across handlers.
-- [ ] Add tests for invalid image/video item GETs and method metadata.
+- [x] Require exact collection paths for image and video list GETs.
+- [x] Return `404` or `405` consistently for unsupported item/action paths.
+- [x] Add a shared method-not-allowed helper that sets `Allow`.
+- [x] Standardize constructor or request-time nil dependency validation across handlers.
+- [x] Add tests for invalid image/video item GETs and method metadata.
+
+## Resolution
+
+- Added `httputil.WriteMethodNotAllowed`, which returns JSON errors with an `Allow` header.
+- Made image/video collection GETs require `/api/images` and `/api/videos` exactly, so item GETs no longer return collection responses.
+- Standardized method-first handler checks, with missing dependencies returning `503 Service Unavailable` across API handlers.
+- Added regression coverage for invalid item GETs, method metadata, dependency failures, and server mux expectations.
 
 ## Related Files
 

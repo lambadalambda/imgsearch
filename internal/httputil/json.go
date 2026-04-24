@@ -3,6 +3,7 @@ package httputil
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 func WriteJSON(w http.ResponseWriter, status int, v any) {
@@ -13,4 +14,9 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 
 func WriteJSONError(w http.ResponseWriter, status int, msg string) {
 	WriteJSON(w, status, map[string]string{"error": msg})
+}
+
+func WriteMethodNotAllowed(w http.ResponseWriter, allowed ...string) {
+	w.Header().Set("Allow", strings.Join(allowed, ", "))
+	WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 }

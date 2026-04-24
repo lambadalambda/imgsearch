@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(api): tighten API route semantics by requiring exact image/video collection GET paths, returning JSON 405 responses with `Allow`, and standardizing missing dependency failures as 503 (issue 043).
 - fix(search): enforce equal vector dimensions through shared cosine scoring, fail corrupt image-vector searches loudly, and skip corrupt transcript embedding rows after checking stored dimensions (issue 042).
 - fix(runtime): add signal-driven graceful shutdown for HTTP and worker modes, including bounded server shutdown and cancellation-aware worker idle waits (issue 041).
 - fix(stats): make retry/status endpoints media-aware by queuing missing video transcript jobs, surfacing failed video jobs in recent failures, and adding video/standalone/frame image totals (issue 039).

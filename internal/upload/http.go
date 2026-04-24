@@ -31,7 +31,11 @@ type UploadBatchResponse struct {
 func NewHandler(svc *Service) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			httputil.WriteMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		if svc == nil {
+			httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
 			return
 		}
 

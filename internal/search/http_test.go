@@ -106,6 +106,33 @@ func (f *fakeIndex) SearchByImageID(ctx context.Context, _ int64, _ int64, _ int
 	return f.similarHits, nil
 }
 
+func TestTextSearchRejectsInvalidMethodWithAllowHeader(t *testing.T) {
+	h := NewHandler(&Handler{})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/search/text?q=dog", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusMethodNotAllowed)
+	}
+	if rr.Header().Get("Allow") != http.MethodGet {
+		t.Fatalf("allow: got=%q want=%q", rr.Header().Get("Allow"), http.MethodGet)
+	}
+}
+
+func TestTextSearchRejectsMissingDependencies(t *testing.T) {
+	h := NewHandler(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/text?q=dog", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+	}
+}
+
 func setupSearchDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbConn, err := sql.Open("sqlite3", ":memory:")

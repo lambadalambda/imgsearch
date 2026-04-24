@@ -69,12 +69,12 @@ var upgrader = websocket.Upgrader{
 
 func NewHandler(h *Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h == nil || h.DB == nil {
-			httputil.WriteJSONError(w, http.StatusInternalServerError, "live updates unavailable")
+		if r.Method != http.MethodGet {
+			httputil.WriteMethodNotAllowed(w, http.MethodGet)
 			return
 		}
-		if r.Method != http.MethodGet {
-			httputil.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		if h == nil || h.DB == nil {
+			httputil.WriteJSONError(w, http.StatusServiceUnavailable, "live updates unavailable")
 			return
 		}
 

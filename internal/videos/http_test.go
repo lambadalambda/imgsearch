@@ -132,6 +132,34 @@ func TestListVideosRejectsInvalidMethod(t *testing.T) {
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusMethodNotAllowed)
 	}
+	if rr.Header().Get("Allow") != http.MethodGet {
+		t.Fatalf("allow: got=%q want=%q", rr.Header().Get("Allow"), http.MethodGet)
+	}
+}
+
+func TestListVideosRequiresExactCollectionPath(t *testing.T) {
+	dbConn := setupVideosDB(t)
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/videos/1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
+	}
+}
+
+func TestVideosHandlerRejectsMissingDependencies(t *testing.T) {
+	h := NewHandler(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/videos", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+	}
 }
 
 func TestListVideosNSFWFiltering(t *testing.T) {
