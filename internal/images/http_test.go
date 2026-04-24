@@ -340,11 +340,13 @@ func TestReannotateImageCreatesAnnotationJob(t *testing.T) {
 	var state string
 	var attempts int
 	var lastError sql.NullString
+	var reannotateRequested int
 	if err := dbConn.QueryRow(`
-SELECT state, attempts, last_error
+SELECT state, attempts, last_error, reannotate_requested
 FROM index_jobs
+JOIN images ON images.id = index_jobs.image_id
 WHERE kind = 'annotate_image' AND image_id = 2 AND model_id = 1
-`).Scan(&state, &attempts, &lastError); err != nil {
+`).Scan(&state, &attempts, &lastError, &reannotateRequested); err != nil {
 		t.Fatalf("load annotate job: %v", err)
 	}
 	if state != "pending" {
@@ -355,6 +357,9 @@ WHERE kind = 'annotate_image' AND image_id = 2 AND model_id = 1
 	}
 	if lastError.Valid {
 		t.Fatalf("expected last_error cleared, got %q", lastError.String)
+	}
+	if reannotateRequested != 1 {
+		t.Fatalf("expected image reannotate_requested=1, got %d", reannotateRequested)
 	}
 }
 
@@ -389,11 +394,13 @@ VALUES ('annotate_image', 1, 1, 'done', 2, datetime('now', '+2 minutes'), dateti
 	var leasedUntil sql.NullString
 	var leaseOwner sql.NullString
 	var lastError sql.NullString
+	var reannotateRequested int
 	if err := dbConn.QueryRow(`
-SELECT state, attempts, run_after, leased_until, lease_owner, last_error
+SELECT state, attempts, run_after, leased_until, lease_owner, last_error, reannotate_requested
 FROM index_jobs
+JOIN images ON images.id = index_jobs.image_id
 WHERE kind = 'annotate_image' AND image_id = 1 AND model_id = 1
-`).Scan(&state, &attempts, &runAfter, &leasedUntil, &leaseOwner, &lastError); err != nil {
+`).Scan(&state, &attempts, &runAfter, &leasedUntil, &leaseOwner, &lastError, &reannotateRequested); err != nil {
 		t.Fatalf("load annotate job: %v", err)
 	}
 	if state != "pending" {
@@ -413,6 +420,9 @@ WHERE kind = 'annotate_image' AND image_id = 1 AND model_id = 1
 	}
 	if lastError.Valid {
 		t.Fatalf("expected last_error cleared, got %q", lastError.String)
+	}
+	if reannotateRequested != 1 {
+		t.Fatalf("expected image reannotate_requested=1, got %d", reannotateRequested)
 	}
 
 	var description string

@@ -26,7 +26,7 @@ func TestRunMigrationsAddsImageAnnotationColumns(t *testing.T) {
 		t.Fatalf("run migrations: %v", err)
 	}
 
-	columns := []string{"description", "tags_json"}
+	columns := []string{"description", "tags_json", "reannotate_requested"}
 	for _, column := range columns {
 		rows, err := db.Query(`PRAGMA table_info(images)`)
 		if err != nil {
@@ -54,6 +54,41 @@ func TestRunMigrationsAddsImageAnnotationColumns(t *testing.T) {
 		if count != 1 {
 			t.Fatalf("expected images.%s column to exist exactly once, got %d", column, count)
 		}
+	}
+}
+
+func TestRunMigrationsAddsVideoReannotateRequestedColumn(t *testing.T) {
+	db := openTestDB(t)
+
+	if err := RunMigrations(context.Background(), db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
+	rows, err := db.Query(`PRAGMA table_info(videos)`)
+	if err != nil {
+		t.Fatalf("pragma table_info(videos): %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	found := 0
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			columnType string
+			notNull    int
+			defaultVal any
+			pk         int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &pk); err != nil {
+			t.Fatalf("scan pragma row: %v", err)
+		}
+		if name == "reannotate_requested" {
+			found++
+		}
+	}
+	if found != 1 {
+		t.Fatalf("expected videos.reannotate_requested column to exist exactly once, got %d", found)
 	}
 }
 

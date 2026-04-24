@@ -62,43 +62,58 @@
           <div class="search-actions">
             <button type="submit" class="cta">Search</button>
             <button id="upload-open" type="button" class="ghost quiet-action">Upload</button>
+            <details class="ops-menu">
+              <summary class="ghost quiet-action ops-menu-trigger">
+                <span aria-hidden="true">...</span>
+                <span class="sr-only">More library actions</span>
+              </summary>
+              <div class="ops-menu-body">
+                <div id="ops-bar" class="ops-status-panel" aria-label="Library indexing status" data-state="idle">
+                  <p id="live-connection" class="connection-badge" data-state="connecting" role="status" aria-live="polite">
+                    <span class="connection-dot" aria-hidden="true"></span>
+                    <span id="live-connection-label">Connecting live updates...</span>
+                  </p>
+                  <div class="ops-status-stack">
+                    <p id="search-status" class="status search-status" role="status" aria-live="polite"></p>
+                    <p id="stats-summary" class="status summary-status" role="status" aria-live="polite"></p>
+                    <p id="stats-detail" class="status detail-status"></p>
+                  </div>
+                  <div class="progress-track progress-track-compact" aria-hidden="true">
+                    <div id="stats-progress" class="progress-fill"></div>
+                  </div>
+                </div>
+                <div class="status-actions">
+                  <button id="retry-failed" type="button" class="ghost quiet-action">Retry stuck</button>
+                  <button id="refresh-stats" type="button" class="ghost quiet-action">Refresh</button>
+                </div>
+                <div id="stats-failures" class="failure-list failure-list-compact"></div>
+              </div>
+            </details>
           </div>
         </form>
       </header>
 
-      <section id="ops-bar" class="ops-bar" aria-label="Library indexing status" data-state="idle">
-        <div class="ops-inline">
-          <p id="live-connection" class="connection-badge" data-state="connecting" role="status" aria-live="polite">
-            <span class="connection-dot" aria-hidden="true"></span>
-            <span id="live-connection-label">Connecting live updates...</span>
-          </p>
-          <p id="search-status" class="status search-status" role="status" aria-live="polite"></p>
-          <p id="stats-summary" class="status summary-status" role="status" aria-live="polite"></p>
-          <p id="stats-detail" class="status detail-status"></p>
-          <details class="ops-menu">
-            <summary class="ghost quiet-action ops-menu-trigger">
-              <span aria-hidden="true">...</span>
-              <span class="sr-only">More library actions</span>
-            </summary>
-            <div class="ops-menu-body">
-              <div class="status-actions">
-                <button id="retry-failed" type="button" class="ghost quiet-action">Retry stuck</button>
-                <button id="refresh-stats" type="button" class="ghost quiet-action">Refresh</button>
-              </div>
-              <div id="stats-failures" class="failure-list failure-list-compact"></div>
-            </div>
-          </details>
-        </div>
-        <div class="progress-track progress-track-compact" aria-hidden="true">
-          <div id="stats-progress" class="progress-fill"></div>
-        </div>
-      </section>
-
       <section class="workspace panel" aria-labelledby="library-view-title">
         <div class="workspace-head">
-          <div>
-            <p class="section-label">Browse</p>
-            <h2 id="library-view-title">Library view</h2>
+          <div class="workspace-nav">
+            <h2 id="library-view-title" class="sr-only">Library view</h2>
+            <div class="tablist" role="tablist" aria-label="Library views">
+              <button id="tab-gallery" type="button" class="tab-button" role="tab" aria-selected="true" aria-controls="gallery-panel">
+                <span>Images</span>
+                <span id="tab-gallery-count" class="tab-count">0</span>
+              </button>
+              <button id="tab-videos" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="videos-panel">
+                <span>Videos</span>
+                <span id="tab-videos-count" class="tab-count">0</span>
+              </button>
+              <button id="tab-tags" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="tags-panel">
+                <span>Tags</span>
+              </button>
+              <button id="tab-results" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="results-panel">
+                <span>Search Results</span>
+                <span id="tab-results-count" class="tab-count">0</span>
+              </button>
+            </div>
           </div>
           <div class="workspace-tools">
             <label class="nsfw-toggle" for="show-nsfw">
@@ -108,24 +123,6 @@
             <button id="refresh-images" type="button" class="ghost">Refresh</button>
             <button id="clear-results" type="button" class="ghost">Clear Results</button>
           </div>
-        </div>
-
-        <div class="tablist" role="tablist" aria-label="Library views">
-          <button id="tab-gallery" type="button" class="tab-button" role="tab" aria-selected="true" aria-controls="gallery-panel">
-            <span>Images</span>
-            <span id="tab-gallery-count" class="tab-count">0</span>
-          </button>
-          <button id="tab-videos" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="videos-panel">
-            <span>Videos</span>
-            <span id="tab-videos-count" class="tab-count">0</span>
-          </button>
-          <button id="tab-tags" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="tags-panel">
-            <span>Tags</span>
-          </button>
-          <button id="tab-results" type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="results-panel">
-            <span>Search Results</span>
-            <span id="tab-results-count" class="tab-count">0</span>
-          </button>
         </div>
 
         <section id="gallery-panel" class="tab-panel" role="tabpanel" aria-labelledby="tab-gallery">

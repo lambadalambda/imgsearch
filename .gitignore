@@ -13,3 +13,6 @@ __pycache__/
 models/**
 !models/.gitkeep
 /imgsearch
+/node_modules/
+/playwright-report/
+/test-results/

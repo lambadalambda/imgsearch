@@ -10,21 +10,22 @@ import (
 )
 
 type Config struct {
-	ModelPath             string
-	VisionModelPath       string
-	Dimensions            int
-	GPULayers             int
-	UseGPU                bool
-	ContextSize           int
-	BatchSize             int
-	MaxSequences          int
-	Threads               int
-	ImageMaxSide          int
-	ImageMaxTokens        int
-	AnnotationTemperature float32
-	AnnotationSeed        int64
-	QueryInstruction      string
-	PassageInstruction    string
+	ModelPath              string
+	VisionModelPath        string
+	Dimensions             int
+	GPULayers              int
+	UseGPU                 bool
+	ContextSize            int
+	BatchSize              int
+	MaxSequences           int
+	Threads                int
+	ImageMaxSide           int
+	AnnotationImageMaxSide int
+	ImageMaxTokens         int
+	AnnotationTemperature  float32
+	AnnotationSeed         int64
+	QueryInstruction       string
+	PassageInstruction     string
 }
 
 type Embedder struct{}

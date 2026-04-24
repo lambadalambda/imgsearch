@@ -1,0 +1,13 @@
+{
+  "name": "imgsearch",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Development tooling for imgsearch.",
+  "scripts": {
+    "playwright:install": "playwright install chromium",
+    "playwright:screenshot": "playwright screenshot"
+  },
+  "devDependencies": {
+    "playwright": "^1.59.1"
+  }
+}

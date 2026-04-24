@@ -48,9 +48,9 @@ body.lightbox-open {
 
 .shell {
   width: min(1380px, calc(100vw - 40px));
-  margin: 24px auto 40px;
+  margin: 14px auto 28px;
   display: grid;
-  gap: 18px;
+  gap: 12px;
 }
 
 .panel {
@@ -61,10 +61,10 @@ body.lightbox-open {
 }
 
 .masthead {
-  padding: 10px 14px;
+  padding: 8px 10px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   border: 1px solid color-mix(in oklab, var(--line) 75%, white 25%);
   border-radius: var(--radius-control);
   background: color-mix(in oklab, var(--surface) 94%, white 6%);
@@ -96,7 +96,7 @@ h2,
 
 .masthead h1 {
   margin: 0;
-  font-size: 1.14rem;
+  font-size: 1.04rem;
   line-height: 1.1;
   white-space: nowrap;
 }
@@ -104,7 +104,7 @@ h2,
 .search-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -120,7 +120,7 @@ h2,
 }
 
 .field-primary input[type="search"] {
-  min-height: 40px;
+  min-height: 36px;
 }
 
 .search-advanced {
@@ -143,8 +143,8 @@ h2,
   border-radius: var(--radius-control);
   background: transparent;
   color: var(--muted);
-  padding: 8px 10px;
-  font-size: 0.82rem;
+  padding: 7px 10px;
+  font-size: 0.8rem;
   line-height: 1;
 }
 
@@ -156,9 +156,9 @@ h2,
 .search-advanced-panel {
   position: absolute;
   right: 0;
-  top: calc(100% + 6px);
+  top: calc(100% + 4px);
   width: min(360px, calc(100vw - 44px));
-  padding: 10px;
+  padding: 9px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-control);
   background: #fffdf8;
@@ -278,7 +278,7 @@ input[type="file"] {
   background: #fffdf9;
   color: var(--ink);
   font: inherit;
-  padding: 10px 12px;
+  padding: 8px 10px;
 }
 
 input[type="search"]::placeholder {
@@ -291,7 +291,7 @@ input[type="search"]::placeholder {
 .modal-actions,
 .pagination-controls {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -304,7 +304,7 @@ input[type="search"]::placeholder {
   border-radius: var(--radius-control);
   background: color-mix(in oklab, var(--surface-strong) 86%, white 14%);
   color: var(--muted-strong);
-  padding: 7px 10px;
+  padding: 6px 9px;
   font-size: 0.82rem;
   line-height: 1;
 }
@@ -339,7 +339,7 @@ input:focus-visible {
 .cta {
   background: var(--accent);
   color: #fffdf9;
-  padding: 10px 14px;
+  padding: 8px 12px;
 }
 
 .cta:hover:not(:disabled) {
@@ -351,7 +351,7 @@ input:focus-visible {
   background: transparent;
   color: var(--muted-strong);
   border: 1px solid var(--line-strong);
-  padding: 8px 12px;
+  padding: 7px 10px;
 }
 
 .ghost:hover:not(:disabled) {
@@ -361,9 +361,9 @@ input:focus-visible {
 
 .status {
   margin: 0;
-  min-height: 1.35rem;
+  min-height: 1.1rem;
   color: var(--muted);
-  font-size: 0.93rem;
+  font-size: 0.86rem;
 }
 
 .status[data-kind="success"] {
@@ -382,58 +382,78 @@ input:focus-visible {
   padding-inline: 2px;
 }
 
-.ops-bar {
-  border: 1px solid color-mix(in oklab, var(--line) 78%, white 22%);
-  border-radius: var(--radius-control);
-  background: color-mix(in oklab, var(--surface) 94%, white 6%);
-  padding: 8px 10px;
+.ops-status-panel {
   display: grid;
-  gap: 7px;
+  gap: 4px;
+  min-width: min(320px, calc(100vw - 78px));
 }
 
-.ops-inline,
+.ops-status-panel .progress-track {
+  width: 100%;
+}
+
 .workspace-head,
 .panel-toolbar {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
 
-.workspace-head h2,
+.workspace-nav {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 560px;
+}
+
+.workspace-nav .tablist {
+  max-width: 100%;
+}
+
+.workspace-tools {
+  margin-left: auto;
+}
+
+.workspace-head h2 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
 .modal-head h2 {
   margin: 2px 0 0;
   font-size: 1.2rem;
 }
 
-.ops-bar .status {
+.workspace-head .section-label {
+  display: none;
+}
+
+.ops-status-panel .status {
   min-height: 0;
-  font-size: 0.84rem;
+  font-size: 0.76rem;
 }
 
-.ops-bar .search-status,
-.ops-bar .summary-status,
-.ops-bar .detail-status {
-  flex: 0 1 auto;
+.ops-status-stack {
+  display: grid;
+  gap: 4px;
 }
 
-.ops-bar .search-status:empty,
-.ops-bar .summary-status:empty,
-.ops-bar .detail-status:empty {
+.ops-status-stack .status:empty {
   display: none;
 }
 
 .summary-status {
   color: var(--ink);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 
 .detail-status,
 .toolbar-status,
 .pagination-label {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
 }
 
 .progress-track {
@@ -448,20 +468,22 @@ input:focus-visible {
   margin-top: 0;
 }
 
-.ops-bar[data-state="idle"] .progress-track,
-.ops-bar[data-state="idle"] .detail-status,
-.ops-bar[data-state="idle"] .failure-list {
+.ops-status-panel[data-state="idle"] .progress-track {
   display: none;
 }
 
 .quiet-action {
-  padding: 6px 10px;
+  padding: 5px 9px;
   font-size: 0.82rem;
 }
 
 .search-actions {
-  gap: 6px;
+  gap: 5px;
   flex-wrap: nowrap;
+}
+
+.search-actions .ops-menu {
+  margin-left: 0;
 }
 
 .ops-menu {
@@ -532,17 +554,17 @@ input:focus-visible {
 }
 
 .workspace {
-  padding: 18px;
+  padding: 12px;
   display: grid;
-  gap: 16px;
+  gap: 10px;
 }
 
 .tablist {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   width: fit-content;
-  padding: 2px;
+  padding: 1px;
   border-radius: var(--radius-control);
   border: 1px solid color-mix(in oklab, var(--line) 78%, white 22%);
   background: color-mix(in oklab, var(--surface-strong) 88%, white 12%);
@@ -552,9 +574,9 @@ input:focus-visible {
   background: transparent;
   color: var(--muted-strong);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   display: inline-flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
 
@@ -567,13 +589,13 @@ input:focus-visible {
 
 .tab-count {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   letter-spacing: 0.03em;
 }
 
 .tab-panel {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .tab-panel[hidden] {
@@ -640,7 +662,7 @@ input:focus-visible {
 }
 
 .gallery-toolbar {
-  padding-bottom: 4px;
+  padding-bottom: 0;
 }
 
 .results-toolbar {
@@ -820,8 +842,8 @@ input:focus-visible {
 
 .meta {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 8px;
   padding: 12px;
   min-height: 0;
   overflow: hidden;
@@ -839,6 +861,14 @@ input:focus-visible {
   display: grid;
   gap: 6px;
   align-content: start;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.meta-tags {
+  min-width: 0;
+  min-height: 1.65rem;
+  overflow: hidden;
 }
 
 .meta-status-row {
@@ -898,6 +928,10 @@ input:focus-visible {
   z-index: 6;
 }
 
+.card-detail-overlay > * {
+  min-width: 0;
+}
+
 .card:hover .card-detail-overlay,
 .card:focus-within .card-detail-overlay {
   opacity: 1;
@@ -918,6 +952,7 @@ input:focus-visible {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .overlay-title {
@@ -990,17 +1025,40 @@ input:focus-visible {
 	margin: 0;
 	padding: 0;
 	list-style: none;
-	display: flex;
-	flex-wrap: nowrap;
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr)) max-content;
+	align-items: start;
 	gap: 6px;
 	overflow: hidden;
-	max-height: 1.8em;
+	max-height: none;
+	min-width: 0;
+}
+
+.tag-list > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tag-list .tag-chip {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
 }
 
 .overlay-tag-list {
+	display: flex;
 	flex-wrap: wrap;
 	max-height: none;
 	overflow: visible;
+}
+
+.overlay-tag-list .tag-chip {
+  display: inline-flex;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .tag-chip {
@@ -1117,7 +1175,7 @@ input:focus-visible {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   white-space: nowrap;
 }
 
@@ -1321,21 +1379,33 @@ input:focus-visible {
 @media (max-width: 760px) {
   .shell {
     width: min(720px, calc(100vw - 20px));
-    margin-top: 12px;
-    gap: 14px;
+    margin-top: 10px;
+    gap: 10px;
   }
 
   .masthead,
   .workspace,
   .modal-card {
-    padding: 16px;
+    padding: 12px;
   }
 
   .brand-row,
-  .ops-inline,
   .workspace-head,
   .panel-toolbar {
     align-items: start;
+  }
+
+  .ops-status-panel {
+    min-width: min(300px, calc(100vw - 64px));
+  }
+
+  .workspace-nav,
+  .workspace-tools {
+    flex-basis: 100%;
+  }
+
+  .workspace-tools {
+    margin-left: 0;
   }
 
   .search-bar {
@@ -1383,7 +1453,7 @@ input:focus-visible {
     flex: 1 1 0;
     justify-content: center;
     min-width: 0;
-    padding: 8px 6px;
+    padding: 6px 4px;
   }
 
   .tab-button span {

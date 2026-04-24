@@ -257,11 +257,12 @@ func (e *Embedder) AnnotateImageWithOptions(ctx context.Context, imagePath strin
 	if e.handle == nil {
 		return coreembedder.ImageAnnotation{}, fmt.Errorf("llama-cpp-native embedder is closed")
 	}
+	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(e.annotationImageMaxSide, opts.ImageMaxSideMultiplier)
 
 	annotation, _, err := describeAndTagImageWithHandle(
 		ctx,
 		e.handle,
-		e.imageMaxSide,
+		annotationImageMaxSide,
 		e.annotationTemperature,
 		e.annotationSeed,
 		imagePath,
@@ -300,11 +301,12 @@ func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAn
 	if err != nil {
 		return coreembedder.VideoAnnotation{}, err
 	}
+	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(e.annotationImageMaxSide, input.ImageMaxSideMultiplier)
 
 	annotation, _, err := describeAndTagImageWithHandle(
 		ctx,
 		e.handle,
-		e.imageMaxSide,
+		annotationImageMaxSide,
 		e.annotationTemperature,
 		e.annotationSeed,
 		representativeFramePath,
@@ -430,11 +432,12 @@ func (r *nativeGemmaRuntime) AnnotateImageWithOptions(ctx context.Context, image
 	if r.handle == nil {
 		return coreembedder.ImageAnnotation{}, fmt.Errorf("native Gemma runtime is closed")
 	}
+	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(r.imageMaxSide, opts.ImageMaxSideMultiplier)
 
 	annotation, _, err := describeAndTagImageWithHandle(
 		ctx,
 		r.handle,
-		r.imageMaxSide,
+		annotationImageMaxSide,
 		r.annotationTemperature,
 		r.annotationSeed,
 		imagePath,
@@ -477,11 +480,12 @@ func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedd
 	if err != nil {
 		return coreembedder.VideoAnnotation{}, err
 	}
+	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(r.imageMaxSide, input.ImageMaxSideMultiplier)
 
 	annotation, _, err := describeAndTagImageWithHandle(
 		ctx,
 		r.handle,
-		r.imageMaxSide,
+		annotationImageMaxSide,
 		r.annotationTemperature,
 		r.annotationSeed,
 		representativeFramePath,

@@ -185,6 +185,13 @@ ALTER TABLE videos ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE videos ADD COLUMN annotation_updated_at TEXT;
 `,
 	},
+	{
+		version: 7,
+		sql: `
+ALTER TABLE images ADD COLUMN reannotate_requested INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE videos ADD COLUMN reannotate_requested INTEGER NOT NULL DEFAULT 0;
+`,
+	},
 }
 
 func LatestVersion() int {

@@ -20,7 +20,8 @@ type ImageAnnotation struct {
 }
 
 type ImageAnnotationOptions struct {
-	OriginalName string
+	OriginalName           string
+	ImageMaxSideMultiplier int
 }
 
 type ImageAnnotator interface {
@@ -43,6 +44,7 @@ type VideoAnnotationInput struct {
 	OriginalName            string
 	DurationMS              int64
 	RepresentativeFramePath string
+	ImageMaxSideMultiplier  int
 	TranscriptText          string
 	Frames                  []VideoFrameAnnotation
 }

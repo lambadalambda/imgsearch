@@ -10,24 +10,25 @@ import (
 )
 
 type llamaCPPNativeEmbedderOptions struct {
-	ModelPath             string
-	VisionModelPath       string
-	Dimensions            int
-	GPULayers             int
-	UseGPU                bool
-	ContextSize           int
-	BatchSize             int
-	MaxSequences          int
-	Threads               int
-	ImageMaxSide          int
-	ImageMaxTokens        int
-	AnnotationTemperature float64
-	AnnotationSeed        int64
-	QueryInstruction      string
-	PassageInstruction    string
-	FlashAttnType         int
-	CacheTypeK            int
-	CacheTypeV            int
+	ModelPath              string
+	VisionModelPath        string
+	Dimensions             int
+	GPULayers              int
+	UseGPU                 bool
+	ContextSize            int
+	BatchSize              int
+	MaxSequences           int
+	Threads                int
+	ImageMaxSide           int
+	AnnotationImageMaxSide int
+	ImageMaxTokens         int
+	AnnotationTemperature  float64
+	AnnotationSeed         int64
+	QueryInstruction       string
+	PassageInstruction     string
+	FlashAttnType          int
+	CacheTypeK             int
+	CacheTypeV             int
 }
 
 const defaultLlamaNativeImageMaxSide = 384
@@ -83,30 +84,38 @@ func newLlamaCPPNativeEmbedder(opts llamaCPPNativeEmbedderOptions) (embedder.Emb
 	if err != nil {
 		return nil, err
 	}
+	annotationImageMaxSide := opts.AnnotationImageMaxSide
+	if annotationImageMaxSide == 0 {
+		annotationImageMaxSide = imageMaxSide
+	}
+	if annotationImageMaxSide < 0 {
+		return nil, fmt.Errorf("llama-cpp-native annotation image max side must be non-negative")
+	}
 	annotationTemperature, annotationSeed, err := resolveLlamaNativeAnnotationSampling(opts.AnnotationTemperature, opts.AnnotationSeed)
 	if err != nil {
 		return nil, err
 	}
 
 	return llamacppnative.New(llamacppnative.Config{
-		ModelPath:             modelPath,
-		VisionModelPath:       visionPath,
-		Dimensions:            opts.Dimensions,
-		GPULayers:             opts.GPULayers,
-		UseGPU:                opts.UseGPU,
-		ContextSize:           opts.ContextSize,
-		BatchSize:             opts.BatchSize,
-		MaxSequences:          opts.MaxSequences,
-		Threads:               opts.Threads,
-		ImageMaxSide:          imageMaxSide,
-		ImageMaxTokens:        imageMaxTokens,
-		AnnotationTemperature: annotationTemperature,
-		AnnotationSeed:        annotationSeed,
-		QueryInstruction:      strings.TrimSpace(opts.QueryInstruction),
-		PassageInstruction:    strings.TrimSpace(opts.PassageInstruction),
-		FlashAttnType:         opts.FlashAttnType,
-		CacheTypeK:            opts.CacheTypeK,
-		CacheTypeV:            opts.CacheTypeV,
+		ModelPath:              modelPath,
+		VisionModelPath:        visionPath,
+		Dimensions:             opts.Dimensions,
+		GPULayers:              opts.GPULayers,
+		UseGPU:                 opts.UseGPU,
+		ContextSize:            opts.ContextSize,
+		BatchSize:              opts.BatchSize,
+		MaxSequences:           opts.MaxSequences,
+		Threads:                opts.Threads,
+		ImageMaxSide:           imageMaxSide,
+		AnnotationImageMaxSide: annotationImageMaxSide,
+		ImageMaxTokens:         imageMaxTokens,
+		AnnotationTemperature:  annotationTemperature,
+		AnnotationSeed:         annotationSeed,
+		QueryInstruction:       strings.TrimSpace(opts.QueryInstruction),
+		PassageInstruction:     strings.TrimSpace(opts.PassageInstruction),
+		FlashAttnType:          opts.FlashAttnType,
+		CacheTypeK:             opts.CacheTypeK,
+		CacheTypeV:             opts.CacheTypeV,
 	})
 }
 

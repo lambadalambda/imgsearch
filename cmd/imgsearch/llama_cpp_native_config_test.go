@@ -100,6 +100,30 @@ func TestNewLlamaCPPNativeEmbedderRejectsNegativeImageMaxTokens(t *testing.T) {
 	}
 }
 
+func TestNewLlamaCPPNativeEmbedderRejectsNegativeAnnotationImageMaxSide(t *testing.T) {
+	tmp := t.TempDir()
+	modelPath := filepath.Join(tmp, "model.gguf")
+	if err := os.WriteFile(modelPath, []byte("model"), 0o644); err != nil {
+		t.Fatalf("write model: %v", err)
+	}
+	visionPath := filepath.Join(tmp, "mmproj.gguf")
+	if err := os.WriteFile(visionPath, []byte("vision"), 0o644); err != nil {
+		t.Fatalf("write vision model: %v", err)
+	}
+
+	_, err := newLlamaCPPNativeEmbedder(llamaCPPNativeEmbedderOptions{
+		ModelPath:              modelPath,
+		VisionModelPath:        visionPath,
+		Dimensions:             2048,
+		ContextSize:            8192,
+		BatchSize:              512,
+		AnnotationImageMaxSide: -1,
+	})
+	if err == nil {
+		t.Fatal("expected negative annotation image max side error")
+	}
+}
+
 func TestNewLlamaCPPNativeEmbedderRejectsNegativeMaxSequences(t *testing.T) {
 	tmp := t.TempDir()
 	modelPath := filepath.Join(tmp, "model.gguf")

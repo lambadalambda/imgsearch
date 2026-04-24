@@ -299,7 +299,7 @@ func Reannotate(ctx context.Context, db *sql.DB, modelID int64, videoID int64) e
 	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE videos
-SET description = '', tags_json = '[]', annotation_updated_at = NULL
+SET description = '', tags_json = '[]', annotation_updated_at = NULL, reannotate_requested = 1
 WHERE id = ?
 `, videoID); err != nil {
 		_ = tx.Rollback()

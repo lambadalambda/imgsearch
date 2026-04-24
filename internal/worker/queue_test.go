@@ -564,6 +564,55 @@ VALUES (2, 'annotate_image', 1, 1, 'pending')
 	}
 }
 
+func TestProcessOneReannotateImageUsesDoubleAnnotationImageMaxSide(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE id = 1`); err != nil {
+		t.Fatalf("mark embed job done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+UPDATE images
+SET description = '',
+    tags_json = '[]',
+    reannotate_requested = 1
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed reannotate image state: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, model_id, state)
+VALUES (2, 'annotate_image', 1, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate job: %v", err)
+	}
+	annotator := &fakeAnnotator{annotation: embedder.ImageAnnotation{
+		Description: "A refreshed test image annotation.",
+		Tags:        []string{"refresh", "nsfw"},
+	}}
+	q.Annotator = annotator
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+	if annotator.optsCalls != 1 {
+		t.Fatalf("expected annotate_image to use options-aware call once, got %d", annotator.optsCalls)
+	}
+	if annotator.lastOpts.ImageMaxSideMultiplier != 2 {
+		t.Fatalf("expected reannotate to use 2x image max side multiplier, got %d", annotator.lastOpts.ImageMaxSideMultiplier)
+	}
+
+	var reannotateRequested int
+	if err := sqlDB.QueryRow(`SELECT reannotate_requested FROM images WHERE id = 1`).Scan(&reannotateRequested); err != nil {
+		t.Fatalf("load image reannotate_requested: %v", err)
+	}
+	if reannotateRequested != 0 {
+		t.Fatalf("expected image reannotate_requested reset to 0, got %d", reannotateRequested)
+	}
+}
+
 func TestProcessOneProcessesAnnotateVideoJobAndStoresVideoAnnotations(t *testing.T) {
 	q, sqlDB := setupQueueTest(t)
 	if _, err := sqlDB.Exec(`DELETE FROM index_jobs WHERE id = 1`); err != nil {
@@ -646,6 +695,69 @@ VALUES (30, 'annotate_video', NULL, 9, 1, 'pending')
 	}
 	if jobState != "done" {
 		t.Fatalf("expected annotate_video job done, got %s", jobState)
+	}
+}
+
+func TestProcessOneReannotateVideoUsesDoubleAnnotationImageMaxSide(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`DELETE FROM index_jobs WHERE id = 1`); err != nil {
+		t.Fatalf("delete default embed job: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+UPDATE images
+SET description = 'A singer on stage under bright lights.',
+    tags_json = '["frame","stage"]'
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed frame annotations: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, transcript_text, reannotate_requested)
+VALUES (11, 'vid11', 'concert_clip.mp4', 'videos/vid11', 'video/mp4', 9000, 1280, 720, 1, 'crowd cheering loudly', 1)
+`); err != nil {
+		t.Fatalf("insert video: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (11, 1, 0, 1000)
+`); err != nil {
+		t.Fatalf("insert video frame: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, video_id, model_id, state)
+VALUES (32, 'annotate_video', NULL, 11, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate_video job: %v", err)
+	}
+
+	annotator := &fakeAnnotator{videoAnnotation: embedder.VideoAnnotation{
+		Description: "A live concert performance with energetic stage lighting and crowd movement.",
+		Tags:        []string{"concert", "music", "crowd"},
+		IsNSFW:      false,
+	}}
+	q.Annotator = annotator
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+
+	if annotator.videoCalls != 1 {
+		t.Fatalf("expected one video annotation call, got %d", annotator.videoCalls)
+	}
+	if annotator.lastVideoInput.ImageMaxSideMultiplier != 2 {
+		t.Fatalf("expected reannotate video to use 2x image max side multiplier, got %d", annotator.lastVideoInput.ImageMaxSideMultiplier)
+	}
+
+	var reannotateRequested int
+	if err := sqlDB.QueryRow(`SELECT reannotate_requested FROM videos WHERE id = 11`).Scan(&reannotateRequested); err != nil {
+		t.Fatalf("load video reannotate_requested: %v", err)
+	}
+	if reannotateRequested != 0 {
+		t.Fatalf("expected video reannotate_requested reset to 0, got %d", reannotateRequested)
 	}
 }
 

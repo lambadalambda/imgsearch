@@ -44,8 +44,17 @@ func TestRootServesIndexPage(t *testing.T) {
 	if strings.Contains(body, "class=\"masthead panel\"") {
 		t.Fatalf("expected masthead to be compact chrome without panel treatment")
 	}
-	if !strings.Contains(body, "id=\"ops-bar\"") || !strings.Contains(body, "class=\"ops-bar\"") {
-		t.Fatalf("expected compact ops bar container outside masthead")
+	if strings.Contains(body, "<section id=\"ops-bar\"") {
+		t.Fatalf("expected live status strip to be integrated into masthead, not rendered as separate section")
+	}
+	if strings.Contains(body, "id=\"ops-bar\" class=\"masthead-status\"") {
+		t.Fatalf("expected no inline masthead status strip below the search row")
+	}
+	if !strings.Contains(body, "id=\"ops-bar\" class=\"ops-status-panel\"") {
+		t.Fatalf("expected status plumbing to move into the top-right overflow menu")
+	}
+	if !strings.Contains(body, "class=\"search-actions\"") || !strings.Contains(body, "class=\"ops-menu\"") {
+		t.Fatalf("expected compact top-right ops menu alongside search controls")
 	}
 	if !strings.Contains(body, "<details class=\"search-advanced\"") {
 		t.Fatalf("expected exclude query to live behind advanced search disclosure")
@@ -64,6 +73,12 @@ func TestRootServesIndexPage(t *testing.T) {
 	}
 	if !strings.Contains(body, "id=\"show-nsfw\"") {
 		t.Fatalf("expected nsfw visibility toggle in workspace controls")
+	}
+	if !strings.Contains(body, "class=\"workspace-nav\"") {
+		t.Fatalf("expected compact workspace nav wrapper for title and tabs")
+	}
+	if !strings.Contains(body, "id=\"library-view-title\" class=\"sr-only\"") {
+		t.Fatalf("expected library view heading to stay accessible while reducing visible chrome")
 	}
 	if !strings.Contains(body, "id=\"search-tag-input\"") || !strings.Contains(body, "id=\"search-tag-suggestions\"") {
 		t.Fatalf("expected advanced search tag filter controls with autocomplete shell")
@@ -134,6 +149,12 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "tag-chip-more") {
 		t.Fatalf("expected compact tag overflow chip support in card rendering")
 	}
+	if !strings.Contains(rr.Body.String(), "tags.slice(0, 3)") {
+		t.Fatalf("expected compact tag rows to reserve room for overflow chip on all cards")
+	}
+	if !strings.Contains(rr.Body.String(), "const compactTagsMarkup = tagsMarkup(tags, true, true);") || !strings.Contains(rr.Body.String(), "<div class=\"meta-tags\">${compactTagsMarkup}</div>") {
+		t.Fatalf("expected card tags to render in a dedicated non-shrinking metadata slot")
+	}
 	if strings.Contains(rr.Body.String(), "description-toggle") || strings.Contains(rr.Body.String(), "Show more") {
 		t.Fatalf("expected inline description toggle pattern removed from card rendering")
 	}
@@ -152,8 +173,20 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "${overlayTagsMarkup}") || !strings.Contains(rr.Body.String(), "${overlaySupportMarkup}") {
 		t.Fatalf("expected overlay detail layer to include tags and expanded supporting text")
 	}
+	if !strings.Contains(rr.Body.String(), "function scoreBadgeText(item, scoreLabel)") || !strings.Contains(rr.Body.String(), "`${scoreLabel} at ${formatTimestamp(item.match_timestamp_ms)}`") {
+		t.Fatalf("expected video result timestamp to be folded into thumbnail match badge text")
+	}
 	if !strings.Contains(rr.Body.String(), "const scoreBadge =") || !strings.Contains(rr.Body.String(), "thumb-match-badge") {
 		t.Fatalf("expected score badge markup over thumbnail for match percentage prominence")
+	}
+	if strings.Contains(rr.Body.String(), "cardMediaClass") || strings.Contains(rr.Body.String(), "class=\"card ${cardMediaClass}\"") {
+		t.Fatalf("expected card rendering to avoid separate image/video card layout classes")
+	}
+	if strings.Contains(rr.Body.String(), "${videoMeta}\n          ${compactTagsMarkup}") {
+		t.Fatalf("expected rest-state cards to keep video metadata out of the shared compact metadata stack")
+	}
+	if strings.Contains(rr.Body.String(), "${anchorBadge}${score}</div>") {
+		t.Fatalf("expected expanded overlay status row not to duplicate match score from thumbnail badge")
 	}
 	if !strings.Contains(rr.Body.String(), "status === 'done' || mediaType === 'video'") {
 		t.Fatalf("expected similar action to stay available for videos regardless of transcript-only index state")
@@ -305,8 +338,17 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	if !strings.Contains(body, ".supporting-stack") || !strings.Contains(body, ".overlay-supporting-stack") {
 		t.Fatalf("expected stacked supporting-text layout rules for description plus transcript")
 	}
-	if !strings.Contains(body, "max-height: 1.8em;") {
-		t.Fatalf("expected tag row to clamp at rest")
+	if !strings.Contains(body, ".meta-tags") || !strings.Contains(body, "min-height: 1.65rem;") {
+		t.Fatalf("expected compact card tags to get a reserved row at rest")
+	}
+	if !strings.Contains(body, "grid-template-rows: auto auto minmax(0, 1fr);") {
+		t.Fatalf("expected card metadata to keep title/path and tags out of the shrinkable prose area")
+	}
+	if !strings.Contains(body, "grid-template-columns: repeat(3, minmax(0, 1fr)) max-content;") {
+		t.Fatalf("expected tag rows to reserve a fixed final column for +N overflow chips")
+	}
+	if !strings.Contains(body, ".tag-list .tag-chip") || !strings.Contains(body, "text-overflow: ellipsis;") {
+		t.Fatalf("expected compact tag chips to ellipsize instead of being visually clipped")
 	}
 	if !strings.Contains(body, ".card-detail-overlay") {
 		t.Fatalf("expected overlay expansion rules for clipped card content")
@@ -332,11 +374,17 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	if !strings.Contains(body, ".thumb-match-badge") {
 		t.Fatalf("expected dedicated thumbnail match badge styling rules")
 	}
+	if strings.Contains(body, ".card-video") || strings.Contains(body, "--card-meta-height: 224px;") {
+		t.Fatalf("expected image and video cards to share the same compact layout rules")
+	}
+	if !strings.Contains(body, ".card-detail-overlay > *") || !strings.Contains(body, "min-width: 0;") {
+		t.Fatalf("expected overlay rows to stay in normal flow without text collision")
+	}
 	if !strings.Contains(body, "right: 10px;") || !strings.Contains(body, "bottom: 10px;") {
 		t.Fatalf("expected thumbnail match badge to stay anchored at lower right")
 	}
-	if !strings.Contains(body, ".ops-bar") || !strings.Contains(body, ".ops-menu") {
-		t.Fatalf("expected compact ops-bar and quiet ops-menu styling rules")
+	if !strings.Contains(body, ".ops-status-panel") || !strings.Contains(body, ".ops-menu") {
+		t.Fatalf("expected overflow-only status panel and quiet ops-menu styling rules")
 	}
 	if !strings.Contains(body, ".search-advanced") {
 		t.Fatalf("expected advanced-search disclosure styling rules")

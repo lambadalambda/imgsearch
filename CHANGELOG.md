@@ -3,11 +3,15 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(ui): unify image/video card metadata layout, keep tag overflow chips visible, and fold video match timestamps into the thumbnail match badge.
+- chore(dev): add Playwright tooling (`playwright` dev dependency, npm scripts, and Chromium install flow) so browser screenshots can be captured locally during UI work.
 - security(api): add API-key route guarding for `/api/*` with header (`X-Imgsearch-API-Key`/Bearer) and HttpOnly same-site cookie auth for the built-in UI, default to a built-in development key on loopback when unset, reject that default key on non-loopback binds, and log a startup warning when the default key is active.
 - fix(import): make `scripts/import_images.sh` / `mise run import-images` send `X-Imgsearch-API-Key` on local health/upload requests using `IMGSEARCH_IMPORT_API_KEY`, `IMGSEARCH_API_KEY`, or the same built-in development default key when both are unset.
 - feat(ui): add per-card `Re-annotate` actions for images and videos that queue annotation jobs (`annotate_image` / `annotate_video`) so existing media can be re-described without re-uploading.
+- ux(layout): compact the top chrome (masthead, workspace header/tabs/toolbars) and move queue/live/debug status into a quiet top-right overflow menu so media content starts immediately below the search header on desktop and mobile.
 - feat(ui): add per-card `Flag NSFW` / `Unflag NSFW` actions for images and videos, backed by new toggle endpoints (`POST /api/images/{id}/toggle-nsfw`, `POST /api/videos/{id}/toggle-nsfw`) for quick manual correction when model NSFW tagging misses.
 - fix(annotations): make image/video re-annotate clear stored descriptions/tags (and video annotation timestamp) before re-queueing so worker `NeedsAnnotation` checks run native annotation instead of completing no-op jobs.
+- feat(annotations): make manual `Re-annotate` requests run high-detail annotation passes at 2x the configured annotation image max-side (default 384 -> 768) for both image and video re-annotation jobs.
 - feat(annotations): add `-llama-native-annotation-temperature` and `-llama-native-annotation-seed` controls, and propagate both through llama.cpp-native image/video annotation generation so re-annotate can produce controlled variation.
 - tweak(annotations): align native annotation sampling defaults with Gemma guidance by using `temperature=1.0` and `top_p=0.95` (with existing `top_k=64`) while keeping seed configurable (`-1` random per request).
 - security(webui): restrict `/media/*` serving to explicit `images/` and `videos/` subdirectories so database and other non-media files under `dataDir` are no longer exposed through the web file server.

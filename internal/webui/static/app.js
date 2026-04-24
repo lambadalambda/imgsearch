@@ -107,7 +107,6 @@ let tagCloudLoaded = false;
 let tagSuggestionRequestToken = 0;
 let tagSuggestionDebounceTimer = null;
 const liveReconnectDelayMaxMs = 30000;
-const touchOptimizedCards = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
 const nsfwPreferenceStorageKey = 'imgsearch.showNSFW';
 
 function setStatus(target, message, kind) {
@@ -193,6 +192,16 @@ function formatMatch(distance) {
   }
   const match = Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
   return `${match}% match`;
+}
+
+function scoreBadgeText(item, scoreLabel) {
+  if (!scoreLabel) {
+    return '';
+  }
+  if ((item.media_type || 'image') === 'video' && Number(item.match_timestamp_ms) > 0) {
+    return `${scoreLabel} at ${formatTimestamp(item.match_timestamp_ms)}`;
+  }
+  return scoreLabel;
 }
 
 function normalizeTagTerms(parts) {
@@ -383,7 +392,7 @@ function videoMetaMarkup(item, mode) {
   }
 
   if (mode === 'result' && Number(item.match_timestamp_ms) > 0) {
-    return `<div class="video-meta"><p class="timestamp">best match at ${escapeHTML(formatTimestamp(item.match_timestamp_ms))}</p></div>`;
+    return '';
   }
 
   const details = [];
@@ -540,7 +549,7 @@ function tagsMarkup(tags, includeOverflowChip, clickable) {
     return '';
   }
 
-  const visibleTags = includeOverflowChip ? tags.slice(0, 4) : tags;
+  const visibleTags = includeOverflowChip ? tags.slice(0, 3) : tags;
   const hiddenTagCount = includeOverflowChip ? Math.max(0, tags.length - visibleTags.length) : 0;
 
   return `<ul class="tag-list${includeOverflowChip ? '' : ' overlay-tag-list'}">${visibleTags
@@ -573,8 +582,8 @@ function cardMarkup(item, mode) {
   const status = item.index_state || 'done';
   const safeStatus = escapeHTML(humanizeIndexState(status));
   const scoreLabel = item.search_source === 'tag' ? '' : formatMatch(item.distance);
-  const score = scoreLabel && !item.is_anchor ? `<p class="distance">${escapeHTML(scoreLabel)}</p>` : '';
-  const scoreBadge = scoreLabel && !item.is_anchor ? `<p class="thumb-match-badge">${escapeHTML(scoreLabel)}</p>` : '';
+  const scoreBadgeLabel = scoreBadgeText(item, scoreLabel);
+  const scoreBadge = scoreBadgeLabel && !item.is_anchor ? `<p class="thumb-match-badge">${escapeHTML(scoreBadgeLabel)}</p>` : '';
   const canSearchSimilar = Number(item.image_id) > 0 && (status === 'done' || mediaType === 'video');
   const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use frame' : 'Use anchor') : 'Find similar';
   const disabled = canSearchSimilar ? '' : 'disabled';
@@ -601,7 +610,8 @@ function cardMarkup(item, mode) {
       .map((entry) => `<p class="${entry.className}">${escapeHTML(entry.text)}</p>`)
       .join('')}</div>`
     : '';
-  const compactTagsMarkup = tagsMarkup(tags, !touchOptimizedCards, true);
+  const compactTagsMarkup = tagsMarkup(tags, true, true);
+  const compactTagsSection = compactTagsMarkup ? `<div class="meta-tags">${compactTagsMarkup}</div>` : '';
   const overlayTagsMarkup = tagsMarkup(tags, false, true);
   const overlaySupportMarkup = supportEntries.length > 0
     ? `<div class="overlay-supporting-stack">${supportEntries
@@ -611,7 +621,7 @@ function cardMarkup(item, mode) {
   const overlayVideoMeta = videoMeta
     ? `<div class="overlay-video-meta">${videoMeta}</div>`
     : '';
-  const overlayStatusMarkup = `<div class="overlay-status-row"><p class="${stateClass(status)}">${safeStatus}</p>${anchorBadge}${score}</div>`;
+  const overlayStatusMarkup = `<div class="overlay-status-row"><p class="${stateClass(status)}">${safeStatus}</p>${anchorBadge}</div>`;
 
   return `
     <article class="card">
@@ -643,9 +653,8 @@ function cardMarkup(item, mode) {
         <div class="meta-main">
           <h3>${safeName}</h3>
           <p class="path">${safePath}</p>
-          ${videoMeta}
-          ${compactTagsMarkup}
         </div>
+        ${compactTagsSection}
         <div class="meta-foot">
           <div class="meta-status-row">
             <p class="${stateClass(status)}">${safeStatus}</p>

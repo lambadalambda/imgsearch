@@ -30,6 +30,8 @@ type Queue struct {
 	Index          vectorindex.VectorIndex
 }
 
+const reannotateImageMaxSideMultiplier = 2
+
 type claimedJob struct {
 	ID          int64
 	Kind        string
@@ -41,13 +43,14 @@ type claimedJob struct {
 }
 
 type imageTaskData struct {
-	OriginalName    string
-	StoragePath     string
-	NeedsAnnotation bool
-	VideoID         int64
-	VideoName       string
-	FrameIndex      int
-	VideoFrameCount int
+	OriginalName        string
+	StoragePath         string
+	NeedsAnnotation     bool
+	ReannotateRequested bool
+	VideoID             int64
+	VideoName           string
+	FrameIndex          int
+	VideoFrameCount     int
 }
 
 func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
@@ -527,7 +530,7 @@ func (q *Queue) executeClaimedJob(ctx context.Context, job claimedJob) (bool, bo
 		log.Printf("%s", formatImageProgress("annotating", job.ImageID, imageTask))
 		annotationAttempted = true
 		stageStartedAt = time.Now()
-		generated, err := q.annotateImage(ctx, absPath, imageTask.OriginalName)
+		generated, err := q.annotateImage(ctx, absPath, imageTask.OriginalName, imageTask.ReannotateRequested)
 		annotateDuration = time.Since(stageStartedAt)
 		if err != nil {
 			annotationErrText = err.Error()
@@ -693,9 +696,13 @@ func (q *Queue) executeClaimedJob(ctx context.Context, job claimedJob) (bool, bo
 	return true, true, nil
 }
 
-func (q *Queue) annotateImage(ctx context.Context, imagePath string, originalName string) (embedder.ImageAnnotation, error) {
+func (q *Queue) annotateImage(ctx context.Context, imagePath string, originalName string, reannotateRequested bool) (embedder.ImageAnnotation, error) {
+	opts := embedder.ImageAnnotationOptions{OriginalName: originalName}
+	if reannotateRequested {
+		opts.ImageMaxSideMultiplier = reannotateImageMaxSideMultiplier
+	}
 	if annotatorWithOptions, ok := q.Annotator.(embedder.ImageAnnotatorWithOptions); ok {
-		return annotatorWithOptions.AnnotateImageWithOptions(ctx, imagePath, embedder.ImageAnnotationOptions{OriginalName: originalName})
+		return annotatorWithOptions.AnnotateImageWithOptions(ctx, imagePath, opts)
 	}
 	return q.Annotator.AnnotateImage(ctx, imagePath)
 }
@@ -718,6 +725,7 @@ func formatImageProgress(action string, imageID int64, task imageTaskData) strin
 func (q *Queue) loadImageTaskData(ctx context.Context, imageID int64) (imageTaskData, error) {
 	var task imageTaskData
 	var needsAnnotation int
+	var reannotateRequested int
 	if err := q.DB.QueryRowContext(ctx, `
 SELECT i.original_name,
   i.storage_path,
@@ -727,6 +735,7 @@ SELECT i.original_name,
       OR COALESCE(i.tags_json, '[]') = '[]'
     THEN 1 ELSE 0
   END,
+  COALESCE(i.reannotate_requested, 0),
   COALESCE(vf.video_id, 0),
   COALESCE(v.original_name, ''),
   COALESCE(vf.frame_index, -1),
@@ -739,6 +748,7 @@ WHERE i.id = ?
 		&task.OriginalName,
 		&task.StoragePath,
 		&needsAnnotation,
+		&reannotateRequested,
 		&task.VideoID,
 		&task.VideoName,
 		&task.FrameIndex,
@@ -747,6 +757,7 @@ WHERE i.id = ?
 		return imageTaskData{}, fmt.Errorf("load image task data: %w", err)
 	}
 	task.NeedsAnnotation = needsAnnotation == 1
+	task.ReannotateRequested = reannotateRequested == 1
 	return task, nil
 }
 
@@ -771,16 +782,21 @@ func (q *Queue) loadVideoAnnotationTaskData(ctx context.Context, videoID int64) 
 	var input embedder.VideoAnnotationInput
 	var existingDescription string
 	var existingTagsJSON string
+	var reannotateRequested int
 	if err := q.DB.QueryRowContext(ctx, `
 SELECT original_name,
        duration_ms,
        COALESCE(transcript_text, ''),
        COALESCE(description, ''),
-       COALESCE(tags_json, '[]')
+       COALESCE(tags_json, '[]'),
+       COALESCE(reannotate_requested, 0)
 FROM videos
 WHERE id = ?
-`, videoID).Scan(&input.OriginalName, &input.DurationMS, &input.TranscriptText, &existingDescription, &existingTagsJSON); err != nil {
+`, videoID).Scan(&input.OriginalName, &input.DurationMS, &input.TranscriptText, &existingDescription, &existingTagsJSON, &reannotateRequested); err != nil {
 		return embedder.VideoAnnotationInput{}, false, fmt.Errorf("load video annotation task data: %w", err)
+	}
+	if reannotateRequested == 1 {
+		input.ImageMaxSideMultiplier = reannotateImageMaxSideMultiplier
 	}
 
 	existingTags, err := tagutil.DecodeJSON(existingTagsJSON)
@@ -848,7 +864,7 @@ ORDER BY vf.frame_index ASC
 		frameTags := row.tags
 		if needsVideoAnnotations && annotationMissing(frameDescription, frameTags) {
 			log.Printf("worker annotating image %d/%d of video id=%d file=%q (image_id=%d)", i+1, len(frameRows), videoID, strings.TrimSpace(input.OriginalName), row.imageID)
-			generated, err := q.annotateImage(ctx, row.absolutePath, row.originalName)
+			generated, err := q.annotateImage(ctx, row.absolutePath, row.originalName, input.ImageMaxSideMultiplier > 1)
 			if err != nil {
 				return embedder.VideoAnnotationInput{}, false, fmt.Errorf("annotate frame image %d for video %d: %w", row.imageID, videoID, err)
 			}
@@ -916,13 +932,35 @@ func (q *Queue) completeJob(ctx context.Context, job claimedJob, annotation *emb
 			_ = tx.Rollback()
 			return fmt.Errorf("marshal image tags: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `
+		if job.Kind == "annotate_image" {
+			if _, err := tx.ExecContext(ctx, `
+UPDATE images
+SET description = ?, tags_json = ?, reannotate_requested = 0
+WHERE id = ?
+`, annotation.Description, string(tagsJSON), job.ImageID); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("update image annotations: %w", err)
+			}
+		} else {
+			if _, err := tx.ExecContext(ctx, `
 UPDATE images
 SET description = ?, tags_json = ?
 WHERE id = ?
 `, annotation.Description, string(tagsJSON), job.ImageID); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("update image annotations: %w", err)
+			}
+		}
+	}
+
+	if annotation == nil && job.Kind == "annotate_image" {
+		if _, err := tx.ExecContext(ctx, `
+UPDATE images
+SET reannotate_requested = 0
+WHERE id = ?
+`, job.ImageID); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("update image annotations: %w", err)
+			return fmt.Errorf("clear image reannotate request: %w", err)
 		}
 	}
 
@@ -954,11 +992,21 @@ func (q *Queue) completeVideoAnnotationJob(ctx context.Context, job claimedJob, 
 UPDATE videos
 SET description = ?,
     tags_json = ?,
-    annotation_updated_at = datetime('now')
+    annotation_updated_at = datetime('now'),
+    reannotate_requested = 0
 WHERE id = ?
 `, annotation.Description, string(tagsJSON), job.VideoID); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("update video annotations: %w", err)
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `
+UPDATE videos
+SET reannotate_requested = 0
+WHERE id = ?
+`, job.VideoID); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("clear video reannotate request: %w", err)
 		}
 	}
 
