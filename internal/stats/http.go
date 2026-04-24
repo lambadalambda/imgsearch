@@ -40,7 +40,9 @@ type JobKindStats struct {
 type FailureItem struct {
 	JobID        int64  `json:"job_id"`
 	Kind         string `json:"kind"`
+	MediaType    string `json:"media_type"`
 	ImageID      int64  `json:"image_id"`
+	VideoID      int64  `json:"video_id"`
 	OriginalName string `json:"original_name"`
 	Attempts     int    `json:"attempts"`
 	LastError    string `json:"last_error"`
@@ -48,10 +50,13 @@ type FailureItem struct {
 }
 
 type Response struct {
-	ImagesTotal    int64                   `json:"images_total"`
-	Queue          QueueStats              `json:"queue"`
-	JobKinds       map[string]JobKindStats `json:"job_kinds,omitempty"`
-	RecentFailures []FailureItem           `json:"recent_failures"`
+	ImagesTotal           int64                   `json:"images_total"`
+	StandaloneImagesTotal int64                   `json:"standalone_images_total"`
+	VideoFrameImagesTotal int64                   `json:"video_frame_images_total"`
+	VideosTotal           int64                   `json:"videos_total"`
+	Queue                 QueueStats              `json:"queue"`
+	JobKinds              map[string]JobKindStats `json:"job_kinds,omitempty"`
+	RecentFailures        []FailureItem           `json:"recent_failures"`
 }
 
 func Collect(ctx context.Context, db *sql.DB, modelID int64) (Response, error) {
@@ -63,6 +68,24 @@ func Collect(ctx context.Context, db *sql.DB, modelID int64) (Response, error) {
 
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM images`).Scan(&resp.ImagesTotal); err != nil {
 		return Response{}, fmt.Errorf("count images: %w", err)
+	}
+	if err := db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM images i
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM video_frames vf
+  WHERE vf.image_id = i.id
+)
+`).Scan(&resp.StandaloneImagesTotal); err != nil {
+		return Response{}, fmt.Errorf("count standalone images: %w", err)
+	}
+	resp.VideoFrameImagesTotal = resp.ImagesTotal - resp.StandaloneImagesTotal
+	if resp.VideoFrameImagesTotal < 0 {
+		resp.VideoFrameImagesTotal = 0
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM videos`).Scan(&resp.VideosTotal); err != nil {
+		return Response{}, fmt.Errorf("count videos: %w", err)
 	}
 
 	jobKinds, err := collectJobKindStats(ctx, db, modelID)
@@ -91,9 +114,18 @@ func Collect(ctx context.Context, db *sql.DB, modelID int64) (Response, error) {
 	resp.Queue.Total = resp.Queue.Tracked + resp.Queue.Missing
 
 	rows, err := db.QueryContext(ctx, `
-SELECT j.id, j.kind, j.image_id, i.original_name, j.attempts, COALESCE(j.last_error, ''), j.updated_at
+SELECT j.id,
+       j.kind,
+       CASE WHEN j.video_id IS NOT NULL THEN 'video' ELSE 'image' END AS media_type,
+       COALESCE(j.image_id, 0),
+       COALESCE(j.video_id, 0),
+       COALESCE(i.original_name, v.original_name, ''),
+       j.attempts,
+       COALESCE(j.last_error, ''),
+       j.updated_at
 FROM index_jobs j
-JOIN images i ON i.id = j.image_id
+LEFT JOIN images i ON i.id = j.image_id
+LEFT JOIN videos v ON v.id = j.video_id
 WHERE j.model_id = ?
   AND j.state = 'failed'
 ORDER BY j.updated_at DESC, j.id DESC
@@ -107,7 +139,7 @@ LIMIT 10
 	resp.RecentFailures = make([]FailureItem, 0, 10)
 	for rows.Next() {
 		var item FailureItem
-		if err := rows.Scan(&item.JobID, &item.Kind, &item.ImageID, &item.OriginalName, &item.Attempts, &item.LastError, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.JobID, &item.Kind, &item.MediaType, &item.ImageID, &item.VideoID, &item.OriginalName, &item.Attempts, &item.LastError, &item.UpdatedAt); err != nil {
 			return Response{}, fmt.Errorf("decode failure row: %w", err)
 		}
 		resp.RecentFailures = append(resp.RecentFailures, item)

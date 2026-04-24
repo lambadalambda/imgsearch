@@ -143,6 +143,40 @@ ORDER BY id ASC
 	}
 }
 
+func TestRetryFailedHandlerEnqueuesMissingVideoTranscriptJobs(t *testing.T) {
+	dbConn := setupJobsDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (1, 'video-a', 'clip.mp4', 'videos/video-a', 'video/mp4', 1000, 640, 360, 0)
+`); err != nil {
+		t.Fatalf("seed video: %v", err)
+	}
+
+	h := NewRetryFailedHandler(&RetryFailedHandler{DB: dbConn, ModelID: 1})
+	req := httptest.NewRequest(http.MethodPost, "/api/jobs/retry-failed", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var state string
+	if err := dbConn.QueryRow(`
+SELECT state
+FROM index_jobs
+WHERE kind = 'transcribe_video'
+  AND video_id = 1
+  AND image_id IS NULL
+  AND model_id = 1
+`).Scan(&state); err != nil {
+		t.Fatalf("query transcript job: %v", err)
+	}
+	if state != "pending" {
+		t.Fatalf("expected missing transcript job pending, got %s", state)
+	}
+}
+
 func TestRetryFailedHandlerRejectsInvalidMethod(t *testing.T) {
 	dbConn := setupJobsDB(t)
 	h := NewRetryFailedHandler(&RetryFailedHandler{DB: dbConn, ModelID: 1})

@@ -77,6 +77,15 @@ func TestStatsHandlerReturnsQueueCountsAndFailures(t *testing.T) {
 	if resp.ImagesTotal != 5 {
 		t.Fatalf("images_total: got=%d want=5", resp.ImagesTotal)
 	}
+	if resp.StandaloneImagesTotal != 5 {
+		t.Fatalf("standalone_images_total: got=%d want=5", resp.StandaloneImagesTotal)
+	}
+	if resp.VideoFrameImagesTotal != 0 {
+		t.Fatalf("video_frame_images_total: got=%d want=0", resp.VideoFrameImagesTotal)
+	}
+	if resp.VideosTotal != 0 {
+		t.Fatalf("videos_total: got=%d want=0", resp.VideosTotal)
+	}
 	if resp.Queue.Tracked != 4 {
 		t.Fatalf("queue.tracked: got=%d want=4", resp.Queue.Tracked)
 	}
@@ -120,6 +129,9 @@ func TestStatsHandlerReturnsQueueCountsAndFailures(t *testing.T) {
 		if got.Kind != "embed_image" {
 			t.Fatalf("failure job kind: got=%q want=embed_image", got.Kind)
 		}
+		if got.MediaType != "image" || got.ImageID != 4 || got.VideoID != 0 {
+			t.Fatalf("failure media fields: got=%+v", got)
+		}
 		if got.OriginalName != "four.jpg" {
 			t.Fatalf("failure original name: got=%q", got.OriginalName)
 		}
@@ -157,6 +169,58 @@ VALUES (18, 'embed_image', 6, 1, 'done', NULL, 1, 3, NULL);
 
 	if resp.Queue.AnnotationsMissing != 1 {
 		t.Fatalf("queue.annotations_missing: got=%d want=1", resp.Queue.AnnotationsMissing)
+	}
+}
+
+func TestCollectIncludesVideoJobFailures(t *testing.T) {
+	dbConn := setupStatsDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES
+  (1, 'v1', 'annotate-failed.mp4', 'videos/v1.mp4', 'video/mp4', 1000, 640, 360, 0),
+  (2, 'v2', 'transcribe-failed.mp4', 'videos/v2.mp4', 'video/mp4', 2000, 640, 360, 0);
+
+INSERT INTO index_jobs(id, kind, image_id, video_id, model_id, state, leased_until, attempts, max_attempts, last_error)
+VALUES
+  (18, 'annotate_video', NULL, 1, 1, 'failed', NULL, 2, 3, 'video annotation failed'),
+  (19, 'transcribe_video', NULL, 2, 1, 'failed', NULL, 3, 3, 'transcription failed');
+`); err != nil {
+		t.Fatalf("seed video failures: %v", err)
+	}
+
+	resp, err := Collect(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("collect stats: %v", err)
+	}
+	if resp.VideosTotal != 2 {
+		t.Fatalf("videos_total: got=%d want=2", resp.VideosTotal)
+	}
+
+	failuresByID := map[int64]FailureItem{}
+	for _, item := range resp.RecentFailures {
+		failuresByID[item.JobID] = item
+	}
+
+	annotateFailure, ok := failuresByID[18]
+	if !ok {
+		t.Fatalf("expected annotate_video failure in recent failures, got=%v", resp.RecentFailures)
+	}
+	if annotateFailure.MediaType != "video" || annotateFailure.VideoID != 1 || annotateFailure.ImageID != 0 {
+		t.Fatalf("unexpected annotate_video failure media fields: %+v", annotateFailure)
+	}
+	if annotateFailure.OriginalName != "annotate-failed.mp4" {
+		t.Fatalf("annotate video original name: got=%q", annotateFailure.OriginalName)
+	}
+
+	transcribeFailure, ok := failuresByID[19]
+	if !ok {
+		t.Fatalf("expected transcribe_video failure in recent failures, got=%v", resp.RecentFailures)
+	}
+	if transcribeFailure.MediaType != "video" || transcribeFailure.VideoID != 2 || transcribeFailure.ImageID != 0 {
+		t.Fatalf("unexpected transcribe_video failure media fields: %+v", transcribeFailure)
+	}
+	if transcribeFailure.OriginalName != "transcribe-failed.mp4" {
+		t.Fatalf("transcribe video original name: got=%q", transcribeFailure.OriginalName)
 	}
 }
 

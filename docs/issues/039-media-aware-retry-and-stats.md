@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -27,12 +27,12 @@ Retry and stats endpoints should treat image jobs, video annotation jobs, and vi
 
 ## Acceptance Criteria
 
-- [ ] Include `EnsureVideoTranscriptJobsForModel` in retry-failed handling when transcription is enabled or when missing transcript jobs should be tracked.
-- [ ] Add `VideoID` and media type information to `FailureItem`.
-- [ ] Update the recent-failures query to left join both `images` and `videos`, populating whichever foreign key is non-null.
-- [ ] Include failed `annotate_video` and `transcribe_video` jobs in stats responses.
-- [ ] Consider adding `videos_total`, standalone image count, and video-frame image count to stats for clarity.
-- [ ] Add tests for retrying missing transcript jobs and listing failed `annotate_video` and `transcribe_video` jobs.
+- [x] Include `EnsureVideoTranscriptJobsForModel` in retry-failed handling when transcription is enabled or when missing transcript jobs should be tracked.
+- [x] Add `VideoID` and media type information to `FailureItem`.
+- [x] Update the recent-failures query to left join both `images` and `videos`, populating whichever foreign key is non-null.
+- [x] Include failed `annotate_video` and `transcribe_video` jobs in stats responses.
+- [x] Consider adding `videos_total`, standalone image count, and video-frame image count to stats for clarity.
+- [x] Add tests for retrying missing transcript jobs and listing failed `annotate_video` and `transcribe_video` jobs.
 
 ## Related Files
 

@@ -55,7 +55,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [ ] P2 Extract typed job handlers from worker switch statement: `docs/issues/037-split-worker-job-handlers.md`
 - [ ] P2 Make `annotate_image` jobs claimable in batch workers: `docs/issues/053-annotate-image-batch-claiming.md`
 - [ ] P2 Include videos in live updates and stale-request guards: `docs/issues/038-live-updates-include-videos.md`
-- [ ] P1 Make retry and stats media-aware for video jobs: `docs/issues/039-media-aware-retry-and-stats.md`
+- [x] P1 Make retry and stats media-aware for video jobs: `docs/issues/039-media-aware-retry-and-stats.md`
 - [ ] P2 Narrow native runtime locks around preprocessing: `docs/issues/040-narrow-native-runtime-locks.md`
 - [ ] P1 Add graceful shutdown and cancellation-aware worker loops: `docs/issues/041-graceful-shutdown-and-worker-cancellation.md`
 - [ ] P2 Enforce vector dimensions and share cosine logic: `docs/issues/042-vector-dimension-validation-and-cosine.md`

@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(stats): make retry/status endpoints media-aware by queuing missing video transcript jobs, surfacing failed video jobs in recent failures, and adding video/standalone/frame image totals (issue 039).
 - fix(worker): harden batch job leasing by defaulting worker options before claiming, checking per-job claim updates, and reloading claimed jobs inside the transaction with owner/state guards (issue 036).
 - fix(ui): unify image/video card metadata layout, keep tag overflow chips visible, and fold video match timestamps into the thumbnail match badge.
 - chore(dev): add Playwright tooling (`playwright` dev dependency, npm scripts, and Chromium install flow) so browser screenshots can be captured locally during UI work.
