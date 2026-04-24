@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Done.
 
 ## Summary
 
@@ -29,10 +29,16 @@ Live snapshots update images and stats, but not videos. Once a live snapshot arr
 
 ## Acceptance Criteria
 
-- [ ] Extend live snapshots to include video list data, or keep a video polling path active while live snapshots remain image-only.
-- [ ] Add stale-request protection to `loadVideos`, mirroring images and stats.
-- [ ] Ensure upload refresh behavior updates both image and video state when live mode is active.
-- [ ] Add regression coverage for live updates with videos.
+- [x] Extend live snapshots to include video list data, or keep a video polling path active while live snapshots remain image-only.
+- [x] Add stale-request protection to `loadVideos`, mirroring images and stats.
+- [x] Ensure upload refresh behavior updates both image and video state when live mode is active.
+- [x] Add regression coverage for live updates with videos.
+
+## Notes
+
+- Live snapshots now include `videos.ListResponse` alongside images and stats.
+- The UI applies live video snapshots on the first videos page and re-renders when video state, transcript, description, tags, preview, or storage fields change.
+- `loadVideos` already uses the shared `loadMediaCollection` stale-request token path introduced by the frontend collection helper refactor.
 
 ## Related Files
 

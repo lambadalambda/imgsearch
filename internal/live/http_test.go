@@ -48,6 +48,14 @@ VALUES
 		t.Fatalf("seed jobs: %v", err)
 	}
 
+	_, err = dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (1, 'v1', 'clip.mp4', 'videos/v1', 'video/mp4', 1000, 640, 360, 0)
+`)
+	if err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+
 	return dbConn
 }
 
@@ -82,6 +90,12 @@ func TestLiveHandlerStreamsSnapshot(t *testing.T) {
 	}
 	if len(snapshot.Images.Images) != 2 {
 		t.Fatalf("images length: got=%d want=2", len(snapshot.Images.Images))
+	}
+	if snapshot.Videos.Total != 1 {
+		t.Fatalf("videos total: got=%d want=1", snapshot.Videos.Total)
+	}
+	if len(snapshot.Videos.Videos) != 1 || snapshot.Videos.Videos[0].VideoID != 1 {
+		t.Fatalf("unexpected videos: %+v", snapshot.Videos.Videos)
 	}
 	if snapshot.Stats.ImagesTotal != 2 {
 		t.Fatalf("stats images total: got=%d want=2", snapshot.Stats.ImagesTotal)

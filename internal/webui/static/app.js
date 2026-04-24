@@ -1300,17 +1300,17 @@ async function runSimilarSearch(imageID, anchorHint) {
   setStatus(searchStatus, `Similar search returned ${state.results.length} result(s).${formatSearchDebugSuffix(payload.debug)}`, 'success');
 }
 
-function imagesDiffer(currentImages, nextImages) {
-  if (!Array.isArray(currentImages) || !Array.isArray(nextImages)) {
+function mediaItemsDiffer(currentItems, nextItems, idKey) {
+  if (!Array.isArray(currentItems) || !Array.isArray(nextItems)) {
     return true;
   }
-  if (currentImages.length !== nextImages.length) {
+  if (currentItems.length !== nextItems.length) {
     return true;
   }
-  for (let i = 0; i < currentImages.length; i += 1) {
-    const current = currentImages[i] || {};
-    const next = nextImages[i] || {};
-    if (Number(current.image_id || 0) !== Number(next.image_id || 0)) {
+  for (let i = 0; i < currentItems.length; i += 1) {
+    const current = currentItems[i] || {};
+    const next = nextItems[i] || {};
+    if (Number(current[idKey] || 0) !== Number(next[idKey] || 0)) {
       return true;
     }
     if ((current.index_state || '') !== (next.index_state || '')) {
@@ -1319,8 +1319,31 @@ function imagesDiffer(currentImages, nextImages) {
     if ((current.storage_path || '') !== (next.storage_path || '')) {
       return true;
     }
+    if ((current.thumbnail_path || '') !== (next.thumbnail_path || '')) {
+      return true;
+    }
+    if ((current.preview_path || '') !== (next.preview_path || '')) {
+      return true;
+    }
+    if ((current.description || '') !== (next.description || '')) {
+      return true;
+    }
+    if ((current.transcript_text || '') !== (next.transcript_text || '')) {
+      return true;
+    }
+    if (JSON.stringify(current.tags || []) !== JSON.stringify(next.tags || [])) {
+      return true;
+    }
   }
   return false;
+}
+
+function imagesDiffer(currentImages, nextImages) {
+  return mediaItemsDiffer(currentImages, nextImages, 'image_id');
+}
+
+function videosDiffer(currentVideos, nextVideos) {
+  return mediaItemsDiffer(currentVideos, nextVideos, 'video_id');
 }
 
 function failuresDiffer(currentFailures, nextFailures) {
@@ -1390,6 +1413,23 @@ function applyLiveSnapshot(payload) {
       } else {
         const end = state.images.length;
         setStatus(galleryStatus, `Showing 1-${end} of ${state.imagesTotal} image(s), newest first.`, 'success');
+      }
+      changed = true;
+    }
+  }
+
+  if (payload.videos && state.videosPage === 0) {
+    const nextVideos = (payload.videos.videos || []).slice(0, state.videosPageSize);
+    const nextTotal = Number(payload.videos.total ?? nextVideos.length);
+    if (videosDiffer(state.videos, nextVideos) || Number(state.videosTotal || 0) !== nextTotal) {
+      state.videos = nextVideos;
+      state.videosTotal = nextTotal;
+      renderVideos();
+      if (state.videosTotal === 0) {
+        setStatus(videosStatus, 'No videos here yet. Upload or import supported clips to build the video index.', 'info');
+      } else {
+        const end = state.videos.length;
+        setStatus(videosStatus, `Showing 1-${end} of ${state.videosTotal} video(s), newest first.`, 'success');
       }
       changed = true;
     }

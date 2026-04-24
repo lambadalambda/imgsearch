@@ -14,6 +14,7 @@ import (
 	"imgsearch/internal/httputil"
 	"imgsearch/internal/images"
 	"imgsearch/internal/stats"
+	"imgsearch/internal/videos"
 )
 
 const (
@@ -36,6 +37,7 @@ type Handler struct {
 type Snapshot struct {
 	Type   string              `json:"type"`
 	Images images.ListResponse `json:"images"`
+	Videos videos.ListResponse `json:"videos"`
 	Stats  stats.Response      `json:"stats"`
 	SentAt string              `json:"sent_at"`
 }
@@ -157,6 +159,10 @@ func writeSnapshot(ctx context.Context, conn *websocket.Conn, db *sql.DB, modelI
 	if err != nil {
 		return err
 	}
+	videosResp, err := videos.List(ctx, db, modelID, limit, offset, includeNSFW)
+	if err != nil {
+		return err
+	}
 	statsResp, err := stats.Collect(ctx, db, modelID)
 	if err != nil {
 		return err
@@ -165,6 +171,7 @@ func writeSnapshot(ctx context.Context, conn *websocket.Conn, db *sql.DB, modelI
 	return writeWS(conn, Snapshot{
 		Type:   "snapshot",
 		Images: imagesResp,
+		Videos: videosResp,
 		Stats:  statsResp,
 		SentAt: time.Now().UTC().Format(time.RFC3339Nano),
 	})
