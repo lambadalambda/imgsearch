@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -26,11 +26,18 @@ Open.
 
 ## Acceptance Criteria
 
-- [ ] Extract parsed runtime configuration into a struct with explicit defaults.
-- [ ] Keep config validation behavior equivalent to the current CLI path.
-- [ ] Add tests for runtime mode, API key exposure, and native option validation through the config layer.
-- [ ] Avoid moving DB/vector/model construction in this issue.
-- [ ] Leave a clear handoff for `docs/issues/052-app-runtime-composition-layer.md`.
+- [x] Extract parsed runtime configuration into a struct with explicit defaults.
+- [x] Keep config validation behavior equivalent to the current CLI path.
+- [x] Add tests for runtime mode, API key exposure, and native option validation through the config layer.
+- [x] Avoid moving DB/vector/model construction in this issue.
+- [x] Leave a clear handoff for `docs/issues/052-app-runtime-composition-layer.md`.
+
+## Resolution
+
+- Added `runtimeConfig` with explicit defaults, flag registration, parsing, and validation helpers.
+- Centralized runtime mode resolution, API key/exposure validation, annotation load/warning decisions, and native image-limit validation in the config layer.
+- Kept database, vector backend, model, server, and worker construction in `cmd/imgsearch/main.go` for the follow-up app composition issue.
+- Added config tests for mode/API key behavior, worker-mode exposure bypass, native image limits, environment defaults, and flag default round-tripping.
 
 ## Related Files
 

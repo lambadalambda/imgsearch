@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- refactor(runtime): extract typed CLI runtime configuration with explicit defaults and validation for mode, API exposure, and native image settings while leaving runtime construction in `main` (issue 048).
 - fix(scripts): improve shell tooling portability with cross-platform file sizing, OS/arch-aware ONNX Runtime resolution, safe release dependency path handling, and `mise run test:scripts` / `test:full` tasks (issue 047).
 - refactor(ui): share image/video collection loading, pagination rendering, empty-state rendering, and card action markup while preserving static asset behavior (issue 051).
 - test(ui): add a standalone Playwright browser smoke suite for core UI flows and keyboard-safe ARIA tab navigation, exposed through `npm test` and `mise run test:ui` (issue 046).

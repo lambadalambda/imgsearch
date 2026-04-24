@@ -47,95 +47,47 @@ const (
 )
 
 func main() {
-	dataDir := flag.String("data-dir", "./data", "data directory")
-	addr := flag.String("addr", "127.0.0.1:8080", "http listen address")
-	apiKey := flag.String("api-key", strings.TrimSpace(os.Getenv("IMGSEARCH_API_KEY")), "API key required for /api/* requests (falls back to built-in development default when unset)")
-	modeFlag := flag.String("mode", string(runtimeModeAll), "process mode: all, api, or worker")
-	workerBatchSize := flag.Int("worker-batch-size", 1, "number of jobs to claim per batch (1 disables batching)")
-	llamaNativeModelPath := flag.String("llama-native-model-path", defaultLlamaNativeModelPath, "path to the llama.cpp GGUF embedding model")
-	llamaNativeMMProjPath := flag.String("llama-native-mmproj-path", defaultLlamaNativeMMProjPath, "path to the llama.cpp GGUF mmproj model")
-	llamaNativeDimensions := flag.Int("llama-native-dimensions", defaultLlamaNativeDimensions, "embedding dimensions for llama-cpp-native model metadata")
-	llamaNativeGPULayers := flag.Int("llama-native-gpu-layers", 99, "number of layers to offload for llama-cpp-native")
-	llamaNativeUseGPU := flag.Bool("llama-native-use-gpu", true, "whether llama-cpp-native should use GPU for mtmd/mmproj")
-	llamaNativeContextSize := flag.Int("llama-native-context-size", defaultLlamaNativeEmbedderContextSize, "context size for llama-cpp-native runtime")
-	llamaNativeBatchSize := flag.Int("llama-native-batch-size", 512, "batch size for llama-cpp-native runtime")
-	llamaNativeMaxSequences := flag.Int("llama-native-max-sequences", 1, "maximum independent sequences for llama-cpp-native embedding batches")
-	llamaNativeThreads := flag.Int("llama-native-threads", 0, "thread count for llama-cpp-native runtime (0 uses backend default)")
-	llamaNativeFlashAttnType := flag.Int("llama-native-flash-attn", defaultLlamaNativeFlashAttnType, "flash attention type for llama-cpp-native (-1=auto, 0=off, 1=on)")
-	llamaNativeCacheTypeK := flag.Int("llama-native-cache-type-k", defaultLlamaNativeCacheTypeK, "K cache type for llama-cpp-native (-1=default, 0=f32, 1=f16, 8=q8_0)")
-	llamaNativeCacheTypeV := flag.Int("llama-native-cache-type-v", defaultLlamaNativeCacheTypeV, "V cache type for llama-cpp-native (-1=default, 0=f32, 1=f16, 8=q8_0)")
-	llamaNativeImageMaxSide := flag.Int("llama-native-image-max-side", 384, "maximum image side length used before llama-cpp-native embedding")
-	llamaNativeImageMaxTokens := flag.Int("llama-native-image-max-tokens", 0, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
-	llamaNativeAnnotationTemperature := flag.Float64("llama-native-annotation-temperature", defaultLlamaNativeAnnotationTemperature, "sampling temperature for llama-cpp-native image/video annotation generation (0 for deterministic greedy decode)")
-	llamaNativeAnnotationSeed := flag.Int64("llama-native-annotation-seed", defaultLlamaNativeAnnotationSeed, "RNG seed for llama-cpp-native image/video annotation generation (-1 uses random seed per request)")
-	llamaNativeQueryInstruction := flag.String("llama-native-query-instruction", "Retrieve images or text relevant to the user's query.", "instruction used for llama-cpp-native text query embeddings")
-	llamaNativePassageInstruction := flag.String("llama-native-passage-instruction", "Represent this image or text for retrieval.", "instruction used for llama-cpp-native image/document embeddings")
-	parakeetBundleDefault := strings.TrimSpace(os.Getenv("PARAKEET_ONNX_BUNDLE_DIR"))
-	if parakeetBundleDefault == "" {
-		parakeetBundleDefault = defaultParakeetOnnxBundleDir
-	}
-	parakeetOnnxBundleDir := flag.String("parakeet-onnx-bundle-dir", parakeetBundleDefault, "directory containing the Parakeet ONNX bundle for video transcription")
-	parakeetOnnxRuntimeLib := flag.String("parakeet-onnxruntime-lib", strings.TrimSpace(os.Getenv("PARAKEET_ONNXRUNTIME_LIB")), "path to the ONNX Runtime shared library used for Parakeet video transcription")
-	parakeetOnnxCoreML := flag.Bool("parakeet-onnx-coreml", os.Getenv("PARAKEET_ONNX_COREML") == "1", "whether to request the CoreML execution provider for Parakeet ONNX video transcription")
-	enableAnnotations := flag.Bool("enable-annotations", true, "whether to load and run image annotation models")
-	llamaNativeAnnotatorModelPath := flag.String("llama-native-annotator-model-path", "", "optional path to a separate llama.cpp GGUF vision model used only for image descriptions/tags")
-	llamaNativeAnnotatorMMProjPath := flag.String("llama-native-annotator-mmproj-path", "", "optional path to a separate llama.cpp GGUF mmproj used only for image descriptions/tags")
-	llamaNativeAnnotatorVariant := flag.String("llama-native-annotator-variant", defaultLlamaNativeAnnotatorVariant, "default separate llama.cpp annotator model variant when explicit annotator paths are not set: e4b or 26b")
-	llamaNativeAnnotatorGPULayers := flag.Int("llama-native-annotator-gpu-layers", 99, "number of layers to offload for the separate llama-cpp-native annotator")
-	llamaNativeAnnotatorUseGPU := flag.Bool("llama-native-annotator-use-gpu", true, "whether the separate llama-cpp-native annotator should use GPU for mtmd/mmproj")
-	llamaNativeAnnotatorContextSize := flag.Int("llama-native-annotator-context-size", 8192, "context size for the separate llama-cpp-native annotator")
-	llamaNativeAnnotatorBatchSize := flag.Int("llama-native-annotator-batch-size", 512, "batch size for the separate llama-cpp-native annotator")
-	llamaNativeAnnotatorThreads := flag.Int("llama-native-annotator-threads", 0, "thread count for the separate llama-cpp-native annotator (0 uses backend default)")
-	llamaNativeAnnotatorFlashAttnType := flag.Int("llama-native-annotator-flash-attn", defaultLlamaNativeFlashAttnType, "flash attention type for the separate annotator (-1=auto, 0=off, 1=on)")
-	llamaNativeAnnotatorCacheTypeK := flag.Int("llama-native-annotator-cache-type-k", defaultLlamaNativeCacheTypeK, "K cache type for the separate annotator (-1=default, 0=f32, 1=f16, 8=q8_0)")
-	llamaNativeAnnotatorCacheTypeV := flag.Int("llama-native-annotator-cache-type-v", defaultLlamaNativeCacheTypeV, "V cache type for the separate annotator (-1=default, 0=f32, 1=f16, 8=q8_0)")
-	llamaNativeAnnotatorImageMaxSide := flag.Int("llama-native-annotator-image-max-side", 1024, "maximum image side length used before separate llama-cpp-native annotation generation")
-	llamaNativeAnnotatorImageMaxTokens := flag.Int("llama-native-annotator-image-max-tokens", 0, "optional maximum image tokens override for the separate llama-cpp-native annotator (0 uses model default)")
-	vectorBackend := flag.String("vector-backend", vectorBackendAuto, "vector backend: auto, sqlite-vector, bruteforce")
-	sqliteVectorPath := flag.String("sqlite-vector-path", "", "path to sqlite-vector extension binary (optional: defaults to SQLITE_VECTOR_PATH or tools/sqlite-vector/vector)")
+	cfg := defaultRuntimeConfig(os.Getenv)
+	registerRuntimeFlags(flag.CommandLine, &cfg)
 	flag.Parse()
+	if err := cfg.Resolve(); err != nil {
+		log.Fatalf("%v", err)
+	}
 	rootCtx, stopRoot := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRoot()
 
-	mode, err := resolveRuntimeMode(*modeFlag)
-	if err != nil {
-		log.Fatalf("configure mode: %v", err)
-	}
-	resolvedAPIKey, usingDefaultAPIKey := resolveAPIKey(*apiKey)
+	mode := cfg.Mode
 	if mode.startsHTTP() {
-		if err := validateHTTPExposure(*addr, resolvedAPIKey, usingDefaultAPIKey); err != nil {
-			log.Fatalf("configure api security: %v", err)
-		}
-		if usingDefaultAPIKey {
+		if cfg.UsingDefaultAPIKey {
 			log.Printf("WARNING: using built-in default API key; set -api-key or IMGSEARCH_API_KEY for non-development use")
 		}
 	}
-	if warning := annotationModeWarning(mode, *enableAnnotations, *llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath); warning != "" {
-		log.Printf("%s", warning)
+	if cfg.AnnotationModeWarning != "" {
+		log.Printf("%s", cfg.AnnotationModeWarning)
 	}
 
-	if err := os.MkdirAll(*dataDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		log.Fatalf("create data directory: %v", err)
 	}
 
-	dbPath := filepath.Join(*dataDir, "imgsearch.sqlite")
+	dbPath := filepath.Join(cfg.DataDir, "imgsearch.sqlite")
 	dsn := fmt.Sprintf("%s?_busy_timeout=30000", dbPath)
 
-	resolvedSQLiteVectorPath, err := discoverSQLiteVectorPath(*sqliteVectorPath)
+	resolvedSQLiteVectorPath, err := discoverSQLiteVectorPath(cfg.SQLiteVectorPath)
 	if err != nil {
 		log.Fatalf("discover sqlite-vector extension: %v", err)
 	}
 
 	autoValidationErr := error(nil)
 	openWithVector := ""
-	if *vectorBackend == vectorBackendAuto {
+	if cfg.VectorBackend == vectorBackendAuto {
 		if resolvedSQLiteVectorPath == "" {
 			autoValidationErr = fmt.Errorf("sqlite-vector extension path not found (run `mise run sqlite-vector-setup` or set SQLITE_VECTOR_PATH)")
 		} else {
 			openWithVector = resolvedSQLiteVectorPath
 		}
 	}
-	if *vectorBackend == vectorBackendSQLiteVector {
+	if cfg.VectorBackend == vectorBackendSQLiteVector {
 		if resolvedSQLiteVectorPath == "" {
 			log.Fatalf("sqlite-vector backend requested but extension path was not found (set -sqlite-vector-path or SQLITE_VECTOR_PATH)")
 		}
@@ -144,7 +96,7 @@ func main() {
 
 	sqlDB, err := openSQLiteDB(dsn, openWithVector)
 	if err != nil {
-		if *vectorBackend == vectorBackendAuto && openWithVector != "" {
+		if cfg.VectorBackend == vectorBackendAuto && openWithVector != "" {
 			autoValidationErr = err
 			sqlDB, err = openSQLiteDB(dsn, "")
 			if err != nil {
@@ -156,11 +108,11 @@ func main() {
 		}
 	}
 
-	if *vectorBackend == vectorBackendAuto && openWithVector != "" && autoValidationErr == nil {
+	if cfg.VectorBackend == vectorBackendAuto && openWithVector != "" && autoValidationErr == nil {
 		autoValidationErr = sqlitevector.ValidateAvailable(rootCtx, sqlDB)
 	}
 
-	resolvedVectorBackend, backendWarning, err := resolveVectorBackend(*vectorBackend, autoValidationErr)
+	resolvedVectorBackend, backendWarning, err := resolveVectorBackend(cfg.VectorBackend, autoValidationErr)
 	if err != nil {
 		log.Fatalf("configure vector backend: %v", err)
 	}
@@ -188,46 +140,41 @@ func main() {
 		log.Fatalf("bootstrap app: %v", err)
 	}
 
-	*llamaNativeModelPath, *llamaNativeMMProjPath, err = ensureDefaultLlamaNativeAssets(rootCtx, *llamaNativeModelPath, *llamaNativeMMProjPath)
+	cfg.LlamaNativeModelPath, cfg.LlamaNativeMMProjPath, err = ensureDefaultLlamaNativeAssets(rootCtx, cfg.LlamaNativeModelPath, cfg.LlamaNativeMMProjPath)
 	if err != nil {
 		log.Fatalf("resolve llama-cpp-native model assets: %v", err)
 	}
-	loadAnnotator := shouldLoadAnnotator(mode, *enableAnnotations)
-	*llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath, err = resolveAnnotatorAssetPaths(
+	loadAnnotator := cfg.LoadAnnotator
+	cfg.AnnotatorModelPath, cfg.AnnotatorMMProjPath, err = resolveAnnotatorAssetPaths(
 		rootCtx,
-		*enableAnnotations,
+		cfg.EnableAnnotations,
 		loadAnnotator,
-		*llamaNativeAnnotatorVariant,
-		*llamaNativeAnnotatorModelPath,
-		*llamaNativeAnnotatorMMProjPath,
+		cfg.AnnotatorVariant,
+		cfg.AnnotatorModelPath,
+		cfg.AnnotatorMMProjPath,
 		ensureDefaultLlamaNativeAnnotatorAssetsForVariant,
 	)
 	if err != nil {
 		log.Fatalf("resolve llama-cpp-native annotator model assets: %v", err)
 	}
 
-	embedDimensions := *llamaNativeDimensions
-	if embedDimensions <= 0 {
-		log.Fatalf("configure embedder dimensions: llama-cpp-native dimensions must be positive")
-	}
+	embedDimensions := cfg.LlamaNativeDimensions
 
-	resolvedLlamaNativeImageMaxSide, resolvedLlamaNativeImageMaxTokens, err := resolveLlamaCPPNativeImageLimits(*llamaNativeImageMaxSide, *llamaNativeImageMaxTokens)
-	if err != nil {
-		log.Fatalf("configure llama-cpp-native options: %v", err)
-	}
+	resolvedLlamaNativeImageMaxSide := cfg.ResolvedLlamaNativeImageMaxSide
+	resolvedLlamaNativeImageMaxTokens := cfg.ResolvedLlamaNativeImageMaxTokens
 
 	modelSpec, err := llamaNativeEmbeddingModelSpec(embedDimensions)
 	if err != nil {
 		log.Fatalf("configure model spec: %v", err)
 	}
 	modelSpec.Version = llamaNativeModelVersion(
-		*llamaNativeModelPath,
-		*llamaNativeMMProjPath,
+		cfg.LlamaNativeModelPath,
+		cfg.LlamaNativeMMProjPath,
 		modelSpec.Dimensions,
 		resolvedLlamaNativeImageMaxSide,
 		resolvedLlamaNativeImageMaxTokens,
-		*llamaNativeQueryInstruction,
-		*llamaNativePassageInstruction,
+		cfg.LlamaNativeQueryInstruction,
+		cfg.LlamaNativePassageInstruction,
 	)
 
 	modelID, err := db.EnsureEmbeddingModel(rootCtx, sqlDB, modelSpec)
@@ -279,24 +226,24 @@ func main() {
 	}
 
 	embedderOpts := llamaCPPNativeEmbedderOptions{
-		ModelPath:             *llamaNativeModelPath,
-		VisionModelPath:       *llamaNativeMMProjPath,
+		ModelPath:             cfg.LlamaNativeModelPath,
+		VisionModelPath:       cfg.LlamaNativeMMProjPath,
 		Dimensions:            modelSpec.Dimensions,
-		GPULayers:             *llamaNativeGPULayers,
-		UseGPU:                *llamaNativeUseGPU,
-		ContextSize:           *llamaNativeContextSize,
-		BatchSize:             *llamaNativeBatchSize,
-		MaxSequences:          *llamaNativeMaxSequences,
-		Threads:               *llamaNativeThreads,
+		GPULayers:             cfg.LlamaNativeGPULayers,
+		UseGPU:                cfg.LlamaNativeUseGPU,
+		ContextSize:           cfg.LlamaNativeContextSize,
+		BatchSize:             cfg.LlamaNativeBatchSize,
+		MaxSequences:          cfg.LlamaNativeMaxSequences,
+		Threads:               cfg.LlamaNativeThreads,
 		ImageMaxSide:          resolvedLlamaNativeImageMaxSide,
 		ImageMaxTokens:        resolvedLlamaNativeImageMaxTokens,
-		AnnotationTemperature: *llamaNativeAnnotationTemperature,
-		AnnotationSeed:        *llamaNativeAnnotationSeed,
-		QueryInstruction:      *llamaNativeQueryInstruction,
-		PassageInstruction:    *llamaNativePassageInstruction,
-		FlashAttnType:         *llamaNativeFlashAttnType,
-		CacheTypeK:            *llamaNativeCacheTypeK,
-		CacheTypeV:            *llamaNativeCacheTypeV,
+		AnnotationTemperature: cfg.LlamaNativeAnnotationTemperature,
+		AnnotationSeed:        cfg.LlamaNativeAnnotationSeed,
+		QueryInstruction:      cfg.LlamaNativeQueryInstruction,
+		PassageInstruction:    cfg.LlamaNativePassageInstruction,
+		FlashAttnType:         cfg.LlamaNativeFlashAttnType,
+		CacheTypeK:            cfg.LlamaNativeCacheTypeK,
+		CacheTypeV:            cfg.LlamaNativeCacheTypeV,
 	}
 	activeEmbedder, err := newLlamaCPPNativeEmbedder(embedderOpts)
 	if err != nil {
@@ -304,18 +251,18 @@ func main() {
 	}
 
 	var videoTranscriber transcribe.VideoTranscriber
-	resolvedParakeetBundleDir := strings.TrimSpace(*parakeetOnnxBundleDir)
-	if strings.TrimSpace(*parakeetOnnxRuntimeLib) != "" {
+	resolvedParakeetBundleDir := strings.TrimSpace(cfg.ParakeetONNXBundleDir)
+	if strings.TrimSpace(cfg.ParakeetONNXRuntimeLib) != "" {
 		resolvedParakeetBundleDir, err = ensureDefaultParakeetOnnxAssets(rootCtx, resolvedParakeetBundleDir)
 		if err != nil {
 			log.Fatalf("ensure Parakeet ONNX assets: %v", err)
 		}
 	}
-	if resolvedParakeetBundleDir != "" && strings.TrimSpace(*parakeetOnnxRuntimeLib) != "" {
+	if resolvedParakeetBundleDir != "" && strings.TrimSpace(cfg.ParakeetONNXRuntimeLib) != "" {
 		videoTranscriber = &parakeetonnx.Recognizer{Config: parakeetonnx.RecognizerConfig{
-			ONNXRuntimeLib: strings.TrimSpace(*parakeetOnnxRuntimeLib),
+			ONNXRuntimeLib: strings.TrimSpace(cfg.ParakeetONNXRuntimeLib),
 			BundleDir:      resolvedParakeetBundleDir,
-			UseCoreML:      *parakeetOnnxCoreML,
+			UseCoreML:      cfg.ParakeetONNXCoreML,
 		}}
 		if closer, ok := videoTranscriber.(interface{ Close() error }); ok {
 			defer func() { _ = closer.Close() }()
@@ -334,8 +281,8 @@ func main() {
 
 	var imageAnnotator embedder.ImageAnnotator
 	canAnnotateImages := false
-	annotatorModelPath := strings.TrimSpace(*llamaNativeAnnotatorModelPath)
-	annotatorVisionPath := strings.TrimSpace(*llamaNativeAnnotatorMMProjPath)
+	annotatorModelPath := strings.TrimSpace(cfg.AnnotatorModelPath)
+	annotatorVisionPath := strings.TrimSpace(cfg.AnnotatorMMProjPath)
 	var modelSwitchboard *llamaModelSwitchboard
 	if loadAnnotator {
 		imageAnnotator, canAnnotateImages = activeEmbedder.(embedder.ImageAnnotator)
@@ -347,18 +294,18 @@ func main() {
 		annotatorOpts := llamaCPPNativeAnnotatorOptions{
 			ModelPath:             annotatorModelPath,
 			VisionModelPath:       annotatorVisionPath,
-			GPULayers:             *llamaNativeAnnotatorGPULayers,
-			UseGPU:                *llamaNativeAnnotatorUseGPU,
-			ContextSize:           *llamaNativeAnnotatorContextSize,
-			BatchSize:             *llamaNativeAnnotatorBatchSize,
-			Threads:               *llamaNativeAnnotatorThreads,
-			ImageMaxSide:          *llamaNativeAnnotatorImageMaxSide,
-			ImageMaxTokens:        *llamaNativeAnnotatorImageMaxTokens,
-			AnnotationTemperature: *llamaNativeAnnotationTemperature,
-			AnnotationSeed:        *llamaNativeAnnotationSeed,
-			FlashAttnType:         *llamaNativeAnnotatorFlashAttnType,
-			CacheTypeK:            *llamaNativeAnnotatorCacheTypeK,
-			CacheTypeV:            *llamaNativeAnnotatorCacheTypeV,
+			GPULayers:             cfg.AnnotatorGPULayers,
+			UseGPU:                cfg.AnnotatorUseGPU,
+			ContextSize:           cfg.AnnotatorContextSize,
+			BatchSize:             cfg.AnnotatorBatchSize,
+			Threads:               cfg.AnnotatorThreads,
+			ImageMaxSide:          cfg.AnnotatorImageMaxSide,
+			ImageMaxTokens:        cfg.AnnotatorImageMaxTokens,
+			AnnotationTemperature: cfg.LlamaNativeAnnotationTemperature,
+			AnnotationSeed:        cfg.LlamaNativeAnnotationSeed,
+			FlashAttnType:         cfg.AnnotatorFlashAttnType,
+			CacheTypeK:            cfg.AnnotatorCacheTypeK,
+			CacheTypeV:            cfg.AnnotatorCacheTypeV,
 		}
 		modelSwitchboard = newLlamaModelSwitchboard(
 			activeEmbedder,
@@ -388,14 +335,14 @@ func main() {
 
 	uploadSvc := &upload.Service{
 		DB:                     sqlDB,
-		DataDir:                *dataDir,
+		DataDir:                cfg.DataDir,
 		ModelID:                modelID,
 		EnableVideoTranscripts: videoTranscriber != nil,
 	}
 
 	queue := &worker.Queue{
 		DB:             sqlDB,
-		DataDir:        *dataDir,
+		DataDir:        cfg.DataDir,
 		LeaseDuration:  30 * time.Second,
 		RetryBaseDelay: 5 * time.Second,
 		Embedder:       activeEmbedder,
@@ -414,18 +361,18 @@ func main() {
 			workerDone = make(chan struct{})
 			go func() {
 				defer close(workerDone)
-				worker.RunLoopBatch(rootCtx, queue, "main-worker", 500*time.Millisecond, *workerBatchSize)
+				worker.RunLoopBatch(rootCtx, queue, "main-worker", 500*time.Millisecond, cfg.WorkerBatchSize)
 			}()
 		} else {
-			worker.RunLoopBatch(rootCtx, queue, "main-worker", 500*time.Millisecond, *workerBatchSize)
+			worker.RunLoopBatch(rootCtx, queue, "main-worker", 500*time.Millisecond, cfg.WorkerBatchSize)
 			return
 		}
 	}
 
 	if mode.startsHTTP() {
-		mux := newServerMux(sqlDB, *dataDir, modelID, activeEmbedder, index, uploadSvc)
-		handler := withAPISecurity(mux, resolvedAPIKey)
-		server := configuredHTTPServer(*addr, handler)
+		mux := newServerMux(sqlDB, cfg.DataDir, modelID, activeEmbedder, index, uploadSvc)
+		handler := withAPISecurity(mux, cfg.ResolvedAPIKey)
+		server := configuredHTTPServer(cfg.Addr, handler)
 		log.Printf(
 			"http limits read_header_timeout=%s read_timeout=%s write_timeout=%s idle_timeout=%s max_header_bytes=%d",
 			server.ReadHeaderTimeout,
@@ -434,7 +381,7 @@ func main() {
 			server.IdleTimeout,
 			server.MaxHeaderBytes,
 		)
-		log.Printf("listening on http://%s", *addr)
+		log.Printf("listening on http://%s", cfg.Addr)
 		if err := serveHTTPWithShutdown(rootCtx, server); err != nil {
 			stopRoot()
 			waitForWorkerShutdown(workerDone, defaultHTTPShutdownTimeout)

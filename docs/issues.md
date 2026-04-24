@@ -65,7 +65,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P2 Wire browser-level UI smoke tests: `docs/issues/046-ui-smoke-tests.md`
 - [x] P2 Extract shared frontend collection and card helpers: `docs/issues/051-frontend-collection-and-card-helpers.md`
 - [x] P2 Harden scripts/tooling portability and wire script tests: `docs/issues/047-script-tooling-portability.md`
-- [ ] P2 Extract runtime config from CLI flag parsing: `docs/issues/048-runtime-config-extraction.md`
+- [x] P2 Extract runtime config from CLI flag parsing: `docs/issues/048-runtime-config-extraction.md`
 - [ ] P2 Promote `internal/app` into the runtime composition layer: `docs/issues/052-app-runtime-composition-layer.md`
 - [ ] P3 Extract repeated native task commands from `mise.toml`: `docs/issues/049-extract-native-task-command-scripts.md`
 - [ ] P2 Harden sqlite-vector quantized search under mixed models: `docs/issues/050-sqlite-vector-quantized-mixed-models.md`
