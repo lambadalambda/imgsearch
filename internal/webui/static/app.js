@@ -1889,15 +1889,26 @@ uploadForm.addEventListener('submit', async (event) => {
   try {
     const response = await fetch('/api/upload', { method: 'POST', body: data });
     const payload = await response.json();
+    const uploadItems = Array.isArray(payload.uploads) ? payload.uploads : [];
+    const uploadErrors = uploadItems.filter((item) => item && item.error);
+    const errorSummary = uploadErrors.slice(0, 3).map((item) => {
+      const name = item.filename || 'file';
+      return `${name}: ${item.error}`;
+    }).join('; ');
     if (!response.ok) {
-      throw new Error(payload.error || 'Upload failed');
+      throw new Error(errorSummary || payload.error || 'Upload failed');
     }
 
     const created = Number(payload.created) || 0;
     const duplicates = Number(payload.duplicates) || 0;
+    const failed = Number(payload.failed) || uploadErrors.length;
     let message = '';
     if (files.length === 1) {
-      message = duplicates > 0 && created === 0 ? `${files[0].name} already exists.` : `${files[0].name} queued for indexing.`;
+      if (failed > 0) {
+        message = errorSummary || `${files[0].name} failed to upload.`;
+      } else {
+        message = duplicates > 0 && created === 0 ? `${files[0].name} already exists.` : `${files[0].name} queued for indexing.`;
+      }
     } else {
       const parts = [];
       if (created > 0) {
@@ -1906,24 +1917,31 @@ uploadForm.addEventListener('submit', async (event) => {
       if (duplicates > 0) {
         parts.push(`${duplicates} already existed`);
       }
+      if (failed > 0) {
+        parts.push(`${failed} failed${errorSummary ? ` (${errorSummary})` : ''}`);
+      }
       message = parts.length > 0 ? `Upload complete: ${parts.join(', ')}.` : 'Upload complete.';
     }
 
-    setStatus(uploadStatus, message, 'success');
-    uploadForm.reset();
-    state.galleryPage = 0;
-    state.videosPage = 0;
-    setActiveTab('gallery');
+    setStatus(uploadStatus, message, failed > 0 ? 'error' : 'success');
+    if (created > 0 || duplicates > 0) {
+      uploadForm.reset();
+      state.galleryPage = 0;
+      state.videosPage = 0;
+      setActiveTab('gallery');
 
-    if (!isLiveSocketActive()) {
-      await loadImages();
-      await loadVideos();
-      await loadStats();
+      if (!isLiveSocketActive()) {
+        await loadImages();
+        await loadVideos();
+        await loadStats();
+      }
     }
 
-    window.setTimeout(() => {
-      closeUploadModal();
-    }, 450);
+    if (failed === 0) {
+      window.setTimeout(() => {
+        closeUploadModal();
+      }, 450);
+    }
   } catch (err) {
     setStatus(uploadStatus, err.message || 'Upload failed', 'error');
   }

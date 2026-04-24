@@ -100,6 +100,7 @@ Full instructions are in `docs/podman-cuda-ubuntu.md`.
 - Set `-api-key <token>` (or `IMGSEARCH_API_KEY`) to use your own key; when unset, the server falls back to a built-in development key and logs a startup warning.
 - If you bind to a non-loopback address (for example `-addr 0.0.0.0:8080`), startup requires an explicit strong API key; the built-in development key is rejected.
 - API clients can authenticate with `X-Imgsearch-API-Key: <token>` or `Authorization: Bearer <token>`.
+- Multipart uploads to `/api/upload` keep partial-success semantics: each uploaded file returns either IDs/digest data or an `error`, mixed success/failure batches return `207 Multi-Status`, and oversized requests return `413 Payload Too Large`.
 - Data is stored in `./data` by default.
 - The UI includes uploads, indexing status, gallery browsing, text search, and similar-image search.
 

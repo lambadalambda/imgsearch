@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -26,11 +26,19 @@ Batch upload currently stores files one by one and returns a single error if a l
 
 ## Acceptance Criteria
 
-- [ ] Keep partial success semantics and return per-file result/error objects for multipart uploads.
-- [ ] Use `207 Multi-Status` for mixed success/failure batches.
-- [ ] Detect `http.MaxBytesError` and return `413` for oversized requests.
-- [ ] Add tests for mixed valid/invalid multipart uploads.
-- [ ] Add/update API docs or README notes if response shape changes.
+- [x] Keep partial success semantics and return per-file result/error objects for multipart uploads.
+- [x] Use `207 Multi-Status` for mixed success/failure batches.
+- [x] Detect `http.MaxBytesError` and return `413` for oversized requests.
+- [x] Add tests for mixed valid/invalid multipart uploads.
+- [x] Add/update API docs or README notes if response shape changes.
+
+## Resolution
+
+- Upload responses now include one `uploads[]` entry per submitted file, with either success data or `filename` plus `error`.
+- Mixed success/failure batches return `207 Multi-Status`; all-failed file batches return `400` with per-file errors; request-level validation errors remain top-level JSON errors.
+- Oversized multipart requests now return `413 Payload Too Large` when `http.MaxBytesError` is detected.
+- The web UI surfaces mixed-batch failures, keeps the upload modal open for failed files, and still refreshes successful uploads.
+- README notes the multipart response behavior for API clients.
 
 ## Related Files
 

@@ -194,6 +194,45 @@ func TestUploadHandlerAcceptsMultipleFiles(t *testing.T) {
 	}
 }
 
+func TestUploadHandlerReturnsMultiStatusForMixedBatch(t *testing.T) {
+	svc, _ := setupService(t)
+	h := NewHandler(svc)
+
+	body, contentType := multipartBodyWithFiles(t, []struct {
+		filename string
+		content  []byte
+	}{
+		{filename: "one.png", content: pngBytes(t)},
+		{filename: "notes.txt", content: []byte("hello")},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMultiStatus {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusMultiStatus, rr.Body.String())
+	}
+
+	var resp UploadBatchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Created != 1 || resp.Duplicates != 0 || resp.Failed != 1 {
+		t.Fatalf("unexpected counters: %+v", resp)
+	}
+	if len(resp.Uploads) != 2 {
+		t.Fatalf("unexpected upload count: %+v", resp)
+	}
+	if resp.Uploads[0].ImageID == 0 || resp.Uploads[0].Error != "" {
+		t.Fatalf("expected first file success, got %+v", resp.Uploads[0])
+	}
+	if resp.Uploads[1].Filename != "notes.txt" || resp.Uploads[1].Error != "unsupported media format" {
+		t.Fatalf("expected second file error, got %+v", resp.Uploads[1])
+	}
+}
+
 func TestUploadHandlerRejectsNonImage(t *testing.T) {
 	svc, _ := setupService(t)
 	h := NewHandler(svc)
@@ -210,6 +249,46 @@ func TestUploadHandlerRejectsNonImage(t *testing.T) {
 	}
 	if ct := rr.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
 		t.Fatalf("expected json content type, got %q", ct)
+	}
+
+	var resp UploadBatchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Created != 0 || resp.Duplicates != 0 || resp.Failed != 1 {
+		t.Fatalf("unexpected counters: %+v", resp)
+	}
+	if len(resp.Uploads) != 1 || resp.Uploads[0].Filename != "notes.txt" || resp.Uploads[0].Error != "unsupported media format" {
+		t.Fatalf("unexpected upload errors: %+v", resp.Uploads)
+	}
+}
+
+func TestUploadHandlerReturnsBadRequestForAllFailedBatch(t *testing.T) {
+	svc, _ := setupService(t)
+	h := NewHandler(svc)
+
+	body, contentType := multipartBodyWithFiles(t, []struct {
+		filename string
+		content  []byte
+	}{
+		{filename: "one.txt", content: []byte("one")},
+		{filename: "two.txt", content: []byte("two")},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+
+	var resp UploadBatchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Created != 0 || resp.Duplicates != 0 || resp.Failed != 2 || len(resp.Uploads) != 2 {
+		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
 
@@ -264,8 +343,8 @@ func TestUploadHandlerRejectsPayloadTooLarge(t *testing.T) {
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusRequestEntityTooLarge, rr.Body.String())
 	}
 }
 

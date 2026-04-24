@@ -15,17 +15,20 @@ const (
 )
 
 type UploadResponse struct {
+	Filename  string `json:"filename,omitempty"`
+	Error     string `json:"error,omitempty"`
 	MediaType string `json:"media_type,omitempty"`
-	ImageID   int64  `json:"image_id"`
+	ImageID   int64  `json:"image_id,omitempty"`
 	VideoID   int64  `json:"video_id,omitempty"`
-	SHA256    string `json:"sha256"`
-	Duplicate bool   `json:"duplicate"`
+	SHA256    string `json:"sha256,omitempty"`
+	Duplicate bool   `json:"duplicate,omitempty"`
 }
 
 type UploadBatchResponse struct {
 	Uploads    []UploadResponse `json:"uploads"`
 	Created    int              `json:"created"`
 	Duplicates int              `json:"duplicates"`
+	Failed     int              `json:"failed"`
 }
 
 func NewHandler(svc *Service) http.Handler {
@@ -42,6 +45,11 @@ func NewHandler(svc *Service) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 
 		if err := r.ParseMultipartForm(maxUploadMemoryBytes); err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				httputil.WriteJSONError(w, http.StatusRequestEntityTooLarge, "upload too large")
+				return
+			}
 			httputil.WriteJSONError(w, http.StatusBadRequest, "invalid multipart upload")
 			return
 		}
@@ -64,22 +72,26 @@ func NewHandler(svc *Service) http.Handler {
 		uploads := make([]UploadResponse, 0, len(files))
 		created := 0
 		duplicates := 0
+		failed := 0
 		for _, header := range files {
+			filename := filepath.Base(header.Filename)
 			file, err := header.Open()
 			if err != nil {
-				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid file upload")
-				return
+				failed++
+				uploads = append(uploads, UploadResponse{Filename: filename, Error: "invalid file upload"})
+				continue
 			}
 
-			out, err := svc.Store(r.Context(), filepath.Base(header.Filename), file)
+			out, err := svc.Store(r.Context(), filename, file)
 			_ = file.Close()
 			if err != nil {
+				failed++
 				if errors.Is(err, ErrUnsupportedFormat) {
-					httputil.WriteJSONError(w, http.StatusBadRequest, "unsupported media format")
-					return
+					uploads = append(uploads, UploadResponse{Filename: filename, Error: "unsupported media format"})
+					continue
 				}
-				httputil.WriteJSONError(w, http.StatusInternalServerError, "upload failed")
-				return
+				uploads = append(uploads, UploadResponse{Filename: filename, Error: "upload failed"})
+				continue
 			}
 
 			if out.Duplicate {
@@ -88,6 +100,7 @@ func NewHandler(svc *Service) http.Handler {
 				created++
 			}
 			uploads = append(uploads, UploadResponse{
+				Filename:  filename,
 				MediaType: out.MediaType,
 				ImageID:   out.ImageID,
 				VideoID:   out.VideoID,
@@ -97,7 +110,11 @@ func NewHandler(svc *Service) http.Handler {
 		}
 
 		status := http.StatusCreated
-		if created == 0 {
+		if failed > 0 && created+duplicates > 0 {
+			status = http.StatusMultiStatus
+		} else if failed > 0 {
+			status = http.StatusBadRequest
+		} else if created == 0 {
 			status = http.StatusOK
 		}
 
@@ -105,6 +122,7 @@ func NewHandler(svc *Service) http.Handler {
 			Uploads:    uploads,
 			Created:    created,
 			Duplicates: duplicates,
+			Failed:     failed,
 		})
 	})
 }
