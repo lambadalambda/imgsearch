@@ -49,6 +49,27 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P3 Extract shared `mark job done` SQL helper: `docs/issues/034-extract-shared-mark-job-done-sql.md`
 - [x] P2 Centralize NSFW SQL fragments used by list/search queries: `docs/issues/035-centralize-nsfw-sql-fragments.md`
 
+## Whole-App Review Follow-ups
+
+- [ ] P1 Harden batch job leasing and worker option defaults: `docs/issues/036-harden-batch-job-leasing.md`
+- [ ] P2 Extract typed job handlers from worker switch statement: `docs/issues/037-split-worker-job-handlers.md`
+- [ ] P2 Make `annotate_image` jobs claimable in batch workers: `docs/issues/053-annotate-image-batch-claiming.md`
+- [ ] P2 Include videos in live updates and stale-request guards: `docs/issues/038-live-updates-include-videos.md`
+- [ ] P1 Make retry and stats media-aware for video jobs: `docs/issues/039-media-aware-retry-and-stats.md`
+- [ ] P2 Narrow native runtime locks around preprocessing: `docs/issues/040-narrow-native-runtime-locks.md`
+- [ ] P1 Add graceful shutdown and cancellation-aware worker loops: `docs/issues/041-graceful-shutdown-and-worker-cancellation.md`
+- [ ] P2 Enforce vector dimensions and share cosine logic: `docs/issues/042-vector-dimension-validation-and-cosine.md`
+- [ ] P2 Tighten API path, method, and dependency semantics: `docs/issues/043-tighten-api-route-semantics.md`
+- [ ] P2 Clarify multipart batch upload semantics: `docs/issues/044-clarify-multipart-batch-upload-semantics.md`
+- [ ] P2 Extract shared image/video media operations: `docs/issues/045-extract-shared-media-http-operations.md`
+- [ ] P2 Wire browser-level UI smoke tests: `docs/issues/046-ui-smoke-tests.md`
+- [ ] P2 Extract shared frontend collection and card helpers: `docs/issues/051-frontend-collection-and-card-helpers.md`
+- [ ] P2 Harden scripts/tooling portability and wire script tests: `docs/issues/047-script-tooling-portability.md`
+- [ ] P2 Extract runtime config from CLI flag parsing: `docs/issues/048-runtime-config-extraction.md`
+- [ ] P2 Promote `internal/app` into the runtime composition layer: `docs/issues/052-app-runtime-composition-layer.md`
+- [ ] P3 Extract repeated native task commands from `mise.toml`: `docs/issues/049-extract-native-task-command-scripts.md`
+- [ ] P2 Harden sqlite-vector quantized search under mixed models: `docs/issues/050-sqlite-vector-quantized-mixed-models.md`
+
 ## Notes
 
 - The most important pre-performance fixes are the read-path requeue loop, the split ownership of embedding persistence, and the sqlite-vector multi-model story.
