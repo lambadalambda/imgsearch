@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- test(worker): add batch-worker regression coverage proving `annotate_image` jobs are claimed and drained after embed jobs complete when an annotator is available (issue 053).
 - refactor(worker): extract typed worker job handlers and centralize job-kind constants across DB, upload, media operations, stats, HTTP route code, and worker claiming/dispatch (issue 037).
 - refactor(runtime): promote `internal/app` into the runtime composition layer for DB/vector initialization, HTTP mux construction, upload service wiring, worker queue setup, and centralized runtime closers while keeping CLI parsing and model option resolution in `cmd/imgsearch` (issue 052).
 - refactor(runtime): extract typed CLI runtime configuration with explicit defaults and validation for mode, API exposure, and native image settings while leaving runtime construction in `main` (issue 048).

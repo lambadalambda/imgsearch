@@ -1245,6 +1245,33 @@ VALUES ('annotate_image', 1, 1, 'pending')
 	}
 }
 
+func TestClaimBatchWithAnnotatorClaimsAnnotateImagesAfterEmbedsDone(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 2)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE kind = ?`, jobkind.EmbedImage); err != nil {
+		t.Fatalf("mark embed jobs done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(kind, image_id, model_id, state)
+VALUES (?, 1, 1, 'pending'), (?, 2, 1, 'pending')
+`, jobkind.AnnotateImage, jobkind.AnnotateImage); err != nil {
+		t.Fatalf("insert annotate jobs: %v", err)
+	}
+	q.Annotator = &fakeAnnotator{annotation: embedder.ImageAnnotation{Description: "desc", Tags: []string{"t"}}}
+
+	jobs, err := q.claimBatch(context.Background(), "worker-1", 2)
+	if err != nil {
+		t.Fatalf("claim batch: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("expected 2 annotate jobs, got %d", len(jobs))
+	}
+	for _, job := range jobs {
+		if job.Kind != jobkind.AnnotateImage {
+			t.Fatalf("claimed kind: got=%q want=%q", job.Kind, jobkind.AnnotateImage)
+		}
+	}
+}
+
 func TestProcessBatchProcessesMultipleJobs(t *testing.T) {
 	q, sqlDB := setupMultiImageQueue(t, 5)
 
@@ -1312,6 +1339,36 @@ VALUES (2, 'annotate_image', 1, 1, 'pending')
 	}
 	if len(tags) != 2 || tags[0] != "batch" {
 		t.Fatalf("unexpected tags: %v", tags)
+	}
+}
+
+func TestProcessBatchDrainsAnnotateImageJobsWhenEmbedsDone(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 2)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE kind = ?`, jobkind.EmbedImage); err != nil {
+		t.Fatalf("mark embed jobs done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(kind, image_id, model_id, state)
+VALUES (?, 1, 1, 'pending'), (?, 2, 1, 'pending')
+`, jobkind.AnnotateImage, jobkind.AnnotateImage); err != nil {
+		t.Fatalf("insert annotate jobs: %v", err)
+	}
+	q.Annotator = &fakeAnnotator{annotation: embedder.ImageAnnotation{Description: "Batch desc", Tags: []string{"batch"}}}
+
+	count, err := q.ProcessBatch(context.Background(), "worker-1", 2)
+	if err != nil {
+		t.Fatalf("process batch: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 processed annotate jobs, got %d", count)
+	}
+
+	var pending int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = ? AND state = 'pending'`, jobkind.AnnotateImage).Scan(&pending); err != nil {
+		t.Fatalf("count pending annotate jobs: %v", err)
+	}
+	if pending != 0 {
+		t.Fatalf("expected no pending annotate jobs, got %d", pending)
 	}
 }
 

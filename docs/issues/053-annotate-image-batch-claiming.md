@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Done.
 
 ## Summary
 
@@ -26,11 +26,16 @@ The batch worker claim path should not strand `annotate_image` jobs when the wor
 
 ## Acceptance Criteria
 
-- [ ] Verify the current batch claim kind filter behavior for `annotate_image` jobs with a failing regression test.
-- [ ] Make `annotate_image` jobs claimable by batch workers when an annotator is available.
-- [ ] Preserve embed-before-annotate ordering so annotation does not run before image embeddings are complete.
-- [ ] Add coverage for mixed available job kinds and the `allClaimedJobsAreKind` batch-embed guard.
-- [ ] Ensure worker-only batch mode drains image annotation jobs.
+- [x] Verify the current batch claim kind filter behavior for `annotate_image` jobs with a failing regression test.
+- [x] Make `annotate_image` jobs claimable by batch workers when an annotator is available.
+- [x] Preserve embed-before-annotate ordering so annotation does not run before image embeddings are complete.
+- [x] Add coverage for mixed available job kinds and the `allClaimedJobsAreKind` batch-embed guard.
+- [x] Ensure worker-only batch mode drains image annotation jobs.
+
+## Notes
+
+- Issue 037 made `annotate_image` part of the batch claim kind filter when `Queue.Annotator` is available.
+- Added regression coverage for the post-embed scenario where only `annotate_image` jobs remain, including an end-to-end `ProcessBatch` drain check.
 
 ## Related Files
 
