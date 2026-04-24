@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestServerMuxServesUIAndMedia(t *testing.T) {
@@ -200,6 +203,42 @@ func TestConfiguredHTTPServerUsesSafeTimeoutDefaults(t *testing.T) {
 	}
 	if server.MaxHeaderBytes != defaultHTTPMaxHeaderBytes {
 		t.Fatalf("max header bytes: got=%d want=%d", server.MaxHeaderBytes, defaultHTTPMaxHeaderBytes)
+	}
+}
+
+func TestServeHTTPWithShutdownReturnsAfterContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	server := configuredHTTPServer("127.0.0.1:0", http.NewServeMux())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- serveHTTPWithShutdown(ctx, server)
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serve with shutdown: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("server shutdown did not complete after context cancellation")
+	}
+}
+
+func TestServeHTTPWithShutdownReturnsListenError(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	server := configuredHTTPServer(listener.Addr().String(), http.NewServeMux())
+	err = serveHTTPWithShutdown(context.Background(), server)
+	if err == nil {
+		t.Fatalf("expected listen error for already-bound address")
 	}
 }
 

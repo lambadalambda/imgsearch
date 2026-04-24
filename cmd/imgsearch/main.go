@@ -3,14 +3,17 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"imgsearch/internal/app"
@@ -37,9 +40,10 @@ const (
 	defaultHTTPReadTimeout       = 30 * time.Second
 	defaultAPIKey                = "imgsearch-dev-default-api-key"
 	// WebSocket handlers manage per-message deadlines after upgrade.
-	defaultHTTPWriteTimeout   = 60 * time.Second
-	defaultHTTPIdleTimeout    = 120 * time.Second
-	defaultHTTPMaxHeaderBytes = 1 << 20
+	defaultHTTPWriteTimeout    = 60 * time.Second
+	defaultHTTPIdleTimeout     = 120 * time.Second
+	defaultHTTPMaxHeaderBytes  = 1 << 20
+	defaultHTTPShutdownTimeout = 10 * time.Second
 )
 
 func main() {
@@ -90,6 +94,8 @@ func main() {
 	vectorBackend := flag.String("vector-backend", vectorBackendAuto, "vector backend: auto, sqlite-vector, bruteforce")
 	sqliteVectorPath := flag.String("sqlite-vector-path", "", "path to sqlite-vector extension binary (optional: defaults to SQLITE_VECTOR_PATH or tools/sqlite-vector/vector)")
 	flag.Parse()
+	rootCtx, stopRoot := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopRoot()
 
 	mode, err := resolveRuntimeMode(*modeFlag)
 	if err != nil {
@@ -151,7 +157,7 @@ func main() {
 	}
 
 	if *vectorBackend == vectorBackendAuto && openWithVector != "" && autoValidationErr == nil {
-		autoValidationErr = sqlitevector.ValidateAvailable(context.Background(), sqlDB)
+		autoValidationErr = sqlitevector.ValidateAvailable(rootCtx, sqlDB)
 	}
 
 	resolvedVectorBackend, backendWarning, err := resolveVectorBackend(*vectorBackend, autoValidationErr)
@@ -178,17 +184,17 @@ func main() {
 		log.Fatalf("build vector backend: %v", err)
 	}
 
-	if err := app.Bootstrap(context.Background(), sqlDB, validateVectorBackend); err != nil {
+	if err := app.Bootstrap(rootCtx, sqlDB, validateVectorBackend); err != nil {
 		log.Fatalf("bootstrap app: %v", err)
 	}
 
-	*llamaNativeModelPath, *llamaNativeMMProjPath, err = ensureDefaultLlamaNativeAssets(context.Background(), *llamaNativeModelPath, *llamaNativeMMProjPath)
+	*llamaNativeModelPath, *llamaNativeMMProjPath, err = ensureDefaultLlamaNativeAssets(rootCtx, *llamaNativeModelPath, *llamaNativeMMProjPath)
 	if err != nil {
 		log.Fatalf("resolve llama-cpp-native model assets: %v", err)
 	}
 	loadAnnotator := shouldLoadAnnotator(mode, *enableAnnotations)
 	*llamaNativeAnnotatorModelPath, *llamaNativeAnnotatorMMProjPath, err = resolveAnnotatorAssetPaths(
-		context.Background(),
+		rootCtx,
 		*enableAnnotations,
 		loadAnnotator,
 		*llamaNativeAnnotatorVariant,
@@ -224,25 +230,25 @@ func main() {
 		*llamaNativePassageInstruction,
 	)
 
-	modelID, err := db.EnsureEmbeddingModel(context.Background(), sqlDB, modelSpec)
+	modelID, err := db.EnsureEmbeddingModel(rootCtx, sqlDB, modelSpec)
 	if err != nil {
 		log.Fatalf("ensure embedding model: %v", err)
 	}
-	purgedEmbeddings, err := db.PurgeOtherModelEmbeddings(context.Background(), sqlDB, modelID)
+	purgedEmbeddings, err := db.PurgeOtherModelEmbeddings(rootCtx, sqlDB, modelID)
 	if err != nil {
 		log.Fatalf("purge old embeddings: %v", err)
 	}
 	if purgedEmbeddings > 0 {
 		log.Printf("purged %d embeddings for inactive model versions", purgedEmbeddings)
 	}
-	purgedVideoTranscriptEmbeddings, err := db.PurgeOtherModelVideoTranscriptEmbeddings(context.Background(), sqlDB, modelID)
+	purgedVideoTranscriptEmbeddings, err := db.PurgeOtherModelVideoTranscriptEmbeddings(rootCtx, sqlDB, modelID)
 	if err != nil {
 		log.Fatalf("purge old video transcript embeddings: %v", err)
 	}
 	if purgedVideoTranscriptEmbeddings > 0 {
 		log.Printf("purged %d video transcript embeddings for inactive model versions", purgedVideoTranscriptEmbeddings)
 	}
-	purgedJobs, err := db.PurgeOtherModelIndexJobs(context.Background(), sqlDB, modelID)
+	purgedJobs, err := db.PurgeOtherModelIndexJobs(rootCtx, sqlDB, modelID)
 	if err != nil {
 		log.Fatalf("purge old index jobs: %v", err)
 	}
@@ -250,21 +256,21 @@ func main() {
 		log.Printf("purged %d index jobs for inactive model versions", purgedJobs)
 	}
 
-	enqueuedMissing, err := db.EnsureIndexJobsForModel(context.Background(), sqlDB, modelID)
+	enqueuedMissing, err := db.EnsureIndexJobsForModel(rootCtx, sqlDB, modelID)
 	if err != nil {
 		log.Fatalf("ensure model index jobs: %v", err)
 	}
 	if enqueuedMissing > 0 {
 		log.Printf("enqueued %d missing index jobs for model_id=%d", enqueuedMissing, modelID)
 	}
-	enqueuedAnnotationJobs, err := db.EnsureAnnotationJobsForModel(context.Background(), sqlDB, modelID)
+	enqueuedAnnotationJobs, err := db.EnsureAnnotationJobsForModel(rootCtx, sqlDB, modelID)
 	if err != nil {
 		log.Fatalf("ensure annotation jobs: %v", err)
 	}
 	if enqueuedAnnotationJobs > 0 {
 		log.Printf("enqueued %d annotation jobs for model_id=%d", enqueuedAnnotationJobs, modelID)
 	}
-	enqueuedVideoAnnotationJobs, err := db.EnsureVideoAnnotationJobsForModel(context.Background(), sqlDB, modelID)
+	enqueuedVideoAnnotationJobs, err := db.EnsureVideoAnnotationJobsForModel(rootCtx, sqlDB, modelID)
 	if err != nil {
 		log.Fatalf("ensure video annotation jobs: %v", err)
 	}
@@ -300,7 +306,7 @@ func main() {
 	var videoTranscriber transcribe.VideoTranscriber
 	resolvedParakeetBundleDir := strings.TrimSpace(*parakeetOnnxBundleDir)
 	if strings.TrimSpace(*parakeetOnnxRuntimeLib) != "" {
-		resolvedParakeetBundleDir, err = ensureDefaultParakeetOnnxAssets(context.Background(), resolvedParakeetBundleDir)
+		resolvedParakeetBundleDir, err = ensureDefaultParakeetOnnxAssets(rootCtx, resolvedParakeetBundleDir)
 		if err != nil {
 			log.Fatalf("ensure Parakeet ONNX assets: %v", err)
 		}
@@ -314,7 +320,7 @@ func main() {
 		if closer, ok := videoTranscriber.(interface{ Close() error }); ok {
 			defer func() { _ = closer.Close() }()
 		}
-		enqueuedTranscriptJobs, err := db.EnsureVideoTranscriptJobsForModel(context.Background(), sqlDB, modelID)
+		enqueuedTranscriptJobs, err := db.EnsureVideoTranscriptJobsForModel(rootCtx, sqlDB, modelID)
 		if err != nil {
 			log.Fatalf("ensure video transcript jobs: %v", err)
 		}
@@ -402,11 +408,16 @@ func main() {
 	log.Printf("using vector backend %s", resolvedVectorBackend)
 	log.Printf("running in %s mode", mode)
 
+	var workerDone chan struct{}
 	if mode.startsWorker() {
 		if mode.startsHTTP() {
-			go worker.RunLoopBatch(context.Background(), queue, "main-worker", 500*time.Millisecond, *workerBatchSize)
+			workerDone = make(chan struct{})
+			go func() {
+				defer close(workerDone)
+				worker.RunLoopBatch(rootCtx, queue, "main-worker", 500*time.Millisecond, *workerBatchSize)
+			}()
 		} else {
-			worker.RunLoopBatch(context.Background(), queue, "main-worker", 500*time.Millisecond, *workerBatchSize)
+			worker.RunLoopBatch(rootCtx, queue, "main-worker", 500*time.Millisecond, *workerBatchSize)
 			return
 		}
 	}
@@ -424,9 +435,55 @@ func main() {
 			server.MaxHeaderBytes,
 		)
 		log.Printf("listening on http://%s", *addr)
-		if err := server.ListenAndServe(); err != nil {
+		if err := serveHTTPWithShutdown(rootCtx, server); err != nil {
+			stopRoot()
+			waitForWorkerShutdown(workerDone, defaultHTTPShutdownTimeout)
 			log.Fatalf("serve http: %v", err)
 		}
+		stopRoot()
+		waitForWorkerShutdown(workerDone, defaultHTTPShutdownTimeout)
+	}
+}
+
+func serveHTTPWithShutdown(ctx context.Context, server *http.Server) error {
+	if server == nil {
+		return fmt.Errorf("http server is nil")
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultHTTPShutdownTimeout)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutdown http server: %w", err)
+		}
+		err := <-errCh
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+}
+
+func waitForWorkerShutdown(done <-chan struct{}, timeout time.Duration) {
+	if done == nil {
+		return
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		log.Printf("worker shutdown timed out after %s", timeout)
 	}
 }
 

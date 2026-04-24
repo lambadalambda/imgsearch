@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -27,11 +27,11 @@ The process should react to OS signals, stop accepting HTTP requests, cancel wor
 
 ## Acceptance Criteria
 
-- [ ] Create a root context from OS signals in `cmd/imgsearch`.
-- [ ] Pass the root context into worker loops and startup-time operations where appropriate.
-- [ ] Use `http.Server.Shutdown` with a bounded timeout for API mode.
-- [ ] Replace worker idle sleeps with cancellation-aware `select` logic.
-- [ ] Add tests for worker loop cancellation behavior.
+- [x] Create a root context from OS signals in `cmd/imgsearch`.
+- [x] Pass the root context into worker loops and startup-time operations where appropriate.
+- [x] Use `http.Server.Shutdown` with a bounded timeout for API mode.
+- [x] Replace worker idle sleeps with cancellation-aware `select` logic.
+- [x] Add tests for worker loop cancellation behavior.
 
 ## Related Files
 
