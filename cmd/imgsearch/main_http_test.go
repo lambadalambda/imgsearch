@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +11,63 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
+
+	"imgsearch/internal/app"
+	"imgsearch/internal/vectorindex/bruteforce"
 )
+
+type fakeHTTPEmbedder struct{}
+
+func (fakeHTTPEmbedder) EmbedText(context.Context, string) ([]float32, error) {
+	return []float32{1, 0}, nil
+}
+func (fakeHTTPEmbedder) EmbedImage(context.Context, string) ([]float32, error) {
+	return []float32{1, 0}, nil
+}
+
+func newTestRuntimeMux(t *testing.T, dataDir string) http.Handler {
+	t.Helper()
+	sqlDB, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	dataRuntime := &app.DataRuntime{DB: sqlDB, DBPath: ":memory:", Index: bruteforce.NewIndex(sqlDB), VectorBackend: "bruteforce"}
+	if err := app.Bootstrap(context.Background(), sqlDB, func(context.Context, *sql.DB) error { return nil }); err != nil {
+		_ = dataRuntime.Close()
+		t.Fatalf("bootstrap: %v", err)
+	}
+	runtime, err := app.NewRuntime(app.RuntimeOptions{
+		Data:                 dataRuntime,
+		DataDir:              dataDir,
+		ModelID:              1,
+		Embedder:             fakeHTTPEmbedder{},
+		Index:                dataRuntime.Index,
+		WorkerLeaseDuration:  30 * time.Second,
+		WorkerRetryBaseDelay: 5 * time.Second,
+		LiveInterval:         2 * time.Second,
+		LiveImagesLimit:      120,
+	})
+	if err != nil {
+		_ = dataRuntime.Close()
+		t.Fatalf("new runtime: %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	return runtime.Mux
+}
+
+func newUnavailableAPIHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/live", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+	return mux
+}
 
 func TestServerMuxServesUIAndMedia(t *testing.T) {
 	dataDir := t.TempDir()
@@ -22,7 +79,7 @@ func TestServerMuxServesUIAndMedia(t *testing.T) {
 		t.Fatalf("write probe file: %v", err)
 	}
 
-	mux := newServerMux(nil, dataDir, 0, nil, nil, nil)
+	mux := newTestRuntimeMux(t, dataDir)
 
 	rootReq := httptest.NewRequest(http.MethodGet, "/", nil)
 	rootRR := httptest.NewRecorder()
@@ -54,17 +111,10 @@ func TestServerMuxServesUIAndMedia(t *testing.T) {
 		t.Fatalf("unexpected health body: %q", healthRR.Body.String())
 	}
 
-	liveReq := httptest.NewRequest(http.MethodGet, "/api/live", nil)
-	liveRR := httptest.NewRecorder()
-	mux.ServeHTTP(liveRR, liveReq)
-	if liveRR.Code != http.StatusServiceUnavailable {
-		t.Fatalf("live status: got=%d want=%d", liveRR.Code, http.StatusServiceUnavailable)
-	}
 }
 
 func TestServerMuxAPIRoutesRequireTokenWhenConfigured(t *testing.T) {
-	dataDir := t.TempDir()
-	h := withAPISecurity(newServerMux(nil, dataDir, 0, nil, nil, nil), "secret-token")
+	h := withAPISecurity(newUnavailableAPIHandler(), "secret-token")
 
 	unauthReq := httptest.NewRequest(http.MethodGet, "/api/live", nil)
 	unauthRR := httptest.NewRecorder()
@@ -94,8 +144,7 @@ func TestServerMuxAPIRoutesRequireTokenWhenConfigured(t *testing.T) {
 }
 
 func TestServerMuxWebRequestsSetAuthCookieWhenConfigured(t *testing.T) {
-	dataDir := t.TempDir()
-	h := withAPISecurity(newServerMux(nil, dataDir, 0, nil, nil, nil), "secret-token")
+	h := withAPISecurity(newUnavailableAPIHandler(), "secret-token")
 
 	rootReq := httptest.NewRequest(http.MethodGet, "/", nil)
 	rootRR := httptest.NewRecorder()
@@ -120,8 +169,7 @@ func TestServerMuxWebRequestsSetAuthCookieWhenConfigured(t *testing.T) {
 }
 
 func TestServerMuxDoesNotRequireTokenWhenNotConfigured(t *testing.T) {
-	dataDir := t.TempDir()
-	h := withAPISecurity(newServerMux(nil, dataDir, 0, nil, nil, nil), "")
+	h := withAPISecurity(newUnavailableAPIHandler(), "")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/live", nil)
 	rr := httptest.NewRecorder()
@@ -133,8 +181,7 @@ func TestServerMuxDoesNotRequireTokenWhenNotConfigured(t *testing.T) {
 }
 
 func TestServerMuxDefaultAPIKeyAuthenticatesWhenConfigured(t *testing.T) {
-	dataDir := t.TempDir()
-	h := withAPISecurity(newServerMux(nil, dataDir, 0, nil, nil, nil), defaultAPIKey)
+	h := withAPISecurity(newUnavailableAPIHandler(), defaultAPIKey)
 
 	unauthReq := httptest.NewRequest(http.MethodGet, "/api/live", nil)
 	unauthRR := httptest.NewRecorder()

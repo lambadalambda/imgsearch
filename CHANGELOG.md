@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- refactor(runtime): promote `internal/app` into the runtime composition layer for DB/vector initialization, HTTP mux construction, upload service wiring, worker queue setup, and centralized runtime closers while keeping CLI parsing and model option resolution in `cmd/imgsearch` (issue 052).
 - refactor(runtime): extract typed CLI runtime configuration with explicit defaults and validation for mode, API exposure, and native image settings while leaving runtime construction in `main` (issue 048).
 - fix(scripts): improve shell tooling portability with cross-platform file sizing, OS/arch-aware ONNX Runtime resolution, safe release dependency path handling, and `mise run test:scripts` / `test:full` tasks (issue 047).
 - refactor(ui): share image/video collection loading, pagination rendering, empty-state rendering, and card action markup while preserving static asset behavior (issue 051).

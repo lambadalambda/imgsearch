@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -20,18 +18,9 @@ import (
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/httputil"
-	"imgsearch/internal/images"
-	"imgsearch/internal/jobs"
-	"imgsearch/internal/live"
-	"imgsearch/internal/search"
-	"imgsearch/internal/stats"
 	"imgsearch/internal/transcribe"
 	"imgsearch/internal/transcribe/parakeetonnx"
-	"imgsearch/internal/upload"
-	"imgsearch/internal/vectorindex"
 	"imgsearch/internal/vectorindex/sqlitevector"
-	"imgsearch/internal/videos"
-	"imgsearch/internal/webui"
 	"imgsearch/internal/worker"
 )
 
@@ -70,74 +59,31 @@ func main() {
 		log.Fatalf("create data directory: %v", err)
 	}
 
-	dbPath := filepath.Join(cfg.DataDir, "imgsearch.sqlite")
-	dsn := fmt.Sprintf("%s?_busy_timeout=30000", dbPath)
-
-	resolvedSQLiteVectorPath, err := discoverSQLiteVectorPath(cfg.SQLiteVectorPath)
+	dataRuntime, err := app.InitializeDataRuntime(rootCtx, app.DataRuntimeConfig{
+		DataDir:                cfg.DataDir,
+		SQLiteVectorPath:       cfg.SQLiteVectorPath,
+		RequestedVectorBackend: cfg.VectorBackend,
+	}, app.DataRuntimeDeps{
+		DiscoverSQLiteVectorPath: discoverSQLiteVectorPath,
+		OpenSQLiteDB:             openSQLiteDB,
+		ValidateSQLiteVector:     sqlitevector.ValidateAvailable,
+		ResolveVectorBackend:     resolveVectorBackend,
+		BuildVectorBackend:       buildVectorBackend,
+	})
 	if err != nil {
-		log.Fatalf("discover sqlite-vector extension: %v", err)
+		log.Fatalf("initialize data runtime: %v", err)
 	}
-
-	autoValidationErr := error(nil)
-	openWithVector := ""
-	if cfg.VectorBackend == vectorBackendAuto {
-		if resolvedSQLiteVectorPath == "" {
-			autoValidationErr = fmt.Errorf("sqlite-vector extension path not found (run `mise run sqlite-vector-setup` or set SQLITE_VECTOR_PATH)")
-		} else {
-			openWithVector = resolvedSQLiteVectorPath
+	sqlDB := dataRuntime.DB
+	index := dataRuntime.Index
+	dataRuntimeOwned := false
+	defer func() {
+		if !dataRuntimeOwned {
+			_ = dataRuntime.Close()
 		}
-	}
-	if cfg.VectorBackend == vectorBackendSQLiteVector {
-		if resolvedSQLiteVectorPath == "" {
-			log.Fatalf("sqlite-vector backend requested but extension path was not found (set -sqlite-vector-path or SQLITE_VECTOR_PATH)")
-		}
-		openWithVector = resolvedSQLiteVectorPath
-	}
+	}()
 
-	sqlDB, err := openSQLiteDB(dsn, openWithVector)
-	if err != nil {
-		if cfg.VectorBackend == vectorBackendAuto && openWithVector != "" {
-			autoValidationErr = err
-			sqlDB, err = openSQLiteDB(dsn, "")
-			if err != nil {
-				log.Fatalf("open sqlite database: %v", err)
-			}
-			openWithVector = ""
-		} else {
-			log.Fatalf("open sqlite database: %v", err)
-		}
-	}
-
-	if cfg.VectorBackend == vectorBackendAuto && openWithVector != "" && autoValidationErr == nil {
-		autoValidationErr = sqlitevector.ValidateAvailable(rootCtx, sqlDB)
-	}
-
-	resolvedVectorBackend, backendWarning, err := resolveVectorBackend(cfg.VectorBackend, autoValidationErr)
-	if err != nil {
-		log.Fatalf("configure vector backend: %v", err)
-	}
-	if resolvedVectorBackend == vectorBackendBruteForce && openWithVector != "" {
-		_ = sqlDB.Close()
-		sqlDB, err = openSQLiteDB(dsn, "")
-		if err != nil {
-			log.Fatalf("open sqlite database: %v", err)
-		}
-	}
-
-	if backendWarning != "" {
-		log.Printf("%s", backendWarning)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
-	defer func() { _ = sqlDB.Close() }()
-
-	index, validateVectorBackend, err := buildVectorBackend(resolvedVectorBackend, sqlDB)
-	if err != nil {
-		log.Fatalf("build vector backend: %v", err)
-	}
-
-	if err := app.Bootstrap(rootCtx, sqlDB, validateVectorBackend); err != nil {
-		log.Fatalf("bootstrap app: %v", err)
+	if dataRuntime.BackendWarning != "" {
+		log.Printf("%s", dataRuntime.BackendWarning)
 	}
 
 	cfg.LlamaNativeModelPath, cfg.LlamaNativeMMProjPath, err = ensureDefaultLlamaNativeAssets(rootCtx, cfg.LlamaNativeModelPath, cfg.LlamaNativeMMProjPath)
@@ -264,9 +210,6 @@ func main() {
 			BundleDir:      resolvedParakeetBundleDir,
 			UseCoreML:      cfg.ParakeetONNXCoreML,
 		}}
-		if closer, ok := videoTranscriber.(interface{ Close() error }); ok {
-			defer func() { _ = closer.Close() }()
-		}
 		enqueuedTranscriptJobs, err := db.EnsureVideoTranscriptJobsForModel(rootCtx, sqlDB, modelID)
 		if err != nil {
 			log.Fatalf("ensure video transcript jobs: %v", err)
@@ -327,32 +270,40 @@ func main() {
 		log.Printf("image annotations disabled")
 	}
 
+	var closers []app.Closer
+	if closer, ok := videoTranscriber.(app.Closer); ok {
+		closers = append(closers, closer)
+	}
 	if modelSwitchboard != nil {
-		defer func() { _ = modelSwitchboard.Close() }()
-	} else if closer, ok := activeEmbedder.(interface{ Close() error }); ok {
-		defer func() { _ = closer.Close() }()
+		closers = append(closers, modelSwitchboard)
+	} else if closer, ok := activeEmbedder.(app.Closer); ok {
+		closers = append(closers, closer)
 	}
 
-	uploadSvc := &upload.Service{
-		DB:                     sqlDB,
-		DataDir:                cfg.DataDir,
-		ModelID:                modelID,
-		EnableVideoTranscripts: videoTranscriber != nil,
+	runtime, err := app.NewRuntime(app.RuntimeOptions{
+		Data:                 dataRuntime,
+		DataDir:              cfg.DataDir,
+		ModelID:              modelID,
+		Embedder:             activeEmbedder,
+		Annotator:            imageAnnotator,
+		Transcriber:          videoTranscriber,
+		Index:                index,
+		Closers:              closers,
+		WorkerLeaseDuration:  30 * time.Second,
+		WorkerRetryBaseDelay: 5 * time.Second,
+		LiveInterval:         2 * time.Second,
+		LiveImagesLimit:      120,
+		LiveImagesOffset:     0,
+		VideoTranscriptsOn:   videoTranscriber != nil,
+	})
+	if err != nil {
+		log.Fatalf("compose runtime: %v", err)
 	}
+	dataRuntimeOwned = true
+	defer func() { _ = runtime.Close() }()
 
-	queue := &worker.Queue{
-		DB:             sqlDB,
-		DataDir:        cfg.DataDir,
-		LeaseDuration:  30 * time.Second,
-		RetryBaseDelay: 5 * time.Second,
-		Embedder:       activeEmbedder,
-		TextEmbedder:   activeEmbedder,
-		Annotator:      imageAnnotator,
-		Transcriber:    videoTranscriber,
-		Index:          index,
-	}
-	log.Printf("imgsearch initialized with database %s", dbPath)
-	log.Printf("using vector backend %s", resolvedVectorBackend)
+	log.Printf("imgsearch initialized with database %s", dataRuntime.DBPath)
+	log.Printf("using vector backend %s", dataRuntime.VectorBackend)
 	log.Printf("running in %s mode", mode)
 
 	var workerDone chan struct{}
@@ -361,17 +312,16 @@ func main() {
 			workerDone = make(chan struct{})
 			go func() {
 				defer close(workerDone)
-				worker.RunLoopBatch(rootCtx, queue, "main-worker", 500*time.Millisecond, cfg.WorkerBatchSize)
+				worker.RunLoopBatch(rootCtx, runtime.Queue, "main-worker", 500*time.Millisecond, cfg.WorkerBatchSize)
 			}()
 		} else {
-			worker.RunLoopBatch(rootCtx, queue, "main-worker", 500*time.Millisecond, cfg.WorkerBatchSize)
+			worker.RunLoopBatch(rootCtx, runtime.Queue, "main-worker", 500*time.Millisecond, cfg.WorkerBatchSize)
 			return
 		}
 	}
 
 	if mode.startsHTTP() {
-		mux := newServerMux(sqlDB, cfg.DataDir, modelID, activeEmbedder, index, uploadSvc)
-		handler := withAPISecurity(mux, cfg.ResolvedAPIKey)
+		handler := withAPISecurity(runtime.Mux, cfg.ResolvedAPIKey)
 		server := configuredHTTPServer(cfg.Addr, handler)
 		log.Printf(
 			"http limits read_header_timeout=%s read_timeout=%s write_timeout=%s idle_timeout=%s max_header_bytes=%d",
@@ -494,39 +444,4 @@ func isLoopbackListenAddress(addr string) bool {
 		return false
 	}
 	return ip.IsLoopback()
-}
-
-func newServerMux(
-	sqlDB *sql.DB,
-	dataDir string,
-	modelID int64,
-	embedder embedder.Embedder,
-	index vectorindex.VectorIndex,
-	uploadSvc *upload.Service,
-) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.Handle("/api/upload", upload.NewHandler(uploadSvc))
-	imageHandler := images.NewHandler(&images.Handler{DB: sqlDB, ModelID: modelID, DataDir: dataDir})
-	videoHandler := videos.NewHandler(&videos.Handler{DB: sqlDB, ModelID: modelID, DataDir: dataDir})
-	mux.Handle("/api/images", imageHandler)
-	mux.Handle("/api/images/", imageHandler)
-	mux.Handle("/api/videos", videoHandler)
-	mux.Handle("/api/videos/", videoHandler)
-	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: sqlDB, ModelID: modelID}))
-	mux.Handle("/api/live", live.NewHandler(&live.Handler{DB: sqlDB, ModelID: modelID, Interval: 2 * time.Second, ImagesLimit: 120, ImagesOffset: 0}))
-	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: sqlDB, ModelID: modelID}))
-	searchHandler := search.NewHandler(&search.Handler{
-		DB:       sqlDB,
-		ModelID:  modelID,
-		DataDir:  dataDir,
-		Embedder: embedder,
-		Index:    index,
-	})
-	mux.Handle("/api/search/", searchHandler)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.Handle("/", webui.NewHandler(dataDir))
-	return mux
 }

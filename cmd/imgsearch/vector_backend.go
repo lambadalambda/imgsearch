@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	vectorBackendAuto         = "auto"
-	vectorBackendSQLiteVector = "sqlite-vector"
-	vectorBackendBruteForce   = "bruteforce"
+	vectorBackendAuto         = app.VectorBackendAuto
+	vectorBackendSQLiteVector = app.VectorBackendSQLiteVector
+	vectorBackendBruteForce   = app.VectorBackendBruteForce
 	sqliteVectorEntryPoint    = "sqlite3_vector_init"
 )
 

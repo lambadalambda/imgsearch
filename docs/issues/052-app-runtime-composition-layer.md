@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Done.
 
 ## Summary
 
@@ -28,11 +28,17 @@ Move reusable DB/vector/model/worker/HTTP construction behind `internal/app` bou
 
 ## Acceptance Criteria
 
-- [ ] Move DB/vector initialization behind an `internal/app` function where practical.
-- [ ] Move model runtime construction behind small factories with clear lifecycle ownership.
-- [ ] Return an app/runtime object that owns HTTP mux, queue, model closers, and shutdown hooks.
-- [ ] Keep `cmd/imgsearch` focused on flags, logging, signal handling, and process exit.
-- [ ] Preserve API, worker, and all-in-one mode behavior with tests.
+- [x] Move DB/vector initialization behind an `internal/app` function where practical.
+- [x] Move model runtime lifecycle ownership behind the app runtime while keeping command-local model option resolution in `cmd/imgsearch`.
+- [x] Return an app/runtime object that owns HTTP mux, queue, model closers, and shutdown hooks.
+- [x] Keep `cmd/imgsearch` focused on flags, logging, signal handling, model option resolution, and process exit.
+- [x] Preserve API, worker, and all-in-one mode behavior with tests.
+
+## Notes
+
+- `internal/app.InitializeDataRuntime` now owns DB path/DSN construction, sqlite-vector auto fallback, vector backend construction, migrations, and vector validation.
+- `internal/app.NewRuntime` now owns HTTP mux construction, upload service wiring, worker queue construction, and runtime closer order.
+- Model-specific option resolution remains in `cmd/imgsearch` because it is tightly coupled to CLI/runtime flags, but model/transcriber closers are handed to `internal/app.Runtime` for centralized cleanup.
 
 ## Related Files
 
