@@ -98,11 +98,11 @@ func TestAssetsAreServed(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusOK, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "fetch(`/api/images?${params.toString()}`)") {
-		t.Fatalf("expected app javascript payload")
+	if !strings.Contains(rr.Body.String(), "loadMediaCollection") || !strings.Contains(rr.Body.String(), "endpoint: '/api/images'") {
+		t.Fatalf("expected shared image collection javascript payload")
 	}
-	if !strings.Contains(rr.Body.String(), "fetch(`/api/videos?${params.toString()}`)") {
-		t.Fatalf("expected videos javascript payload")
+	if !strings.Contains(rr.Body.String(), "loadMediaCollection") || !strings.Contains(rr.Body.String(), "endpoint: '/api/videos'") {
+		t.Fatalf("expected shared videos collection javascript payload")
 	}
 	if !strings.Contains(rr.Body.String(), "openLightbox") {
 		t.Fatalf("expected lightbox javascript behavior")

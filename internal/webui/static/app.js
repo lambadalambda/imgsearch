@@ -100,7 +100,7 @@ let liveReconnectTimer = null;
 let pollingTimer = null;
 let receivedLiveSnapshot = false;
 let liveReconnectDelayMs = 1500;
-let imagesRequestToken = 0;
+const collectionRequestTokens = { images: 0, videos: 0 };
 let statsRequestToken = 0;
 let videoPlayer = null;
 let tagCloudLoaded = false;
@@ -438,9 +438,9 @@ function renderPagination() {
   galleryNextButton.disabled = state.galleryPage >= galleryPages - 1;
 
   const videoPages = totalPages(state.videosTotal, state.videosPageSize);
-	videosPageLabel.textContent = `Page ${state.videosPage + 1} of ${videoPages}`;
-	videosPrevButton.disabled = state.videosPage <= 0;
-	videosNextButton.disabled = state.videosPage >= videoPages - 1;
+  videosPageLabel.textContent = `Page ${state.videosPage + 1} of ${videoPages}`;
+  videosPrevButton.disabled = state.videosPage <= 0;
+  videosNextButton.disabled = state.videosPage >= videoPages - 1;
 
   const resultTotal = state.resultsMode === 'tag' ? Number(state.resultsTotal || 0) : Number(state.results.length || 0);
   const resultPages = totalPages(resultTotal, state.resultsPageSize);
@@ -563,6 +563,34 @@ function tagsMarkup(tags, includeOverflowChip, clickable) {
     .join('')}${hiddenTagCount > 0 ? `<li class="tag-chip tag-chip-more">+${hiddenTagCount}</li>` : ''}</ul>`;
 }
 
+function cardActionMarkup(item, mode, safeName, isNSFWTagged, canSearchSimilar, mediaType) {
+  const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use frame' : 'Use anchor') : 'Find similar';
+  const disabled = canSearchSimilar ? '' : 'disabled';
+  const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';
+  const deleteButton = mode === 'gallery'
+    ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="image" data-delete-id="${item.image_id}" data-delete-name="${safeName}">Delete</button>`
+    : mode === 'videos'
+      ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}">Delete</button>`
+      : '';
+  const nsfwToggleButton = mode === 'gallery'
+    ? `<button class="ghost thumb-action nsfw-toggle-action${isNSFWTagged ? ' danger' : ''}" data-nsfw-kind="image" data-nsfw-id="${item.image_id}" data-nsfw-name="${safeName}" data-nsfw-current="${isNSFWTagged ? '1' : '0'}">${isNSFWTagged ? 'Unflag NSFW' : 'Flag NSFW'}</button>`
+    : mode === 'videos'
+      ? `<button class="ghost thumb-action nsfw-toggle-action${isNSFWTagged ? ' danger' : ''}" data-nsfw-kind="video" data-nsfw-id="${item.video_id}" data-nsfw-name="${safeName}" data-nsfw-current="${isNSFWTagged ? '1' : '0'}">${isNSFWTagged ? 'Unflag NSFW' : 'Flag NSFW'}</button>`
+      : '';
+  const reannotateButton = mode === 'gallery'
+    ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="image" data-reannotate-id="${item.image_id}" data-reannotate-name="${safeName}">Re-annotate</button>`
+    : mode === 'videos'
+      ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="video" data-reannotate-id="${item.video_id}" data-reannotate-name="${safeName}">Re-annotate</button>`
+      : '';
+
+  return `
+    <button class="ghost thumb-action similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
+    ${nsfwToggleButton}
+    ${reannotateButton}
+    ${deleteButton}
+  `;
+}
+
 function cardMarkup(item, mode) {
   const safeName = escapeHTML(item.original_name);
   const safePath = escapeHTML(item.storage_path);
@@ -585,26 +613,9 @@ function cardMarkup(item, mode) {
   const scoreBadgeLabel = scoreBadgeText(item, scoreLabel);
   const scoreBadge = scoreBadgeLabel && !item.is_anchor ? `<p class="thumb-match-badge">${escapeHTML(scoreBadgeLabel)}</p>` : '';
   const canSearchSimilar = Number(item.image_id) > 0 && (status === 'done' || mediaType === 'video');
-  const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use frame' : 'Use anchor') : 'Find similar';
-  const disabled = canSearchSimilar ? '' : 'disabled';
-  const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';
   const anchorBadge = item.is_anchor ? '<p class="state anchor">anchor</p>' : '';
   const videoMeta = videoMetaMarkup(item, mode);
-  const deleteButton = mode === 'gallery'
-    ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="image" data-delete-id="${item.image_id}" data-delete-name="${safeName}">Delete</button>`
-    : mode === 'videos'
-      ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}">Delete</button>`
-      : '';
-  const nsfwToggleButton = mode === 'gallery'
-    ? `<button class="ghost thumb-action nsfw-toggle-action${isNSFWTagged ? ' danger' : ''}" data-nsfw-kind="image" data-nsfw-id="${item.image_id}" data-nsfw-name="${safeName}" data-nsfw-current="${isNSFWTagged ? '1' : '0'}">${isNSFWTagged ? 'Unflag NSFW' : 'Flag NSFW'}</button>`
-    : mode === 'videos'
-      ? `<button class="ghost thumb-action nsfw-toggle-action${isNSFWTagged ? ' danger' : ''}" data-nsfw-kind="video" data-nsfw-id="${item.video_id}" data-nsfw-name="${safeName}" data-nsfw-current="${isNSFWTagged ? '1' : '0'}">${isNSFWTagged ? 'Unflag NSFW' : 'Flag NSFW'}</button>`
-      : '';
-  const reannotateButton = mode === 'gallery'
-    ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="image" data-reannotate-id="${item.image_id}" data-reannotate-name="${safeName}">Re-annotate</button>`
-    : mode === 'videos'
-      ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="video" data-reannotate-id="${item.video_id}" data-reannotate-name="${safeName}">Re-annotate</button>`
-      : '';
+  const actionsMarkup = cardActionMarkup(item, mode, safeName, isNSFWTagged, canSearchSimilar, mediaType);
   const supportMarkup = supportEntries.length > 0
     ? `<div class="supporting-stack">${supportEntries
       .map((entry) => `<p class="${entry.className}">${escapeHTML(entry.text)}</p>`)
@@ -642,10 +653,7 @@ function cardMarkup(item, mode) {
           ${mediaType === 'video' ? '<span class="thumb-video-badge">video</span>' : ''}
         </button>
         <div class="thumb-actions" role="group" aria-label="Card actions for ${safeName}">
-          <button class="ghost thumb-action similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
-          ${nsfwToggleButton}
-          ${reannotateButton}
-          ${deleteButton}
+          ${actionsMarkup}
         </div>
         ${scoreBadge}
       </div>
@@ -675,40 +683,41 @@ function cardMarkup(item, mode) {
   `;
 }
 
-function renderGallery() {
+function renderMediaCollection(items, total, grid, mode, emptyPagedMessage, emptyMessage) {
   updateTabCounts();
   renderPagination();
 
-  const galleryItems = Array.isArray(state.images) ? state.images : [];
-
-  if (galleryItems.length === 0) {
-    if (state.imagesTotal > 0) {
-      galleryGrid.innerHTML = '<p class="empty">No images are visible on this page yet. Move back toward newer pages.</p>';
-    } else {
-      galleryGrid.innerHTML = '<p class="empty">No images here yet. Import or upload something to start building the archive.</p>';
-    }
+  const safeItems = Array.isArray(items) ? items : [];
+  if (safeItems.length === 0) {
+    grid.innerHTML = total > 0
+      ? `<p class="empty">${emptyPagedMessage}</p>`
+      : `<p class="empty">${emptyMessage}</p>`;
     return;
   }
 
-  galleryGrid.innerHTML = galleryItems.map((item) => cardMarkup(item, 'gallery')).join('');
+  grid.innerHTML = safeItems.map((item) => cardMarkup(item, mode)).join('');
+}
+
+function renderGallery() {
+  renderMediaCollection(
+    state.images,
+    state.imagesTotal,
+    galleryGrid,
+    'gallery',
+    'No images are visible on this page yet. Move back toward newer pages.',
+    'No images here yet. Import or upload something to start building the archive.',
+  );
 }
 
 function renderVideos() {
-  updateTabCounts();
-  renderPagination();
-
-  const videoItems = Array.isArray(state.videos) ? state.videos : [];
-
-  if (videoItems.length === 0) {
-    if (state.videosTotal > 0) {
-      videosGrid.innerHTML = '<p class="empty">No videos are visible on this page yet. Move back toward newer pages.</p>';
-    } else {
-      videosGrid.innerHTML = '<p class="empty">No videos here yet. Upload a clip to start building the video archive.</p>';
-    }
-    return;
-  }
-
-  videosGrid.innerHTML = videoItems.map((item) => cardMarkup(item, 'videos')).join('');
+  renderMediaCollection(
+    state.videos,
+    state.videosTotal,
+    videosGrid,
+    'videos',
+    'No videos are visible on this page yet. Move back toward newer pages.',
+    'No videos here yet. Upload a clip to start building the video archive.',
+  );
 }
 
 function renderResults() {
@@ -1141,64 +1150,70 @@ async function loadStats() {
   renderStats();
 }
 
-async function loadImages() {
-  const offset = state.galleryPage * state.galleryPageSize;
-  const requestToken = ++imagesRequestToken;
-  setStatus(galleryStatus, 'Loading gallery...', 'info');
+async function loadMediaCollection(config) {
+  const offset = state[config.pageKey] * state[config.pageSizeKey];
+  const requestToken = ++collectionRequestTokens[config.tokenKey];
+  setStatus(config.statusTarget, config.loadingMessage, 'info');
 
-  const params = applyNSFWQuery(new URLSearchParams({ limit: String(state.galleryPageSize), offset: String(offset) }));
-  const response = await fetch(`/api/images?${params.toString()}`);
+  const params = applyNSFWQuery(new URLSearchParams({ limit: String(state[config.pageSizeKey]), offset: String(offset) }));
+  const response = await fetch(`${config.endpoint}?${params.toString()}`);
   const payload = await response.json();
-  if (requestToken !== imagesRequestToken) {
+  if (requestToken !== collectionRequestTokens[config.tokenKey]) {
     return;
   }
   if (!response.ok) {
-    throw new Error(payload.error || 'Could not load images');
+    throw new Error(payload.error || config.errorMessage);
   }
 
-  const nextImages = payload.images || [];
-  const nextTotal = Number(payload.total || nextImages.length);
-  const maxPage = Math.max(0, Math.ceil(nextTotal / state.galleryPageSize) - 1);
-  if (nextImages.length === 0 && nextTotal > 0 && state.galleryPage > maxPage) {
-    state.galleryPage = maxPage;
-    return loadImages();
+  const nextItems = payload[config.payloadKey] || [];
+  const nextTotal = Number(payload.total || nextItems.length);
+  const maxPage = Math.max(0, Math.ceil(nextTotal / state[config.pageSizeKey]) - 1);
+  if (nextItems.length === 0 && nextTotal > 0 && state[config.pageKey] > maxPage) {
+    state[config.pageKey] = maxPage;
+    return loadMediaCollection(config);
   }
 
-  state.images = nextImages;
-  state.imagesTotal = nextTotal;
-  renderGallery();
+  state[config.itemsKey] = nextItems;
+  state[config.totalKey] = nextTotal;
+  config.render();
 
-  const start = state.imagesTotal === 0 ? 0 : offset + 1;
-  const end = offset + state.images.length;
-  setStatus(galleryStatus, `Showing ${start}-${end} of ${state.imagesTotal} image(s), newest first.`, 'success');
+  const start = nextTotal === 0 ? 0 : offset + 1;
+  const end = offset + nextItems.length;
+  setStatus(config.statusTarget, `Showing ${start}-${end} of ${nextTotal} ${config.label}(s), newest first.`, 'success');
+}
+
+async function loadImages() {
+  return loadMediaCollection({
+    tokenKey: 'images',
+    endpoint: '/api/images',
+    payloadKey: 'images',
+    itemsKey: 'images',
+    totalKey: 'imagesTotal',
+    pageKey: 'galleryPage',
+    pageSizeKey: 'galleryPageSize',
+    statusTarget: galleryStatus,
+    loadingMessage: 'Loading gallery...',
+    errorMessage: 'Could not load images',
+    label: 'image',
+    render: renderGallery,
+  });
 }
 
 async function loadVideos() {
-  const offset = state.videosPage * state.videosPageSize;
-  setStatus(videosStatus, 'Loading videos...', 'info');
-
-  const params = applyNSFWQuery(new URLSearchParams({ limit: String(state.videosPageSize), offset: String(offset) }));
-  const response = await fetch(`/api/videos?${params.toString()}`);
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error || 'Could not load videos');
-  }
-
-  const nextVideos = payload.videos || [];
-  const nextTotal = Number(payload.total || nextVideos.length);
-  const maxPage = Math.max(0, Math.ceil(nextTotal / state.videosPageSize) - 1);
-  if (nextVideos.length === 0 && nextTotal > 0 && state.videosPage > maxPage) {
-    state.videosPage = maxPage;
-    return loadVideos();
-  }
-
-  state.videos = nextVideos;
-  state.videosTotal = nextTotal;
-  renderVideos();
-
-  const start = state.videosTotal === 0 ? 0 : offset + 1;
-  const end = offset + state.videos.length;
-  setStatus(videosStatus, `Showing ${start}-${end} of ${state.videosTotal} video(s), newest first.`, 'success');
+  return loadMediaCollection({
+    tokenKey: 'videos',
+    endpoint: '/api/videos',
+    payloadKey: 'videos',
+    itemsKey: 'videos',
+    totalKey: 'videosTotal',
+    pageKey: 'videosPage',
+    pageSizeKey: 'videosPageSize',
+    statusTarget: videosStatus,
+    loadingMessage: 'Loading videos...',
+    errorMessage: 'Could not load videos',
+    label: 'video',
+    render: renderVideos,
+  });
 }
 
 async function runTextSearch(query, negative, tagFilters, tagMode) {

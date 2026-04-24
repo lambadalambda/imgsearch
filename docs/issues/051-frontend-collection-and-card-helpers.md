@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -27,11 +27,18 @@ The static frontend duplicates image/video collection loading, pagination, rende
 
 ## Acceptance Criteria
 
-- [ ] Extract shared collection pagination/loading helpers for images and videos.
-- [ ] Split card markup into smaller helpers or safer DOM/template utilities.
-- [ ] Keep current image, video, tag, and result UI behavior covered by browser tests.
-- [ ] Preserve existing no-build static asset serving unless a separate build-tool decision is made.
-- [ ] Keep the refactor incremental enough to review without visual churn.
+- [x] Extract shared collection pagination/loading helpers for images and videos.
+- [x] Split card markup into smaller helpers or safer DOM/template utilities.
+- [x] Keep current image, video, tag, and result UI behavior covered by browser tests.
+- [x] Preserve existing no-build static asset serving unless a separate build-tool decision is made.
+- [x] Keep the refactor incremental enough to review without visual churn.
+
+## Resolution
+
+- Added shared image/video collection loading through `loadMediaCollection`, including pagination bounds and stale-response guards.
+- Added shared image/video collection rendering through `renderMediaCollection` while preserving existing empty-state copy.
+- Extracted card action button markup into `cardActionMarkup` so action attributes and ordering live in one helper.
+- Kept the frontend as static no-build JavaScript and verified behavior with `npm test` plus the Go suite.
 
 ## Related Files
 
