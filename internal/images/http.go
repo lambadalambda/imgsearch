@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/jobkind"
 	"imgsearch/internal/mediaops"
 	"imgsearch/internal/nsfwsql"
 	"imgsearch/internal/tagutil"
@@ -74,7 +75,7 @@ FROM images i
 LEFT JOIN index_jobs j
 	ON j.image_id = i.id
 	AND j.model_id = ?
-	AND j.kind = 'embed_image'
+	AND j.kind = ?
 WHERE NOT EXISTS (
 	SELECT 1
 	FROM video_frames vf
@@ -83,7 +84,7 @@ WHERE NOT EXISTS (
 	AND (? = 1 OR NOT (%s))
 ORDER BY i.id DESC
 LIMIT ? OFFSET ?
-`, imageHasNSFWExpr), modelID, includeNSFWInt, limit, offset)
+`, imageHasNSFWExpr), modelID, jobkind.EmbedImage, includeNSFWInt, limit, offset)
 	if err != nil {
 		return ListResponse{}, fmt.Errorf("query images: %w", err)
 	}
@@ -270,7 +271,7 @@ WHERE id = ?
 		return fmt.Errorf("clear image annotations: %w", err)
 	}
 
-	if err := mediaops.RequestReannotationJob(ctx, tx, mediaops.ReannotationTarget{Kind: "annotate_image", ImageID: imageID, ModelID: modelID}); err != nil {
+	if err := mediaops.RequestReannotationJob(ctx, tx, mediaops.ReannotationTarget{Kind: jobkind.AnnotateImage, ImageID: imageID, ModelID: modelID}); err != nil {
 		_ = tx.Rollback()
 		return err
 	}

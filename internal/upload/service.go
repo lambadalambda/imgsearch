@@ -16,6 +16,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"imgsearch/internal/jobkind"
 )
 
 var ErrUnsupportedFormat = errors.New("unsupported image format")
@@ -249,15 +251,15 @@ ON CONFLICT(sha256) DO NOTHING
 
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO index_jobs(kind, image_id, model_id, state)
-VALUES('embed_image', ?, ?, 'pending')
+VALUES(?, ?, ?, 'pending')
 ON CONFLICT DO NOTHING
-`, out.ImageID, s.ModelID); err != nil {
+`, jobkind.EmbedImage, out.ImageID, s.ModelID); err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert index job: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO index_jobs(kind, image_id, model_id, state)
-SELECT 'annotate_image', i.id, ?, 'pending'
+SELECT ?, i.id, ?, 'pending'
 FROM images i
 WHERE i.id = ?
   AND (
@@ -266,7 +268,7 @@ WHERE i.id = ?
     OR COALESCE(i.tags_json, '[]') = '[]'
   )
 ON CONFLICT DO NOTHING
-`, s.ModelID, out.ImageID); err != nil {
+`, jobkind.AnnotateImage, s.ModelID, out.ImageID); err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert annotation job: %w", err)
 	}
@@ -363,18 +365,18 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?)
 	if s.EnableVideoTranscripts {
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO index_jobs(kind, image_id, video_id, model_id, state)
-VALUES('transcribe_video', NULL, ?, ?, 'pending')
+VALUES(?, NULL, ?, ?, 'pending')
 ON CONFLICT DO NOTHING
-`, out.VideoID, s.ModelID); err != nil {
+`, jobkind.TranscribeVideo, out.VideoID, s.ModelID); err != nil {
 			_ = tx.Rollback()
 			return StoreResult{}, fmt.Errorf("insert transcribe job: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO index_jobs(kind, image_id, video_id, model_id, state)
-VALUES('annotate_video', NULL, ?, ?, 'pending')
+VALUES(?, NULL, ?, ?, 'pending')
 ON CONFLICT DO NOTHING
-`, out.VideoID, s.ModelID); err != nil {
+`, jobkind.AnnotateVideo, out.VideoID, s.ModelID); err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert video annotation job: %w", err)
 	}
@@ -448,9 +450,9 @@ VALUES(?, ?, ?, ?)
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO index_jobs(kind, image_id, model_id, state)
-VALUES('embed_image', ?, ?, 'pending')
+VALUES(?, ?, ?, 'pending')
 ON CONFLICT DO NOTHING
-`, imageID, s.ModelID); err != nil {
+`, jobkind.EmbedImage, imageID, s.ModelID); err != nil {
 		return 0, "", fmt.Errorf("insert sampled frame embed job: %w", err)
 	}
 

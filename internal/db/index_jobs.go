@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"imgsearch/internal/jobkind"
 )
 
 func EnsureIndexJobsForModel(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
@@ -16,9 +18,9 @@ func EnsureIndexJobsForModel(ctx context.Context, db *sql.DB, modelID int64) (in
 
 	res, err := db.ExecContext(ctx, `
 INSERT OR IGNORE INTO index_jobs(kind, image_id, model_id, state)
-SELECT 'embed_image', i.id, ?, 'pending'
+SELECT ?, i.id, ?, 'pending'
 FROM images i
-`, modelID)
+`, jobkind.EmbedImage, modelID)
 	if err != nil {
 		return 0, fmt.Errorf("ensure index jobs for model %d: %w", modelID, err)
 	}
@@ -40,7 +42,7 @@ func EnsureAnnotationJobsForModel(ctx context.Context, db *sql.DB, modelID int64
 
 	res, err := db.ExecContext(ctx, `
 INSERT OR IGNORE INTO index_jobs(kind, image_id, model_id, state)
-SELECT 'annotate_image', i.id, ?, 'pending'
+SELECT ?, i.id, ?, 'pending'
 FROM images i
 WHERE NOT EXISTS (
   SELECT 1
@@ -52,7 +54,7 @@ WHERE NOT EXISTS (
     OR COALESCE(i.tags_json, '') = ''
     OR COALESCE(i.tags_json, '[]') = '[]'
   )
-`, modelID)
+`, jobkind.AnnotateImage, modelID)
 	if err != nil {
 		return 0, fmt.Errorf("ensure annotation jobs for model %d: %w", modelID, err)
 	}
@@ -74,14 +76,14 @@ func EnsureVideoTranscriptJobsForModel(ctx context.Context, db *sql.DB, modelID 
 
 	res, err := db.ExecContext(ctx, `
 INSERT OR IGNORE INTO index_jobs(kind, image_id, video_id, model_id, state)
-SELECT 'transcribe_video', NULL, v.id, ?, 'pending'
+SELECT ?, NULL, v.id, ?, 'pending'
 FROM videos v
 LEFT JOIN video_transcript_embeddings vte
   ON vte.video_id = v.id
  AND vte.model_id = ?
 WHERE trim(COALESCE(v.transcript_text, '')) = ''
    OR vte.video_id IS NULL
-`, modelID, modelID)
+`, jobkind.TranscribeVideo, modelID, modelID)
 	if err != nil {
 		return 0, fmt.Errorf("ensure video transcript jobs for model %d: %w", modelID, err)
 	}
@@ -103,12 +105,12 @@ func EnsureVideoAnnotationJobsForModel(ctx context.Context, db *sql.DB, modelID 
 
 	res, err := db.ExecContext(ctx, `
 INSERT OR IGNORE INTO index_jobs(kind, image_id, video_id, model_id, state)
-SELECT 'annotate_video', NULL, v.id, ?, 'pending'
+SELECT ?, NULL, v.id, ?, 'pending'
 FROM videos v
 WHERE trim(COALESCE(v.description, '')) = ''
    OR COALESCE(v.tags_json, '') = ''
    OR COALESCE(v.tags_json, '[]') = '[]'
-`, modelID)
+`, jobkind.AnnotateVideo, modelID)
 	if err != nil {
 		return 0, fmt.Errorf("ensure video annotation jobs for model %d: %w", modelID, err)
 	}
@@ -137,7 +139,7 @@ SET state = 'pending',
     lease_owner = NULL,
     last_error = NULL,
     updated_at = datetime('now')
-WHERE kind = 'annotate_image'
+WHERE kind = ?
   AND model_id = ?
   AND state = 'done'
   AND EXISTS (
@@ -155,7 +157,7 @@ WHERE kind = 'annotate_image'
     FROM video_frames vf
     WHERE vf.image_id = index_jobs.image_id
   )
-`, modelID)
+`, jobkind.AnnotateImage, modelID)
 	if err != nil {
 		return 0, fmt.Errorf("requeue jobs missing annotations for model %d: %w", modelID, err)
 	}

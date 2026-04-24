@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/jobkind"
 )
 
 type Handler struct {
@@ -93,7 +94,7 @@ WHERE NOT EXISTS (
 		return Response{}, err
 	}
 	resp.JobKinds = jobKinds
-	if embedStats, ok := jobKinds["embed_image"]; ok {
+	if embedStats, ok := jobKinds[jobkind.EmbedImage]; ok {
 		resp.Queue.Tracked = embedStats.Tracked
 		resp.Queue.Runnable = embedStats.Runnable
 		resp.Queue.Pending = embedStats.Pending
@@ -157,7 +158,7 @@ func countDoneJobsMissingAnnotations(ctx context.Context, db *sql.DB, modelID in
 SELECT COUNT(*)
 FROM index_jobs j
 JOIN images i ON i.id = j.image_id
-WHERE j.kind = 'embed_image'
+WHERE j.kind = ?
   AND j.model_id = ?
   AND j.state = 'done'
   AND NOT EXISTS (
@@ -170,7 +171,7 @@ WHERE j.kind = 'embed_image'
     OR COALESCE(i.tags_json, '') = ''
     OR COALESCE(i.tags_json, '[]') = '[]'
   )
-`, modelID).Scan(&total); err != nil {
+`, jobkind.EmbedImage, modelID).Scan(&total); err != nil {
 		return 0, fmt.Errorf("count done jobs missing annotations: %w", err)
 	}
 	return total, nil

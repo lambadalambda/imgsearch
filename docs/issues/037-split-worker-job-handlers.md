@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Done.
 
 ## Summary
 
@@ -26,12 +26,18 @@ The worker queue still owns claiming, job dispatch, media-specific execution, re
 
 ## Acceptance Criteria
 
-- [ ] Define shared job kind constants in a package that DB and worker code can use without import cycles.
-- [ ] Replace repeated job kind string literals in production code.
-- [ ] Extract worker handlers for embed image, annotate image, annotate video, and transcribe video.
-- [ ] Existing worker integration tests pass after extraction without weakening assertions.
-- [ ] Add coverage that each extracted handler returns the expected success/failure signals used by the queue.
-- [ ] Keep claim/fail/retry/complete behavior equivalent to the current public queue path.
+- [x] Define shared job kind constants in a package that DB and worker code can use without import cycles.
+- [x] Replace repeated job kind string literals in production code.
+- [x] Extract worker handlers for embed image, annotate image, annotate video, and transcribe video.
+- [x] Existing worker integration tests pass after extraction without weakening assertions.
+- [x] Add coverage that each extracted handler returns the expected success/failure signals used by the queue.
+- [x] Keep claim/fail/retry/complete behavior equivalent to the current public queue path.
+
+## Notes
+
+- Added `internal/jobkind` constants for the four worker job kinds.
+- Worker dispatch now delegates each supported job kind to a typed handler that returns the processed/batch/error signals consumed by the queue.
+- Production SQL paths use `jobkind` constants through query parameters or quoted constants; remaining literal job-kind strings are test fixtures/assertions or native symbol names.
 
 ## Related Files
 

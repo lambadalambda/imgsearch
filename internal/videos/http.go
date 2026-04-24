@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/jobkind"
 	"imgsearch/internal/mediaops"
 	"imgsearch/internal/nsfwsql"
 	"imgsearch/internal/tagutil"
@@ -77,7 +78,7 @@ WITH frame_jobs AS (
   LEFT JOIN index_jobs j
     ON j.image_id = vf.image_id
    AND j.model_id = ?
-   AND j.kind = 'embed_image'
+   AND j.kind = ?
   GROUP BY vf.video_id
 ), transcript_jobs AS (
   SELECT j.video_id,
@@ -88,7 +89,7 @@ WITH frame_jobs AS (
   FROM index_jobs j
   WHERE j.video_id IS NOT NULL
     AND j.model_id = ?
-    AND j.kind = 'transcribe_video'
+    AND j.kind = ?
   GROUP BY j.video_id
 ), annotation_jobs AS (
   SELECT j.video_id,
@@ -99,7 +100,7 @@ WITH frame_jobs AS (
   FROM index_jobs j
   WHERE j.video_id IS NOT NULL
     AND j.model_id = ?
-    AND j.kind = 'annotate_video'
+    AND j.kind = ?
   GROUP BY j.video_id
 ), preview_frames AS (
   SELECT vf.video_id,
@@ -139,7 +140,7 @@ LEFT JOIN preview_frames p ON p.video_id = v.id AND p.rn = 1
 WHERE (? = 1 OR NOT (%s))
 ORDER BY v.id DESC
 LIMIT ? OFFSET ?
-`, videoHasNSFWListExpr), modelID, modelID, modelID, includeNSFWInt, limit, offset)
+`, videoHasNSFWListExpr), modelID, jobkind.EmbedImage, modelID, jobkind.TranscribeVideo, modelID, jobkind.AnnotateVideo, includeNSFWInt, limit, offset)
 	if err != nil {
 		return ListResponse{}, fmt.Errorf("query videos: %w", err)
 	}
@@ -324,7 +325,7 @@ WHERE id = ?
 		return fmt.Errorf("clear video annotations: %w", err)
 	}
 
-	if err := mediaops.RequestReannotationJob(ctx, tx, mediaops.ReannotationTarget{Kind: "annotate_video", VideoID: videoID, ModelID: modelID}); err != nil {
+	if err := mediaops.RequestReannotationJob(ctx, tx, mediaops.ReannotationTarget{Kind: jobkind.AnnotateVideo, VideoID: videoID, ModelID: modelID}); err != nil {
 		_ = tx.Rollback()
 		return err
 	}

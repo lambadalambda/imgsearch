@@ -15,6 +15,7 @@ import (
 
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/jobkind"
 	"imgsearch/internal/transcribe"
 	"imgsearch/internal/vectorindex"
 )
@@ -260,6 +261,51 @@ VALUES (?, 'transcribe_video', NULL, ?, ?, 'pending')
 	}
 
 	return modelID
+}
+
+func TestEmbedImageHandlerSignalsSuccessfulWork(t *testing.T) {
+	q, _ := setupQueueTest(t)
+	job := claimedJob{ID: 1, Kind: jobkind.EmbedImage, ImageID: 1, ModelID: 1, Attempts: 1, MaxAttempts: 3}
+
+	result := q.handleEmbedImageJob(context.Background(), job, filepath.Join(q.DataDir, "images", "abc"), imageTaskData{OriginalName: "a.jpg"})
+
+	if !result.processed || !result.batchProcessed || result.skipCompletion || result.err != nil {
+		t.Fatalf("unexpected embed result: %+v", result)
+	}
+}
+
+func TestAnnotateImageHandlerSignalsUnavailableAnnotator(t *testing.T) {
+	q, _ := setupQueueTest(t)
+	job := claimedJob{ID: 1, Kind: jobkind.AnnotateImage, ImageID: 1, ModelID: 1, Attempts: 1, MaxAttempts: 3}
+
+	result := q.handleAnnotateImageJob(context.Background(), job, filepath.Join(q.DataDir, "images", "abc"), imageTaskData{NeedsAnnotation: true})
+
+	if result.processed || result.batchProcessed || result.skipCompletion || result.err != nil {
+		t.Fatalf("unexpected annotate result: %+v", result)
+	}
+}
+
+func TestAnnotateVideoHandlerSignalsUnavailableAnnotator(t *testing.T) {
+	q, _ := setupQueueTest(t)
+	job := claimedJob{ID: 1, Kind: jobkind.AnnotateVideo, VideoID: 1, ModelID: 1, Attempts: 1, MaxAttempts: 3}
+
+	result := q.handleAnnotateVideoJob(context.Background(), job)
+
+	if result.processed || result.batchProcessed || result.skipCompletion || result.err != nil {
+		t.Fatalf("unexpected annotate video result: %+v", result)
+	}
+}
+
+func TestTranscribeVideoHandlerSignalsMissingTranscriberFailure(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	modelID := seedVideoTranscribeJob(t, q, sqlDB, 7, 77)
+	job := claimedJob{ID: 77, Kind: jobkind.TranscribeVideo, VideoID: 7, ModelID: modelID, Attempts: 1, MaxAttempts: 3}
+
+	result := q.handleTranscribeVideoJob(context.Background(), job)
+
+	if !result.processed || result.batchProcessed || !result.skipCompletion || result.err == nil {
+		t.Fatalf("unexpected transcribe result: %+v", result)
+	}
 }
 
 func TestProcessOneSuccessStoresEmbeddingAndMarksDone(t *testing.T) {

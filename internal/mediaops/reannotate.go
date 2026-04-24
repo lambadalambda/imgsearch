@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"imgsearch/internal/jobkind"
 )
 
 type ReannotationTarget struct {
@@ -22,15 +24,15 @@ func RequestReannotationJob(ctx context.Context, tx *sql.Tx, target Reannotation
 	}
 
 	switch target.Kind {
-	case "annotate_image":
+	case jobkind.AnnotateImage:
 		if target.ImageID <= 0 {
 			return fmt.Errorf("invalid image id")
 		}
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO index_jobs(kind, image_id, model_id, state)
-VALUES('annotate_image', ?, ?, 'pending')
+VALUES(?, ?, ?, 'pending')
 ON CONFLICT DO NOTHING
-`, target.ImageID, target.ModelID); err != nil {
+`, jobkind.AnnotateImage, target.ImageID, target.ModelID); err != nil {
 			return fmt.Errorf("insert image annotation job: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -42,22 +44,22 @@ SET state = 'pending',
     lease_owner = NULL,
     last_error = NULL,
     updated_at = datetime('now')
-WHERE kind = 'annotate_image'
+WHERE kind = ?
   AND image_id = ?
   AND model_id = ?
   AND state <> 'leased'
-`, target.ImageID, target.ModelID); err != nil {
+`, jobkind.AnnotateImage, target.ImageID, target.ModelID); err != nil {
 			return fmt.Errorf("reset image annotation job: %w", err)
 		}
-	case "annotate_video":
+	case jobkind.AnnotateVideo:
 		if target.VideoID <= 0 {
 			return fmt.Errorf("invalid video id")
 		}
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO index_jobs(kind, image_id, video_id, model_id, state)
-VALUES('annotate_video', NULL, ?, ?, 'pending')
+VALUES(?, NULL, ?, ?, 'pending')
 ON CONFLICT DO NOTHING
-`, target.VideoID, target.ModelID); err != nil {
+`, jobkind.AnnotateVideo, target.VideoID, target.ModelID); err != nil {
 			return fmt.Errorf("insert video annotation job: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -69,11 +71,11 @@ SET state = 'pending',
     lease_owner = NULL,
     last_error = NULL,
     updated_at = datetime('now')
-WHERE kind = 'annotate_video'
+WHERE kind = ?
   AND video_id = ?
   AND model_id = ?
   AND state <> 'leased'
-`, target.VideoID, target.ModelID); err != nil {
+`, jobkind.AnnotateVideo, target.VideoID, target.ModelID); err != nil {
 			return fmt.Errorf("reset video annotation job: %w", err)
 		}
 	default:
