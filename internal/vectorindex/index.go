@@ -7,6 +7,8 @@ import (
 
 var ErrNotFound = errors.New("vector not found")
 
+var ErrVectorDimensionMismatch = errors.New("vector dimension mismatch")
+
 type SearchHit struct {
 	ImageID  int64
 	ModelID  int64

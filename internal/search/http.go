@@ -769,10 +769,11 @@ SELECT v.id,
        v.mime_type,
        COALESCE(v.description, ''),
        COALESCE(v.tags_json, '[]'),
-       COALESCE(v.transcript_text, ''),
-       COALESCE(p.image_id, 0),
-       COALESCE(p.storage_path, ''),
-       vte.vector_blob
+	       COALESCE(v.transcript_text, ''),
+	       COALESCE(p.image_id, 0),
+	       COALESCE(p.storage_path, ''),
+	       vte.dim,
+	       vte.vector_blob
 FROM video_transcript_embeddings vte
 JOIN videos v ON v.id = vte.video_id
 LEFT JOIN preview_frames p ON p.video_id = v.id AND p.rn = 1
@@ -788,8 +789,9 @@ WHERE vte.model_id = ?
 	for rows.Next() {
 		var result SearchResult
 		var blob []byte
+		var dim int
 		var tagsJSON string
-		if err := rows.Scan(&result.VideoID, &result.OriginalName, &result.StoragePath, &result.MimeType, &result.Description, &tagsJSON, &result.TranscriptText, &result.ImageID, &result.PreviewPath, &blob); err != nil {
+		if err := rows.Scan(&result.VideoID, &result.OriginalName, &result.StoragePath, &result.MimeType, &result.Description, &tagsJSON, &result.TranscriptText, &result.ImageID, &result.PreviewPath, &dim, &blob); err != nil {
 			return nil, fmt.Errorf("scan transcript embedding row: %w", err)
 		}
 		tags, err := tagutil.DecodeJSON(tagsJSON)
@@ -798,11 +800,18 @@ WHERE vte.model_id = ?
 		}
 		result.Tags = tags
 		vec := vectorindex.BlobToFloats(blob)
-		if len(vec) == 0 {
+		if len(vec) == 0 || len(vec) != dim {
 			continue
 		}
 		result.MediaType = "video"
-		result.Distance = 1 - cosine(query, vec)
+		similarity, err := vectorindex.Cosine(query, vec)
+		if err != nil {
+			if errors.Is(err, vectorindex.ErrVectorDimensionMismatch) {
+				continue
+			}
+			return nil, fmt.Errorf("compare transcript vector for video %d: %w", result.VideoID, err)
+		}
+		result.Distance = 1 - similarity
 		result.StoragePath = filepath.ToSlash(result.StoragePath)
 		result.PreviewPath = filepath.ToSlash(result.PreviewPath)
 		results = append(results, result)
@@ -865,28 +874,6 @@ func mergeResults(frameResults []SearchResult, transcriptResults []SearchResult,
 		out = out[:limit]
 	}
 	return out
-}
-
-func cosine(a, b []float32) float64 {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	if n == 0 {
-		return 0
-	}
-	var dot, na, nb float64
-	for i := 0; i < n; i++ {
-		av := float64(a[i])
-		bv := float64(b[i])
-		dot += av * bv
-		na += av * av
-		nb += bv * bv
-	}
-	if na == 0 || nb == 0 {
-		return 0
-	}
-	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }
 
 func parseMinCount(r *http.Request, fallback int) int {

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math"
 	"sort"
 
 	"imgsearch/internal/vectorindex"
@@ -88,7 +87,10 @@ WHERE model_id = ?
 			return nil, fmt.Errorf("decode embedding vector for image %d", imageID)
 		}
 
-		similarity := cosine(query, vec)
+		similarity, err := vectorindex.Cosine(query, vec)
+		if err != nil {
+			return nil, fmt.Errorf("compare embedding vector for image %d: %w", imageID, err)
+		}
 		hits = append(hits, vectorindex.SearchHit{
 			ImageID:  imageID,
 			ModelID:  modelID,
@@ -151,29 +153,4 @@ WHERE image_id = ? AND model_id = ?
 		}
 	}
 	return filtered, nil
-}
-
-func cosine(a, b []float32) float64 {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	if n == 0 {
-		return 0
-	}
-
-	var dot float64
-	var na float64
-	var nb float64
-	for i := 0; i < n; i++ {
-		av := float64(a[i])
-		bv := float64(b[i])
-		dot += av * bv
-		na += av * av
-		nb += bv * bv
-	}
-	if na == 0 || nb == 0 {
-		return 0
-	}
-	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }

@@ -2,6 +2,7 @@ package vectorindex
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 )
@@ -37,10 +38,14 @@ func (f *fakeIndex) Search(_ context.Context, modelID int64, query []float32, li
 	m := f.byModel[modelID]
 	hits := make([]SearchHit, 0, len(m))
 	for imageID, vec := range m {
+		similarity, err := Cosine(query, vec)
+		if err != nil {
+			return nil, err
+		}
 		hits = append(hits, SearchHit{
 			ImageID:  imageID,
 			ModelID:  modelID,
-			Distance: l2(query, vec),
+			Distance: 1 - similarity,
 		})
 	}
 	sort.Slice(hits, func(i, j int) bool { return hits[i].Distance < hits[j].Distance })
@@ -68,19 +73,6 @@ func (f *fakeIndex) SearchByImageID(ctx context.Context, modelID int64, imageID 
 		filtered = filtered[:limit]
 	}
 	return filtered, nil
-}
-
-func l2(a, b []float32) float64 {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	var sum float64
-	for i := 0; i < n; i++ {
-		d := float64(a[i] - b[i])
-		sum += d * d
-	}
-	return sum
 }
 
 func TestVectorIndexContractUpsertSearchDelete(t *testing.T) {
@@ -115,6 +107,20 @@ func TestVectorIndexContractUpsertSearchDelete(t *testing.T) {
 	}
 	if len(hits) != 1 || hits[0].ImageID != 2 {
 		t.Fatalf("unexpected hits after delete: %+v", hits)
+	}
+}
+
+func TestVectorIndexContractRejectsDimensionMismatch(t *testing.T) {
+	ctx := context.Background()
+	var idx VectorIndex = newFakeIndex()
+
+	if err := idx.Upsert(ctx, 1, 10, []float32{1, 0, 0}); err != nil {
+		t.Fatalf("upsert image 1: %v", err)
+	}
+
+	_, err := idx.Search(ctx, 10, []float32{1, 0}, 2)
+	if !errors.Is(err, ErrVectorDimensionMismatch) {
+		t.Fatalf("expected ErrVectorDimensionMismatch, got %v", err)
 	}
 }
 

@@ -342,6 +342,58 @@ VALUES (8, 1, 2, ?)
 	}
 }
 
+func TestTextSearchSkipsTranscriptEmbeddingDimensionMismatch(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES (22, 'vf22', 'frame.jpg', 'images/vf22', 'image/jpeg', 100, 100)
+`); err != nil {
+		t.Fatalf("seed frame image: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, transcript_text)
+VALUES (10, 'vid10', 'bad-transcript.mp4', 'videos/vid10', 'video/mp4', 4000, 1280, 720, 1, 'mismatched vector should not be ranked')
+`); err != nil {
+		t.Fatalf("seed video: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (10, 22, 0, 1000)
+`); err != nil {
+		t.Fatalf("seed preview frame: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO video_transcript_embeddings(video_id, model_id, dim, vector_blob)
+VALUES (10, 1, 3, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 0, 0})); err != nil {
+		t.Fatalf("seed transcript embedding: %v", err)
+	}
+
+	h := NewHandler(&Handler{
+		DB:       dbConn,
+		ModelID:  1,
+		DataDir:  "/tmp",
+		Embedder: &fakeEmbedder{textVec: []float32{1, 0}},
+		Index:    &fakeIndex{hits: nil},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/text?q=mismatched", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 0 {
+		t.Fatalf("expected mismatched transcript vector to be skipped, got %+v", resp.Results)
+	}
+}
+
 func TestTextSearchTranscriptRespectsVideoTagNSFWFiltering(t *testing.T) {
 	dbConn := setupSearchDB(t)
 	if _, err := dbConn.Exec(`

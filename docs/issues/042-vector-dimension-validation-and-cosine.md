@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -27,11 +27,18 @@ Production search paths should not silently compare vectors with different dimen
 
 ## Acceptance Criteria
 
-- [ ] Introduce a shared cosine helper that validates equal non-zero dimensions.
-- [ ] Use the shared helper in bruteforce image search and transcript search.
-- [ ] Select and verify transcript embedding dimensions before scoring.
-- [ ] Decide whether dimension mismatches should return errors or skip corrupt rows, and test that behavior.
-- [ ] Add contract coverage for vector index dimension behavior.
+- [x] Introduce a shared cosine helper that validates equal non-zero dimensions.
+- [x] Use the shared helper in bruteforce image search and transcript search.
+- [x] Select and verify transcript embedding dimensions before scoring.
+- [x] Decide whether dimension mismatches should return errors or skip corrupt rows, and test that behavior.
+- [x] Add contract coverage for vector index dimension behavior.
+
+## Resolution
+
+- Added `vectorindex.Cosine` as the single cosine implementation. It rejects empty and mismatched dimensions, while preserving the previous zero-norm behavior of returning similarity `0`.
+- Bruteforce image search now returns an `ErrVectorDimensionMismatch`-wrapped error when stored vectors for a model do not match the query dimension, surfacing corrupt image embeddings loudly.
+- Transcript search now selects `video_transcript_embeddings.dim`, skips rows where decoded vector length does not match stored `dim`, and skips rows whose dimension does not match the query vector.
+- Added regression tests for shared cosine validation, vector-index contract dimension behavior, bruteforce mismatch errors, and transcript mismatch skipping.
 
 ## Related Files
 

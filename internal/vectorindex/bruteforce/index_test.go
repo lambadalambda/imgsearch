@@ -3,6 +3,7 @@ package bruteforce
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -83,5 +84,21 @@ func TestSearchByImageIDReturnsNotFound(t *testing.T) {
 	}
 	if err != vectorindex.ErrNotFound {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestSearchRejectsMismatchedVectorDimensions(t *testing.T) {
+	idx := setupIndex(t)
+
+	if err := idx.Upsert(context.Background(), 1, 10, []float32{1, 0, 0}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	_, err := idx.Search(context.Background(), 10, []float32{1, 0}, 5)
+	if err == nil {
+		t.Fatalf("expected dimension mismatch error")
+	}
+	if !errors.Is(err, vectorindex.ErrVectorDimensionMismatch) {
+		t.Fatalf("expected ErrVectorDimensionMismatch, got %v", err)
 	}
 }

@@ -58,7 +58,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P1 Make retry and stats media-aware for video jobs: `docs/issues/039-media-aware-retry-and-stats.md`
 - [ ] P2 Narrow native runtime locks around preprocessing: `docs/issues/040-narrow-native-runtime-locks.md`
 - [x] P1 Add graceful shutdown and cancellation-aware worker loops: `docs/issues/041-graceful-shutdown-and-worker-cancellation.md`
-- [ ] P2 Enforce vector dimensions and share cosine logic: `docs/issues/042-vector-dimension-validation-and-cosine.md`
+- [x] P2 Enforce vector dimensions and share cosine logic: `docs/issues/042-vector-dimension-validation-and-cosine.md`
 - [ ] P2 Tighten API path, method, and dependency semantics: `docs/issues/043-tighten-api-route-semantics.md`
 - [ ] P2 Clarify multipart batch upload semantics: `docs/issues/044-clarify-multipart-batch-upload-semantics.md`
 - [ ] P2 Extract shared image/video media operations: `docs/issues/045-extract-shared-media-http-operations.md`
