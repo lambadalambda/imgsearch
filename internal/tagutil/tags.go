@@ -50,3 +50,16 @@ func ToggleTag(tags []string, target string) ([]string, bool) {
 	updated = append(updated, normalizedTarget)
 	return updated, true
 }
+
+func ToggleTagJSON(raw string, target string) (string, bool, error) {
+	tags, err := DecodeJSON(raw)
+	if err != nil {
+		return "", false, err
+	}
+	updatedTags, isPresent := ToggleTag(tags, target)
+	encodedTags, err := json.Marshal(updatedTags)
+	if err != nil {
+		return "", false, err
+	}
+	return string(encodedTags), isPresent, nil
+}

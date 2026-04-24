@@ -52,3 +52,16 @@ func TestToggleTagRemovesExistingTagCaseInsensitive(t *testing.T) {
 		t.Fatalf("unexpected toggled tags: %#v", tags)
 	}
 }
+
+func TestToggleTagJSONEncodesUpdatedTags(t *testing.T) {
+	encoded, isPresent, err := ToggleTagJSON(`["portrait"]`, "nsfw")
+	if err != nil {
+		t.Fatalf("toggle tag json: %v", err)
+	}
+	if !isPresent {
+		t.Fatal("expected nsfw to be present after toggle")
+	}
+	if encoded != `["portrait","nsfw"]` {
+		t.Fatalf("encoded tags: got=%s", encoded)
+	}
+}

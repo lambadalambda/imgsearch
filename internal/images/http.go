@@ -3,12 +3,12 @@ package images
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/mediaops"
 	"imgsearch/internal/nsfwsql"
 	"imgsearch/internal/tagutil"
 )
@@ -233,21 +233,11 @@ func NewHandler(h *Handler) http.Handler {
 }
 
 func parseReannotateImageIDPath(path string) (int64, error) {
-	const suffix = "/reannotate"
-	if !strings.HasSuffix(path, suffix) {
-		return 0, fmt.Errorf("missing reannotate suffix")
-	}
-	idPath := strings.TrimSuffix(path, suffix)
-	return httputil.ParseItemIDPath(idPath, "/api/images/")
+	return httputil.ParseItemActionIDPath(path, "/api/images/", "reannotate")
 }
 
 func parseToggleNSFWImageIDPath(path string) (int64, error) {
-	const suffix = "/toggle-nsfw"
-	if !strings.HasSuffix(path, suffix) {
-		return 0, fmt.Errorf("missing toggle nsfw suffix")
-	}
-	idPath := strings.TrimSuffix(path, suffix)
-	return httputil.ParseItemIDPath(idPath, "/api/images/")
+	return httputil.ParseItemActionIDPath(path, "/api/images/", "toggle-nsfw")
 }
 
 func Reannotate(ctx context.Context, db *sql.DB, modelID int64, imageID int64) error {
@@ -280,31 +270,9 @@ WHERE id = ?
 		return fmt.Errorf("clear image annotations: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO index_jobs(kind, image_id, model_id, state)
-VALUES('annotate_image', ?, ?, 'pending')
-ON CONFLICT DO NOTHING
-`, imageID, modelID); err != nil {
+	if err := mediaops.RequestReannotationJob(ctx, tx, mediaops.ReannotationTarget{Kind: "annotate_image", ImageID: imageID, ModelID: modelID}); err != nil {
 		_ = tx.Rollback()
-		return fmt.Errorf("insert image annotation job: %w", err)
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-UPDATE index_jobs
-SET state = 'pending',
-    attempts = 0,
-    run_after = NULL,
-    leased_until = NULL,
-    lease_owner = NULL,
-    last_error = NULL,
-    updated_at = datetime('now')
-WHERE kind = 'annotate_image'
-  AND image_id = ?
-  AND model_id = ?
-  AND state <> 'leased'
-`, imageID, modelID); err != nil {
-		_ = tx.Rollback()
-		return fmt.Errorf("reset image annotation job: %w", err)
+		return err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -336,23 +304,17 @@ WHERE id = ?
 		return false, err
 	}
 
-	tags, err := tagutil.DecodeJSON(tagsJSON)
+	encodedTags, isNSFW, err := tagutil.ToggleTagJSON(tagsJSON, "nsfw")
 	if err != nil {
 		_ = tx.Rollback()
 		return false, fmt.Errorf("decode image tags: %w", err)
-	}
-	updatedTags, isNSFW := tagutil.ToggleTag(tags, "nsfw")
-	encodedTags, err := json.Marshal(updatedTags)
-	if err != nil {
-		_ = tx.Rollback()
-		return false, fmt.Errorf("encode image tags: %w", err)
 	}
 
 	if _, err := tx.ExecContext(ctx, `
 UPDATE images
 SET tags_json = ?
 WHERE id = ?
-`, string(encodedTags), imageID); err != nil {
+`, encodedTags, imageID); err != nil {
 		_ = tx.Rollback()
 		return false, fmt.Errorf("update image tags: %w", err)
 	}
@@ -418,10 +380,7 @@ func Delete(ctx context.Context, db *sql.DB, dataDir string, imageID int64) erro
 }
 
 func boolToInt(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
+	return httputil.BoolToInt(v)
 }
 
 func (h *Handler) String() string {

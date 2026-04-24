@@ -905,10 +905,7 @@ func parseMinCount(r *http.Request, fallback int) int {
 }
 
 func boolToInt(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
+	return httputil.BoolToInt(v)
 }
 
 func parseTagFilters(r *http.Request) []string {

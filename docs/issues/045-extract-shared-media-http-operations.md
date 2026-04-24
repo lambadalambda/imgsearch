@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -30,12 +30,20 @@ This should follow `docs/issues/043-tighten-api-route-semantics.md` so shared pa
 
 ## Acceptance Criteria
 
-- [ ] Extract shared path-action parsing for item action routes.
-- [ ] Extract or centralize bool-to-int conversion for SQL query args.
-- [ ] Consolidate reannotation request logic where the SQL shape can remain explicit and safe.
-- [ ] Consolidate NSFW tag toggling through a shared helper or small data-layer function.
-- [ ] Keep delete operations transactional and remove files only after commit.
-- [ ] Preserve existing image and video API behavior with regression tests.
+- [x] Extract shared path-action parsing for item action routes.
+- [x] Extract or centralize bool-to-int conversion for SQL query args.
+- [x] Consolidate reannotation request logic where the SQL shape can remain explicit and safe.
+- [x] Consolidate NSFW tag toggling through a shared helper or small data-layer function.
+- [x] Keep delete operations transactional and remove files only after commit.
+- [x] Preserve existing image and video API behavior with regression tests.
+
+## Resolution
+
+- Added `httputil.ParseItemActionIDPath` for shared item action route parsing.
+- Added `httputil.BoolToInt` and routed image, video, and search SQL helpers through it.
+- Added `tagutil.ToggleTagJSON` so image/video NSFW toggles share decode/toggle/encode behavior.
+- Added `internal/mediaops.RequestReannotationJob` to share annotation job insert/reset SQL while leaving media-specific row updates explicit.
+- Left image/video delete flows transactional with file removal after commit, and kept existing regression coverage green.
 
 ## Related Files
 

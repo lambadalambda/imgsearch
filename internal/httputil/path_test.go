@@ -29,6 +29,32 @@ func TestParseItemIDPath(t *testing.T) {
 	}
 }
 
+func TestParseItemActionIDPath(t *testing.T) {
+	id, err := ParseItemActionIDPath("/api/images/42/reannotate", "/api/images/", "reannotate")
+	if err != nil {
+		t.Fatalf("parse valid action id: %v", err)
+	}
+	if id != 42 {
+		t.Fatalf("valid id: got=%d want=%d", id, 42)
+	}
+
+	if _, err := ParseItemActionIDPath("/api/images/42", "/api/images/", "reannotate"); err == nil {
+		t.Fatal("expected error for missing action suffix")
+	}
+	if _, err := ParseItemActionIDPath("/api/images/42/toggle-nsfw/extra", "/api/images/", "toggle-nsfw"); err == nil {
+		t.Fatal("expected error for nested action path")
+	}
+}
+
+func TestBoolToInt(t *testing.T) {
+	if BoolToInt(true) != 1 {
+		t.Fatalf("true should convert to 1")
+	}
+	if BoolToInt(false) != 0 {
+		t.Fatalf("false should convert to 0")
+	}
+}
+
 func TestRemoveStoredPathRemovesContainedPath(t *testing.T) {
 	dataDir := t.TempDir()
 	rel := filepath.Join("images", "sample.jpg")

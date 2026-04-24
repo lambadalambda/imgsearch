@@ -61,7 +61,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P2 Enforce vector dimensions and share cosine logic: `docs/issues/042-vector-dimension-validation-and-cosine.md`
 - [x] P2 Tighten API path, method, and dependency semantics: `docs/issues/043-tighten-api-route-semantics.md`
 - [x] P2 Clarify multipart batch upload semantics: `docs/issues/044-clarify-multipart-batch-upload-semantics.md`
-- [ ] P2 Extract shared image/video media operations: `docs/issues/045-extract-shared-media-http-operations.md`
+- [x] P2 Extract shared image/video media operations: `docs/issues/045-extract-shared-media-http-operations.md`
 - [ ] P2 Wire browser-level UI smoke tests: `docs/issues/046-ui-smoke-tests.md`
 - [ ] P2 Extract shared frontend collection and card helpers: `docs/issues/051-frontend-collection-and-card-helpers.md`
 - [ ] P2 Harden scripts/tooling portability and wire script tests: `docs/issues/047-script-tooling-portability.md`

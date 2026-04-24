@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- refactor(media): extract shared image/video action-path parsing, bool SQL conversion, NSFW tag toggling, and annotation job reset helpers while preserving media delete transaction behavior (issue 045).
 - fix(upload): make multipart batch results explicit with per-file success/error entries, `207 Multi-Status` for mixed outcomes, `failed` counts, and `413 Payload Too Large` for oversized requests (issue 044).
 - fix(api): tighten API route semantics by requiring exact image/video collection GET paths, returning JSON 405 responses with `Allow`, and standardizing missing dependency failures as 503 (issue 043).
 - fix(search): enforce equal vector dimensions through shared cosine scoring, fail corrupt image-vector searches loudly, and skip corrupt transcript embedding rows after checking stored dimensions (issue 042).

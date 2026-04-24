@@ -17,6 +17,21 @@ func ParseItemIDPath(path string, prefix string) (int64, error) {
 	return strconv.ParseInt(idText, 10, 64)
 }
 
+func ParseItemActionIDPath(path string, prefix string, action string) (int64, error) {
+	suffix := "/" + strings.Trim(action, "/")
+	if suffix == "/" || !strings.HasSuffix(path, suffix) {
+		return 0, fmt.Errorf("invalid action path")
+	}
+	return ParseItemIDPath(strings.TrimSuffix(path, suffix), prefix)
+}
+
+func BoolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
 func RemoveStoredPath(dataDir string, rel string) error {
 	trimmedDataDir := strings.TrimSpace(dataDir)
 	trimmedRel := strings.TrimSpace(rel)
