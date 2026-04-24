@@ -51,7 +51,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 
 ## Whole-App Review Follow-ups
 
-- [ ] P1 Harden batch job leasing and worker option defaults: `docs/issues/036-harden-batch-job-leasing.md`
+- [x] P1 Harden batch job leasing and worker option defaults: `docs/issues/036-harden-batch-job-leasing.md`
 - [ ] P2 Extract typed job handlers from worker switch statement: `docs/issues/037-split-worker-job-handlers.md`
 - [ ] P2 Make `annotate_image` jobs claimable in batch workers: `docs/issues/053-annotate-image-batch-claiming.md`
 - [ ] P2 Include videos in live updates and stale-request guards: `docs/issues/038-live-updates-include-videos.md`

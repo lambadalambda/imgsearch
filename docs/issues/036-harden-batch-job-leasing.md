@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -28,12 +28,12 @@ The batched worker claim path should guarantee that every returned job was actua
 
 ## Acceptance Criteria
 
-- [ ] Apply owner and lease-duration defaults before batch claiming.
-- [ ] Ensure `claimBatch` returns only jobs with `state = 'leased'` and `lease_owner` matching the claimant.
-- [ ] Verify `claimBatch` reloads jobs with `WHERE id IN (...) AND state = 'leased' AND lease_owner = ?` so jobs claimed by another concurrent worker are excluded.
-- [ ] Check the update result enough to distinguish no successfully claimed jobs from a successful batch claim.
-- [ ] Remove unused placeholder/query-building code in `claimBatch`.
-- [ ] Add regression tests for empty owner defaulting and partial/unclaimed batch candidates.
+- [x] Apply owner and lease-duration defaults before batch claiming.
+- [x] Ensure `claimBatch` returns only jobs with `state = 'leased'` and `lease_owner` matching the claimant.
+- [x] Verify `claimBatch` reloads jobs with `WHERE id IN (...) AND state = 'leased' AND lease_owner = ?` so jobs claimed by another concurrent worker are excluded.
+- [x] Check the update result enough to distinguish no successfully claimed jobs from a successful batch claim.
+- [x] Remove unused placeholder/query-building code in `claimBatch`.
+- [x] Add regression tests for empty owner defaulting and partial/unclaimed batch candidates.
 
 ## Related Files
 

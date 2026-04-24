@@ -206,6 +206,11 @@ LIMIT ?
 		}
 		candidates = append(candidates, ik)
 	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		_ = tx.Rollback()
+		return nil, fmt.Errorf("iterate claimable jobs: %w", err)
+	}
 	_ = rows.Close()
 
 	if len(candidates) == 0 {
@@ -226,14 +231,9 @@ LIMIT ?
 		leaseSeconds = 30
 	}
 
-	placeholders := make([]string, len(filtered))
-	args := make([]any, 0, len(filtered)*3+1)
-	for i, f := range filtered {
-		placeholders[i] = "?"
-		args = append(args, owner, fmt.Sprintf("+%d seconds", leaseSeconds), f.id)
-	}
-
-	query := fmt.Sprintf(`
+	claimedIDs := make([]int64, 0, len(filtered))
+	for _, f := range filtered {
+		res, err := tx.ExecContext(ctx, `
 UPDATE index_jobs
 SET state = 'leased',
     attempts = attempts + 1,
@@ -245,56 +245,75 @@ WHERE id = ?
     state = 'pending'
     OR (state = 'leased' AND leased_until IS NOT NULL AND leased_until <= datetime('now'))
   )
-`)
-	var updateQuery strings.Builder
-	updateQuery.WriteString("UPDATE index_jobs SET state = 'leased', attempts = attempts + 1, lease_owner = ?, leased_until = datetime('now', ?), updated_at = datetime('now') WHERE id = ? AND (state = 'pending' OR (state = 'leased' AND leased_until IS NOT NULL AND leased_until <= datetime('now')))")
-	for i := 1; i < len(filtered); i++ {
-		updateQuery.WriteString(";\n")
-		updateQuery.WriteString(query)
-		args = append(args, owner, fmt.Sprintf("+%d seconds", leaseSeconds), filtered[i].id)
-	}
-
-	_, err = tx.ExecContext(ctx, updateQuery.String(), args...)
-	if err != nil {
-		_ = tx.Rollback()
-		if isSQLiteLockError(err) {
-			return nil, nil
+	`, owner, fmt.Sprintf("+%d seconds", leaseSeconds), f.id)
+		if err != nil {
+			_ = tx.Rollback()
+			if isSQLiteLockError(err) {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("update claimed batch: %w", err)
 		}
-		return nil, fmt.Errorf("update claimed batch: %w", err)
+		updated, err := res.RowsAffected()
+		if err != nil {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("rows affected claim batch job: %w", err)
+		}
+		if updated > 0 {
+			claimedIDs = append(claimedIDs, f.id)
+		}
+	}
+	if len(claimedIDs) == 0 {
+		_ = tx.Rollback()
+		return nil, nil
 	}
 
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit claim batch tx: %w", err)
+	idArgs := make([]any, 0, len(claimedIDs)+1)
+	for _, id := range claimedIDs {
+		idArgs = append(idArgs, id)
 	}
-
-	idArgs := make([]any, len(filtered))
-	for i, f := range filtered {
-		idArgs[i] = f.id
-	}
-	ph := make([]string, len(filtered))
+	idArgs = append(idArgs, owner)
+	ph := make([]string, len(claimedIDs))
 	for i := range ph {
 		ph[i] = "?"
 	}
 
 	var jobs []claimedJob
-	jobRows, err := q.DB.QueryContext(ctx, fmt.Sprintf(`
+	jobRows, err := tx.QueryContext(ctx, fmt.Sprintf(`
 SELECT id, kind, COALESCE(image_id, 0), COALESCE(video_id, 0), model_id, attempts, max_attempts
 FROM index_jobs
 WHERE id IN (%s)
+  AND state = 'leased'
+  AND lease_owner = ?
 ORDER BY created_at ASC
 `, strings.Join(ph, ",")), idArgs...)
 	if err != nil {
+		_ = tx.Rollback()
 		return nil, fmt.Errorf("select claimed jobs: %w", err)
 	}
 	for jobRows.Next() {
 		var j claimedJob
 		if err := jobRows.Scan(&j.ID, &j.Kind, &j.ImageID, &j.VideoID, &j.ModelID, &j.Attempts, &j.MaxAttempts); err != nil {
 			_ = jobRows.Close()
+			_ = tx.Rollback()
 			return nil, fmt.Errorf("scan claimed job: %w", err)
 		}
 		jobs = append(jobs, j)
 	}
+	if err := jobRows.Err(); err != nil {
+		_ = jobRows.Close()
+		_ = tx.Rollback()
+		return nil, fmt.Errorf("iterate claimed jobs: %w", err)
+	}
 	_ = jobRows.Close()
+
+	if len(jobs) == 0 {
+		_ = tx.Rollback()
+		return nil, nil
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit claim batch tx: %w", err)
+	}
 
 	return jobs, nil
 }
@@ -315,6 +334,12 @@ func (q *Queue) ProcessBatch(ctx context.Context, owner string, batchSize int) (
 	if batchSize <= 0 {
 		batchSize = 1
 	}
+	if owner == "" {
+		owner = "worker"
+	}
+	if q.LeaseDuration <= 0 {
+		q.LeaseDuration = 30 * time.Second
+	}
 
 	jobs, err := q.claimBatch(ctx, owner, batchSize)
 	if err != nil {
@@ -322,12 +347,6 @@ func (q *Queue) ProcessBatch(ctx context.Context, owner string, batchSize int) (
 	}
 	if len(jobs) == 0 {
 		return 0, nil
-	}
-	if owner == "" {
-		owner = "worker"
-	}
-	if q.LeaseDuration <= 0 {
-		q.LeaseDuration = 30 * time.Second
 	}
 
 	if len(jobs) > 1 {

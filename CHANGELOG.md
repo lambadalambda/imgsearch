@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(worker): harden batch job leasing by defaulting worker options before claiming, checking per-job claim updates, and reloading claimed jobs inside the transaction with owner/state guards (issue 036).
 - fix(ui): unify image/video card metadata layout, keep tag overflow chips visible, and fold video match timestamps into the thumbnail match badge.
 - chore(dev): add Playwright tooling (`playwright` dev dependency, npm scripts, and Chromium install flow) so browser screenshots can be captured locally during UI work.
 - security(api): add API-key route guarding for `/api/*` with header (`X-Imgsearch-API-Key`/Bearer) and HttpOnly same-site cookie auth for the built-in UI, default to a built-in development key on loopback when unset, reject that default key on non-loopback binds, and log a startup warning when the default key is active.

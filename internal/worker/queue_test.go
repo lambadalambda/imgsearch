@@ -1094,6 +1094,65 @@ func TestClaimBatchAllLeasedWithSameOwner(t *testing.T) {
 	}
 }
 
+func TestProcessBatchDefaultsOwnerBeforeClaiming(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 2)
+	if _, err := sqlDB.Exec(`
+CREATE TRIGGER require_default_batch_owner
+BEFORE UPDATE ON index_jobs
+WHEN NEW.state = 'leased' AND NEW.lease_owner <> 'worker'
+BEGIN
+  SELECT RAISE(ABORT, 'unexpected lease owner');
+END;
+`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	count, err := q.ProcessBatch(context.Background(), "", 2)
+	if err != nil {
+		t.Fatalf("process batch: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 processed jobs, got %d", count)
+	}
+}
+
+func TestClaimBatchReturnsOnlyJobsLeasedByOwner(t *testing.T) {
+	q, sqlDB := setupMultiImageQueue(t, 3)
+
+	if _, err := sqlDB.Exec(`
+CREATE TRIGGER ignore_second_job_batch_claim
+BEFORE UPDATE ON index_jobs
+WHEN OLD.image_id = 2 AND NEW.state = 'leased'
+BEGIN
+  SELECT RAISE(IGNORE);
+END;
+`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	jobs, err := q.claimBatch(context.Background(), "worker-1", 3)
+	if err != nil {
+		t.Fatalf("claim batch: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("expected only 2 successfully leased jobs, got %d: %+v", len(jobs), jobs)
+	}
+	for _, job := range jobs {
+		if job.ImageID == 2 {
+			t.Fatalf("claimBatch returned unleased job: %+v", job)
+		}
+	}
+
+	var state string
+	var owner sql.NullString
+	if err := sqlDB.QueryRow(`SELECT state, lease_owner FROM index_jobs WHERE image_id = 2`).Scan(&state, &owner); err != nil {
+		t.Fatalf("select skipped job: %v", err)
+	}
+	if state != "pending" || owner.Valid {
+		t.Fatalf("expected skipped job to remain pending with no owner, got state=%s owner=%q valid=%v", state, owner.String, owner.Valid)
+	}
+}
+
 func TestClaimBatchSkipsExpiredLeasesAndPendingOnly(t *testing.T) {
 	q, sqlDB := setupMultiImageQueue(t, 4)
 
