@@ -14,6 +14,7 @@ const state = {
   videosPageSize: 24,
   resultsPageSize: 24,
   resultsMode: 'none',
+  resultsProvenance: '',
   activeTagFilters: [],
   activeTagMode: 'any',
   searchTagFilters: [],
@@ -60,6 +61,7 @@ const resultsPanel = document.getElementById('results-panel');
 const resultsPrevButton = document.getElementById('results-prev');
 const resultsNextButton = document.getElementById('results-next');
 const resultsPageLabel = document.getElementById('results-page-label');
+const resultsProvenance = document.getElementById('results-provenance');
 
 const uploadModal = document.getElementById('upload-modal');
 const uploadOpenButton = document.getElementById('upload-open');
@@ -889,6 +891,7 @@ function renderVideos() {
 function renderResults() {
   updateTabCounts();
   renderPagination();
+  renderResultsProvenance();
   const resultItems = Array.isArray(state.results) ? state.results : [];
   clearResultsButton.disabled = resultItems.length === 0;
 
@@ -898,6 +901,18 @@ function renderResults() {
   }
 
   resultsGrid.innerHTML = resultItems.map((item) => cardMarkup(item, 'result')).join('');
+}
+
+function renderResultsProvenance() {
+  if (!resultsProvenance) {
+    return;
+  }
+  if (state.resultsMode === 'none' || !state.resultsProvenance) {
+    resultsProvenance.textContent = 'Latest text, tag, or similar-image search results stay here until you clear them.';
+    return;
+  }
+  const total = state.resultsMode === 'tag' ? Number(state.resultsTotal || 0) : Number((state.results || []).length);
+  resultsProvenance.textContent = `${state.resultsProvenance} - ${total} ${total === 1 ? 'match' : 'matches'}`;
 }
 
 function renderTagCloud() {
@@ -983,6 +998,7 @@ async function runTagSearch(tags, mode, page) {
   state.resultsPage = safePage;
   state.activeTagFilters = normalizedTags;
   state.activeTagMode = safeMode;
+  state.resultsProvenance = `Results for tags: ${normalizedTags.join(', ')} (${safeMode === 'all' ? 'all tags' : 'any tag'})`;
 
   renderResults();
   setActiveTab('results');
@@ -1421,6 +1437,14 @@ async function runTextSearch(query, negative, tagFilters, tagMode) {
   state.resultsTotal = state.results.length;
   state.resultsPage = 0;
   state.activeTagFilters = [];
+  const filters = [];
+  if (negative) {
+    filters.push(`excluding "${negative}"`);
+  }
+  if (normalizedTags.length > 0) {
+    filters.push(`${tagMode === 'all' ? 'all' : 'any'} tags: ${normalizedTags.join(', ')}`);
+  }
+  state.resultsProvenance = `Results for "${query}"${filters.length > 0 ? ` (${filters.join('; ')})` : ''}`;
   renderResults();
   setActiveTab('results');
   setStatus(searchStatus, `Text search returned ${state.results.length} result(s).${formatSearchDebugSuffix(payload.debug)}`, 'success');
@@ -1470,6 +1494,7 @@ async function runSimilarSearch(imageID, anchorHint) {
   state.resultsTotal = state.results.length;
   state.resultsPage = 0;
   state.activeTagFilters = [];
+  state.resultsProvenance = `Similar images for #${imageID}`;
   renderResults();
   setActiveTab('results');
   setStatus(searchStatus, `Similar search returned ${state.results.length} result(s).${formatSearchDebugSuffix(payload.debug)}`, 'success');
@@ -2533,6 +2558,7 @@ clearResultsButton.addEventListener('click', () => {
   state.resultsTotal = 0;
   state.resultsPage = 0;
   state.resultsMode = 'none';
+  state.resultsProvenance = '';
   state.activeTagFilters = [];
   renderResults();
   setActiveTab('gallery');

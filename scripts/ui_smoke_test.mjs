@@ -217,8 +217,19 @@ try {
   await page.locator('.tag-cloud-chip[data-tag="concert"]').waitFor();
   await page.locator('.tag-cloud-chip[data-tag="concert"]').click();
   await page.locator('#results-panel').waitFor({ state: 'visible' });
+  await page.waitForFunction(() => (document.getElementById('results-provenance')?.textContent || '').includes('Results for tags: concert'));
+  const resultsProvenance = await page.locator('#results-provenance').textContent() || '';
+  if (!resultsProvenance.includes('0 matches')) {
+    throw new Error(`results provenance does not include result count: ${JSON.stringify(resultsProvenance)}`);
+  }
+  if ((await page.locator('#results-prev').textContent() || '').trim() !== 'Newer uploads') {
+    throw new Error('results pagination does not clarify newer upload sort context');
+  }
+  if ((await page.locator('#results-next').textContent() || '').trim() !== 'Older uploads') {
+    throw new Error('results pagination does not clarify older upload sort context');
+  }
 
-  await page.getByRole('button', { name: 'Upload' }).click();
+  await page.getByRole('button', { name: 'Upload', exact: true }).click();
   await page.getByRole('dialog', { name: 'Add media' }).waitFor();
   await page.getByRole('button', { name: 'Close upload dialog' }).click();
   await page.locator('#upload-modal').waitFor({ state: 'hidden' });

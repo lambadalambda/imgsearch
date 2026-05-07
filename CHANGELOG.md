@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ux(ui): show result provenance and match counts for text, tag, and similar-image searches, with clearer results pagination labels.
 - ux(ui): rename advanced search controls to Filters and show active negative/tag filters with a count and masthead chips.
 - ux(ui): surface live-update and compact indexing status in the masthead while keeping detailed queue controls in the overflow menu.
 - ux(ui): improve mobile gallery density with two-column cards, reduced metadata, shorter results tab text, larger touch targets, and tighter lightbox padding.
