@@ -15,6 +15,7 @@ const contentTypes = new Map([
 
 let imageRequestsWithNSFW = 0;
 let videoRequests = 0;
+let deletedImages = 0;
 
 function json(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -66,6 +67,12 @@ const server = createServer(async (req, res) => {
         })),
         total: 2,
       });
+      return;
+    }
+    if (/^\/api\/images\/\d+$/.test(url.pathname) && req.method === 'DELETE') {
+      deletedImages += 1;
+      res.writeHead(204);
+      res.end();
       return;
     }
     if (url.pathname === '/api/videos') {
@@ -133,6 +140,32 @@ try {
   if (await firstCard.locator('.meta .path').isVisible()) {
     throw new Error('resting card metadata still shows storage path');
   }
+  const galleryPagination = page.locator('.pagination-controls[aria-label="Gallery pagination"]');
+  const selectionToolbar = page.locator('#gallery-selection-toolbar');
+  const selectionControlsInPagination = await galleryPagination.locator('#gallery-select-page, #gallery-clear-selection, #gallery-delete-selected, #gallery-delete-all').count();
+  if (selectionControlsInPagination !== 0) {
+    throw new Error('gallery pagination contains selection or destructive controls');
+  }
+  if (await selectionToolbar.isVisible()) {
+    throw new Error('selection toolbar is visible before selection mode starts');
+  }
+  await page.getByRole('button', { name: 'Select' }).click();
+  if (!(await selectionToolbar.isVisible())) {
+    throw new Error('selection toolbar did not appear in selection mode');
+  }
+  if (!(await selectionToolbar.textContent() || '').includes('0 selected')) {
+    throw new Error('selection toolbar does not show the selected count');
+  }
+  await selectionToolbar.getByRole('button', { name: 'Select page' }).waitFor();
+  await selectionToolbar.getByRole('button', { name: 'Clear' }).waitFor();
+  await selectionToolbar.getByRole('button', { name: 'Delete selected' }).waitFor();
+  page.once('dialog', (dialog) => dialog.accept());
+  await selectionToolbar.getByRole('button', { name: 'Delete all images (2)' }).click();
+  await page.getByText('Deleted 2 images.').waitFor();
+  if (deletedImages !== 2) {
+    throw new Error(`bulk image delete sent ${deletedImages} DELETE requests, want 2`);
+  }
+
   await page.getByRole('tab', { name: /Videos/ }).click();
   await page.locator('#videos-panel').waitFor({ state: 'visible' });
 

@@ -130,10 +130,22 @@
             <div>
               <p id="gallery-status" class="status toolbar-status" role="status" aria-live="polite"></p>
             </div>
-            <div class="pagination-controls" aria-label="Gallery pagination">
-              <button id="gallery-prev" type="button" class="ghost">Newer</button>
-              <p id="gallery-page-label" class="pagination-label">Page 1</p>
-              <button id="gallery-next" type="button" class="ghost">Older</button>
+            <div class="gallery-toolbar-actions">
+              <button id="gallery-select-mode" type="button" class="ghost">Select</button>
+              <div class="pagination-controls" aria-label="Gallery pagination">
+                <button id="gallery-prev" type="button" class="ghost">Newer</button>
+                <p id="gallery-page-label" class="pagination-label">Page 1</p>
+                <button id="gallery-next" type="button" class="ghost">Older</button>
+              </div>
+            </div>
+          </div>
+          <div id="gallery-selection-toolbar" class="selection-toolbar" aria-label="Gallery selection actions" hidden>
+            <p id="gallery-selection-summary" class="selection-summary">0 selected</p>
+            <div class="selection-actions">
+              <button id="gallery-select-page" type="button" class="ghost">Select page</button>
+              <button id="gallery-clear-selection" type="button" class="ghost">Clear</button>
+              <button id="gallery-delete-selected" type="button" class="ghost danger" disabled>Delete selected</button>
+              <button id="gallery-delete-all" type="button" class="ghost danger">Delete all images</button>
             </div>
           </div>
           <div id="gallery-grid" class="grid gallery-grid"></div>

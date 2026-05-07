@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ux(ui): split gallery selection and destructive bulk actions into a contextual toolbar separate from pagination.
 - ux(ui): make the NSFW visibility control show explicit hidden/visible states with a distinct enabled treatment.
 - ux(ui): promote generated descriptions over filenames in media cards, hide storage paths at rest, and improve compact tag/status readability.
 - fix(live): include videos in WebSocket snapshots and apply live video updates for index state, transcripts, descriptions, tags, and previews while preserving stale-request guards (issue 038).

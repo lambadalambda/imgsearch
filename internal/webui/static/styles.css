@@ -671,6 +671,41 @@ input:focus-visible {
   padding-bottom: 0;
 }
 
+.gallery-toolbar-actions,
+.selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gallery-toolbar-actions {
+  margin-left: auto;
+}
+
+.selection-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklab, var(--line-strong) 78%, white 22%);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, var(--surface-strong) 84%, white 16%);
+}
+
+.selection-toolbar[hidden] {
+  display: none;
+}
+
+.selection-summary {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
 .results-toolbar {
   gap: 12px;
 }
@@ -708,12 +743,47 @@ input:focus-visible {
   box-shadow: 0 12px 24px rgba(44, 37, 25, 0.14);
 }
 
+.card.is-selected {
+  border-color: color-mix(in oklab, var(--accent) 78%, white 22%);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 42%, transparent 58%), var(--shadow-card-rest);
+}
+
 .thumb-wrap {
   position: relative;
   overflow: hidden;
   border-top-left-radius: inherit;
   border-top-right-radius: inherit;
   border-bottom: 1px solid color-mix(in oklab, var(--line) 84%, white 16%);
+}
+
+.selection-control {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 5;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 253, 249, 0.75);
+  border-radius: 8px;
+  background: rgba(35, 32, 28, 0.74);
+  color: #fffdf9;
+  padding: 5px 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  backdrop-filter: blur(2px);
+}
+
+.selection-control input {
+  margin: 0;
+  inline-size: 15px;
+  block-size: 15px;
+  accent-color: var(--accent);
+}
+
+.selection-active .selection-control,
+.card.is-selected .selection-control {
+  display: inline-flex;
 }
 
 .thumb-button {

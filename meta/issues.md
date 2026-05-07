@@ -1,6 +1,5 @@
 - [ ] [Simplify masthead search and filter controls](issues/simplify-masthead-search-and-filter-controls.md)
 - [ ] [Improve mobile gallery browsing](issues/improve-mobile-gallery-browsing.md)
 - [ ] [Surface indexing status outside the overflow menu](issues/surface-indexing-status-outside-overflow-menu.md)
-- [ ] [Separate selection mode from pagination controls](issues/separate-selection-mode-from-pagination-controls.md)
 - [ ] [Clarify search result provenance and pagination context](issues/clarify-search-result-provenance-and-pagination-context.md)
 - [ ] [Add loading, empty-state, and accessibility polish](issues/add-loading-empty-state-and-accessibility-polish.md)

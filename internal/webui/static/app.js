@@ -19,6 +19,8 @@ const state = {
   searchTagFilters: [],
   showNSFW: false,
   activeTab: 'gallery',
+  imageSelectionMode: false,
+  selectedImageIDs: new Set(),
 };
 
 const galleryGrid = document.getElementById('gallery-grid');
@@ -29,6 +31,13 @@ const galleryPageLabel = document.getElementById('gallery-page-label');
 const galleryTabButton = document.getElementById('tab-gallery');
 const galleryTabCount = document.getElementById('tab-gallery-count');
 const galleryPanel = document.getElementById('gallery-panel');
+const gallerySelectModeButton = document.getElementById('gallery-select-mode');
+const gallerySelectPageButton = document.getElementById('gallery-select-page');
+const galleryClearSelectionButton = document.getElementById('gallery-clear-selection');
+const galleryDeleteSelectedButton = document.getElementById('gallery-delete-selected');
+const galleryDeleteAllButton = document.getElementById('gallery-delete-all');
+const gallerySelectionToolbar = document.getElementById('gallery-selection-toolbar');
+const gallerySelectionSummary = document.getElementById('gallery-selection-summary');
 
 const videosGrid = document.getElementById('videos-grid');
 const videosStatus = document.getElementById('videos-status');
@@ -108,6 +117,7 @@ let videoPlayer = null;
 let tagCloudLoaded = false;
 let tagSuggestionRequestToken = 0;
 let tagSuggestionDebounceTimer = null;
+let bulkImageDeleteInFlight = false;
 const liveReconnectDelayMaxMs = 30000;
 const nsfwPreferenceStorageKey = 'imgsearch.showNSFW';
 
@@ -574,6 +584,91 @@ function tagsMarkup(tags, includeOverflowChip, clickable) {
     .join('')}${hiddenTagCount > 0 ? `<li class="tag-chip tag-chip-more">+${hiddenTagCount}</li>` : ''}</ul>`;
 }
 
+function selectedImageCount() {
+  return state.selectedImageIDs instanceof Set ? state.selectedImageIDs.size : 0;
+}
+
+function visibleImageIDs() {
+  return (Array.isArray(state.images) ? state.images : [])
+    .map((item) => Number(item.image_id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0);
+}
+
+function pruneImageSelection() {
+  if (!(state.selectedImageIDs instanceof Set)) {
+    state.selectedImageIDs = new Set();
+    return;
+  }
+  const visible = new Set(visibleImageIDs());
+  for (const id of Array.from(state.selectedImageIDs)) {
+    if (!visible.has(id)) {
+      state.selectedImageIDs.delete(id);
+    }
+  }
+}
+
+function updateImageSelectionControls() {
+  const active = Boolean(state.imageSelectionMode);
+  const count = selectedImageCount();
+  const visibleCount = visibleImageIDs().length;
+
+  if (gallerySelectModeButton) {
+    gallerySelectModeButton.textContent = active ? 'Done selecting' : 'Select';
+    gallerySelectModeButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+  if (gallerySelectionToolbar) {
+    gallerySelectionToolbar.hidden = !active;
+  }
+  if (gallerySelectionSummary) {
+    gallerySelectionSummary.textContent = `${count} selected`;
+  }
+  if (gallerySelectPageButton) {
+    gallerySelectPageButton.disabled = visibleCount === 0;
+  }
+  if (galleryClearSelectionButton) {
+    galleryClearSelectionButton.disabled = count === 0;
+  }
+  if (galleryDeleteSelectedButton) {
+    galleryDeleteSelectedButton.disabled = count === 0 || bulkImageDeleteInFlight;
+    galleryDeleteSelectedButton.textContent = count > 0 ? `Delete selected (${count})` : 'Delete selected';
+  }
+  if (galleryDeleteAllButton) {
+    galleryDeleteAllButton.disabled = Number(state.imagesTotal || 0) === 0 || bulkImageDeleteInFlight;
+    const total = Number(state.imagesTotal || 0);
+    galleryDeleteAllButton.textContent = total > 0 ? `Delete all images (${total})` : 'Delete all images';
+  }
+}
+
+async function loadAllImageIDs() {
+  const pageSize = 200;
+  const ids = [];
+  let offset = 0;
+  let total = Number(state.imagesTotal || 0);
+
+  do {
+    const params = applyNSFWQuery(new URLSearchParams({ limit: String(pageSize), offset: String(offset) }));
+    const response = await fetch(`/api/images?${params.toString()}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || 'Could not select all images');
+    }
+    const images = Array.isArray(payload.images) ? payload.images : [];
+    total = Number(payload.total || total || images.length);
+    for (const item of images) {
+      const id = Number(item && item.image_id);
+      if (Number.isFinite(id) && id > 0) {
+        ids.push(id);
+      }
+    }
+    if (images.length === 0) {
+      break;
+    }
+    offset += images.length;
+  } while (offset < total);
+
+  return ids;
+}
+
 function cardActionMarkup(item, mode, safeName, isNSFWTagged, canSearchSimilar, mediaType) {
   const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use frame' : 'Use anchor') : 'Find similar';
   const disabled = canSearchSimilar ? '' : 'disabled';
@@ -648,10 +743,19 @@ function cardMarkup(item, mode) {
     ? `<div class="overlay-video-meta">${videoMeta}</div>`
     : '';
   const overlayStatusMarkup = `<div class="overlay-status-row"><p class="${stateClass(status)}">${safeStatus}</p>${anchorBadge}</div>`;
+  const isSelected = mediaType !== 'video' && mode === 'gallery' && state.selectedImageIDs.has(Number(item.image_id || 0));
+  const selectionClass = isSelected ? ' is-selected' : '';
+  const selectionControl = mode === 'gallery'
+    ? `<label class="selection-control" title="Select image">
+        <input type="checkbox" class="image-select-checkbox" data-image-id="${escapeHTML(String(item.image_id || ''))}" ${isSelected ? 'checked' : ''} aria-label="Select ${safeName}" />
+        <span>Select</span>
+      </label>`
+    : '';
 
   return `
-    <article class="card">
+    <article class="card${selectionClass}">
       <div class="thumb-wrap">
+        ${selectionControl}
         <button
           type="button"
           class="thumb-button"
@@ -716,6 +820,7 @@ function renderMediaCollection(items, total, grid, mode, emptyPagedMessage, empt
 }
 
 function renderGallery() {
+  pruneImageSelection();
   renderMediaCollection(
     state.images,
     state.imagesTotal,
@@ -724,6 +829,8 @@ function renderGallery() {
     'No images are visible on this page yet. Move back toward newer pages.',
     'No images here yet. Import or upload something to start building the archive.',
   );
+  galleryGrid.classList.toggle('selection-active', Boolean(state.imageSelectionMode));
+  updateImageSelectionControls();
 }
 
 function renderVideos() {
@@ -1576,9 +1683,15 @@ async function deleteMedia(kind, id, name) {
   if (!window.confirm(`Delete ${label} \"${name || 'this item'}\"? This cannot be undone.`)) {
     return false;
   }
+  await deleteMediaRequest(kind, id);
+  return true;
+}
+
+async function deleteMediaRequest(kind, id) {
+  const label = kind === 'video' ? 'video' : 'image';
   const response = await fetch(`/api/${kind === 'video' ? 'videos' : 'images'}/${id}`, { method: 'DELETE' });
   if (response.status === 204) {
-    return true;
+    return;
   }
   let message = `Could not delete ${label}`;
   try {
@@ -1590,6 +1703,81 @@ async function deleteMedia(kind, id, name) {
     // fall back to the generic message.
   }
   throw new Error(message);
+}
+
+async function deleteSelectedImages() {
+  if (bulkImageDeleteInFlight) {
+    return;
+  }
+  const ids = Array.from(state.selectedImageIDs || [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id) && id > 0);
+  if (ids.length === 0) {
+    return;
+  }
+  if (!window.confirm(`Delete ${ids.length} selected image${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) {
+    return;
+  }
+
+  await deleteImageIDs(ids, 'selected');
+}
+
+async function deleteAllImages() {
+  if (bulkImageDeleteInFlight) {
+    return;
+  }
+  const total = Number(state.imagesTotal || 0);
+  if (total <= 0) {
+    return;
+  }
+  if (!window.confirm(`Delete all ${total} image${total === 1 ? '' : 's'} matching the current gallery filter? This cannot be undone.`)) {
+    return;
+  }
+
+  setStatus(galleryStatus, 'Loading all image IDs for deletion...', 'info');
+  const ids = await loadAllImageIDs();
+  if (ids.length === 0) {
+    setStatus(galleryStatus, 'No images found to delete.', 'info');
+    return;
+  }
+  await deleteImageIDs(ids, 'all');
+}
+
+async function deleteImageIDs(ids, scopeLabel) {
+  bulkImageDeleteInFlight = true;
+  updateImageSelectionControls();
+  setStatus(galleryStatus, `Deleting ${ids.length} image${ids.length === 1 ? '' : 's'}...`, 'info');
+  let deleted = 0;
+  const deletedIDs = [];
+  const failures = [];
+  try {
+    for (const id of ids) {
+      try {
+        await deleteMediaRequest('image', id);
+        deleted += 1;
+        deletedIDs.push(id);
+        state.selectedImageIDs.delete(id);
+      } catch (err) {
+        failures.push({ id, message: err instanceof Error ? err.message : 'delete failed' });
+      }
+    }
+
+    state.results = state.results.filter((item) => !deletedIDs.includes(Number(item.image_id || 0)));
+    renderResults();
+    await loadImages();
+    await loadStats();
+
+    if (failures.length > 0) {
+      const summary = failures.slice(0, 3).map((item) => `#${item.id}: ${item.message}`).join('; ');
+      setStatus(galleryStatus, `Deleted ${deleted}; ${failures.length} failed${summary ? ` (${summary})` : ''}.`, 'error');
+      return;
+    }
+    const label = scopeLabel === 'all' ? '' : ' selected';
+    setStatus(galleryStatus, `Deleted ${deleted}${label} image${deleted === 1 ? '' : 's'}.`, 'success');
+  } finally {
+    bulkImageDeleteInFlight = false;
+    updateImageSelectionControls();
+  }
 }
 
 async function reannotateMedia(kind, id) {
@@ -1655,7 +1843,7 @@ function attachSimilarHandler(target) {
 
 function attachLightboxHandler(target) {
   target.addEventListener('click', (event) => {
-    if (event.target.closest('.thumb-actions')) {
+    if (event.target.closest('.thumb-actions') || event.target.closest('.selection-control')) {
       return;
     }
 
@@ -1678,6 +1866,26 @@ function attachLightboxHandler(target) {
     const source = trigger.dataset.lightboxSrc || '';
     const caption = trigger.dataset.lightboxCaption || '';
     openLightbox(source, caption);
+  });
+}
+
+function attachImageSelectionHandler(target) {
+  target.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('.image-select-checkbox');
+    if (!checkbox || !target.contains(checkbox)) {
+      return;
+    }
+
+    const id = Number(checkbox.dataset.imageId || 0);
+    if (!Number.isFinite(id) || id <= 0) {
+      return;
+    }
+    if (checkbox.checked) {
+      state.selectedImageIDs.add(id);
+    } else {
+      state.selectedImageIDs.delete(id);
+    }
+    renderGallery();
   });
 }
 
@@ -2199,6 +2407,44 @@ refreshImagesButton.addEventListener('click', () => {
   loadVideos().catch((err) => setStatus(videosStatus, err.message || 'Video refresh failed', 'error'));
 });
 
+if (gallerySelectModeButton) {
+  gallerySelectModeButton.addEventListener('click', () => {
+    state.imageSelectionMode = !state.imageSelectionMode;
+    if (!state.imageSelectionMode) {
+      state.selectedImageIDs.clear();
+    }
+    renderGallery();
+  });
+}
+
+if (gallerySelectPageButton) {
+  gallerySelectPageButton.addEventListener('click', () => {
+    for (const id of visibleImageIDs()) {
+      state.selectedImageIDs.add(id);
+    }
+    renderGallery();
+  });
+}
+
+if (galleryClearSelectionButton) {
+  galleryClearSelectionButton.addEventListener('click', () => {
+    state.selectedImageIDs.clear();
+    renderGallery();
+  });
+}
+
+if (galleryDeleteSelectedButton) {
+  galleryDeleteSelectedButton.addEventListener('click', () => {
+    deleteSelectedImages().catch((err) => setStatus(galleryStatus, err.message || 'Bulk delete failed', 'error'));
+  });
+}
+
+if (galleryDeleteAllButton) {
+  galleryDeleteAllButton.addEventListener('click', () => {
+    deleteAllImages().catch((err) => setStatus(galleryStatus, err.message || 'Delete all failed', 'error'));
+  });
+}
+
 refreshStatsButton.addEventListener('click', () => {
   loadStats().catch((err) => setStatus(statsSummary, err.message || 'Status refresh failed', 'error'));
 });
@@ -2246,6 +2492,7 @@ attachTagChipSearchHandler(videosGrid);
 attachTagChipSearchHandler(resultsGrid);
 attachDeleteHandler(galleryGrid);
 attachDeleteHandler(videosGrid);
+attachImageSelectionHandler(galleryGrid);
 attachNSFWToggleHandler(galleryGrid);
 attachNSFWToggleHandler(videosGrid);
 attachReannotateHandler(galleryGrid);

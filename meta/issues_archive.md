@@ -1,2 +1,3 @@
 - [x] [Improve card metadata hierarchy](issues/improve-card-metadata-hierarchy.md)
 - [x] [Make NSFW visibility state explicit](issues/make-nsfw-visibility-state-explicit.md)
+- [x] [Separate selection mode from pagination controls](issues/separate-selection-mode-from-pagination-controls.md)
