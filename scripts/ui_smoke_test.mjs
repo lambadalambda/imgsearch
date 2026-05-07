@@ -211,6 +211,30 @@ try {
     throw new Error('video pagination did not request a second page');
   }
 
+  const mobilePage = await browser.newPage({
+    viewport: { width: 390, height: 844 },
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  });
+  await mobilePage.goto(baseURL, { waitUntil: 'domcontentloaded' });
+  const mobileGrid = mobilePage.locator('#gallery-grid');
+  await mobileGrid.locator('.card').first().waitFor();
+  const mobileColumns = await mobileGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length);
+  if (mobileColumns < 2) {
+    throw new Error(`mobile gallery used ${mobileColumns} column(s), want at least 2`);
+  }
+  if (await mobileGrid.locator('.card').first().locator('.meta-foot').isVisible()) {
+    throw new Error('mobile cards still show secondary metadata');
+  }
+  const mobileResultsLabel = (await mobilePage.locator('#tab-results span').first().textContent() || '').trim();
+  if (mobileResultsLabel !== 'Results') {
+    throw new Error(`mobile results tab label is ${JSON.stringify(mobileResultsLabel)}, want "Results"`);
+  }
+  const lightboxPadding = await mobilePage.locator('#image-lightbox').evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingTop));
+  if (lightboxPadding > 12) {
+    throw new Error(`mobile lightbox padding is ${lightboxPadding}px, want at most 12px`);
+  }
+  await mobilePage.close();
+
   console.log('UI smoke checks passed');
 } finally {
   if (browser) {

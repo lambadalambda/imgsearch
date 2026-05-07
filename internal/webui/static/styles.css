@@ -1521,18 +1521,49 @@ input:focus-visible {
   }
 
   .grid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
 
   .card {
-    --card-media-height: 162px;
-    --card-meta-height: 164px;
-    grid-template-rows: var(--card-media-height) minmax(var(--card-meta-height), var(--card-meta-height));
+    --card-media-height: 140px;
+    grid-template-rows: var(--card-media-height) auto;
+  }
+
+  .meta {
+    gap: 6px;
+    padding: 9px;
+  }
+
+  .meta h3 {
+    font-size: 0.86rem;
+  }
+
+  .file-name,
+  .meta-foot {
+    display: none;
+  }
+
+  .meta-tags {
+    min-height: 0;
+  }
+
+  .tag-list {
+    gap: 4px;
+  }
+
+  .tag-chip {
+    padding: 3px 7px;
+    font-size: 0.74rem;
   }
 
   .card-detail-overlay {
     top: calc(var(--card-media-height) + 6px);
+  }
+
+  .modal,
+  .lightbox {
+    padding: 10px;
   }
 
   .tablist {
@@ -1547,7 +1578,14 @@ input:focus-visible {
     flex: 1 1 0;
     justify-content: center;
     min-width: 0;
-    padding: 6px 4px;
+    min-height: 40px;
+    padding: 8px 4px;
+  }
+
+  .thumb-action.ghost,
+  .pagination-controls .ghost,
+  .selection-actions .ghost {
+    min-height: 40px;
   }
 
   .tab-button span {

@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ux(ui): improve mobile gallery density with two-column cards, reduced metadata, shorter results tab text, larger touch targets, and tighter lightbox padding.
 - ux(ui): split gallery selection and destructive bulk actions into a contextual toolbar separate from pagination.
 - ux(ui): make the NSFW visibility control show explicit hidden/visible states with a distinct enabled treatment.
 - ux(ui): promote generated descriptions over filenames in media cards, hide storage paths at rest, and improve compact tag/status readability.
