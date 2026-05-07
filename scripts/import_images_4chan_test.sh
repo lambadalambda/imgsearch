@@ -93,11 +93,11 @@ if [[ "$url" == "https://a.4cdn.org/v/thread/737156945.json" ]]; then
     emit_response "429" "" "0"
     exit 0
   fi
-  emit_response "200" '{"posts":[{"no":1,"tim":1111111111111,"ext":".jpg"},{"no":2,"tim":2222222222222,"ext":".webm"},{"no":3,"tim":3333333333333,"ext":".png"}]}'
+  emit_response "200" '{"posts":[{"no":1,"tim":1111111111111,"ext":".jpg"},{"no":2,"tim":2222222222222,"ext":".webm"},{"no":3,"tim":3333333333333,"ext":".png"},{"no":4,"tim":4444444444444,"ext":".gif"}]}'
   exit 0
 fi
 
-if [[ "$url" == "https://i.4cdn.org/v/1111111111111.jpg" || "$url" == "https://i.4cdn.org/v/2222222222222.webm" || "$url" == "https://i.4cdn.org/v/3333333333333.png" ]]; then
+if [[ "$url" == "https://i.4cdn.org/v/1111111111111.jpg" || "$url" == "https://i.4cdn.org/v/2222222222222.webm" || "$url" == "https://i.4cdn.org/v/3333333333333.png" || "$url" == "https://i.4cdn.org/v/4444444444444.gif" ]]; then
   if [[ "$url" == "https://i.4cdn.org/v/1111111111111.jpg" ]]; then
     first_try_flag="$state_dir/media-jpg-first"
     if [[ -n "$state_dir" && ! -f "$first_try_flag" ]]; then
@@ -131,8 +131,18 @@ fi
 EOF
 chmod +x "$mock_bin/sleep"
 
+cat >"$mock_bin/ffmpeg" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+out="${@: -1}"
+printf 'mp4' >"$out"
+EOF
+chmod +x "$mock_bin/ffmpeg"
+
 set +e
 output="$({
+  unset IMGSEARCH_IMPORT_API_KEY IMGSEARCH_API_KEY
   IMGSEARCH_TEST_CURL_LOG="$mock_log" \
     IMGSEARCH_TEST_SLEEP_LOG="$sleep_log" \
     IMGSEARCH_TEST_STATE_DIR="$mock_state_dir" \
@@ -151,7 +161,7 @@ if [[ "$status" -ne 0 ]]; then
   exit 1
 fi
 
-if [[ "$output" != *"Import summary: total=3 created=3 duplicates=0 converted=0 failed=0"* ]]; then
+if [[ "$output" != *"Import summary: total=4 created=4 duplicates=0 converted=1 failed=0"* ]]; then
   echo "unexpected summary output" >&2
   printf '%s\n' "$output" >&2
   exit 1
@@ -171,6 +181,12 @@ fi
 
 if ! grep -q "https://i.4cdn.org/v/2222222222222.webm" "$mock_log"; then
   echo "expected full media download URL for webm" >&2
+  cat "$mock_log" >&2
+  exit 1
+fi
+
+if ! grep -q "https://i.4cdn.org/v/4444444444444.gif" "$mock_log"; then
+  echo "expected full media download URL for gif" >&2
   cat "$mock_log" >&2
   exit 1
 fi

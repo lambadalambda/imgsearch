@@ -14,6 +14,7 @@ usage() {
   echo "  IMGSEARCH_API_KEY=<token> (fallback if IMGSEARCH_IMPORT_API_KEY is unset)"
   echo "  (if both are unset, importer uses built-in development key: imgsearch-dev-default-api-key)"
   echo "  IMGSEARCH_IMPORT_CONVERT=auto|never|vips (default: auto)"
+  echo "  GIF imports require ffmpeg and are converted to MP4 unless conversion is disabled."
   echo "  IMGSEARCH_IMPORT_MAX_VIDEO_BYTES=<bytes> (default: 20971520, 20 MB)"
   echo "  IMGSEARCH_IMPORT_HTTP_MAX_ATTEMPTS=<n> (default: 6)"
   echo "  IMGSEARCH_IMPORT_HTTP_RETRY_DELAY_SECONDS=<seconds> (default: 2)"
@@ -93,6 +94,11 @@ if command -v vips >/dev/null 2>&1; then
   has_vips=1
 fi
 
+has_ffmpeg=0
+if command -v ffmpeg >/dev/null 2>&1; then
+  has_ffmpeg=1
+fi
+
 if [[ "$convert_mode" == "vips" && "$has_vips" -ne 1 ]]; then
   echo "IMGSEARCH_IMPORT_CONVERT=vips requires the 'vips' CLI in PATH" >&2
   exit 1
@@ -118,6 +124,12 @@ convert_with_vips() {
   local src="$1"
   local dst="$2"
   vips copy "$src" "$dst[Q=90]" >/dev/null 2>&1
+}
+
+convert_gif_to_mp4() {
+  local src="$1"
+  local dst="$2"
+  ffmpeg -y -loglevel error -i "$src" -movflags +faststart -pix_fmt yuv420p -vf "fps=15,scale=trunc(iw/2)*2:trunc(ih/2)*2" "$dst"
 }
 
 retry_delay_seconds() {
@@ -215,7 +227,7 @@ import sys
 
 board = sys.argv[1]
 payload = json.loads(os.environ["THREAD_JSON"])
-allowed = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".webm"}
+allowed = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".webm"}
 seen = set()
 for post in payload.get("posts", []):
     tim = post.get("tim")
@@ -236,7 +248,7 @@ PY
 
 emit_source_paths() {
   if [[ "$source_mode" == "dir" ]]; then
-    find "$source_dir" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" -o -iname "*.avif" -o -iname "*.mp4" -o -iname "*.mov" -o -iname "*.webm" -o -iname "*.mkv" \) -print0
+    find "$source_dir" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" -o -iname "*.avif" -o -iname "*.gif" -o -iname "*.mp4" -o -iname "*.mov" -o -iname "*.webm" -o -iname "*.mkv" \) -print0
     return
   fi
 
@@ -310,6 +322,10 @@ while IFS= read -r -d '' path; do
   if [[ "$ext" == "webp" || "$ext" == "avif" ]]; then
     should_convert=1
   fi
+  is_gif=0
+  if [[ "$ext" == "gif" ]]; then
+    is_gif=1
+  fi
   if [[ "$ext" == "mp4" || "$ext" == "mov" || "$ext" == "webm" || "$ext" == "mkv" ]]; then
     is_video=1
   fi
@@ -323,6 +339,34 @@ while IFS= read -r -d '' path; do
   fi
 
   upload_path="$path"
+
+  if [[ "$is_gif" -eq 1 ]]; then
+    if [[ "$convert_mode" == "never" ]]; then
+      failed=$((failed + 1))
+      echo "FAIL $path (gif conversion disabled by IMGSEARCH_IMPORT_CONVERT=never)"
+      continue
+    fi
+    if [[ "$has_ffmpeg" -ne 1 ]]; then
+      failed=$((failed + 1))
+      echo "FAIL $path (gif conversion requires ffmpeg)"
+      continue
+    fi
+
+    converted_path="$tmp_dir/${total}-${base_name%.*}.mp4"
+    if ! convert_gif_to_mp4 "$path" "$converted_path"; then
+      failed=$((failed + 1))
+      echo "FAIL $path (gif to mp4 conversion failed)"
+      continue
+    fi
+    file_size="$(file_size_bytes "$converted_path")"
+    if [[ "$file_size" -gt "$max_video_bytes" ]]; then
+      failed=$((failed + 1))
+      echo "FAIL $path (converted video exceeds max size ${max_video_bytes} bytes)"
+      continue
+    fi
+    upload_path="$converted_path"
+    converted=$((converted + 1))
+  fi
 
   if [[ "$should_convert" -eq 1 && "$convert_mode" == "vips" ]]; then
     converted_path="$tmp_dir/${total}-${base_name%.*}.jpg"
