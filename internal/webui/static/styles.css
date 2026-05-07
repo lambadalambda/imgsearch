@@ -146,6 +146,9 @@ h2,
   padding: 7px 10px;
   font-size: 0.8rem;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .search-advanced[open] .search-advanced-toggle {
@@ -170,6 +173,45 @@ h2,
 
 .search-advanced:not([open]) .search-advanced-panel {
   display: none;
+}
+
+.search-filter-count {
+  min-width: 1.35em;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fffdf9;
+  padding: 2px 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.active-search-filters {
+  flex: 1 1 100%;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.active-search-filters[hidden] {
+  display: none;
+}
+
+.active-filter-chip {
+  border: 1px solid color-mix(in oklab, var(--line-strong) 76%, white 24%);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, var(--accent-soft) 72%, white 28%);
+  color: var(--accent-strong);
+  padding: 3px 8px;
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
+.active-filter-negative {
+  background: color-mix(in oklab, #f1e6d3 84%, white 16%);
+  color: var(--muted-strong);
 }
 
 .search-tag-filter {

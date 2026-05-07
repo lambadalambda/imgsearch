@@ -76,6 +76,8 @@ const searchTagChips = document.getElementById('search-tag-chips');
 const searchTagInput = document.getElementById('search-tag-input');
 const searchTagSuggestions = document.getElementById('search-tag-suggestions');
 const searchTagMode = document.getElementById('search-tag-mode');
+const searchFilterCount = document.getElementById('search-filter-count');
+const activeSearchFilters = document.getElementById('active-search-filters');
 
 const refreshImagesButton = document.getElementById('refresh-images');
 const clearResultsButton = document.getElementById('clear-results');
@@ -284,14 +286,44 @@ function formatSearchDebugSuffix(debug) {
 
 function renderSearchTagFilters() {
   if (!searchTagChips) {
+    renderActiveSearchFilters();
     return;
   }
   if (!Array.isArray(state.searchTagFilters) || state.searchTagFilters.length === 0) {
     searchTagChips.innerHTML = '';
+    renderActiveSearchFilters();
     return;
   }
   searchTagChips.innerHTML = state.searchTagFilters
     .map((tag) => `<button type="button" class="search-tag-chip" data-tag-remove="${escapeHTML(tag)}" aria-label="Remove tag filter ${escapeHTML(tag)}">${escapeHTML(tag)}<span class="search-tag-chip-remove" aria-hidden="true">x</span></button>`)
+    .join('');
+  renderActiveSearchFilters();
+}
+
+function activeSearchFilterEntries() {
+  const entries = [];
+  const negative = negativeQuery ? negativeQuery.value.trim() : '';
+  if (negative) {
+    entries.push({ label: `Exclude: ${negative}`, className: 'active-filter-chip active-filter-negative' });
+  }
+  for (const tag of state.searchTagFilters || []) {
+    entries.push({ label: `Tag: ${tag}`, className: 'active-filter-chip' });
+  }
+  return entries;
+}
+
+function renderActiveSearchFilters() {
+  const entries = activeSearchFilterEntries();
+  if (searchFilterCount) {
+    searchFilterCount.textContent = String(entries.length);
+    searchFilterCount.hidden = entries.length === 0;
+  }
+  if (!activeSearchFilters) {
+    return;
+  }
+  activeSearchFilters.hidden = entries.length === 0;
+  activeSearchFilters.innerHTML = entries
+    .map((entry) => `<span class="${entry.className}">${escapeHTML(entry.label)}</span>`)
     .join('');
 }
 
@@ -304,6 +336,7 @@ function addSearchTagFilters(parts) {
 function removeSearchTagFilter(tag) {
   if (!Array.isArray(state.searchTagFilters)) {
     state.searchTagFilters = [];
+    renderActiveSearchFilters();
     return;
   }
   state.searchTagFilters = state.searchTagFilters.filter((item) => item !== tag);
@@ -2321,6 +2354,10 @@ searchForm.addEventListener('submit', async (event) => {
     setStatus(searchStatus, err.message || 'Text search failed', 'error');
   }
 });
+
+if (negativeQuery) {
+  negativeQuery.addEventListener('input', renderActiveSearchFilters);
+}
 
 if (searchTagChips) {
   searchTagChips.addEventListener('click', (event) => {

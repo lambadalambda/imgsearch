@@ -150,6 +150,27 @@ try {
   await page.locator('.ops-menu > summary').click();
   await page.getByRole('button', { name: 'Retry stuck' }).waitFor();
   await page.locator('.ops-menu > summary').click();
+  const filterToggle = page.locator('.search-advanced-toggle');
+  if (!((await filterToggle.textContent() || '').trim().startsWith('Filters'))) {
+    throw new Error('advanced search disclosure is not labeled Filters');
+  }
+  await filterToggle.click();
+  await page.locator('#negative-query').fill('cartoon');
+  await page.locator('#search-tag-input').fill('dog');
+  await page.locator('#search-tag-input').press('Enter');
+  await filterToggle.click();
+  const filterToggleText = (await filterToggle.textContent() || '').trim();
+  if (!filterToggleText.includes('2')) {
+    throw new Error(`filter toggle does not show active count: ${JSON.stringify(filterToggleText)}`);
+  }
+  const activeFilters = page.locator('#active-search-filters');
+  if (!(await activeFilters.isVisible())) {
+    throw new Error('active search filter chips are not visible when filters are closed');
+  }
+  const activeFilterText = await activeFilters.textContent() || '';
+  if (!activeFilterText.includes('Exclude: cartoon') || !activeFilterText.includes('Tag: dog')) {
+    throw new Error(`active filter chips are incomplete: ${JSON.stringify(activeFilterText)}`);
+  }
   const firstCard = page.locator('.card').first();
   await firstCard.locator('.meta h3').waitFor();
   const firstTitle = (await firstCard.locator('.meta h3').textContent() || '').trim();

@@ -28,7 +28,10 @@
             />
           </label>
           <details class="search-advanced">
-            <summary class="search-advanced-toggle">Exclude</summary>
+            <summary class="search-advanced-toggle">
+              <span>Filters</span>
+              <span id="search-filter-count" class="search-filter-count" hidden>0</span>
+            </summary>
             <div class="search-advanced-panel">
               <label class="field field-secondary">
                 <span class="field-label">Exclude</span>
@@ -59,6 +62,7 @@
               </div>
             </div>
           </details>
+          <div id="active-search-filters" class="active-search-filters" aria-label="Active search filters" hidden></div>
           <div class="search-actions">
             <button type="submit" class="cta">Search</button>
             <div class="masthead-status-strip" aria-label="Library status">
