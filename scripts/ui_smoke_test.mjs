@@ -162,10 +162,45 @@ async function assertOpenLayout(page) {
   if (await card.locator('.card-detail-overlay').isVisible()) {
     throw new Error('open layout still shows a hover detail overlay over compact cards');
   }
-  await card.locator('.thumb-button').click();
+  const longCaptionCard = page.locator('#gallery-grid .card').nth(1);
+  await longCaptionCard.locator('.thumb-button').click();
   await page.locator('#image-lightbox:not([hidden])').waitFor();
+  await assertLightboxImageCentered(page);
   await page.getByRole('button', { name: 'Close image preview' }).click();
   await page.locator('#image-lightbox').waitFor({ state: 'hidden' });
+}
+
+async function assertLightboxImageCentered(page) {
+  const image = page.locator('#lightbox-image');
+  await image.waitFor();
+  await image.evaluate((element) => {
+    if (element.complete && element.naturalWidth > 0) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      element.addEventListener('load', resolve, { once: true });
+      element.addEventListener('error', resolve, { once: true });
+    });
+  });
+
+  const boxes = await page.locator('#image-lightbox').evaluate((lightbox) => {
+    const imageElement = lightbox.querySelector('#lightbox-image');
+    const overlayRect = lightbox.getBoundingClientRect();
+    const imageRect = imageElement.getBoundingClientRect();
+    return {
+      overlayCenter: overlayRect.left + overlayRect.width / 2,
+      imageCenter: imageRect.left + imageRect.width / 2,
+      imageWidth: imageRect.width,
+      imageHeight: imageRect.height,
+    };
+  });
+  if (boxes.imageWidth <= 0 || boxes.imageHeight <= 0) {
+    throw new Error(`lightbox image did not render with a measurable size: ${JSON.stringify(boxes)}`);
+  }
+  const centerOffset = Math.abs(boxes.overlayCenter - boxes.imageCenter);
+  if (centerOffset > 2) {
+    throw new Error(`lightbox image is ${Math.round(centerOffset)}px off-center: ${JSON.stringify(boxes)}`);
+  }
 }
 
 async function assertOpenVideoLayout(page) {
@@ -295,7 +330,9 @@ const server = createServer(async (req, res) => {
           width: 320,
           height: 240,
           index_state: 'done',
-          description: id === 1 ? 'Brown dog running across a sunny grass field.' : '',
+          description: id === 1
+            ? 'Brown dog running across a sunny grass field.'
+            : 'A screenshot of a long social media thread with enough generated description text to span the lightbox caption across a wide display.',
           tags: id === 1 ? ['dog', 'sunny field', 'outdoor portrait'] : [],
           created_at: '2026-04-24T00:00:00Z',
         })),
@@ -307,6 +344,11 @@ const server = createServer(async (req, res) => {
       deletedImages += 1;
       res.writeHead(204);
       res.end();
+      return;
+    }
+    if (url.pathname === '/media/images/image-2') {
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+      res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 1200"><rect width="640" height="1200" fill="#f9f7f0"/><rect x="84" y="96" width="472" height="1008" rx="24" fill="#ead1b2"/><circle cx="320" cy="330" r="132" fill="#3f6f8f"/><text x="320" y="720" text-anchor="middle" font-size="62" font-family="sans-serif" fill="#34261d">Long caption</text></svg>');
       return;
     }
     if (url.pathname === '/media/videos/portrait-preview-1.svg') {

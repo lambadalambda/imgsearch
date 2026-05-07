@@ -1550,6 +1550,7 @@ input:focus-visible {
   max-height: 88vh;
   display: grid;
   gap: 10px;
+  justify-items: center;
 }
 
 .lightbox-figure img {
