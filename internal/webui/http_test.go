@@ -137,7 +137,7 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "delete-action") {
 		t.Fatalf("expected delete action class in card rendering")
 	}
-	if !strings.Contains(rr.Body.String(), "const supportEntries = supportEntriesForItem(item, mode);") {
+	if !strings.Contains(rr.Body.String(), "supportEntriesForItem(item, mode)") {
 		t.Fatalf("expected card rendering to derive supporting text entries")
 	}
 	if !strings.Contains(rr.Body.String(), "supporting-text") {
@@ -146,11 +146,11 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "overlay-supporting-stack") {
 		t.Fatalf("expected card rendering to support stacked description/transcript text")
 	}
-	if !strings.Contains(rr.Body.String(), "tag-chip-more") {
-		t.Fatalf("expected compact tag overflow chip support in card rendering")
+	if strings.Contains(rr.Body.String(), "tags.slice(0, 2)") || strings.Contains(rr.Body.String(), "tags.slice(0, 3)") {
+		t.Fatalf("expected compact card tags to show the rendered tag set instead of hiding tags behind overflow chips")
 	}
-	if !strings.Contains(rr.Body.String(), "tags.slice(0, 3)") {
-		t.Fatalf("expected compact tag rows to reserve room for overflow chip on all cards")
+	if !strings.Contains(rr.Body.String(), "const visibleTags = tags;") {
+		t.Fatalf("expected compact tag rows to keep rendered card tags visible")
 	}
 	if !strings.Contains(rr.Body.String(), "const compactTagsMarkup = tagsMarkup(tags, true, true);") || !strings.Contains(rr.Body.String(), "<div class=\"meta-tags\">${compactTagsMarkup}</div>") {
 		t.Fatalf("expected card tags to render in a dedicated non-shrinking metadata slot")
@@ -245,7 +245,7 @@ func TestAssetsAreServed(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "restartLiveUpdates();") {
 		t.Fatalf("expected nsfw toggle changes to restart live updates with updated filters")
 	}
-	if !strings.Contains(rr.Body.String(), "if (event.target.closest('.thumb-actions'))") {
+	if !strings.Contains(rr.Body.String(), "event.target.closest('.thumb-actions') || event.target.closest('.selection-control')") {
 		t.Fatalf("expected lightbox handler to ignore taps on thumbnail action controls")
 	}
 }
@@ -326,11 +326,11 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	if strings.Contains(body, "--radius-lg:") || strings.Contains(body, "--radius-md:") || strings.Contains(body, "--radius-sm:") {
 		t.Fatalf("expected legacy multi-size radius tokens to be removed")
 	}
-	if !strings.Contains(body, "--card-media-height: 220px;") || !strings.Contains(body, "--card-meta-height: 172px;") {
-		t.Fatalf("expected cards to declare fixed resting media/meta dimensions")
+	if !strings.Contains(body, "grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));") || !strings.Contains(body, ".videos-grid") {
+		t.Fatalf("expected open media grid and capped video grid rules")
 	}
-	if !strings.Contains(body, "grid-template-rows: var(--card-media-height) minmax(var(--card-meta-height), var(--card-meta-height));") {
-		t.Fatalf("expected cards to use fixed resting media/meta proportions")
+	if !strings.Contains(body, "aspect-ratio: 16 / 9;") || !strings.Contains(body, "grid-template-rows: auto auto;") {
+		t.Fatalf("expected cards to use compact 16:9 thumbnails with open metadata rows")
 	}
 	if !strings.Contains(body, ".supporting-text") {
 		t.Fatalf("expected dedicated supporting text clamping rules")
@@ -338,14 +338,14 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	if !strings.Contains(body, ".supporting-stack") || !strings.Contains(body, ".overlay-supporting-stack") {
 		t.Fatalf("expected stacked supporting-text layout rules for description plus transcript")
 	}
-	if !strings.Contains(body, ".meta-tags") || !strings.Contains(body, "min-height: 1.65rem;") {
-		t.Fatalf("expected compact card tags to get a reserved row at rest")
+	if !strings.Contains(body, ".meta-tags") || !strings.Contains(body, "min-height: 0;") {
+		t.Fatalf("expected compact card tags to participate in the open metadata flow")
 	}
-	if !strings.Contains(body, "grid-template-rows: auto auto minmax(0, 1fr);") {
+	if !strings.Contains(body, "grid-template-rows: auto auto minmax(0, auto);") {
 		t.Fatalf("expected card metadata to keep title/path and tags out of the shrinkable prose area")
 	}
-	if !strings.Contains(body, "grid-template-columns: repeat(3, minmax(0, 1fr)) max-content;") {
-		t.Fatalf("expected tag rows to reserve a fixed final column for +N overflow chips")
+	if !strings.Contains(body, ".tag-list") || !strings.Contains(body, "display: flex;") || !strings.Contains(body, "flex-wrap: wrap;") {
+		t.Fatalf("expected tag rows to wrap readable chips in the open card layout")
 	}
 	if !strings.Contains(body, ".tag-list .tag-chip") || !strings.Contains(body, "text-overflow: ellipsis;") {
 		t.Fatalf("expected compact tag chips to ellipsize instead of being visually clipped")
@@ -359,13 +359,16 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	if !strings.Contains(body, ".thumb-actions") {
 		t.Fatalf("expected thumbnail action overlay styling rules")
 	}
+	if !strings.Contains(body, ".thumb-wrap-portrait-video") || !strings.Contains(body, ".thumb-backdrop") || !strings.Contains(body, "filter: blur(18px) saturate(1.08);") {
+		t.Fatalf("expected portrait video thumbnails to use blurred backdrop fill rules")
+	}
 	if strings.Contains(body, "box-shadow: 0 12px 24px rgba(44, 37, 25, 0.14);\n  transform:") {
 		t.Fatalf("expected card hover state to avoid vertical movement")
 	}
 	if !strings.Contains(body, "white-space: nowrap;") || !strings.Contains(body, "text-overflow: ellipsis;") {
 		t.Fatalf("expected compact card title/path to truncate horizontally")
 	}
-	if !strings.Contains(body, "padding: 2px 8px;") {
+	if !strings.Contains(body, "padding: 2px 7px;") {
 		t.Fatalf("expected tag chips to match state-pill interior spacing")
 	}
 	if !strings.Contains(body, ".card-detail-overlay .overlay-supporting-text") {
@@ -380,8 +383,8 @@ func TestStylesIncludeTightRadiusAndCardDensityRules(t *testing.T) {
 	if !strings.Contains(body, ".card-detail-overlay > *") || !strings.Contains(body, "min-width: 0;") {
 		t.Fatalf("expected overlay rows to stay in normal flow without text collision")
 	}
-	if !strings.Contains(body, "right: 10px;") || !strings.Contains(body, "bottom: 10px;") {
-		t.Fatalf("expected thumbnail match badge to stay anchored at lower right")
+	if !strings.Contains(body, "left: 8px;") || !strings.Contains(body, "bottom: 8px;") {
+		t.Fatalf("expected thumbnail match badge to stay anchored within the thumbnail")
 	}
 	if !strings.Contains(body, ".ops-status-panel") || !strings.Contains(body, ".ops-menu") {
 		t.Fatalf("expected overflow-only status panel and quiet ops-menu styling rules")
