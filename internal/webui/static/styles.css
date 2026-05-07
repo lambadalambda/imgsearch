@@ -3,8 +3,8 @@
   --surface: #fcfaf5;
   --surface-strong: #f4efe4;
   --ink: #23201c;
-  --muted: #6b655b;
-  --muted-strong: #4f4a42;
+  --muted: #5e584f;
+  --muted-strong: #48433c;
   --line: #ddd3c4;
   --line-strong: #cdbfa9;
   --accent: #b35624;
@@ -14,6 +14,7 @@
   --warn: #8b6422;
   --bad: #a33636;
   --leased: #2d6780;
+  --focus: #6f3d9e;
   --radius-panel: 16px;
   --radius-control: 10px;
   --shadow: 0 12px 32px rgba(47, 38, 24, 0.07);
@@ -380,7 +381,7 @@ button:disabled {
 
 button:focus-visible,
 input:focus-visible {
-  outline: 2px solid var(--leased);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -871,7 +872,7 @@ input:focus-visible {
 }
 
 .thumb-button:focus-visible {
-  outline: 2px solid var(--leased);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -1248,7 +1249,7 @@ input:focus-visible {
 }
 
 .tag-chip-button:focus-visible {
-	outline: 2px solid var(--leased);
+	outline: 2px solid var(--focus);
 	outline-offset: 1px;
 }
 
@@ -1334,6 +1335,66 @@ input:focus-visible {
   margin: 0;
   padding: 18px 4px 8px;
   color: var(--muted);
+}
+
+.empty-state,
+.loading-state {
+  grid-column: 1 / -1;
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.empty-state {
+  padding: 18px 4px 8px;
+}
+
+.empty-state .empty {
+  padding: 0;
+}
+
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.loading-state {
+  color: var(--muted-strong);
+  font-size: 0.86rem;
+}
+
+.grid-loading {
+  align-items: center;
+  grid-template-columns: auto 1fr;
+}
+
+.loading-dot {
+  width: 0.68rem;
+  height: 0.68rem;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 45%, transparent 55%);
+  animation: loading-pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton-card {
+  min-height: 220px;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklab, var(--line) 86%, white 14%);
+  background: linear-gradient(90deg, #eee6d8 25%, #f7f1e6 50%, #eee6d8 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes loading-pulse {
+  0%, 100% { opacity: 0.55; box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 42%, transparent 58%); }
+  50% { opacity: 1; box-shadow: 0 0 0 5px color-mix(in oklab, var(--accent) 8%, transparent 92%); }
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .connection-badge {
@@ -1485,12 +1546,25 @@ input:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+
   button,
   .progress-fill,
   .thumb-actions,
   .card-detail-overlay,
   .card {
     transition: none;
+  }
+
+  button,
+  .thumb-actions,
+  .card-detail-overlay {
+    transform: none !important;
   }
 }
 

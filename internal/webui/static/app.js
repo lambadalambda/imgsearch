@@ -848,6 +848,32 @@ function cardMarkup(item, mode) {
   `;
 }
 
+function loadingStateMarkup(message) {
+  return `<div class="loading-state" role="status"><span class="loading-dot" aria-hidden="true"></span><span>${escapeHTML(message)}</span></div>`;
+}
+
+function renderMediaLoading(grid, message) {
+  if (!grid) {
+    return;
+  }
+  const skeletons = Array.from({ length: 6 }, () => '<article class="skeleton-card" aria-hidden="true"></article>').join('');
+  grid.innerHTML = `${loadingStateMarkup(message).replace('loading-state', 'loading-state grid-loading')}${skeletons}`;
+}
+
+function emptyStateMarkup(message, actionMarkup) {
+  return `<div class="empty-state"><p class="empty">${escapeHTML(message)}</p>${actionMarkup ? `<div class="empty-actions">${actionMarkup}</div>` : ''}</div>`;
+}
+
+function emptyActionForMode(mode) {
+  if (mode === 'gallery' || mode === 'videos') {
+    return '<button type="button" class="ghost empty-upload-action">Upload media</button>';
+  }
+  if (mode === 'result') {
+    return '<button type="button" class="ghost empty-clear-results-action">Clear results</button>';
+  }
+  return '';
+}
+
 function renderMediaCollection(items, total, grid, mode, emptyPagedMessage, emptyMessage) {
   updateTabCounts();
   renderPagination();
@@ -855,8 +881,8 @@ function renderMediaCollection(items, total, grid, mode, emptyPagedMessage, empt
   const safeItems = Array.isArray(items) ? items : [];
   if (safeItems.length === 0) {
     grid.innerHTML = total > 0
-      ? `<p class="empty">${emptyPagedMessage}</p>`
-      : `<p class="empty">${emptyMessage}</p>`;
+      ? emptyStateMarkup(emptyPagedMessage, '')
+      : emptyStateMarkup(emptyMessage, emptyActionForMode(mode));
     return;
   }
 
@@ -896,7 +922,7 @@ function renderResults() {
   clearResultsButton.disabled = resultItems.length === 0;
 
   if (resultItems.length === 0) {
-    resultsGrid.innerHTML = '<p class="empty">Run a text search or similar-image search to populate this view with image or video matches.</p>';
+    resultsGrid.innerHTML = emptyStateMarkup('Run a text search, tag search, or similar-image search to populate this view with image or video matches.', emptyActionForMode('result'));
     return;
   }
 
@@ -922,7 +948,7 @@ function renderTagCloud() {
 
   const tags = Array.isArray(state.tagCloud) ? state.tagCloud : [];
   if (tags.length === 0) {
-    tagCloud.innerHTML = '<p class="tag-cloud-empty">No tags yet. Let annotation finish and this panel will populate.</p>';
+    tagCloud.innerHTML = emptyStateMarkup('No tags yet. Let annotation finish and this panel will populate.', '<button type="button" class="ghost empty-retry-tags-action">Retry tags</button>');
     return;
   }
 
@@ -947,6 +973,7 @@ async function loadTagCloud() {
   if (!tagCloud) {
     return;
   }
+  tagCloud.innerHTML = loadingStateMarkup('Loading tags...');
   const params = applyNSFWQuery(new URLSearchParams({ limit: '80' }));
   const response = await fetch(`/api/search/tag-cloud?${params.toString()}`);
   const payload = await response.json();
@@ -966,6 +993,11 @@ async function runTagSearch(tags, mode, page) {
 
   const safeMode = mode === 'all' ? 'all' : 'any';
   const safePage = Number.isFinite(Number(page)) ? Math.max(0, Number(page)) : 0;
+  state.resultsMode = 'tag';
+  state.resultsProvenance = `Results for tags: ${normalizedTags.join(', ')} (${safeMode === 'all' ? 'all tags' : 'any tag'})`;
+  renderResultsProvenance();
+  resultsGrid.innerHTML = loadingStateMarkup('Loading tag results...');
+  setActiveTab('results');
   const params = applyNSFWQuery(new URLSearchParams({ limit: String(state.resultsPageSize), offset: String(safePage * state.resultsPageSize) }));
   params.set('mode', safeMode);
   normalizedTags.forEach((tag) => params.append('tag', tag));
@@ -1345,6 +1377,7 @@ async function loadMediaCollection(config) {
   const offset = state[config.pageKey] * state[config.pageSizeKey];
   const requestToken = ++collectionRequestTokens[config.tokenKey];
   setStatus(config.statusTarget, config.loadingMessage, 'info');
+  renderMediaLoading(config.grid, config.loadingMessage);
 
   const params = applyNSFWQuery(new URLSearchParams({ limit: String(state[config.pageSizeKey]), offset: String(offset) }));
   const response = await fetch(`${config.endpoint}?${params.toString()}`);
@@ -1382,6 +1415,7 @@ async function loadImages() {
     totalKey: 'imagesTotal',
     pageKey: 'galleryPage',
     pageSizeKey: 'galleryPageSize',
+    grid: galleryGrid,
     statusTarget: galleryStatus,
     loadingMessage: 'Loading gallery...',
     errorMessage: 'Could not load images',
@@ -1399,6 +1433,7 @@ async function loadVideos() {
     totalKey: 'videosTotal',
     pageKey: 'videosPage',
     pageSizeKey: 'videosPageSize',
+    grid: videosGrid,
     statusTarget: videosStatus,
     loadingMessage: 'Loading videos...',
     errorMessage: 'Could not load videos',
@@ -1408,6 +1443,11 @@ async function loadVideos() {
 }
 
 async function runTextSearch(query, negative, tagFilters, tagMode) {
+  state.resultsMode = 'text';
+  state.resultsProvenance = `Results for "${query}"`;
+  renderResultsProvenance();
+  resultsGrid.innerHTML = loadingStateMarkup('Searching images and videos...');
+  setActiveTab('results');
   const params = applyNSFWQuery(new URLSearchParams({ q: query, limit: '24' }));
   if (negative) {
     params.set('neg', negative);
@@ -1451,6 +1491,11 @@ async function runTextSearch(query, negative, tagFilters, tagMode) {
 }
 
 async function runSimilarSearch(imageID, anchorHint) {
+  state.resultsMode = 'similar';
+  state.resultsProvenance = `Similar images for #${imageID}`;
+  renderResultsProvenance();
+  resultsGrid.innerHTML = loadingStateMarkup('Searching similar images...');
+  setActiveTab('results');
   const params = applyNSFWQuery(new URLSearchParams({ image_id: String(imageID), limit: '24' }));
   const response = await fetch(`/api/search/similar?${params.toString()}`);
   const payload = await response.json();
@@ -2261,6 +2306,27 @@ if (resultsNextButton) {
 
 uploadOpenButton.addEventListener('click', openUploadModal);
 uploadCloseButton.addEventListener('click', closeUploadModal);
+
+document.addEventListener('click', (event) => {
+  if (event.target.closest('.empty-upload-action')) {
+    openUploadModal();
+    return;
+  }
+  if (event.target.closest('.empty-clear-results-action')) {
+    state.results = [];
+    state.resultsTotal = 0;
+    state.resultsPage = 0;
+    state.resultsMode = 'none';
+    state.resultsProvenance = '';
+    state.activeTagFilters = [];
+    renderResults();
+    setActiveTab('gallery');
+    return;
+  }
+  if (event.target.closest('.empty-retry-tags-action')) {
+    loadTagCloud().catch((err) => setStatus(tagsStatus, err.message || 'Tag cloud failed to load', 'error'));
+  }
+});
 
 uploadModal.addEventListener('click', (event) => {
   if (event.target === uploadModal) {

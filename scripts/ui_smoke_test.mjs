@@ -44,6 +44,75 @@ async function serveStatic(res, pathname) {
   res.end(body);
 }
 
+async function assertPolishBasics(page) {
+  const opsGlyph = (await page.locator('.ops-menu-trigger [aria-hidden="true"]').textContent() || '').trim();
+  if (opsGlyph === '...' || opsGlyph !== '…') {
+    throw new Error(`ops menu trigger uses ${JSON.stringify(opsGlyph)}, want polished ellipsis`);
+  }
+
+  const tokens = await page.evaluate(() => {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      focus: style.getPropertyValue('--focus').trim(),
+      leased: style.getPropertyValue('--leased').trim(),
+      muted: style.getPropertyValue('--muted').trim(),
+    };
+  });
+  if (!tokens.focus || tokens.focus === tokens.leased) {
+    throw new Error('focus token is missing or still reuses processing-state color');
+  }
+  if (tokens.muted === '#6b655b') {
+    throw new Error('muted text color was not darkened for contrast');
+  }
+}
+
+async function assertLoadingAndEmptyStates(browser, baseURL) {
+  const loadingPage = await browser.newPage();
+  let releaseImages;
+  const releasePromise = new Promise((resolve) => {
+    releaseImages = resolve;
+  });
+  await loadingPage.route('**/api/images*', async (route) => {
+    await releasePromise;
+    await route.continue();
+  });
+  await loadingPage.goto(baseURL, { waitUntil: 'domcontentloaded' });
+  await loadingPage.locator('#gallery-grid .skeleton-card').first().waitFor({ timeout: 1200 });
+  releaseImages();
+  await loadingPage.locator('#gallery-grid .card').first().waitFor();
+  await loadingPage.close();
+
+  const emptyPage = await browser.newPage();
+  await emptyPage.route('**/api/images*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ images: [], total: 0 }),
+    });
+  });
+  await emptyPage.goto(baseURL, { waitUntil: 'domcontentloaded' });
+  const emptyState = emptyPage.locator('#gallery-grid .empty-state');
+  await emptyState.waitFor();
+  const emptyText = await emptyState.textContent() || '';
+  if (!emptyText.includes('Upload media')) {
+    throw new Error(`gallery empty state is not actionable: ${JSON.stringify(emptyText)}`);
+  }
+  await emptyPage.close();
+}
+
+async function assertReducedMotion(browser, baseURL) {
+  const context = await browser.newContext({ reducedMotion: 'reduce' });
+  const motionPage = await context.newPage();
+  await motionPage.goto(baseURL, { waitUntil: 'domcontentloaded' });
+  const searchButton = motionPage.getByRole('button', { name: 'Search' });
+  await searchButton.hover();
+  const transform = await searchButton.evaluate((element) => getComputedStyle(element).transform);
+  if (transform !== 'none') {
+    throw new Error(`reduced-motion hover transform is ${transform}, want none`);
+  }
+  await context.close();
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
@@ -131,6 +200,7 @@ try {
   await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
 
   await page.getByRole('heading', { name: 'imgsearch' }).waitFor();
+  await assertPolishBasics(page);
   const liveConnection = page.locator('#live-connection');
   await liveConnection.waitFor();
   if (!(await liveConnection.isVisible())) {
@@ -285,6 +355,9 @@ try {
     throw new Error(`mobile lightbox padding is ${lightboxPadding}px, want at most 12px`);
   }
   await mobilePage.close();
+
+  await assertLoadingAndEmptyStates(browser, baseURL);
+  await assertReducedMotion(browser, baseURL);
 
   console.log('UI smoke checks passed');
 } finally {
