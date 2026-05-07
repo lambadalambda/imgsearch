@@ -131,6 +131,25 @@ try {
   await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
 
   await page.getByRole('heading', { name: 'imgsearch' }).waitFor();
+  const liveConnection = page.locator('#live-connection');
+  await liveConnection.waitFor();
+  if (!(await liveConnection.isVisible())) {
+    throw new Error('live connection status is not visible in the masthead');
+  }
+  if (await liveConnection.evaluate((element) => Boolean(element.closest('.ops-menu-body')))) {
+    throw new Error('live connection status is still buried in the overflow menu');
+  }
+  const mastheadIndexStatus = page.locator('#masthead-index-status');
+  await mastheadIndexStatus.waitFor();
+  if (!(await mastheadIndexStatus.isVisible())) {
+    throw new Error('indexing status summary is not visible in the masthead');
+  }
+  if (await mastheadIndexStatus.evaluate((element) => Boolean(element.closest('.ops-menu-body')))) {
+    throw new Error('indexing status summary is still buried in the overflow menu');
+  }
+  await page.locator('.ops-menu > summary').click();
+  await page.getByRole('button', { name: 'Retry stuck' }).waitFor();
+  await page.locator('.ops-menu > summary').click();
   const firstCard = page.locator('.card').first();
   await firstCard.locator('.meta h3').waitFor();
   const firstTitle = (await firstCard.locator('.meta h3').textContent() || '').trim();

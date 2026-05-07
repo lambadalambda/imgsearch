@@ -488,6 +488,32 @@ input:focus-visible {
   flex-wrap: nowrap;
 }
 
+.masthead-status-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.masthead-index-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.masthead-index-status[data-state="active"] {
+  color: var(--warn);
+}
+
+.masthead-index-status[data-state="failed"] {
+  color: var(--bad);
+}
+
+.masthead-connection {
+  min-width: 0;
+}
+
 .search-actions .ops-menu {
   margin-left: 0;
 }
@@ -1511,7 +1537,16 @@ input:focus-visible {
   }
 
   .search-actions {
-    margin-left: auto;
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .masthead-status-strip {
+    order: 2;
+    flex: 1 1 100%;
+    justify-content: flex-start;
   }
 
   .ops-menu-body,

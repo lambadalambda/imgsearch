@@ -61,6 +61,13 @@
           </details>
           <div class="search-actions">
             <button type="submit" class="cta">Search</button>
+            <div class="masthead-status-strip" aria-label="Library status">
+              <p id="live-connection" class="connection-badge masthead-connection" data-state="connecting" role="status" aria-live="polite">
+                <span class="connection-dot" aria-hidden="true"></span>
+                <span id="live-connection-label">Connecting live updates...</span>
+              </p>
+              <p id="masthead-index-status" class="masthead-index-status" data-state="idle">Index: waiting</p>
+            </div>
             <button id="upload-open" type="button" class="ghost quiet-action">Upload</button>
             <details class="ops-menu">
               <summary class="ghost quiet-action ops-menu-trigger">
@@ -69,10 +76,6 @@
               </summary>
               <div class="ops-menu-body">
                 <div id="ops-bar" class="ops-status-panel" aria-label="Library indexing status" data-state="idle">
-                  <p id="live-connection" class="connection-badge" data-state="connecting" role="status" aria-live="polite">
-                    <span class="connection-dot" aria-hidden="true"></span>
-                    <span id="live-connection-label">Connecting live updates...</span>
-                  </p>
                   <div class="ops-status-stack">
                     <p id="search-status" class="status search-status" role="status" aria-live="polite"></p>
                     <p id="stats-summary" class="status summary-status" role="status" aria-live="polite"></p>

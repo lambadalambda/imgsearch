@@ -2,3 +2,4 @@
 - [x] [Make NSFW visibility state explicit](issues/make-nsfw-visibility-state-explicit.md)
 - [x] [Separate selection mode from pagination controls](issues/separate-selection-mode-from-pagination-controls.md)
 - [x] [Improve mobile gallery browsing](issues/improve-mobile-gallery-browsing.md)
+- [x] [Surface indexing status outside the overflow menu](issues/surface-indexing-status-outside-overflow-menu.md)

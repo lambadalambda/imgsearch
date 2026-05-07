@@ -1,4 +1,3 @@
 - [ ] [Simplify masthead search and filter controls](issues/simplify-masthead-search-and-filter-controls.md)
-- [ ] [Surface indexing status outside the overflow menu](issues/surface-indexing-status-outside-overflow-menu.md)
 - [ ] [Clarify search result provenance and pagination context](issues/clarify-search-result-provenance-and-pagination-context.md)
 - [ ] [Add loading, empty-state, and accessibility polish](issues/add-loading-empty-state-and-accessibility-polish.md)

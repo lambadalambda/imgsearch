@@ -102,6 +102,7 @@ const videoCloseButton = document.getElementById('video-close');
 
 const liveConnectionBadge = document.getElementById('live-connection');
 const liveConnectionLabel = document.getElementById('live-connection-label');
+const mastheadIndexStatus = document.getElementById('masthead-index-status');
 const liveAnnouncer = document.getElementById('live-announcer');
 const shell = document.querySelector('.shell');
 
@@ -150,6 +151,14 @@ function announceLiveChange(message) {
     return;
   }
   liveAnnouncer.textContent = message;
+}
+
+function setMastheadIndexStatus(label, stateName) {
+  if (!mastheadIndexStatus) {
+    return;
+  }
+  mastheadIndexStatus.textContent = label;
+  mastheadIndexStatus.dataset.state = stateName || 'idle';
 }
 
 function clearLiveReconnectTimer() {
@@ -979,6 +988,7 @@ function renderStats() {
     if (opsBar) {
       opsBar.dataset.state = 'idle';
     }
+    setMastheadIndexStatus('Index: waiting', 'idle');
     setStatus(statsSummary, 'No queue stats available yet.', 'info');
     statsDetail.textContent = '';
     statsProgress.style.width = '0%';
@@ -1001,6 +1011,14 @@ function renderStats() {
 
   if (opsBar) {
     opsBar.dataset.state = hasWork ? 'active' : 'idle';
+  }
+  if (failed > 0) {
+    setMastheadIndexStatus(`Index: ${failed} failed`, 'failed');
+  } else if (hasWork) {
+    const activeCount = pending + leased + missing + annotationsMissing;
+    setMastheadIndexStatus(activeCount > 0 ? `Index: ${activeCount} queued` : 'Index active', 'active');
+  } else {
+    setMastheadIndexStatus('Index idle', 'idle');
   }
 
   statsProgress.style.width = `${pct}%`;
