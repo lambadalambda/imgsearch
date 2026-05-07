@@ -94,3 +94,6 @@ run = "scripts/import_images.sh"
 [tasks.reset-db]
 description = "Delete local SQLite database files"
 run = "mkdir -p ./data && rm -f ./data/imgsearch.sqlite ./data/imgsearch.sqlite-journal ./data/imgsearch.sqlite-wal ./data/imgsearch.sqlite-shm"
+
+[env]
+_.file = '.env'
