@@ -737,7 +737,7 @@ function cardActionMarkup(item, mode, safeName, isNSFWTagged, canSearchSimilar, 
       : '';
 
   return `
-    <button class="ghost thumb-action similar-action" data-image-id="${item.image_id}" aria-label="${similarAriaLabel}" ${disabled} ${title}>${actionLabel}</button>
+    <button class="ghost thumb-action similar-action" data-image-id="${escapeHTML(String(item.image_id ?? ''))}" aria-label="${similarAriaLabel}" ${disabled} ${title}>${actionLabel}</button>
     ${nsfwToggleButton}
     ${reannotateButton}
     ${deleteButton}
