@@ -71,6 +71,8 @@ const searchTagMode = document.getElementById('search-tag-mode');
 const refreshImagesButton = document.getElementById('refresh-images');
 const clearResultsButton = document.getElementById('clear-results');
 const showNSFWToggle = document.getElementById('show-nsfw');
+const showNSFWLabel = document.getElementById('show-nsfw-label');
+const showNSFWControl = document.querySelector('.nsfw-toggle');
 const refreshStatsButton = document.getElementById('refresh-stats');
 const retryFailedButton = document.getElementById('retry-failed');
 const opsBar = document.getElementById('ops-bar');
@@ -380,10 +382,13 @@ function tagCloudSizeClass(count, minCount, maxCount) {
 }
 
 function humanizeIndexState(indexState) {
-  if (indexState === 'leased') {
-    return 'processing';
-  }
-  return indexState || 'done';
+  const labels = {
+    done: 'Indexed',
+    failed: 'Failed',
+    leased: 'Processing',
+    pending: 'Pending',
+  };
+  return labels[indexState] || indexState || labels.done;
 }
 
 function videoMetaMarkup(item, mode) {
@@ -491,6 +496,12 @@ function applyNSFWPreference(nextValue) {
   if (showNSFWToggle) {
     showNSFWToggle.checked = state.showNSFW;
   }
+  if (showNSFWLabel) {
+    showNSFWLabel.textContent = state.showNSFW ? 'NSFW: Visible' : 'NSFW: Hidden';
+  }
+  if (showNSFWControl) {
+    showNSFWControl.classList.toggle('is-enabled', state.showNSFW);
+  }
 }
 
 function normalizeText(value) {
@@ -549,7 +560,7 @@ function tagsMarkup(tags, includeOverflowChip, clickable) {
     return '';
   }
 
-  const visibleTags = includeOverflowChip ? tags.slice(0, 3) : tags;
+  const visibleTags = includeOverflowChip ? tags.slice(0, 2) : tags;
   const hiddenTagCount = includeOverflowChip ? Math.max(0, tags.length - visibleTags.length) : 0;
 
   return `<ul class="tag-list${includeOverflowChip ? '' : ' overlay-tag-list'}">${visibleTags
@@ -592,14 +603,18 @@ function cardActionMarkup(item, mode, safeName, isNSFWTagged, canSearchSimilar, 
 }
 
 function cardMarkup(item, mode) {
-  const safeName = escapeHTML(item.original_name);
+  const itemName = normalizeText(item.original_name) || normalizeText(item.storage_path) || 'Untitled media';
+  const titleText = normalizeText(item.description) || itemName;
+  const safeTitle = escapeHTML(titleText);
+  const safeName = escapeHTML(itemName);
   const safePath = escapeHTML(item.storage_path);
   const mediaType = item.media_type || 'image';
   const safeMimeType = escapeHTML(item.mime_type || 'video/mp4');
   const thumbPath = mediaType === 'video' && item.preview_path ? item.preview_path : item.storage_path;
   const thumbURL = escapeHTML(toMediaURL(thumbPath));
   const mediaURL = escapeHTML(toMediaURL(item.storage_path));
-  const supportEntries = supportEntriesForItem(item, mode);
+  const supportEntries = supportEntriesForItem(item, mode)
+    .filter((entry) => normalizeText(entry.text) !== titleText);
   const tags = Array.isArray(item.tags)
     ? item.tags
         .filter((tag) => typeof tag === 'string' && tag.trim() !== '')
@@ -642,14 +657,14 @@ function cardMarkup(item, mode) {
           class="thumb-button"
           data-media-type="${mediaType}"
           data-lightbox-src="${thumbURL}"
-          data-lightbox-caption="${safeName}${mediaType === 'video' ? ' preview frame' : ''}"
+          data-lightbox-caption="${safeTitle}${mediaType === 'video' ? ' preview frame' : ''}"
           data-player-src="${mediaURL}"
           data-player-poster="${thumbURL}"
           data-player-type="${safeMimeType}"
-          data-player-caption="${safeName}"
-          aria-label="Open full ${mediaType === 'video' ? 'preview frame' : 'image'} for ${safeName}"
+          data-player-caption="${safeTitle}"
+          aria-label="Open full ${mediaType === 'video' ? 'preview frame' : 'image'} for ${safeTitle}"
         >
-          <img src="${thumbURL}" alt="${safeName}" loading="lazy" />
+          <img src="${thumbURL}" alt="${safeTitle}" loading="lazy" />
           ${mediaType === 'video' ? '<span class="thumb-video-badge">video</span>' : ''}
         </button>
         <div class="thumb-actions" role="group" aria-label="Card actions for ${safeName}">
@@ -659,7 +674,8 @@ function cardMarkup(item, mode) {
       </div>
       <div class="meta">
         <div class="meta-main">
-          <h3>${safeName}</h3>
+          <h3>${safeTitle}</h3>
+          ${titleText !== itemName ? `<p class="file-name">${safeName}</p>` : ''}
           <p class="path">${safePath}</p>
         </div>
         ${compactTagsSection}
@@ -672,7 +688,8 @@ function cardMarkup(item, mode) {
         </div>
       </div>
       <div class="card-detail-overlay" aria-hidden="true">
-        <p class="overlay-title">${safeName}</p>
+        <p class="overlay-title">${safeTitle}</p>
+        ${titleText !== itemName ? `<p class="overlay-file-name">${safeName}</p>` : ''}
         <p class="overlay-path">${safePath}</p>
         ${overlayVideoMeta}
         ${overlayTagsMarkup}

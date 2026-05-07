@@ -1,0 +1,2 @@
+- [x] [Improve card metadata hierarchy](issues/improve-card-metadata-hierarchy.md)
+- [x] [Make NSFW visibility state explicit](issues/make-nsfw-visibility-state-explicit.md)

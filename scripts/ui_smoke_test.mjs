@@ -50,7 +50,22 @@ const server = createServer(async (req, res) => {
       if (url.searchParams.get('include_nsfw') === '1') {
         imageRequestsWithNSFW += 1;
       }
-      json(res, 200, { images: [], total: 0 });
+      json(res, 200, {
+        images: [1, 2].map((id) => ({
+          image_id: id,
+          media_type: 'image',
+          original_name: `image-${id}.jpg`,
+          storage_path: `images/image-${id}`,
+          mime_type: 'image/jpeg',
+          width: 320,
+          height: 240,
+          index_state: 'done',
+          description: id === 1 ? 'Brown dog running across a sunny grass field.' : '',
+          tags: id === 1 ? ['dog', 'sunny field', 'outdoor portrait'] : [],
+          created_at: '2026-04-24T00:00:00Z',
+        })),
+        total: 2,
+      });
       return;
     }
     if (url.pathname === '/api/videos') {
@@ -109,6 +124,15 @@ try {
   await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
 
   await page.getByRole('heading', { name: 'imgsearch' }).waitFor();
+  const firstCard = page.locator('.card').first();
+  await firstCard.locator('.meta h3').waitFor();
+  const firstTitle = (await firstCard.locator('.meta h3').textContent() || '').trim();
+  if (firstTitle !== 'Brown dog running across a sunny grass field.') {
+    throw new Error(`card title used ${JSON.stringify(firstTitle)}, want description text`);
+  }
+  if (await firstCard.locator('.meta .path').isVisible()) {
+    throw new Error('resting card metadata still shows storage path');
+  }
   await page.getByRole('tab', { name: /Videos/ }).click();
   await page.locator('#videos-panel').waitFor({ state: 'visible' });
 
@@ -126,12 +150,22 @@ try {
   await page.getByRole('button', { name: 'Close upload dialog' }).click();
   await page.locator('#upload-modal').waitFor({ state: 'hidden' });
 
+  const nsfwControl = page.locator('.nsfw-toggle');
+  if (!(await nsfwControl.textContent() || '').includes('NSFW: Hidden')) {
+    throw new Error('NSFW control does not show the hidden state by default');
+  }
   const nsfwRefresh = page.waitForResponse((response) => {
     const responseURL = new URL(response.url());
     return responseURL.pathname === '/api/images' && responseURL.searchParams.get('include_nsfw') === '1';
   });
-  await page.getByLabel('Show NSFW').check();
+  await page.getByLabel(/NSFW/).check();
   await page.waitForFunction(() => window.localStorage.getItem('imgsearch.showNSFW') === '1');
+  if (!(await nsfwControl.textContent() || '').includes('NSFW: Visible')) {
+    throw new Error('NSFW control does not show the visible state when enabled');
+  }
+  if (!(await nsfwControl.evaluate((element) => element.classList.contains('is-enabled')))) {
+    throw new Error('NSFW control does not expose a distinct enabled state');
+  }
   await nsfwRefresh;
   if (imageRequestsWithNSFW === 0) {
     throw new Error('NSFW toggle did not refresh image requests with include_nsfw=1');
