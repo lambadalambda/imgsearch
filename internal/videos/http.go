@@ -27,6 +27,8 @@ type VideoItem struct {
 	OriginalName   string   `json:"original_name"`
 	StoragePath    string   `json:"storage_path"`
 	PreviewPath    string   `json:"preview_path,omitempty"`
+	PreviewWidth   int      `json:"preview_width,omitempty"`
+	PreviewHeight  int      `json:"preview_height,omitempty"`
 	TranscriptText string   `json:"transcript_text,omitempty"`
 	Description    string   `json:"description,omitempty"`
 	Tags           []string `json:"tags,omitempty"`
@@ -106,6 +108,8 @@ WITH frame_jobs AS (
   SELECT vf.video_id,
          vf.image_id,
          i.storage_path,
+         i.width,
+         i.height,
          ROW_NUMBER() OVER (PARTITION BY vf.video_id ORDER BY vf.frame_index ASC) AS rn
   FROM video_frames vf
   JOIN images i ON i.id = vf.image_id
@@ -121,9 +125,11 @@ SELECT v.id,
        v.width,
        v.height,
        v.frame_count,
-        COALESCE(p.image_id, 0),
-        COALESCE(p.storage_path, ''),
-        CASE
+         COALESCE(p.image_id, 0),
+         COALESCE(p.storage_path, ''),
+         COALESCE(p.width, 0),
+         COALESCE(p.height, 0),
+         CASE
           WHEN COALESCE(f.failed_jobs, 0) > 0 OR COALESCE(tj.failed_jobs, 0) > 0 OR COALESCE(aj.failed_jobs, 0) > 0 THEN 'failed'
           WHEN COALESCE(f.leased_jobs, 0) > 0 OR COALESCE(tj.leased_jobs, 0) > 0 OR COALESCE(aj.leased_jobs, 0) > 0 THEN 'leased'
           WHEN COALESCE(f.total_jobs, 0) > 0 AND COALESCE(f.done_jobs, 0) = COALESCE(f.total_jobs, 0)
@@ -164,6 +170,8 @@ LIMIT ? OFFSET ?
 			&item.FrameCount,
 			&item.ImageID,
 			&item.PreviewPath,
+			&item.PreviewWidth,
+			&item.PreviewHeight,
 			&item.IndexState,
 			&item.CreatedAt,
 		); err != nil {

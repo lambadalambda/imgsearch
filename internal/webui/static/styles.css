@@ -876,6 +876,7 @@ input:focus-visible {
   display: block;
   cursor: zoom-in;
   position: relative;
+  overflow: hidden;
 }
 
 .thumb-button:focus-visible {
@@ -891,6 +892,39 @@ input:focus-visible {
   background: linear-gradient(135deg, #ede7da 0%, #e4ddcf 100%);
 }
 
+.thumb-image {
+  position: relative;
+  z-index: 1;
+  display: block;
+}
+
+.thumb-backdrop {
+  display: none;
+}
+
+.thumb-wrap-portrait-video {
+  background: #181512;
+}
+
+.thumb-wrap-portrait-video .thumb-backdrop {
+  position: absolute;
+  inset: -18px;
+  display: block;
+  width: calc(100% + 36px);
+  height: calc(100% + 36px);
+  max-width: none;
+  object-fit: cover;
+  filter: blur(18px) saturate(1.08);
+  opacity: 0.74;
+  transform: scale(1.04);
+  z-index: 0;
+}
+
+.thumb-wrap-portrait-video .thumb-image {
+  object-fit: contain;
+  background: transparent;
+}
+
 .thumb-video-badge {
   position: absolute;
   right: 8px;
@@ -904,6 +938,7 @@ input:focus-visible {
   line-height: 1.1;
   letter-spacing: 0.01em;
   text-transform: none;
+  z-index: 3;
 }
 
 .thumb-match-badge {

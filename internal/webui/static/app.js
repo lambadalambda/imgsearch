@@ -793,6 +793,20 @@ function cardMarkup(item, mode) {
   const overlayStatusMarkup = `<div class="overlay-status-row"><p class="${stateClass(status)}">${safeStatus}</p>${anchorBadge}</div>`;
   const isSelected = mediaType !== 'video' && mode === 'gallery' && state.selectedImageIDs.has(Number(item.image_id || 0));
   const selectionClass = isSelected ? ' is-selected' : '';
+  const previewWidth = Number(item.preview_width || 0);
+  const previewHeight = Number(item.preview_height || 0);
+  const hasPreviewDimensions = previewWidth > 0 && previewHeight > 0;
+  const hasPreviewFrame = mediaType === 'video' && Boolean(item.preview_path);
+  const mediaWidth = hasPreviewDimensions ? previewWidth : Number(item.width || 0);
+  const mediaHeight = hasPreviewDimensions ? previewHeight : Number(item.height || 0);
+  const hasVideoDimensions = mediaType === 'video' && mediaWidth > 0 && mediaHeight > 0;
+  const isPortraitVideo = hasVideoDimensions && mediaHeight > mediaWidth;
+  const shouldProbePortrait = hasPreviewFrame && !isPortraitVideo && !hasPreviewDimensions;
+  const thumbWrapClass = `thumb-wrap${mediaType === 'video' ? ' thumb-wrap-video' : ''}${isPortraitVideo ? ' thumb-wrap-portrait-video' : ''}${shouldProbePortrait ? ' thumb-wrap-portrait-probe' : ''}`;
+  const portraitBackdrop = hasPreviewFrame && (isPortraitVideo || shouldProbePortrait)
+    ? `<img class="thumb-backdrop" src="${thumbURL}" alt="" aria-hidden="true" loading="lazy" />`
+    : '';
+  const thumbImageClass = `thumb-image${isPortraitVideo ? ' thumb-image-contain' : ''}`;
   const selectionControl = mode === 'gallery'
     ? `<label class="selection-control" title="Select image">
         <input type="checkbox" class="image-select-checkbox" data-image-id="${escapeHTML(String(item.image_id || ''))}" ${isSelected ? 'checked' : ''} aria-label="Select ${safeName}" />
@@ -802,7 +816,7 @@ function cardMarkup(item, mode) {
 
   return `
     <article class="card${selectionClass}">
-      <div class="thumb-wrap">
+      <div class="${thumbWrapClass}">
         ${selectionControl}
         <button
           type="button"
@@ -816,7 +830,8 @@ function cardMarkup(item, mode) {
           data-player-caption="${safeTitle}"
           aria-label="Open full ${mediaType === 'video' ? 'preview frame' : 'image'} for ${safeTitle}"
         >
-          <img src="${thumbURL}" alt="${safeTitle}" loading="lazy" />
+          ${portraitBackdrop}
+          <img class="${thumbImageClass}" src="${thumbURL}" alt="${safeTitle}" loading="lazy" />
           ${mediaType === 'video' ? `<span class="thumb-video-badge">${escapeHTML(videoBadgeLabel)}</span>` : ''}
         </button>
         <div class="thumb-actions" role="group" aria-label="Card actions for ${safeName}">
@@ -891,6 +906,30 @@ function renderMediaCollection(items, total, grid, mode, emptyPagedMessage, empt
   }
 
   grid.innerHTML = safeItems.map((item) => cardMarkup(item, mode)).join('');
+  applyLoadedPortraitVideoThumbnails(grid);
+}
+
+function updatePortraitVideoThumbnail(image) {
+  if (!(image instanceof HTMLImageElement) || !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+    return;
+  }
+  const wrap = image.closest('.thumb-wrap-portrait-probe');
+  if (!wrap) {
+    return;
+  }
+  if (image.naturalHeight > image.naturalWidth) {
+    wrap.classList.add('thumb-wrap-portrait-video');
+  } else {
+    wrap.querySelector('.thumb-backdrop')?.remove();
+  }
+  wrap.classList.remove('thumb-wrap-portrait-probe');
+}
+
+function applyLoadedPortraitVideoThumbnails(root) {
+  if (!root) {
+    return;
+  }
+  root.querySelectorAll('.thumb-wrap-portrait-probe .thumb-image').forEach(updatePortraitVideoThumbnail);
 }
 
 function renderGallery() {
@@ -1572,6 +1611,18 @@ function mediaItemsDiffer(currentItems, nextItems, idKey) {
       return true;
     }
     if ((current.preview_path || '') !== (next.preview_path || '')) {
+      return true;
+    }
+    if (Number(current.preview_width || 0) !== Number(next.preview_width || 0)) {
+      return true;
+    }
+    if (Number(current.preview_height || 0) !== Number(next.preview_height || 0)) {
+      return true;
+    }
+    if (Number(current.width || 0) !== Number(next.width || 0)) {
+      return true;
+    }
+    if (Number(current.height || 0) !== Number(next.height || 0)) {
       return true;
     }
     if ((current.description || '') !== (next.description || '')) {
@@ -2331,6 +2382,10 @@ document.addEventListener('click', (event) => {
     loadTagCloud().catch((err) => setStatus(tagsStatus, err.message || 'Tag cloud failed to load', 'error'));
   }
 });
+
+document.addEventListener('load', (event) => {
+  updatePortraitVideoThumbnail(event.target);
+}, true);
 
 uploadModal.addEventListener('click', (event) => {
   if (event.target === uploadModal) {

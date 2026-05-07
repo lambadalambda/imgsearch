@@ -16,6 +16,10 @@ const contentTypes = new Map([
 let imageRequestsWithNSFW = 0;
 let videoRequests = 0;
 let deletedImages = 0;
+let releaseLandscapePreview;
+const landscapePreviewRelease = new Promise((resolve) => {
+  releaseLandscapePreview = resolve;
+});
 
 function json(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -184,6 +188,48 @@ async function assertOpenVideoLayout(page) {
   if (badgeText !== '0:01') {
     throw new Error(`video badge is ${JSON.stringify(badgeText)}, want duration at a glance`);
   }
+
+  const portraitThumb = videoCard.locator('.thumb-wrap');
+  await page.waitForFunction(() => document.querySelector('#videos-grid .card .thumb-wrap')?.classList.contains('thumb-wrap-portrait-video'));
+  if (!(await portraitThumb.evaluate((element) => element.classList.contains('thumb-wrap-portrait-video')))) {
+    throw new Error('portrait video thumbnail is not using portrait backdrop treatment');
+  }
+  if (await portraitThumb.locator('.thumb-backdrop').count() !== 1) {
+    throw new Error('portrait video thumbnail is missing a blurred backdrop image');
+  }
+  const portraitStyles = await portraitThumb.evaluate((element) => {
+    const foreground = element.querySelector('.thumb-image');
+    const backdrop = element.querySelector('.thumb-backdrop');
+    const foregroundStyle = foreground ? getComputedStyle(foreground) : null;
+    const backdropStyle = backdrop ? getComputedStyle(backdrop) : null;
+    return {
+      foregroundFit: foregroundStyle?.objectFit || '',
+      foregroundBackground: foregroundStyle?.backgroundColor || '',
+      backdropDisplay: backdropStyle?.display || '',
+      backdropFilter: backdropStyle?.filter || '',
+      backdropPosition: backdropStyle?.position || '',
+      backdropAriaHidden: backdrop?.getAttribute('aria-hidden') || '',
+    };
+  });
+  if (portraitStyles.foregroundFit !== 'contain' || portraitStyles.foregroundBackground !== 'rgba(0, 0, 0, 0)') {
+    throw new Error(`portrait foreground is not a transparent contained frame: ${JSON.stringify(portraitStyles)}`);
+  }
+  if (portraitStyles.backdropDisplay === 'none' || !portraitStyles.backdropFilter.includes('blur') || portraitStyles.backdropPosition !== 'absolute' || portraitStyles.backdropAriaHidden !== 'true') {
+    throw new Error(`portrait backdrop is not visible blurred presentation-only media: ${JSON.stringify(portraitStyles)}`);
+  }
+
+  const landscapeVideoCard = page.locator('#videos-grid .card').nth(1);
+  const landscapeThumb = landscapeVideoCard.locator('.thumb-wrap');
+  await landscapeThumb.waitFor();
+  const landscapeProbeState = await landscapeThumb.evaluate((element) => ({
+    isProbe: element.classList.contains('thumb-wrap-portrait-probe'),
+    isPortrait: element.classList.contains('thumb-wrap-portrait-video'),
+    backdropCount: element.querySelectorAll('.thumb-backdrop').length,
+  }));
+  releaseLandscapePreview();
+  if (landscapeProbeState.isProbe || landscapeProbeState.isPortrait || landscapeProbeState.backdropCount !== 0) {
+    throw new Error(`known landscape video thumbnail should not probe or render a duplicate backdrop: ${JSON.stringify(landscapeProbeState)}`);
+  }
 }
 
 async function assertCardActionsFit(cardLocator, contextLabel) {
@@ -263,24 +309,41 @@ const server = createServer(async (req, res) => {
       res.end();
       return;
     }
+    if (url.pathname === '/media/videos/portrait-preview-1.svg') {
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+      res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#4d8ad9"/><stop offset="1" stop-color="#f4c17a"/></linearGradient></defs><rect width="1080" height="1920" fill="url(#g)"/><circle cx="540" cy="780" r="260" fill="#fff8ee"/><rect x="260" y="1080" width="560" height="360" rx="120" fill="#f5eee8"/></svg>');
+      return;
+    }
+    if (url.pathname === '/media/videos/landscape-preview-2.svg') {
+      await landscapePreviewRelease;
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+      res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720"><rect width="1280" height="720" fill="#375170"/><circle cx="640" cy="360" r="190" fill="#e6bc65"/></svg>');
+      return;
+    }
     if (url.pathname === '/api/videos') {
       videoRequests += 1;
       const offset = Number(url.searchParams.get('offset') || 0);
       const limit = Number(url.searchParams.get('limit') || 24);
       const count = Math.max(0, Math.min(limit, 50 - offset));
-      const videos = Array.from({ length: count }, (_, i) => ({
-        video_id: offset + i + 1,
-        media_type: 'video',
-        original_name: `clip-${offset + i + 1}.mp4`,
-        storage_path: `videos/clip-${offset + i + 1}`,
-        mime_type: 'video/mp4',
-        duration_ms: 1000,
-        width: 320,
-        height: 180,
-        frame_count: 1,
-        index_state: 'done',
-        created_at: '2026-04-24T00:00:00Z',
-      }));
+      const videos = Array.from({ length: count }, (_, i) => {
+        const id = offset + i + 1;
+        const firstVideo = id === 1;
+        return {
+          video_id: id,
+          media_type: 'video',
+          original_name: `clip-${id}.mp4`,
+          storage_path: `videos/clip-${id}`,
+          preview_path: firstVideo ? 'videos/portrait-preview-1.svg' : (id === 2 ? 'videos/landscape-preview-2.svg' : ''),
+          preview_width: firstVideo ? 1080 : (id === 2 ? 1280 : 0),
+          preview_height: firstVideo ? 1920 : (id === 2 ? 720 : 0),
+          mime_type: 'video/mp4',
+          duration_ms: 1000,
+          ...(firstVideo ? { width: 1920, height: 1080 } : { width: 320, height: 180 }),
+          frame_count: 1,
+          index_state: 'done',
+          created_at: '2026-04-24T00:00:00Z',
+        };
+      });
       json(res, 200, { videos, total: 50 });
       return;
     }

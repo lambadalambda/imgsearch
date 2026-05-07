@@ -51,7 +51,7 @@ WHERE id = 1
 	if _, err := dbConn.Exec(`
 INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
 VALUES
-	(10, 'f1', 'frame1.jpg', 'images/f1', 'image/jpeg', 100, 100),
+	(10, 'f1', 'frame1.jpg', 'images/f1', 'image/jpeg', 1080, 1920),
 	(11, 'f2', 'frame2.jpg', 'images/f2', 'image/jpeg', 100, 100),
 	(12, 'f3', 'frame3.jpg', 'images/f3', 'image/jpeg', 100, 100)
 `); err != nil {
@@ -109,6 +109,9 @@ func TestListVideosReturnsResults(t *testing.T) {
 	}
 	if resp.Videos[1].PreviewPath != "images/f1" || resp.Videos[1].ImageID != 10 {
 		t.Fatalf("unexpected preview frame for video 1: %+v", resp.Videos[1])
+	}
+	if resp.Videos[1].PreviewWidth != 1080 || resp.Videos[1].PreviewHeight != 1920 {
+		t.Fatalf("expected preview frame dimensions for video 1, got %+v", resp.Videos[1])
 	}
 	if resp.Videos[1].TranscriptText != "tis better to remain silent" {
 		t.Fatalf("expected transcript text in video list, got %+v", resp.Videos[1])
