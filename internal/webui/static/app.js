@@ -614,8 +614,8 @@ function tagsMarkup(tags, includeOverflowChip, clickable) {
     return '';
   }
 
-  const visibleTags = includeOverflowChip ? tags.slice(0, 2) : tags;
-  const hiddenTagCount = includeOverflowChip ? Math.max(0, tags.length - visibleTags.length) : 0;
+  const visibleTags = tags;
+  const hiddenTagCount = 0;
 
   return `<ul class="tag-list${includeOverflowChip ? '' : ' overlay-tag-list'}">${visibleTags
     .map((tag) => {
@@ -714,27 +714,30 @@ async function loadAllImageIDs() {
 }
 
 function cardActionMarkup(item, mode, safeName, isNSFWTagged, canSearchSimilar, mediaType) {
-  const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use frame' : 'Use anchor') : 'Find similar';
+  const actionLabel = mode === 'result' ? (item.is_anchor ? 'Anchor image' : mediaType === 'video' ? 'Use frame' : 'Use anchor') : 'Similar';
+  const similarAriaLabel = mode === 'result'
+    ? `${actionLabel} for ${safeName}`
+    : `Find similar media for ${safeName}`;
   const disabled = canSearchSimilar ? '' : 'disabled';
-  const title = canSearchSimilar ? '' : 'title="Available after indexing finishes"';
+  const title = canSearchSimilar ? (mode === 'result' ? '' : 'title="Find similar"') : 'title="Available after indexing finishes"';
   const deleteButton = mode === 'gallery'
-    ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="image" data-delete-id="${item.image_id}" data-delete-name="${safeName}">Delete</button>`
+    ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="image" data-delete-id="${item.image_id}" data-delete-name="${safeName}" aria-label="Delete ${safeName}">Delete</button>`
     : mode === 'videos'
-      ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}">Delete</button>`
+      ? `<button class="ghost thumb-action danger delete-action" data-delete-kind="video" data-delete-id="${item.video_id}" data-delete-name="${safeName}" aria-label="Delete ${safeName}">Delete</button>`
       : '';
   const nsfwToggleButton = mode === 'gallery'
-    ? `<button class="ghost thumb-action nsfw-toggle-action${isNSFWTagged ? ' danger' : ''}" data-nsfw-kind="image" data-nsfw-id="${item.image_id}" data-nsfw-name="${safeName}" data-nsfw-current="${isNSFWTagged ? '1' : '0'}">${isNSFWTagged ? 'Unflag NSFW' : 'Flag NSFW'}</button>`
+    ? `<button class="ghost thumb-action nsfw-toggle-action${isNSFWTagged ? ' danger' : ''}" data-nsfw-kind="image" data-nsfw-id="${item.image_id}" data-nsfw-name="${safeName}" data-nsfw-current="${isNSFWTagged ? '1' : '0'}" title="${isNSFWTagged ? 'Unflag NSFW' : 'Flag NSFW'}" aria-label="${isNSFWTagged ? 'Unflag NSFW for' : 'Flag NSFW for'} ${safeName}">${isNSFWTagged ? 'Unflag' : 'Flag'}</button>`
     : mode === 'videos'
-      ? `<button class="ghost thumb-action nsfw-toggle-action${isNSFWTagged ? ' danger' : ''}" data-nsfw-kind="video" data-nsfw-id="${item.video_id}" data-nsfw-name="${safeName}" data-nsfw-current="${isNSFWTagged ? '1' : '0'}">${isNSFWTagged ? 'Unflag NSFW' : 'Flag NSFW'}</button>`
+      ? `<button class="ghost thumb-action nsfw-toggle-action${isNSFWTagged ? ' danger' : ''}" data-nsfw-kind="video" data-nsfw-id="${item.video_id}" data-nsfw-name="${safeName}" data-nsfw-current="${isNSFWTagged ? '1' : '0'}" title="${isNSFWTagged ? 'Unflag NSFW' : 'Flag NSFW'}" aria-label="${isNSFWTagged ? 'Unflag NSFW for' : 'Flag NSFW for'} ${safeName}">${isNSFWTagged ? 'Unflag' : 'Flag'}</button>`
       : '';
   const reannotateButton = mode === 'gallery'
-    ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="image" data-reannotate-id="${item.image_id}" data-reannotate-name="${safeName}">Re-annotate</button>`
+    ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="image" data-reannotate-id="${item.image_id}" data-reannotate-name="${safeName}" title="Re-annotate" aria-label="Re-annotate ${safeName}">Annotate</button>`
     : mode === 'videos'
-      ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="video" data-reannotate-id="${item.video_id}" data-reannotate-name="${safeName}">Re-annotate</button>`
+      ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="video" data-reannotate-id="${item.video_id}" data-reannotate-name="${safeName}" title="Re-annotate" aria-label="Re-annotate ${safeName}">Annotate</button>`
       : '';
 
   return `
-    <button class="ghost thumb-action similar-action" data-image-id="${item.image_id}" ${disabled} ${title}>${actionLabel}</button>
+    <button class="ghost thumb-action similar-action" data-image-id="${item.image_id}" aria-label="${similarAriaLabel}" ${disabled} ${title}>${actionLabel}</button>
     ${nsfwToggleButton}
     ${reannotateButton}
     ${deleteButton}
@@ -766,6 +769,7 @@ function cardMarkup(item, mode) {
   const scoreLabel = item.search_source === 'tag' ? '' : formatMatch(item.distance);
   const scoreBadgeLabel = scoreBadgeText(item, scoreLabel);
   const scoreBadge = scoreBadgeLabel && !item.is_anchor ? `<p class="thumb-match-badge">${escapeHTML(scoreBadgeLabel)}</p>` : '';
+  const videoBadgeLabel = Number(item.duration_ms) > 0 ? formatTimestamp(item.duration_ms) : 'video';
   const canSearchSimilar = Number(item.image_id) > 0 && (status === 'done' || mediaType === 'video');
   const anchorBadge = item.is_anchor ? '<p class="state anchor">anchor</p>' : '';
   const videoMeta = videoMetaMarkup(item, mode);
@@ -777,7 +781,7 @@ function cardMarkup(item, mode) {
     : '';
   const compactTagsMarkup = tagsMarkup(tags, true, true);
   const compactTagsSection = compactTagsMarkup ? `<div class="meta-tags">${compactTagsMarkup}</div>` : '';
-  const overlayTagsMarkup = tagsMarkup(tags, false, true);
+  const overlayTagsMarkup = tagsMarkup(tags, false, false);
   const overlaySupportMarkup = supportEntries.length > 0
     ? `<div class="overlay-supporting-stack">${supportEntries
       .map((entry) => `<p class="${entry.className} overlay-supporting-text">${escapeHTML(entry.text)}</p>`)
@@ -813,7 +817,7 @@ function cardMarkup(item, mode) {
           aria-label="Open full ${mediaType === 'video' ? 'preview frame' : 'image'} for ${safeTitle}"
         >
           <img src="${thumbURL}" alt="${safeTitle}" loading="lazy" />
-          ${mediaType === 'video' ? '<span class="thumb-video-badge">video</span>' : ''}
+          ${mediaType === 'video' ? `<span class="thumb-video-badge">${escapeHTML(videoBadgeLabel)}</span>` : ''}
         </button>
         <div class="thumb-actions" role="group" aria-label="Card actions for ${safeName}">
           ${actionsMarkup}

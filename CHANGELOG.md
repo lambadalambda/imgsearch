@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ux(ui): switch media browsing to an open, borderless layout with compact 16:9 cards, readable in-card tags, and duration badges on videos.
 - ux(ui): add skeleton loading states, actionable empty states, darker muted text, a dedicated focus color, reduced-motion transform suppression, and a polished overflow ellipsis.
 - ux(ui): show result provenance and match counts for text, tag, and similar-image searches, with clearer results pagination labels.
 - ux(ui): rename advanced search controls to Filters and show active negative/tag filters with a count and masthead chips.

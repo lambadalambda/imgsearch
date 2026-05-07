@@ -113,6 +113,125 @@ async function assertReducedMotion(browser, baseURL) {
   await context.close();
 }
 
+async function assertOpenLayout(page) {
+  const workspaceStyle = await page.locator('.workspace').evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      borderTopWidth: Number.parseFloat(style.borderTopWidth),
+      boxShadow: style.boxShadow,
+    };
+  });
+  if (workspaceStyle.borderTopWidth > 0 || workspaceStyle.boxShadow !== 'none') {
+    throw new Error(`workspace still uses heavy panel chrome: ${JSON.stringify(workspaceStyle)}`);
+  }
+
+  const card = page.locator('#gallery-grid .card').first();
+  const cardBox = await card.boundingBox();
+  if (!cardBox) {
+    throw new Error('gallery card did not render for open layout check');
+  }
+  if (cardBox.height > 330) {
+    throw new Error(`gallery card is ${Math.round(cardBox.height)}px tall, want a more compact open layout`);
+  }
+
+  const thumbBox = await card.locator('.thumb-wrap').boundingBox();
+  if (!thumbBox) {
+    throw new Error('gallery thumbnail did not render for open layout check');
+  }
+  const ratio = thumbBox.width / thumbBox.height;
+  if (ratio < 1.68 || ratio > 1.9) {
+    throw new Error(`gallery thumbnail ratio is ${ratio.toFixed(2)}, want compact 16:9 browsing cards`);
+  }
+
+  const visibleTags = await card.locator('.meta-tags .tag-chip').evaluateAll((nodes) => nodes.map((node) => (node.textContent || '').trim()));
+  if (!visibleTags.includes('outdoor portrait') || visibleTags.some((tag) => tag.startsWith('+'))) {
+    throw new Error(`card tags are still collapsed instead of readable: ${JSON.stringify(visibleTags)}`);
+  }
+
+  const titleFont = await card.locator('.meta h3').evaluate((element) => getComputedStyle(element).fontFamily);
+  if (/Iowan|Palatino/i.test(titleFont)) {
+    throw new Error(`card titles still use dense display serif typography: ${titleFont}`);
+  }
+
+  await card.hover();
+  await assertCardActionsFit(card, 'desktop');
+  if (await card.locator('.card-detail-overlay').isVisible()) {
+    throw new Error('open layout still shows a hover detail overlay over compact cards');
+  }
+  await card.locator('.thumb-button').click();
+  await page.locator('#image-lightbox:not([hidden])').waitFor();
+  await page.getByRole('button', { name: 'Close image preview' }).click();
+  await page.locator('#image-lightbox').waitFor({ state: 'hidden' });
+}
+
+async function assertOpenVideoLayout(page) {
+  const videoColumns = await page.locator('#videos-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length);
+  if (videoColumns !== 3) {
+    throw new Error(`desktop videos grid used ${videoColumns} columns, want 3 to avoid crowding`);
+  }
+
+  const videoCard = page.locator('#videos-grid .card').first();
+  await videoCard.waitFor();
+  const cardBox = await videoCard.boundingBox();
+  if (!cardBox) {
+    throw new Error('video card did not render for open layout check');
+  }
+  if (cardBox.height > 320) {
+    throw new Error(`video card is ${Math.round(cardBox.height)}px tall, want compact video browsing cards`);
+  }
+
+  const badgeText = (await videoCard.locator('.thumb-video-badge').first().textContent() || '').trim();
+  if (badgeText !== '0:01') {
+    throw new Error(`video badge is ${JSON.stringify(badgeText)}, want duration at a glance`);
+  }
+}
+
+async function assertCardActionsFit(cardLocator, contextLabel) {
+  const actionRects = await cardLocator.evaluate((card) => {
+    const thumb = card.querySelector('.thumb-wrap')?.getBoundingClientRect();
+    const actionBar = card.querySelector('.thumb-actions')?.getBoundingClientRect();
+    const actions = Array.from(card.querySelectorAll('.thumb-actions .thumb-action'));
+    return {
+      thumb: thumb ? { left: thumb.left, top: thumb.top, right: thumb.right, bottom: thumb.bottom } : null,
+      actionBar: actionBar ? { left: actionBar.left, top: actionBar.top, right: actionBar.right, bottom: actionBar.bottom } : null,
+      actions: actions.map((action) => {
+        const rect = action.getBoundingClientRect();
+        return {
+          label: (action.textContent || '').trim(),
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+        };
+      }),
+    };
+  });
+  if (!actionRects.thumb || !actionRects.actionBar || actionRects.actions.length < 4) {
+    throw new Error(`${contextLabel} card actions are missing: ${JSON.stringify(actionRects)}`);
+  }
+  if (
+    actionRects.actionBar.left < actionRects.thumb.left - 0.5
+    || actionRects.actionBar.right > actionRects.thumb.right + 0.5
+    || actionRects.actionBar.top < actionRects.thumb.top - 0.5
+    || actionRects.actionBar.bottom > actionRects.thumb.bottom + 0.5
+  ) {
+    throw new Error(`${contextLabel} action bar overflows the thumbnail: ${JSON.stringify(actionRects.actionBar)}`);
+  }
+  const clipped = actionRects.actions.filter((rect) => (
+    rect.left < actionRects.actionBar.left - 0.5
+    || rect.right > actionRects.actionBar.right + 0.5
+    || rect.top < actionRects.actionBar.top - 0.5
+    || rect.bottom > actionRects.actionBar.bottom + 0.5
+  ));
+  if (clipped.length > 0) {
+    throw new Error(`${contextLabel} card actions overflow the action bar: ${JSON.stringify(clipped)}`);
+  }
+}
+
+async function assertMobileCardActionsFit(mobileGrid) {
+  await assertCardActionsFit(mobileGrid.locator('.card').first(), 'mobile');
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
@@ -250,6 +369,7 @@ try {
   if (await firstCard.locator('.meta .path').isVisible()) {
     throw new Error('resting card metadata still shows storage path');
   }
+  await assertOpenLayout(page);
   const galleryPagination = page.locator('.pagination-controls[aria-label="Gallery pagination"]');
   const selectionToolbar = page.locator('#gallery-selection-toolbar');
   const selectionControlsInPagination = await galleryPagination.locator('#gallery-select-page, #gallery-clear-selection, #gallery-delete-selected, #gallery-delete-all').count();
@@ -278,6 +398,7 @@ try {
 
   await page.getByRole('tab', { name: /Videos/ }).click();
   await page.locator('#videos-panel').waitFor({ state: 'visible' });
+  await assertOpenVideoLayout(page);
 
   // Tab keyboard navigation follows the current DOM order and skips disabled tabs.
   await page.keyboard.press('ArrowRight');
@@ -312,7 +433,7 @@ try {
     const responseURL = new URL(response.url());
     return responseURL.pathname === '/api/images' && responseURL.searchParams.get('include_nsfw') === '1';
   });
-  await page.getByLabel(/NSFW/).check();
+  await page.locator('#show-nsfw').check();
   await page.waitForFunction(() => window.localStorage.getItem('imgsearch.showNSFW') === '1');
   if (!(await nsfwControl.textContent() || '').includes('NSFW: Visible')) {
     throw new Error('NSFW control does not show the visible state when enabled');
@@ -332,13 +453,17 @@ try {
     throw new Error('video pagination did not request a second page');
   }
 
+  const mobileUserAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
   const mobilePage = await browser.newPage({
     viewport: { width: 390, height: 844 },
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+    isMobile: true,
+    hasTouch: true,
+    userAgent: mobileUserAgent,
   });
   await mobilePage.goto(baseURL, { waitUntil: 'domcontentloaded' });
   const mobileGrid = mobilePage.locator('#gallery-grid');
   await mobileGrid.locator('.card').first().waitFor();
+  await assertMobileCardActionsFit(mobileGrid);
   const mobileColumns = await mobileGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length);
   if (mobileColumns < 2) {
     throw new Error(`mobile gallery used ${mobileColumns} column(s), want at least 2`);
@@ -355,6 +480,18 @@ try {
     throw new Error(`mobile lightbox padding is ${lightboxPadding}px, want at most 12px`);
   }
   await mobilePage.close();
+
+  const narrowMobilePage = await browser.newPage({
+    viewport: { width: 340, height: 740 },
+    isMobile: true,
+    hasTouch: true,
+    userAgent: mobileUserAgent,
+  });
+  await narrowMobilePage.goto(baseURL, { waitUntil: 'domcontentloaded' });
+  const narrowMobileGrid = narrowMobilePage.locator('#gallery-grid');
+  await narrowMobileGrid.locator('.card').first().waitFor();
+  await assertMobileCardActionsFit(narrowMobileGrid);
+  await narrowMobilePage.close();
 
   await assertLoadingAndEmptyStates(browser, baseURL);
   await assertReducedMotion(browser, baseURL);
