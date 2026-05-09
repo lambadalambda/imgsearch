@@ -125,4 +125,7 @@ export interface Pin {
   isAnchor?: boolean;
   /** Whether this pin is currently flagged as NSFW (best-effort, derived from tags). */
   isNSFW?: boolean;
+  /** Stored media MIME type (e.g. video/mp4). Populated for video pins so the
+   *  Feed launcher can call canPlayType() before opening. */
+  mimeType?: string;
 }

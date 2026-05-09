@@ -146,6 +146,18 @@ export function closeUpload(): void {
   uploadOpen.set(false);
 }
 
+/** Seed pin for the similar-video Feed overlay. null = closed. */
+export const feedSeed = writable<Pin | null>(null);
+
+export function openFeed(seed: Pin): void {
+  if (seed.mediaType !== "video" || !seed.videoId) return;
+  feedSeed.set(seed);
+}
+
+export function closeFeed(): void {
+  feedSeed.set(null);
+}
+
 export function getMode(): AppMode {
   return get(mode);
 }

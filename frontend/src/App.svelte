@@ -6,6 +6,7 @@
   import Masonry from "./components/Masonry.svelte";
   import Lightbox from "./components/Lightbox.svelte";
   import Upload from "./components/Upload.svelte";
+  import Feed from "./components/Feed.svelte";
 
   import { untrack } from "svelte";
   import { get } from "svelte/store";
@@ -206,3 +207,4 @@
 
 <Lightbox />
 <Upload />
+<Feed />

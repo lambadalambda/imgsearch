@@ -1,7 +1,13 @@
 <script lang="ts">
   import type { Pin } from "../lib/types";
-  import { formatDuration, formatPercent, tagTone } from "../lib/utils";
-  import { setSimilar, setTagSearch, lightboxPin, pins } from "../lib/stores";
+  import { canPlayMime, formatDuration, formatPercent, tagTone } from "../lib/utils";
+  import {
+    setSimilar,
+    setTagSearch,
+    lightboxPin,
+    pins,
+    openFeed,
+  } from "../lib/stores";
   import { deleteMedia, reannotate, toggleNSFW, ApiError } from "../lib/api";
 
   interface Props {
@@ -103,11 +109,25 @@
   const tagsToShow = $derived(pin.tags.slice(0, 5));
   const hiddenTagCount = $derived(Math.max(0, pin.tags.length - tagsToShow.length));
   const nsfwFlagged = $derived(nsfwLocal ?? pin.isNSFW ?? false);
+  // Feed launcher only renders on video pins the browser can play.
+  const canFeed = $derived(
+    pin.mediaType === "video" && pin.videoId !== undefined && canPlayMime(pin.mimeType),
+  );
 
   // Tailwind class fragments to keep template tidy.
+  //
+  // We deliberately keep colour classes OUT of `cornerBtn` so the variants
+  // (`cornerLight` / `cornerPrimary`) don't have to override them. With
+  // Tailwind v4's source-ordered cascade, theme utilities like `text-ink`
+  // are emitted after arbitrary-value utilities like `text-[#fffdf8]`, so
+  // including both on the same element makes the theme one win regardless
+  // of class string order — which would render the primary button dark-on-
+  // dark (black "Feed" / "Play" text on a black background, invisible).
   const cornerBtn =
-    "[font:500_11.5px/1_var(--font-sans)] bg-[rgba(255,253,249,0.96)] text-ink border border-black/[0.06] backdrop-blur-md px-[9px] py-[5px] rounded-full cursor-pointer transition-transform duration-100 ease-soft hover:-translate-y-px";
-  const cornerPrimary = "bg-ink text-[#fffdf8] border-ink";
+    "[font:500_11.5px/1_var(--font-sans)] backdrop-blur-md px-[9px] py-[5px] rounded-full cursor-pointer transition-transform duration-100 ease-soft hover:-translate-y-px";
+  const cornerLight =
+    "bg-[rgba(255,253,249,0.96)] text-ink border border-black/[0.06]";
+  const cornerPrimary = "bg-ink text-[#fffdf8] border border-ink";
 </script>
 
 {#if !isHidden}
@@ -170,7 +190,7 @@
       <button
         type="button"
         data-pin-action="similar"
-        class={cornerBtn}
+        class="{cornerBtn} {cornerLight}"
         onclick={(event) => {
           event.stopPropagation();
           findSimilar();
@@ -179,17 +199,32 @@
       >
         Similar
       </button>
-      <button
-        type="button"
-        class="{cornerBtn} {cornerPrimary}"
-        onclick={(event) => {
-          event.stopPropagation();
-          open();
-        }}
-        aria-label={pin.mediaType === "video" ? "Play video" : "Open image"}
-      >
-        {pin.mediaType === "video" ? "Play" : "Open"}
-      </button>
+      {#if canFeed}
+        <button
+          type="button"
+          data-pin-action="feed"
+          class="{cornerBtn} {cornerPrimary}"
+          onclick={(event) => {
+            event.stopPropagation();
+            openFeed(pin);
+          }}
+          aria-label="Start similar-video feed"
+        >
+          Feed
+        </button>
+      {:else}
+        <button
+          type="button"
+          class="{cornerBtn} {cornerPrimary}"
+          onclick={(event) => {
+            event.stopPropagation();
+            open();
+          }}
+          aria-label={pin.mediaType === "video" ? "Play video" : "Open image"}
+        >
+          {pin.mediaType === "video" ? "Play" : "Open"}
+        </button>
+      {/if}
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <details
@@ -199,9 +234,7 @@
       >
         <summary
           data-pin-action="more"
-          class="{cornerBtn} no-marker px-[9px] py-[5px] leading-none select-none {menuOpen
-            ? cornerPrimary
-            : ''}"
+          class="{cornerBtn} {menuOpen ? cornerPrimary : cornerLight} no-marker leading-none select-none"
           aria-label="More actions"
           title="More actions"
         >

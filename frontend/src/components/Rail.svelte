@@ -1,6 +1,12 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
-  import { mode, openUpload, setLibrary, uploadOpen } from "../lib/stores";
+  import {
+    feedSeed,
+    mode,
+    openUpload,
+    setLibrary,
+    uploadOpen,
+  } from "../lib/stores";
 
   type RailItem = {
     id: "library" | "search" | "tags" | "feed" | "upload";
@@ -24,7 +30,23 @@
       activeWhen: (s) => s.mode === "search",
     },
     { id: "tags", label: "Tags (soon)", disabled: true },
-    { id: "feed", label: "Feed (soon)", disabled: true },
+    {
+      id: "feed",
+      label: "Feed — open from a video card",
+      // No global launcher — Feed is always seeded by a specific video pin.
+      // The button stays clickable so it can serve as a hint; we focus the
+      // first video Feed button on the page if one exists.
+      onClick: () => {
+        const seedBtn = document.querySelector<HTMLElement>(
+          '[data-pin-action="feed"]',
+        );
+        if (seedBtn) {
+          seedBtn.focus();
+          seedBtn.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+      },
+      activeWhen: () => $feedSeed !== null,
+    },
     {
       id: "upload",
       label: "Upload",

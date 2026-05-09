@@ -77,8 +77,25 @@ const sampleImages = Array.from({ length: 96 }, (_, i) => ({
   tags: ["portrait", "cat", "indoor", "warm-tone", "test"],
 }));
 
+// Two synthetic videos that the Feed flow can use as seeds. We expose them
+// as search results (and as similar-videos candidates) — Atelier's library
+// view is image-only so the Feed entry-point is reached via search.
+const sampleVideos = Array.from({ length: 6 }, (_, i) => ({
+  image_id: 5000 + i,
+  video_id: 200 + i,
+  original_name: `clip-${i}.mp4`,
+  storage_path: `videos/clip-${i}`,
+  preview_path: `images/clip-${i}-frame`,
+  mime_type: "video/mp4",
+  width: 720,
+  height: 1280,
+  duration_ms: 8500,
+  description: `Short cinematic clip ${i} of cats playing in warm light.`,
+  tags: ["video", "cat", "warm-tone"],
+}));
+
 function searchResults(seedOffset = 0) {
-  return sampleImages.slice(0, 12).map((image, i) => ({
+  const imageHits = sampleImages.slice(0, 10).map((image, i) => ({
     image_id: image.image_id,
     media_type: "image",
     preview_path: image.storage_path,
@@ -91,6 +108,43 @@ function searchResults(seedOffset = 0) {
     description: image.description,
     tags: image.tags,
   }));
+  const videoHits = sampleVideos.slice(0, 2).map((video, i) => ({
+    image_id: video.image_id,
+    video_id: video.video_id,
+    media_type: "video",
+    preview_path: video.preview_path,
+    storage_path: video.storage_path,
+    mime_type: video.mime_type,
+    width: video.width,
+    height: video.height,
+    duration_ms: video.duration_ms,
+    distance: 0.05 + (i + seedOffset) * 0.04,
+    original_name: video.original_name,
+    description: video.description,
+    tags: video.tags,
+  }));
+  return [...videoHits, ...imageHits];
+}
+
+function similarVideoResults(excludeIds) {
+  const exclude = new Set(excludeIds);
+  return sampleVideos
+    .filter((v) => !exclude.has(v.video_id))
+    .map((video, i) => ({
+      image_id: video.image_id,
+      video_id: video.video_id,
+      media_type: "video",
+      preview_path: video.preview_path,
+      storage_path: video.storage_path,
+      mime_type: video.mime_type,
+      width: video.width,
+      height: video.height,
+      duration_ms: video.duration_ms,
+      distance: 0.1 + i * 0.04,
+      original_name: video.original_name,
+      description: video.description,
+      tags: video.tags,
+    }));
 }
 
 async function serveDist(res, pathname) {
@@ -117,6 +171,7 @@ let deleteCount = 0;
 const tagSearchRequests = [];
 const imagesRequests = [];
 const uploadRequests = [];
+const similarVideoRequests = [];
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
@@ -158,6 +213,27 @@ const server = createServer(async (req, res) => {
         results: searchResults(),
         total: 12,
         debug: { duration_ms: 12 },
+      });
+      return;
+    }
+    if (url.pathname === "/api/search/similar-videos") {
+      const videoId = Number(url.searchParams.get("video_id") || 0);
+      const seenIds = (url.searchParams.get("seen") || "")
+        .split(",")
+        .map(Number)
+        .filter((n) => !Number.isNaN(n) && n > 0);
+      const preferTags = (url.searchParams.get("prefer_tags") || "")
+        .split(",")
+        .filter(Boolean);
+      const avoidTags = (url.searchParams.get("avoid_tags") || "")
+        .split(",")
+        .filter(Boolean);
+      const limit = Number(url.searchParams.get("limit") || 12);
+      similarVideoRequests.push({ videoId, seenIds, preferTags, avoidTags, limit });
+      const candidates = similarVideoResults([videoId, ...seenIds]).slice(0, limit);
+      jsonResponse(res, 200, {
+        results: candidates,
+        total: candidates.length,
       });
       return;
     }
@@ -292,6 +368,61 @@ try {
   if (searchHeadline !== "warm portrait") {
     throw new Error(`expected search headline to mirror query, got ${JSON.stringify(searchHeadline)}`);
   }
+
+  // 2b. Feed flow — search results include video pins; clicking the Feed
+  //     corner action on one opens the fullscreen overlay, kicks a
+  //     /api/search/similar-videos fetch with the seed video_id, and
+  //     responds to keyboard navigation + Escape close.
+  const feedTrigger = page.locator('[data-pin-action="feed"]').first();
+  await feedTrigger.waitFor({ state: "visible", timeout: 5000 });
+  const baselineSimilarVideos = similarVideoRequests.length;
+  await feedTrigger.click();
+  await page.locator("[data-feed-overlay]").waitFor({ state: "visible", timeout: 5000 });
+
+  await page.waitForFunction(
+    (baseline) => {
+      const overlay = document.querySelector("[data-feed-overlay]");
+      const size = Number(overlay?.getAttribute("data-feed-queue-size") || 0);
+      return size > 1; // seed + at least one similar candidate
+    },
+    baselineSimilarVideos,
+    { timeout: 5000 },
+  );
+
+  if (similarVideoRequests.length <= baselineSimilarVideos) {
+    throw new Error(
+      `expected at least one /api/search/similar-videos request, got ${similarVideoRequests.length}`,
+    );
+  }
+  const firstFeedRequest = similarVideoRequests[baselineSimilarVideos];
+  if (!firstFeedRequest.videoId || firstFeedRequest.videoId < 200) {
+    throw new Error(
+      `expected similar-videos request to carry the seed video_id (>=200), got ${JSON.stringify(firstFeedRequest)}`,
+    );
+  }
+  if (!firstFeedRequest.seenIds.includes(firstFeedRequest.videoId)) {
+    throw new Error(
+      `expected seen list to include the seed videoId, got ${JSON.stringify(firstFeedRequest)}`,
+    );
+  }
+
+  // ArrowDown advances. Read the data-feed-current-index attr before/after.
+  const overlayHandle = await page.locator("[data-feed-overlay]").elementHandle();
+  if (!overlayHandle) throw new Error("feed overlay handle missing");
+  const beforeIdx = Number(await overlayHandle.getAttribute("data-feed-current-index"));
+  await page.keyboard.press("ArrowDown");
+  await page.waitForFunction(
+    (before) => {
+      const overlay = document.querySelector("[data-feed-overlay]");
+      const idx = Number(overlay?.getAttribute("data-feed-current-index") || 0);
+      return idx > before;
+    },
+    beforeIdx,
+    { timeout: 5000 },
+  );
+
+  await page.keyboard.press("Escape");
+  await page.locator("[data-feed-overlay]").waitFor({ state: "hidden", timeout: 5000 });
 
   // 3. Tag chip flow — clicks the "Tag · portrait" quick-row chip and
   //    expects to land on ?tag=portrait with no similarity badges (tag

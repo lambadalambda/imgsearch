@@ -104,6 +104,47 @@ export async function searchSimilar(opts: SimilarSearchOptions): Promise<SearchR
   return getJSON<SearchResponse>(`/api/search/similar?${params.toString()}`, { signal: opts.signal });
 }
 
+export interface SimilarVideoOptions {
+  videoId: number;
+  /** Optional matched-frame image_id; when absent the backend falls back to
+   *  the first indexed frame of the video. */
+  seedImageId?: number;
+  limit?: number;
+  /** Already-shown video IDs (queue + dismissed). Server adds the seed itself. */
+  seenIds?: number[];
+  preferTags?: string[];
+  avoidTags?: string[];
+  includeNSFW?: boolean;
+  signal?: AbortSignal;
+}
+
+export async function searchSimilarVideos(
+  opts: SimilarVideoOptions,
+): Promise<SearchResponse> {
+  const params = new URLSearchParams();
+  params.set("video_id", String(opts.videoId));
+  if (opts.seedImageId !== undefined) {
+    params.set("seed_image_id", String(opts.seedImageId));
+  }
+  params.set("limit", String(opts.limit ?? 12));
+  if (opts.seenIds && opts.seenIds.length > 0) {
+    params.set("seen", opts.seenIds.join(","));
+  }
+  if (opts.preferTags && opts.preferTags.length > 0) {
+    params.set("prefer_tags", opts.preferTags.join(","));
+  }
+  if (opts.avoidTags && opts.avoidTags.length > 0) {
+    params.set("avoid_tags", opts.avoidTags.join(","));
+  }
+  if (opts.includeNSFW) {
+    params.set("include_nsfw", "1");
+  }
+  return getJSON<SearchResponse>(
+    `/api/search/similar-videos?${params.toString()}`,
+    { signal: opts.signal },
+  );
+}
+
 export interface TagCloudOptions {
   limit?: number;
   signal?: AbortSignal;

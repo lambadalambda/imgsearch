@@ -6,8 +6,8 @@ The web UI is in transition. Two shells coexist:
   `frontend/`, build output embedded into the Go binary at
   `internal/webui/atelier/dist/`.
 - **Legacy** at `/legacy` — the original `internal/webui/static/`
-  vanilla-JS shell. Kept as a fallback for unported features (Feed mode,
-  bulk select/delete, tags explorer, ops menu, live status) and for
+  vanilla-JS shell. Kept as a fallback for unported features (bulk
+  select/delete, tags explorer, ops menu, live status) and for
   one-click rollback if the new SPA misbehaves.
 
 Both shells share the same backend API at `/api/*` and media serving at
@@ -31,11 +31,17 @@ The first cut of the Atelier SPA covers:
 - Pagination via the `Load more` button (offset bumps in 48-pin pages)
 - Upload modal (multi-select + drag-drop) hitting `POST /api/upload` with
   per-file row states (pending → uploading → created/duplicate/failed)
+- Similar-video Feed overlay: seeded by any video pin's "Feed" corner
+  action, drives `/api/search/similar-videos` with session-local prefer/
+  avoid tag preferences, supports keyboard (↑↓/Esc/Space) and vertical
+  swipe navigation, lazy-batches candidates (initial 4, then batches of
+  3 once fewer than 2 remain ahead), preserves playback continuity by
+  rotating queue indices across three CSS-positioned `<video>` slots
+  rather than re-parenting DOM nodes
 
 The following still live in `/legacy` for now and will be ported in
 follow-ups:
 
-- Feed mode (similar-video swipe player)
 - Bulk select / delete
 - Tags explorer page
 - Ops menu (retry stuck, refresh, queue stats)
@@ -124,10 +130,25 @@ mise run build:frontend            # rebuilds dist
 - **Two embed declarations** rather than versioned URL prefixes: legacy and
   Atelier ship together in the same Go binary so we can roll back to the
   legacy UI by visiting `/legacy` without a redeploy.
-- **MVP first**: the SPA does *not* yet replicate Feed, bulk select, or
-  live status. Each of those is a separate follow-up issue.
+- **MVP first**: the SPA does *not* yet replicate bulk select, the tags
+  explorer, the ops menu, or the live-update connection badge. Each of
+  those is a separate follow-up issue.
 - **Upload as a modal** rather than a route: dragging files into the page
   feels lighter than a navigation, and a modal keeps the masonry context
   visible behind the dimmed backdrop. After a successful batch we bump
   `dataEpoch` so the library re-fetches in place rather than the user
   having to reload.
+- **Feed via slot rotation, not DOM re-parenting**: the legacy feed
+  physically `appendChild`'d the three `<video>` elements between
+  `.feed-slide` parents on each swipe. In Svelte that fights the
+  framework. The Atelier port keeps three persistent `<video>` elements
+  and three "queue index" assignments; advancing the feed updates the
+  assignments so each element's CSS slot (`translateY(-100% | 0 | 100%)`)
+  changes without re-parenting. The element that was at "next" stays the
+  same DOM node while it animates into the "current" slot, preserving
+  its playing buffer.
+- **Feed feedback is session-local**: tag preference scores live in a
+  `Map` inside the component, decay 0.9 per fetch, clamp to the same
+  `[-3, +5]` bounds as the legacy classifier, and disappear with the
+  tab. Closing the overlay wipes everything. The only thing that ever
+  reaches the server is the `prefer_tags` / `avoid_tags` CSV.

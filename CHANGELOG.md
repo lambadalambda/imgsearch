@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(frontend): port the similar-video Feed to the Atelier SPA — fullscreen muted/`playsinline` overlay launched from any video pin's Feed corner action, drives `/api/search/similar-videos` with session-local prefer/avoid tag preferences, supports keyboard (↑↓/Esc/Space) and vertical swipe, lazy-batches candidates (initial 4, then batches of 3), and preserves playback continuity by rotating queue indices across three CSS-positioned `<video>` slots.
 - feat(frontend): add an in-app Atelier Upload modal with drag-drop, click-to-pick, per-file row states (pending/uploading/created/duplicate/failed), and an automatic library refresh when at least one file was queued for indexing; the legacy upload remains available at `/legacy`.
 - ux(ui): polish overall design with a search-icon search field, lighter segmented tabs, softer card hover elevation, smaller pill-shaped match/duration badges, muted toolbar status text, and tighter mobile thumbnail action chips.
 - ux(ui): simplify the mobile top chrome by compacting search actions, hiding secondary status clutter, and keeping tab labels readable.
