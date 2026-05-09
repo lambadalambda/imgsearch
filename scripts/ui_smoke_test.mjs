@@ -359,6 +359,47 @@ async function assertMobileCardActionsFit(mobileGrid) {
   await assertCardActionsFit(mobileGrid.locator('.card').first(), 'mobile');
 }
 
+async function assertMobileChromeCompact(page) {
+  const chrome = await page.evaluate(() => {
+    const rectFor = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) {
+        return null;
+      }
+      const rect = element.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    };
+    const visible = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) {
+        return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return getComputedStyle(element).display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const clippedTabs = Array.from(document.querySelectorAll('.tab-button span:first-child'))
+      .filter((span) => span.scrollWidth > span.clientWidth + 1)
+      .map((span) => (span.textContent || '').trim());
+    return {
+      masthead: rectFor('.masthead'),
+      workspaceHead: rectFor('.workspace-head'),
+      statusStripVisible: visible('.masthead-status-strip'),
+      disabledClearVisible: visible('#clear-results:disabled'),
+      clippedTabs,
+      overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  if (!chrome.masthead || chrome.masthead.height > 150) {
+    throw new Error(`mobile masthead is too tall/cluttered: ${JSON.stringify(chrome)}`);
+  }
+  if (!chrome.workspaceHead || chrome.workspaceHead.height > 110) {
+    throw new Error(`mobile workspace controls are too tall/cluttered: ${JSON.stringify(chrome)}`);
+  }
+  if (chrome.statusStripVisible || chrome.disabledClearVisible || chrome.clippedTabs.length > 0 || chrome.overflowX > 1) {
+    throw new Error(`mobile chrome is still cluttered or overflowing: ${JSON.stringify(chrome)}`);
+  }
+}
+
 async function assertAdaptiveVideoFeed(page) {
   await page.getByRole('tab', { name: /Videos/ }).click();
   await page.locator('#videos-panel').waitFor({ state: 'visible' });
@@ -944,6 +985,7 @@ try {
   const mobileGrid = mobilePage.locator('#gallery-grid');
   await mobileGrid.locator('.card').first().waitFor();
   await assertAdaptiveVideoFeed(mobilePage);
+  await assertMobileChromeCompact(mobilePage);
   await assertMobileCardActionsFit(mobileGrid);
   const mobileColumns = await mobileGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length);
   if (mobileColumns < 2) {

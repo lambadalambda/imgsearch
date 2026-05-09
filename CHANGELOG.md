@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ux(ui): polish overall design with a search-icon search field, lighter segmented tabs, softer card hover elevation, smaller pill-shaped match/duration badges, muted toolbar status text, and tighter mobile thumbnail action chips.
+- ux(ui): simplify the mobile top chrome by compacting search actions, hiding secondary status clutter, and keeping tab labels readable.
 - fix(ui): let the mobile Feed playback progress bar span the available viewport width instead of capping it to a short strip.
 - fix(ui): keep similar-video Feed sessions from ending early after short batches by searching a wider frame window and retrying until a batch is truly empty.
 - feat(ui): make the similar-video Feed start with a small seed queue, lazily append session-adapted batches, and keep feedback private to the current browser session.
