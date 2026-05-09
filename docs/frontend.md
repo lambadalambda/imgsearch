@@ -32,12 +32,13 @@ The first cut of the Atelier SPA covers:
 - Upload modal (multi-select + drag-drop) hitting `POST /api/upload` with
   per-file row states (pending → uploading → created/duplicate/failed)
 - Similar-video Feed overlay: seeded by any video pin's "Feed" corner
-  action, drives `/api/search/similar-videos` with session-local prefer/
-  avoid tag preferences, supports keyboard (↑↓/Esc/Space) and vertical
-  swipe navigation, lazy-batches candidates (initial 4, then batches of
-  3 once fewer than 2 remain ahead), preserves playback continuity by
-  rotating queue indices across three CSS-positioned `<video>` slots
-  rather than re-parenting DOM nodes
+  action or by the Rail Feed button, which samples a random playable video
+  from `/api/videos`; the overlay drives `/api/search/similar-videos` with
+  session-local prefer/avoid tag preferences, supports keyboard
+  (↑↓/Esc/Space) and vertical swipe navigation, lazy-batches candidates
+  (initial 4, then batches of 3 once fewer than 2 remain ahead), and
+  preserves playback continuity by rotating queue indices across three
+  CSS-positioned `<video>` slots rather than re-parenting DOM nodes
 
 The following still live in `/legacy` for now and will be ported in
 follow-ups:

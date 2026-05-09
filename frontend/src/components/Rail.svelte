@@ -1,12 +1,16 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
+  import { listVideos } from "../lib/api";
   import {
     feedSeed,
+    includeNSFW,
     mode,
+    openFeed,
     openUpload,
     setLibrary,
     uploadOpen,
   } from "../lib/stores";
+  import { canPlayMime, pinFromVideo } from "../lib/utils";
 
   type RailItem = {
     id: "library" | "search" | "tags" | "feed" | "upload";
@@ -15,6 +19,43 @@
     disabled?: boolean;
     activeWhen?: (state: { mode: string }) => boolean;
   };
+
+  let feedLoading = $state(false);
+
+  async function openRandomFeed() {
+    if (feedLoading) return;
+    feedLoading = true;
+    try {
+      const firstPage = await listVideos({ limit: 1, offset: 0, includeNSFW: $includeNSFW });
+      const total = firstPage.total ?? firstPage.videos.length;
+      if (total <= 0) return;
+
+      const seenOffsets = new Set<number>();
+      const maxAttempts = Math.min(total, 6);
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        let offset = Math.floor(Math.random() * total);
+        while (seenOffsets.has(offset) && seenOffsets.size < total) {
+          offset = Math.floor(Math.random() * total);
+        }
+        seenOffsets.add(offset);
+
+        const page = offset === 0
+          ? firstPage
+          : await listVideos({ limit: 1, offset, includeNSFW: $includeNSFW });
+        const record = page.videos[0] ?? firstPage.videos[0];
+        if (!record) continue;
+
+        const seed = pinFromVideo(record);
+        if (!canPlayMime(seed.mimeType)) continue;
+        openFeed(seed);
+        return;
+      }
+    } catch (err) {
+      console.warn("random Feed launch failed", err);
+    } finally {
+      feedLoading = false;
+    }
+  }
 
   const items: RailItem[] = [
     {
@@ -32,19 +73,8 @@
     { id: "tags", label: "Tags (soon)", disabled: true },
     {
       id: "feed",
-      label: "Feed — open from a video card",
-      // No global launcher — Feed is always seeded by a specific video pin.
-      // The button stays clickable so it can serve as a hint; we focus the
-      // first video Feed button on the page if one exists.
-      onClick: () => {
-        const seedBtn = document.querySelector<HTMLElement>(
-          '[data-pin-action="feed"]',
-        );
-        if (seedBtn) {
-          seedBtn.focus();
-          seedBtn.scrollIntoView({ block: "center", behavior: "smooth" });
-        }
-      },
+      label: "Feed — random video",
+      onClick: openRandomFeed,
       activeWhen: () => $feedSeed !== null,
     },
     {
@@ -82,9 +112,11 @@
     <button
       type="button"
       class="{railBtnBase} {isActive ? activeBtn : ''}"
-      disabled={item.disabled}
+      disabled={item.disabled || (item.id === "feed" && feedLoading)}
       title={item.label}
       aria-label={item.label}
+      aria-busy={item.id === "feed" && feedLoading ? "true" : undefined}
+      data-rail-item={item.id}
       data-upload-trigger={item.id === "upload" ? "" : undefined}
       onclick={() => item.onClick?.()}
     >

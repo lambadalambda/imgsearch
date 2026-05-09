@@ -77,9 +77,9 @@ const sampleImages = Array.from({ length: 96 }, (_, i) => ({
   tags: ["portrait", "cat", "indoor", "warm-tone", "test"],
 }));
 
-// Two synthetic videos that the Feed flow can use as seeds. We expose them
-// as search results (and as similar-videos candidates) — Atelier's library
-// view is image-only so the Feed entry-point is reached via search.
+// Synthetic videos that the Feed flow can use as seeds. We expose them via
+// /api/videos for the Rail launcher and as search/similar-videos results for
+// the per-pin Feed flow.
 const sampleVideos = Array.from({ length: 6 }, (_, i) => ({
   image_id: 5000 + i,
   video_id: 200 + i,
@@ -170,6 +170,7 @@ let reannotateCount = 0;
 let deleteCount = 0;
 const tagSearchRequests = [];
 const imagesRequests = [];
+const videosRequests = [];
 const uploadRequests = [];
 const similarVideoRequests = [];
 
@@ -205,7 +206,13 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/api/videos") {
-      jsonResponse(res, 200, { videos: [], total: 0 });
+      const limit = Number(url.searchParams.get("limit") || 24);
+      const offset = Number(url.searchParams.get("offset") || 0);
+      videosRequests.push({ limit, offset });
+      jsonResponse(res, 200, {
+        videos: sampleVideos.slice(offset, offset + limit),
+        total: sampleVideos.length,
+      });
       return;
     }
     if (url.pathname === "/api/search/text") {
@@ -358,6 +365,32 @@ try {
   if (headline !== "Library") {
     throw new Error(`expected library headline, got ${JSON.stringify(headline)}`);
   }
+
+  // 1b. Rail Feed launcher — starts from a random video even though the
+  //     library grid itself is image-only.
+  const baselineRailSimilarVideos = similarVideoRequests.length;
+  await page.locator('button[aria-label^="Feed"]').click();
+  await page.locator("[data-feed-overlay]").waitFor({ state: "visible", timeout: 5000 });
+  await page.waitForFunction(
+    () => {
+      const overlay = document.querySelector("[data-feed-overlay]");
+      const size = Number(overlay?.getAttribute("data-feed-queue-size") || 0);
+      return size > 1;
+    },
+    {},
+    { timeout: 5000 },
+  );
+  if (videosRequests.length === 0) {
+    throw new Error("expected Rail Feed click to request /api/videos");
+  }
+  const railFeedRequest = similarVideoRequests[baselineRailSimilarVideos];
+  if (!railFeedRequest || railFeedRequest.videoId < 200 || railFeedRequest.videoId > 205) {
+    throw new Error(
+      `expected Rail Feed to seed one sample video, got ${JSON.stringify(railFeedRequest)}`,
+    );
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("[data-feed-overlay]").waitFor({ state: "hidden", timeout: 5000 });
 
   // 2. Search flow.
   await page.locator("#atelier-search").fill("warm portrait");
