@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(dev): make `mise run serve:8b:annotator-26b` use the same autorestart watcher wrapper as the default serve task.
 - feat(import): convert GIF imports to MP4 with `ffmpeg`, including GIFs discovered from 4chan thread imports, and add shell regression coverage.
 - ux(ui): show portrait video thumbnails as contained full-height frames over a blurred duplicate backdrop using preview-frame dimensions when available.
 - chore(dev): make `mise run serve` autorestart on Go, embedded static asset, and serve helper script changes via `mise watch` and a one-shot `serve:run` task.
