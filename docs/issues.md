@@ -69,6 +69,17 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [x] P2 Promote `internal/app` into the runtime composition layer: `docs/issues/052-app-runtime-composition-layer.md`
 - [ ] P3 Extract repeated native task commands from `mise.toml`: `docs/issues/049-extract-native-task-command-scripts.md`
 - [ ] P2 Harden sqlite-vector quantized search under mixed models: `docs/issues/050-sqlite-vector-quantized-mixed-models.md`
+- [ ] P1 Document trusted UI API cookie model: `docs/issues/054-harden-ui-api-cookie-auth.md`
+- [ ] P0 Avoid reusing standalone images as video frames: `docs/issues/055-avoid-standalone-image-reuse-for-video-frames.md`
+- [ ] P1 Reset Atelier pagination on data key changes: `docs/issues/056-reset-atelier-pagination-on-data-key-changes.md`
+- [ ] P1 Owner-check worker job completion and failure updates: `docs/issues/057-owner-check-worker-job-completion.md`
+- [ ] P1 Align Atelier tag all-mode with backend parameters: `docs/issues/058-align-atelier-tag-all-mode-with-backend.md`
+- [ ] P2 Handle Feed fetch errors without ending the session: `docs/issues/059-handle-feed-fetch-errors-without-exhaustion.md`
+- [ ] P2 Abort Feed lookahead requests on close: `docs/issues/060-abort-feed-lookahead-requests-on-close.md`
+- [ ] P2 Port Feed buffer reranking or document the divergence: `docs/issues/061-port-feed-buffer-reranking-or-document-divergence.md`
+- [ ] P2 Surface Rail Feed empty and unplayable states: `docs/issues/062-surface-rail-feed-empty-unplayable-states.md`
+- [ ] P3 Filter Upload drop files client-side: `docs/issues/063-filter-upload-drop-files-client-side.md`
+- [ ] P3 Ignore Feed touch gestures from chrome controls: `docs/issues/064-ignore-feed-touch-gestures-from-chrome.md`
 
 ## Notes
 
