@@ -80,6 +80,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [ ] P2 Surface Rail Feed empty and unplayable states: `docs/issues/062-surface-rail-feed-empty-unplayable-states.md`
 - [ ] P3 Filter Upload drop files client-side: `docs/issues/063-filter-upload-drop-files-client-side.md`
 - [ ] P3 Ignore Feed touch gestures from chrome controls: `docs/issues/064-ignore-feed-touch-gestures-from-chrome.md`
+- [x] P1 Preserve result rank across masonry rows: `docs/issues/065-preserve-result-rank-across-masonry-rows.md`
 
 ## Notes
 

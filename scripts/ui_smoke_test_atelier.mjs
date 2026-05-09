@@ -402,6 +402,25 @@ try {
     throw new Error(`expected search headline to mirror query, got ${JSON.stringify(searchHeadline)}`);
   }
 
+  const visualTopRowMatches = await page.locator("[data-pin]").evaluateAll((pins) =>
+    pins
+      .map((pin) => {
+        const rect = pin.getBoundingClientRect();
+        const match = pin.querySelector("[data-pin-match]")?.textContent?.trim() || "";
+        return { left: rect.left, top: rect.top, match };
+      })
+      .filter((pin) => pin.match)
+      .sort((a, b) => a.top - b.top || a.left - b.left)
+      .slice(0, 4)
+      .map((pin) => pin.match),
+  );
+  const expectedTopRowMatches = ["95%", "91%", "90%", "86%"];
+  if (JSON.stringify(visualTopRowMatches) !== JSON.stringify(expectedTopRowMatches)) {
+    throw new Error(
+      `expected visual top row to preserve search rank ${JSON.stringify(expectedTopRowMatches)}, got ${JSON.stringify(visualTopRowMatches)}`,
+    );
+  }
+
   // 2b. Feed flow — search results include video pins; clicking the Feed
   //     corner action on one opens the fullscreen overlay, kicks a
   //     /api/search/similar-videos fetch with the seed video_id, and

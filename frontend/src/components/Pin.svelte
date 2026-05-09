@@ -136,7 +136,7 @@
     data-pin
     data-pin-anchor={pin.isAnchor ? "true" : undefined}
     data-pin-nsfw={nsfwFlagged ? "true" : undefined}
-    class="relative break-inside-avoid mb-4 bg-surface border border-line rounded-card overflow-hidden shadow-card cursor-pointer transition-[transform,box-shadow] duration-200 ease-soft hover:-translate-y-0.5 hover:shadow-elev group {pin.isAnchor
+    class="relative bg-surface border border-line rounded-card overflow-hidden shadow-card cursor-pointer transition-[transform,box-shadow] duration-200 ease-soft hover:-translate-y-0.5 hover:shadow-elev group {pin.isAnchor
       ? 'border-accent/60 [box-shadow:0_0_0_1px_var(--color-accent-soft),var(--shadow-card)]'
       : ''}"
     onkeydown={handleMenuKey}

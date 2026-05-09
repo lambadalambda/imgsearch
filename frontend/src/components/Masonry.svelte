@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { Pin as PinType } from "../lib/types";
   import Pin from "./Pin.svelte";
 
@@ -20,17 +21,92 @@
     onLoadMore,
   }: Props = $props();
 
-  // CSS columns gives us the masonry effect; gap-x-* sets the column gap and
-  // break-inside-avoid keeps each pin self-contained.
-  const masonryClass = "columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-x-4";
+  const ROW_HEIGHT_PX = 8;
+  const ROW_GAP_PX = 16;
+
+  let spans = $state<Record<string, number>>({});
+  let resizeObserver: ResizeObserver | undefined;
+  const observedTargets = new Map<HTMLElement, string>();
+
+  function spanForHeight(height: number): number {
+    return Math.max(1, Math.ceil((height + ROW_GAP_PX) / (ROW_HEIGHT_PX + ROW_GAP_PX)));
+  }
+
+  function updateSpan(key: string, target: HTMLElement): void {
+    const next = spanForHeight(target.getBoundingClientRect().height);
+    if (spans[key] === next) return;
+    spans = { ...spans, [key]: next };
+  }
+
+  function measureCell(node: HTMLElement, key: string) {
+    let currentKey = key;
+    let target: HTMLElement | undefined;
+    let frame = 0;
+    let destroyed = false;
+
+    function attach() {
+      frame = 0;
+      if (destroyed) return;
+      const nextTarget = (node.querySelector("[data-pin]") as HTMLElement | null) ?? node;
+      if (target && target !== nextTarget) {
+        resizeObserver?.unobserve(target);
+        observedTargets.delete(target);
+      }
+      target = nextTarget;
+      observedTargets.set(target, currentKey);
+      resizeObserver?.observe(target);
+      updateSpan(currentKey, target);
+    }
+
+    function scheduleAttach() {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(attach);
+    }
+
+    scheduleAttach();
+
+    return {
+      update(nextKey: string) {
+        currentKey = nextKey;
+        if (target) observedTargets.set(target, currentKey);
+        scheduleAttach();
+      },
+      destroy() {
+        destroyed = true;
+        if (frame) cancelAnimationFrame(frame);
+        if (target) {
+          resizeObserver?.unobserve(target);
+          observedTargets.delete(target);
+        }
+      },
+    };
+  }
+
+  onMount(() => {
+    resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const target = entry.target as HTMLElement;
+        const key = observedTargets.get(target);
+        if (key) updateSpan(key, target);
+      }
+    });
+    for (const [target, key] of observedTargets) {
+      resizeObserver.observe(target);
+      updateSpan(key, target);
+    }
+    return () => resizeObserver?.disconnect();
+  });
+
+  const gridClass = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-4 items-start";
+  const masonryClass = `${gridClass} [grid-auto-rows:8px]`;
 </script>
 
 <section class="px-5 sm:px-9 pb-16 pt-2" aria-label="Results">
   {#if loading && pins.length === 0}
-    <div class={masonryClass}>
+    <div class={gridClass}>
       {#each Array.from({ length: 12 }) as _, index (index)}
         <div
-          class="skeleton break-inside-avoid mb-4 border border-line rounded-card shadow-card"
+          class="skeleton border border-line rounded-card shadow-card"
           style:height={`${180 + ((index * 47) % 220)}px`}
         ></div>
       {/each}
@@ -40,7 +116,13 @@
   {:else}
     <div class={masonryClass}>
       {#each pins as pin (pin.key)}
-        <Pin {pin} />
+        <div
+          class="min-w-0"
+          use:measureCell={pin.key}
+          style:grid-row-end={`span ${spans[pin.key] ?? 1}`}
+        >
+          <Pin {pin} />
+        </div>
       {/each}
     </div>
 
