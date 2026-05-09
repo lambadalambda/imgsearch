@@ -7,6 +7,18 @@ watchexec = "latest"
 description = "Run Go tests"
 run = "go test ./..."
 
+[tasks."dev:frontend"]
+description = "Run the Atelier frontend (Svelte + Tailwind) dev server with API proxy"
+run = "cd frontend && npm install --no-audit --no-fund --silent && npm run dev"
+
+[tasks."build:frontend"]
+description = "Build the Atelier frontend into internal/webui/atelier/dist for embed"
+run = "cd frontend && npm install --no-audit --no-fund --silent && npm run build"
+
+[tasks."check:frontend"]
+description = "Run svelte-check on the Atelier frontend"
+run = "cd frontend && npm install --no-audit --no-fund --silent && npm run check"
+
 [tasks."test:scripts"]
 description = "Run shell script regression tests"
 run = "scripts/import_images_4chan_test.sh && scripts/import_images_gif_test.sh && scripts/run_imgsearch_cuda_container_test.sh && scripts/resolve_onnxruntime_lib_test.sh"

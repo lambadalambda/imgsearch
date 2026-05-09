@@ -36,7 +36,21 @@ function statsPayload() {
 }
 
 async function serveStatic(res, pathname) {
-  const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/assets\//, '');
+  // The legacy shell now lives at /legacy with its assets under /legacy/assets/*.
+  // Map both that and the historical "/" + "/assets/" layout so the smoke
+  // server can serve the same files in either form.
+  let rel;
+  if (pathname === '/' || pathname === '/legacy' || pathname === '/legacy/') {
+    rel = 'index.html';
+  } else if (pathname.startsWith('/legacy/assets/')) {
+    rel = pathname.replace(/^\/legacy\/assets\//, '');
+  } else if (pathname.startsWith('/assets/')) {
+    rel = pathname.replace(/^\/assets\//, '');
+  } else {
+    res.writeHead(404);
+    res.end('not found');
+    return;
+  }
   const filePath = join(staticRoot, rel);
   if (filePath !== staticRoot && !filePath.startsWith(staticRoot + sep)) {
     res.writeHead(404);
@@ -421,7 +435,7 @@ let browser;
 try {
   browser = await chromium.launch();
   const page = await browser.newPage();
-  await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
+  await page.goto(`${baseURL}/legacy`, { waitUntil: 'domcontentloaded' });
 
   await page.getByRole('heading', { name: 'imgsearch' }).waitFor();
   await assertPolishBasics(page);

@@ -17,3 +17,13 @@ models/**
 /node_modules/
 /playwright-report/
 /test-results/
+
+# Atelier frontend (Svelte + Vite). The dist tree is build output,
+# but we keep a .gitkeep so the //go:embed directive always has at
+# least one file at compile time.
+internal/webui/atelier/dist/**
+!internal/webui/atelier/dist/
+!internal/webui/atelier/dist/.gitkeep
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
