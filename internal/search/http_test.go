@@ -215,6 +215,9 @@ WHERE id = 2
 	if resp.Results[0].Description != "Friendly dog in the library." {
 		t.Fatalf("unexpected description: %q", resp.Results[0].Description)
 	}
+	if resp.Results[0].Width != 100 || resp.Results[0].Height != 100 {
+		t.Fatalf("expected image dimensions on text result, got %+v", resp.Results[0])
+	}
 	if len(resp.Results[0].Tags) != 2 || resp.Results[0].Tags[0] != "dog" {
 		t.Fatalf("unexpected tags: %v", resp.Results[0].Tags)
 	}
@@ -381,6 +384,9 @@ VALUES (8, 1, 2, ?)
 	if resp.Results[0].Description != "A speaker delivers a short stage speech to an audience." {
 		t.Fatalf("expected transcript result to include video description, got %+v", resp.Results[0])
 	}
+	if resp.Results[0].Width != 1280 || resp.Results[0].Height != 720 {
+		t.Fatalf("expected video dimensions on transcript result, got %+v", resp.Results[0])
+	}
 	if len(resp.Results[0].Tags) != 3 || resp.Results[0].Tags[0] != "speech" {
 		t.Fatalf("expected transcript result to include video tags, got %+v", resp.Results[0])
 	}
@@ -540,6 +546,9 @@ func TestSimilarSearchReturnsResults(t *testing.T) {
 	}
 	if len(resp.Results) != 1 || resp.Results[0].ImageID != 2 {
 		t.Fatalf("unexpected results: %+v", resp.Results)
+	}
+	if resp.Results[0].Width != 100 || resp.Results[0].Height != 100 {
+		t.Fatalf("expected image dimensions on similar result, got %+v", resp.Results[0])
 	}
 }
 
@@ -1241,8 +1250,14 @@ UPDATE images SET description = 'A friendly dog outside.', tags_json = '["dog","
 	if _, ok := seen[1]; !ok {
 		t.Fatalf("expected image 1 in tag search results: %+v", resp.Results)
 	}
+	if seen[1].Width != 100 || seen[1].Height != 100 {
+		t.Fatalf("expected image dimensions on tag result, got %+v", seen[1])
+	}
 	if _, ok := seen[2]; !ok {
 		t.Fatalf("expected image 2 in tag search results: %+v", resp.Results)
+	}
+	if seen[2].Width != 100 || seen[2].Height != 100 {
+		t.Fatalf("expected image dimensions on tag result, got %+v", seen[2])
 	}
 }
 
@@ -1352,6 +1367,9 @@ VALUES (7, 10, 0, 1000);
 	}
 	if resp.Results[0].PreviewPath != "images/vf1" {
 		t.Fatalf("expected preview path from matched frame, got %+v", resp.Results[0])
+	}
+	if resp.Results[0].Width != 1920 || resp.Results[0].Height != 1080 {
+		t.Fatalf("expected video dimensions on tag video result, got %+v", resp.Results[0])
 	}
 }
 

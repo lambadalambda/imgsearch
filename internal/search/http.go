@@ -611,6 +611,8 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 	       i.original_name,
 	       i.storage_path,
 	       i.mime_type,
+	       i.width,
+	       i.height,
 	       COALESCE(i.description, ''),
 	       COALESCE(i.tags_json, '[]'),
 	       vf.video_id,
@@ -653,6 +655,8 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 		originalName        string
 		storagePath         string
 		mimeType            string
+		width               int
+		height              int
 		description         string
 		tags                []string
 		videoID             sql.NullInt64
@@ -673,7 +677,28 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 		var row mediaRow
 		var tagsJSON string
 		var videoTagsJSON string
-		if err := rows.Scan(&row.imageID, &row.originalName, &row.storagePath, &row.mimeType, &row.description, &tagsJSON, &row.videoID, &row.videoOriginalName, &row.videoStoragePath, &row.videoMimeType, &row.videoDescription, &videoTagsJSON, &row.videoTranscriptText, &row.timestampMS, &row.videoDurationMS, &row.videoWidth, &row.videoHeight, &row.videoFrameCount); err != nil {
+		if err := rows.Scan(
+			&row.imageID,
+			&row.originalName,
+			&row.storagePath,
+			&row.mimeType,
+			&row.width,
+			&row.height,
+			&row.description,
+			&tagsJSON,
+			&row.videoID,
+			&row.videoOriginalName,
+			&row.videoStoragePath,
+			&row.videoMimeType,
+			&row.videoDescription,
+			&videoTagsJSON,
+			&row.videoTranscriptText,
+			&row.timestampMS,
+			&row.videoDurationMS,
+			&row.videoWidth,
+			&row.videoHeight,
+			&row.videoFrameCount,
+		); err != nil {
 			return nil, fmt.Errorf("scan enriched image row: %w", err)
 		}
 		tags, err := tagutil.DecodeJSON(tagsJSON)
@@ -715,6 +740,8 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 				Distance:     hit.Distance,
 				OriginalName: row.originalName,
 				StoragePath:  filepath.ToSlash(row.storagePath),
+				Width:        row.width,
+				Height:       row.height,
 				Description:  row.description,
 				Tags:         row.tags,
 			}
@@ -734,8 +761,12 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 				result.PreviewPath = filepath.ToSlash(row.storagePath)
 				result.MatchTimestampMS = row.timestampMS.Int64
 				result.DurationMS = row.videoDurationMS.Int64
-				result.Width = int(row.videoWidth.Int64)
-				result.Height = int(row.videoHeight.Int64)
+				if row.videoWidth.Valid && row.videoWidth.Int64 > 0 {
+					result.Width = int(row.videoWidth.Int64)
+				}
+				if row.videoHeight.Valid && row.videoHeight.Int64 > 0 {
+					result.Height = int(row.videoHeight.Int64)
+				}
 				result.FrameCount = int(row.videoFrameCount.Int64)
 			}
 			results = append(results, result)
@@ -836,12 +867,18 @@ WITH requested_tags(tag) AS (
     i.original_name AS image_original_name,
     i.storage_path AS image_storage_path,
     i.mime_type AS image_mime_type,
+    i.width AS image_width,
+    i.height AS image_height,
     COALESCE(i.description, '') AS image_description,
     COALESCE(i.tags_json, '[]') AS image_tags_json,
     vf.video_id AS video_id,
 	    v.original_name AS video_original_name,
 	    v.storage_path AS video_storage_path,
 	    v.mime_type AS video_mime_type,
+	    COALESCE(v.duration_ms, 0) AS video_duration_ms,
+	    COALESCE(v.width, 0) AS video_width,
+	    COALESCE(v.height, 0) AS video_height,
+	    COALESCE(v.frame_count, 0) AS video_frame_count,
 	    COALESCE(v.description, '') AS video_description,
 	    COALESCE(v.tags_json, '[]') AS video_tags_json,
 	    COALESCE(v.transcript_text, '') AS video_transcript_text,
@@ -868,12 +905,18 @@ SELECT media_type,
        image_original_name,
        image_storage_path,
        image_mime_type,
+       image_width,
+       image_height,
        image_description,
        image_tags_json,
        video_id,
        video_original_name,
        video_storage_path,
        video_mime_type,
+       video_duration_ms,
+       video_width,
+       video_height,
+       video_frame_count,
        video_description,
        video_tags_json,
        video_transcript_text,
@@ -902,6 +945,10 @@ OFFSET ?
 		var videoOriginalName sql.NullString
 		var videoStoragePath sql.NullString
 		var videoMimeType sql.NullString
+		var videoDurationMS int64
+		var videoWidth int
+		var videoHeight int
+		var videoFrameCount int
 		var videoDescription sql.NullString
 		var videoTagsJSON sql.NullString
 		var videoTranscriptText sql.NullString
@@ -914,12 +961,18 @@ OFFSET ?
 			&result.OriginalName,
 			&imageStoragePath,
 			&result.MimeType,
+			&result.Width,
+			&result.Height,
 			&result.Description,
 			&imageTagsJSON,
 			&videoID,
 			&videoOriginalName,
 			&videoStoragePath,
 			&videoMimeType,
+			&videoDurationMS,
+			&videoWidth,
+			&videoHeight,
+			&videoFrameCount,
 			&videoDescription,
 			&videoTagsJSON,
 			&videoTranscriptText,
@@ -945,6 +998,14 @@ OFFSET ?
 			result.OriginalName = videoOriginalName.String
 			result.StoragePath = filepath.ToSlash(videoStoragePath.String)
 			result.MimeType = videoMimeType.String
+			result.DurationMS = videoDurationMS
+			if videoWidth > 0 {
+				result.Width = videoWidth
+			}
+			if videoHeight > 0 {
+				result.Height = videoHeight
+			}
+			result.FrameCount = videoFrameCount
 			if desc := strings.TrimSpace(videoDescription.String); desc != "" {
 				result.Description = desc
 			}
@@ -1035,6 +1096,10 @@ SELECT v.id,
        v.original_name,
        v.storage_path,
        v.mime_type,
+       COALESCE(v.duration_ms, 0),
+       COALESCE(v.width, 0),
+       COALESCE(v.height, 0),
+       COALESCE(v.frame_count, 0),
        COALESCE(v.description, ''),
        COALESCE(v.tags_json, '[]'),
 	       COALESCE(v.transcript_text, ''),
@@ -1059,7 +1124,23 @@ WHERE vte.model_id = ?
 		var blob []byte
 		var dim int
 		var tagsJSON string
-		if err := rows.Scan(&result.VideoID, &result.OriginalName, &result.StoragePath, &result.MimeType, &result.Description, &tagsJSON, &result.TranscriptText, &result.ImageID, &result.PreviewPath, &dim, &blob); err != nil {
+		if err := rows.Scan(
+			&result.VideoID,
+			&result.OriginalName,
+			&result.StoragePath,
+			&result.MimeType,
+			&result.DurationMS,
+			&result.Width,
+			&result.Height,
+			&result.FrameCount,
+			&result.Description,
+			&tagsJSON,
+			&result.TranscriptText,
+			&result.ImageID,
+			&result.PreviewPath,
+			&dim,
+			&blob,
+		); err != nil {
 			return nil, fmt.Errorf("scan transcript embedding row: %w", err)
 		}
 		tags, err := tagutil.DecodeJSON(tagsJSON)
