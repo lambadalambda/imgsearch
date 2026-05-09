@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 /* Atelier design tokens, exposed as Tailwind v4 theme variables so utility
- * classes like `bg-bg`, `text-ink`, `border-line` resolve correctly. */
+ * classes like `bg-bg`, `text-ink`, `border-line`, `rounded-card`,
+ * `shadow-card`, `ease-soft`, `font-display` resolve correctly. */
 @theme {
   --color-bg: #faf7f2;
   --color-bg-2: #f3ede2;
@@ -28,16 +29,16 @@
 
   --font-display: "Iowan Old Style", "Source Serif Pro", Georgia, serif;
   --font-sans:
-    "Inter", "SF Pro Text", -apple-system, system-ui, "Segoe UI",
-    sans-serif;
+    "Inter", "SF Pro Text", -apple-system, system-ui, "Segoe UI", sans-serif;
 
   --radius-card: 14px;
   --radius-control: 10px;
 
-  --shadow-card: 0 1px 2px rgba(40, 30, 18, 0.05), 0 16px 32px -20px rgba(40, 30, 18, 0.18);
+  --shadow-card: 0 1px 2px rgba(40, 30, 18, 0.05),
+    0 16px 32px -20px rgba(40, 30, 18, 0.18);
   --shadow-elev: 0 18px 40px -16px rgba(40, 30, 18, 0.28);
 
-  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-soft: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 html {
@@ -57,51 +58,13 @@ body.modal-open {
   overflow: hidden;
 }
 
+/* Display heading family — Tailwind exposes this via `font-display`,
+ * but we also tighten letter-spacing globally so headings feel right. */
 .font-display {
-  font-family: var(--font-display);
   letter-spacing: -0.012em;
 }
 
-/* Soft "card" surface */
-.surface-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-}
-
-/* Hairline divider used in the rail and between sections */
-.hairline {
-  border-color: var(--color-line);
-}
-
-/* Pin tag-chip color tones referenced from data via `data-tone="plum|moss|gold"`. */
-.tone-plum {
-  background: var(--color-plum-soft);
-  color: var(--color-plum);
-}
-.tone-moss {
-  background: var(--color-moss-soft);
-  color: var(--color-moss);
-}
-.tone-gold {
-  background: var(--color-gold-soft);
-  color: var(--color-gold);
-}
-
-/* Hide scrollbars but keep scroll for the quick-row on mobile */
-.scroll-x-soft {
-  scrollbar-width: none;
-}
-.scroll-x-soft::-webkit-scrollbar {
-  display: none;
-}
-
-/* Masonry layout via CSS columns. Number of columns set inline. */
-.masonry > * {
-  break-inside: avoid;
-}
-
+/* Skeleton shimmer for loading states. */
 @keyframes shimmer {
   0% {
     background-position: 200% 0;
@@ -111,7 +74,7 @@ body.modal-open {
   }
 }
 
-.skeleton {
+@utility skeleton {
   background: linear-gradient(
     90deg,
     var(--color-surface-2) 25%,
@@ -120,6 +83,41 @@ body.modal-open {
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* Hide scrollbars but keep scroll for the quick-row on mobile. */
+@utility scroll-x-soft {
+  scrollbar-width: none;
+}
+@utility scroll-x-soft {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Tag tone variants, applied via class names on chips. */
+@utility tone-plum {
+  background: var(--color-plum-soft);
+  color: var(--color-plum);
+}
+@utility tone-moss {
+  background: var(--color-moss-soft);
+  color: var(--color-moss);
+}
+@utility tone-gold {
+  background: var(--color-gold-soft);
+  color: var(--color-gold);
+}
+
+/* Hide the default <details> disclosure marker so we can style the summary
+ * as a normal button. */
+@utility no-marker {
+  list-style: none;
+}
+@utility no-marker {
+  &::-webkit-details-marker {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

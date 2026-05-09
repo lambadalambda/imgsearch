@@ -9,8 +9,13 @@
  *   1. Library mode renders a masonry of pins with titles and tag chips.
  *   2. Typing a query into the search bar puts the SPA into search mode and
  *      shows match badges on result pins.
- *   3. Clicking "Similar" on a pin switches to similar mode keyed on its id.
- *   4. The lightbox opens when a pin is clicked and closes via Escape.
+ *   3. Clicking a tag chip moves to ?tag=foo and runs a tag-restricted
+ *      search (no similarity badges).
+ *   4. Clicking "Similar" on a pin switches to similar mode keyed on its id.
+ *   5. The lightbox opens when a pin is clicked and closes via Escape.
+ *   6. The pin overflow menu exposes Flag NSFW / Re-annotate / Delete and
+ *      Delete optimistically removes the pin from the masonry.
+ *   7. "Load more" pulls the next offset and appends pins.
  *
  * If the embedded Atelier build is missing (placeholder shell), the test
  * skips with exit code 0 so a fresh checkout that has not yet run
@@ -57,7 +62,7 @@ function jsonResponse(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-const sampleImages = Array.from({ length: 24 }, (_, i) => ({
+const sampleImages = Array.from({ length: 96 }, (_, i) => ({
   image_id: 1000 + i,
   original_name: `sample-${i}.jpg`,
   storage_path: `images/sample-${i}`,
@@ -72,22 +77,24 @@ const sampleImages = Array.from({ length: 24 }, (_, i) => ({
   tags: ["portrait", "cat", "indoor", "warm-tone", "test"],
 }));
 
-const sampleSearchResults = sampleImages.slice(0, 12).map((image, i) => ({
-  image_id: image.image_id,
-  media_type: "image",
-  preview_path: image.storage_path,
-  storage_path: image.storage_path,
-  mime_type: image.mime_type,
-  width: image.width,
-  height: image.height,
-  distance: 0.1 + i * 0.04,
-  original_name: image.original_name,
-  description: image.description,
-  tags: image.tags,
-}));
+function searchResults(seedOffset = 0) {
+  return sampleImages.slice(0, 12).map((image, i) => ({
+    image_id: image.image_id,
+    media_type: "image",
+    preview_path: image.storage_path,
+    storage_path: image.storage_path,
+    mime_type: image.mime_type,
+    width: image.width,
+    height: image.height,
+    distance: 0.1 + (i + seedOffset) * 0.04,
+    original_name: image.original_name,
+    description: image.description,
+    tags: image.tags,
+  }));
+}
 
 async function serveDist(res, pathname) {
-  let rel = pathname === "/" ? "index.html" : pathname.replace(/^\//, "");
+  const rel = pathname === "/" ? "index.html" : pathname.replace(/^\//, "");
   const filePath = join(distRoot, rel);
   if (filePath !== distRoot && !filePath.startsWith(distRoot + sep)) {
     res.writeHead(404);
@@ -104,13 +111,19 @@ async function serveDist(res, pathname) {
   }
 }
 
+let nsfwToggleCount = 0;
+let reannotateCount = 0;
+let deleteCount = 0;
+const tagSearchRequests = [];
+const imagesRequests = [];
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   try {
     if (url.pathname === "/api/stats") {
       jsonResponse(res, 200, {
-        images_total: 24,
-        standalone_images_total: 24,
+        images_total: sampleImages.length,
+        standalone_images_total: sampleImages.length,
         videos_total: 7,
       });
       return;
@@ -127,7 +140,12 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname === "/api/images") {
       const limit = Number(url.searchParams.get("limit") || 24);
-      jsonResponse(res, 200, { images: sampleImages.slice(0, limit), total: sampleImages.length });
+      const offset = Number(url.searchParams.get("offset") || 0);
+      imagesRequests.push({ limit, offset });
+      jsonResponse(res, 200, {
+        images: sampleImages.slice(offset, offset + limit),
+        total: sampleImages.length,
+      });
       return;
     }
     if (url.pathname === "/api/videos") {
@@ -136,8 +154,8 @@ const server = createServer(async (req, res) => {
     }
     if (url.pathname === "/api/search/text") {
       jsonResponse(res, 200, {
-        results: sampleSearchResults,
-        total: sampleSearchResults.length,
+        results: searchResults(),
+        total: 12,
         debug: { duration_ms: 12 },
       });
       return;
@@ -145,7 +163,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/search/similar") {
       const seed = Number(url.searchParams.get("image_id") || 0);
       jsonResponse(res, 200, {
-        results: sampleSearchResults.slice(0, 6).map((r, idx) => ({
+        results: searchResults().slice(0, 6).map((r, idx) => ({
           ...r,
           is_anchor: idx === 0,
           image_id: idx === 0 ? seed : r.image_id,
@@ -154,8 +172,38 @@ const server = createServer(async (req, res) => {
       });
       return;
     }
+    if (url.pathname === "/api/search/tags") {
+      const tags = url.searchParams.getAll("tag");
+      const mode = url.searchParams.get("tag_mode") || "any";
+      tagSearchRequests.push({ tags, mode });
+      jsonResponse(res, 200, {
+        results: searchResults().map((r) => ({
+          ...r,
+          search_source: "tag",
+          distance: 0,
+          tags: Array.from(new Set([...(r.tags || []), ...tags])),
+        })),
+        total: 12,
+      });
+      return;
+    }
+    if (/^\/api\/(images|videos)\/\d+\/toggle-nsfw$/.test(url.pathname) && req.method === "POST") {
+      nsfwToggleCount += 1;
+      jsonResponse(res, 200, { ok: true });
+      return;
+    }
+    if (/^\/api\/(images|videos)\/\d+\/reannotate$/.test(url.pathname) && req.method === "POST") {
+      reannotateCount += 1;
+      jsonResponse(res, 200, { ok: true });
+      return;
+    }
+    if (/^\/api\/(images|videos)\/\d+$/.test(url.pathname) && req.method === "DELETE") {
+      deleteCount += 1;
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     if (url.pathname.startsWith("/media/")) {
-      // Return a tiny 1x1 transparent PNG for any media request.
       const png = Buffer.from(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
         "base64",
@@ -190,11 +238,11 @@ try {
 
   await page.goto(`${baseURL}/`, { waitUntil: "networkidle" });
 
-  // 1. Shell renders.
-  await page.locator(".pin").first().waitFor({ state: "visible", timeout: 10000 });
-  const pinCount = await page.locator(".pin").count();
-  if (pinCount < 3) {
-    throw new Error(`expected at least 3 library pins, got ${pinCount}`);
+  // 1. Library shell renders.
+  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 10000 });
+  const pinCount = await page.locator("[data-pin]").count();
+  if (pinCount < 12) {
+    throw new Error(`expected initial 48-page library to render at least 12 pins, got ${pinCount}`);
   }
   const headline = (await page.locator("h1").first().textContent() || "").trim();
   if (headline !== "Library") {
@@ -205,33 +253,125 @@ try {
   await page.locator("#atelier-search").fill("warm portrait");
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => /\?q=/.test(window.location.search), {}, { timeout: 5000 });
-  await page.locator(".pin .pin-match").first().waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-pin-match]").first().waitFor({ state: "visible", timeout: 5000 });
   const searchHeadline = (await page.locator("h1").first().textContent() || "").trim();
   if (searchHeadline !== "warm portrait") {
     throw new Error(`expected search headline to mirror query, got ${JSON.stringify(searchHeadline)}`);
   }
 
-  // 3. Similar flow via the corner action.
-  const firstPin = page.locator(".pin").first();
+  // 3. Tag chip flow — clicks the "Tag · portrait" quick-row chip and
+  //    expects to land on ?tag=portrait with no similarity badges (tag
+  //    search results have search_source="tag" / distance=0).
+  await page.getByRole("button", { name: "Tag · portrait" }).click();
+  await page.waitForFunction(
+    () => /\?tag=portrait/.test(window.location.search),
+    {},
+    { timeout: 5000 },
+  );
+  await page.waitForFunction(
+    () => document.querySelectorAll("[data-pin-match]").length === 0,
+    {},
+    { timeout: 5000 },
+  );
+  const tagHeadline = (await page.locator("h1").first().textContent() || "").trim();
+  if (tagHeadline !== "portrait") {
+    throw new Error(`expected tag headline, got ${JSON.stringify(tagHeadline)}`);
+  }
+  if (tagSearchRequests.length === 0 || tagSearchRequests[0].tags[0] !== "portrait") {
+    throw new Error(`expected /api/search/tags request for "portrait", got ${JSON.stringify(tagSearchRequests)}`);
+  }
+
+  // Reset to library before similar/lightbox/menu checks.
+  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
+  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
+
+  // 4. Similar flow via the corner action.
+  const firstPin = page.locator("[data-pin]").first();
   await firstPin.hover();
-  await firstPin.locator("button", { hasText: "Similar" }).click();
+  await firstPin.locator('[data-pin-action="similar"]').click();
   await page.waitForFunction(() => /\?similar=/.test(window.location.search), {}, { timeout: 5000 });
-  await page.locator(".pin.is-anchor").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-pin-anchor]").waitFor({ state: "visible", timeout: 5000 });
   const similarHeadline = (await page.locator("h1").first().textContent() || "").trim();
   if (similarHeadline !== "Similar in your library") {
     throw new Error(`expected similar headline, got ${JSON.stringify(similarHeadline)}`);
   }
 
-  // 4. Lightbox open + Escape close.
-  await page.locator(".pin .pin-media").first().click();
-  await page.locator(".lightbox").waitFor({ state: "visible", timeout: 5000 });
-  await page.keyboard.press("Escape");
-  await page.locator(".lightbox").waitFor({ state: "hidden", timeout: 5000 });
-
-  // 5. Rail "Library" returns to library mode and clears query.
+  // Back to library for lightbox / menu / load-more.
   await page.locator('a[aria-label="imgsearch home"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
-  await page.locator(".pin").first().waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
+
+  // 5. Lightbox open + Escape close.
+  await page.locator('[data-pin-media]').first().click();
+  await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  await page.keyboard.press("Escape");
+  await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+
+  // 6. Pin overflow menu — Re-annotate hits the API; Delete drops the pin.
+  const targetPin = page.locator("[data-pin]").first();
+  const beforeFirst = await targetPin.evaluate((el) => el.getAttribute("data-pin-anchor"));
+  if (beforeFirst === "true") {
+    throw new Error("smoke test assumed first library pin is not an anchor");
+  }
+  const initialCount = await page.locator("[data-pin]").count();
+
+  await targetPin.hover();
+  await targetPin.locator('[data-pin-action="more"]').click();
+  await targetPin.locator('[data-pin-menu="reannotate"]').click();
+  // Wait for the in-flight POST to settle so menu items become enabled
+  // again before the next interaction.
+  const reannotateDeadline = Date.now() + 5000;
+  while (reannotateCount !== 1 && Date.now() < reannotateDeadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  if (reannotateCount !== 1) {
+    throw new Error(`expected one re-annotate POST, got ${reannotateCount}`);
+  }
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll("[data-pin-menu]")).every(
+        (el) => !el.disabled,
+      ),
+    {},
+    { timeout: 5000 },
+  );
+
+  // Confirm dialog must auto-accept for the delete branch.
+  page.once("dialog", (dialog) => dialog.accept());
+  const targetPin2 = page.locator("[data-pin]").first();
+  await targetPin2.hover();
+  await targetPin2.locator('[data-pin-action="more"]').click();
+  await targetPin2.locator('[data-pin-menu="delete"]').click();
+  await page.waitForFunction(
+    (initial) => document.querySelectorAll("[data-pin]").length === initial - 1,
+    initialCount,
+    { timeout: 5000 },
+  );
+  if (deleteCount !== 1) {
+    throw new Error(`expected one DELETE, got ${deleteCount}`);
+  }
+
+  // 7. Load more — ensure clicking it grows the masonry.
+  const beforeLoadMore = await page.locator("[data-pin]").count();
+  await page.locator("[data-load-more]").click();
+  await page.waitForFunction(
+    (before) => document.querySelectorAll("[data-pin]").length > before,
+    beforeLoadMore,
+    { timeout: 5000 },
+  );
+  if (imagesRequests.length < 2) {
+    throw new Error(`expected at least two /api/images requests after load-more, got ${imagesRequests.length}`);
+  }
+  const lastRequest = imagesRequests[imagesRequests.length - 1];
+  if (lastRequest.offset === 0) {
+    throw new Error(`expected load-more to request a non-zero offset, got ${JSON.stringify(lastRequest)}`);
+  }
+
+  // 8. Rail "Library" returns to library mode and clears query.
+  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
+  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
   const libraryHeadline = (await page.locator("h1").first().textContent() || "").trim();
   if (libraryHeadline !== "Library") {
     throw new Error(`expected return to library mode, got ${JSON.stringify(libraryHeadline)}`);

@@ -39,19 +39,27 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="lightbox"
+    data-lightbox
+    class="fixed inset-0 z-[1200] grid place-items-center bg-black/[0.78] p-6 backdrop-blur-md"
     role="dialog"
     aria-modal="true"
     aria-label={pin.title}
     tabindex="-1"
     onclick={handleBackdropClick}
   >
-    <div class="lightbox-card">
-      <button type="button" class="lightbox-close" aria-label="Close" onclick={close}>
+    <div
+      class="relative bg-surface rounded-[20px] shadow-[0_30px_80px_rgba(0,0,0,0.45)] w-[min(1100px,calc(100vw-32px))] max-h-[calc(100vh-32px)] grid grid-rows-[minmax(0,1fr)_auto] overflow-hidden md:grid-rows-1 md:grid-cols-[minmax(0,1fr)_320px]"
+    >
+      <button
+        type="button"
+        class="absolute top-3 right-3 z-[5] grid place-items-center w-9 h-9 bg-black/[0.74] text-[#fffdf8] border-0 rounded-full cursor-pointer transition-colors duration-100 ease-soft hover:bg-black/[0.92]"
+        aria-label="Close"
+        onclick={close}
+      >
         <Icon name="close" class="w-4 h-4" />
       </button>
 
-      <div class="lightbox-media">
+      <div class="bg-[#181613] grid place-items-center min-h-0">
         {#if pin.mediaType === "video"}
           <!-- User-uploaded media has no captions track; suppress the a11y nag -->
           <!-- svelte-ignore a11y_media_has_caption -->
@@ -62,36 +70,57 @@
             playsinline
             preload="auto"
             poster={pin.thumbUrl}
+            class="block max-w-full w-auto h-auto max-h-[calc(100vh-200px)] md:max-h-[calc(100vh-64px)] object-contain"
           ></video>
         {:else}
-          <img src={pin.mediaUrl} alt={pin.title} />
+          <img
+            src={pin.mediaUrl}
+            alt={pin.title}
+            class="block max-w-full w-auto h-auto max-h-[calc(100vh-200px)] md:max-h-[calc(100vh-64px)] object-contain"
+          />
         {/if}
       </div>
 
-      <div class="lightbox-meta">
-        <h2 class="font-display text-2xl font-semibold text-ink leading-tight">{pin.title}</h2>
-        <p class="text-sm text-muted mt-1 break-all">{pin.filename}</p>
+      <div class="p-[18px_22px_22px] overflow-auto">
+        <h2 class="font-display text-[24px] font-semibold text-ink leading-tight m-0">
+          {pin.title}
+        </h2>
+        <p class="text-sm text-muted mt-1 break-all m-0">{pin.filename}</p>
 
-        <div class="meta-row">
+        <div class="flex flex-wrap items-center gap-2 mt-[14px]">
           {#if pin.matchScore !== undefined}
-            <span class="meta-pill">{formatPercent(pin.matchScore)} match{pin.matchTimestampMs ? ` at ${formatDuration(pin.matchTimestampMs)}` : ""}</span>
+            <span
+              class="text-[12px] font-medium leading-none bg-bg-2 text-ink px-[9px] py-[5px] rounded-full tabular-nums"
+            >
+              {formatPercent(pin.matchScore)} match{pin.matchTimestampMs
+                ? ` at ${formatDuration(pin.matchTimestampMs)}`
+                : ""}
+            </span>
           {/if}
           {#if pin.mediaType === "video" && pin.durationMs}
-            <span class="meta-pill">▶ {formatDuration(pin.durationMs)}</span>
+            <span
+              class="text-[12px] font-medium leading-none bg-bg-2 text-ink px-[9px] py-[5px] rounded-full tabular-nums"
+            >
+              ▶ {formatDuration(pin.durationMs)}
+            </span>
           {/if}
           {#if pin.tags?.length}
-            <div class="meta-tags">
+            <div class="flex flex-wrap gap-[5px]">
               {#each pin.tags as tag (tag)}
-                <span class="meta-tag">{tag}</span>
+                <span
+                  class="text-[12px] font-medium leading-none bg-surface-2 text-ink-2 px-[9px] py-1 rounded-full"
+                >
+                  {tag}
+                </span>
               {/each}
             </div>
           {/if}
         </div>
 
-        <div class="meta-actions">
+        <div class="mt-[18px] flex flex-wrap gap-2">
           <button
             type="button"
-            class="action primary"
+            class="px-[14px] py-[9px] bg-ink text-[#fffdf8] border border-ink rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-[#2d2924]"
             onclick={() => {
               setSimilar(pin.imageId);
               close();
@@ -99,7 +128,12 @@
           >
             Find similar
           </button>
-          <a class="action" href={pin.mediaUrl} target="_blank" rel="noreferrer noopener">
+          <a
+            href={pin.mediaUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            class="px-[14px] py-[9px] bg-surface text-ink-2 border border-line-2 rounded-full text-[13.5px] font-medium leading-none cursor-pointer no-underline transition-colors duration-150 ease-soft hover:bg-surface-2"
+          >
             Open original
           </a>
         </div>
@@ -107,132 +141,3 @@
     </div>
   </div>
 {/if}
-
-<style>
-  .lightbox {
-    position: fixed;
-    inset: 0;
-    z-index: 1200;
-    display: grid;
-    place-items: center;
-    background: rgba(20, 17, 12, 0.78);
-    padding: 24px;
-    backdrop-filter: blur(6px);
-  }
-  .lightbox-card {
-    position: relative;
-    background: var(--color-surface);
-    border-radius: 20px;
-    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
-    width: min(1100px, calc(100vw - 32px));
-    max-height: calc(100vh - 32px);
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
-    overflow: hidden;
-  }
-  @media (min-width: 900px) {
-    .lightbox-card {
-      grid-template-columns: minmax(0, 1fr) 320px;
-      grid-template-rows: 1fr;
-    }
-  }
-  .lightbox-close {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    z-index: 5;
-    display: grid;
-    place-items: center;
-    width: 36px;
-    height: 36px;
-    background: rgba(20, 17, 12, 0.74);
-    color: #fffdf8;
-    border: 0;
-    border-radius: 999px;
-    cursor: pointer;
-    transition: background 120ms var(--ease);
-  }
-  .lightbox-close:hover {
-    background: rgba(20, 17, 12, 0.92);
-  }
-  .lightbox-media {
-    background: #181613;
-    display: grid;
-    place-items: center;
-    min-height: 0;
-  }
-  .lightbox-media img,
-  .lightbox-media video {
-    max-width: 100%;
-    max-height: calc(100vh - 200px);
-    width: auto;
-    height: auto;
-    display: block;
-    object-fit: contain;
-  }
-  @media (min-width: 900px) {
-    .lightbox-media img,
-    .lightbox-media video {
-      max-height: calc(100vh - 64px);
-    }
-  }
-  .lightbox-meta {
-    padding: 18px 22px 22px;
-    overflow: auto;
-  }
-  .meta-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    margin-top: 14px;
-  }
-  .meta-pill {
-    font: 500 12px/1 var(--font-sans);
-    background: var(--color-bg-2);
-    color: var(--color-ink);
-    padding: 5px 9px;
-    border-radius: 999px;
-    font-variant-numeric: tabular-nums;
-  }
-  .meta-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-  }
-  .meta-tag {
-    font: 500 12px/1 var(--font-sans);
-    background: var(--color-surface-2);
-    color: var(--color-ink-2);
-    padding: 4px 9px;
-    border-radius: 999px;
-  }
-  .meta-actions {
-    margin-top: 18px;
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .action {
-    padding: 9px 14px;
-    border: 1px solid var(--color-line-2);
-    background: var(--color-surface);
-    color: var(--color-ink-2);
-    border-radius: 999px;
-    font: 500 13.5px/1 var(--font-sans);
-    cursor: pointer;
-    text-decoration: none;
-    transition: background 140ms var(--ease), border-color 140ms var(--ease);
-  }
-  .action:hover {
-    background: var(--color-surface-2);
-  }
-  .action.primary {
-    background: var(--color-ink);
-    color: #fffdf8;
-    border-color: var(--color-ink);
-  }
-  .action.primary:hover {
-    background: #2d2924;
-  }
-</style>

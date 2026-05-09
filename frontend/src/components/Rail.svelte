@@ -15,7 +15,7 @@
       id: "library",
       label: "Library",
       onClick: () => setLibrary(),
-      activeWhen: (s) => s.mode === "library" || s.mode === "similar",
+      activeWhen: (s) => s.mode === "library" || s.mode === "similar" || s.mode === "tag",
     },
     {
       id: "search",
@@ -33,6 +33,11 @@
       },
     },
   ];
+
+  const railBtnBase =
+    "grid place-items-center w-10 h-10 border-0 rounded-[10px] cursor-pointer text-muted bg-transparent transition-[background-color,color] duration-150 ease-soft hover:bg-black/[0.04] hover:text-ink disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted";
+  const activeBtn =
+    "bg-surface text-accent shadow-[0_1px_2px_rgba(40,30,18,0.06)] hover:bg-surface hover:text-accent";
 </script>
 
 <aside
@@ -41,8 +46,8 @@
 >
   <a
     href="?"
-    class="rail-mark mr-2 sm:mr-0 sm:mb-3"
     aria-label="imgsearch home"
+    class="flex-none grid place-items-center w-8 h-8 mr-2 sm:mr-0 sm:mb-3 rounded-[9px] bg-gradient-to-br from-accent to-accent-strong text-white text-[13px] font-bold leading-none shadow-[0_4px_12px_rgba(160,60,30,0.28)] no-underline"
     onclick={(event) => {
       event.preventDefault();
       setLibrary();
@@ -55,8 +60,7 @@
     {@const isActive = item.activeWhen?.($mode) ?? false}
     <button
       type="button"
-      class="rail-btn {isActive ? 'is-active' : ''}"
-      class:disabled={item.disabled}
+      class="{railBtnBase} {isActive ? activeBtn : ''}"
       disabled={item.disabled}
       title={item.label}
       aria-label={item.label}
@@ -70,56 +74,19 @@
 
   <a
     href="/legacy"
-    class="rail-btn"
+    class={railBtnBase}
     title="Legacy UI"
     aria-label="Open legacy UI"
   >
     <Icon name="external" class="w-[18px] h-[18px]" />
   </a>
-  <button type="button" class="rail-btn" disabled aria-label="Settings (soon)" title="Settings (soon)">
+  <button
+    type="button"
+    class={railBtnBase}
+    disabled
+    aria-label="Settings (soon)"
+    title="Settings (soon)"
+  >
     <Icon name="settings" class="w-[19px] h-[19px]" />
   </button>
 </aside>
-
-<style>
-  .rail-mark {
-    display: grid;
-    place-items: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 9px;
-    background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-strong) 100%);
-    color: #fff;
-    font-weight: 700;
-    font-size: 13px;
-    box-shadow: 0 4px 12px rgba(160, 60, 30, 0.28);
-    text-decoration: none;
-    flex: 0 0 auto;
-  }
-
-  .rail-btn {
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    border: 0;
-    background: transparent;
-    color: var(--color-muted);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: background 140ms var(--ease), color 140ms var(--ease);
-  }
-  .rail-btn:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.04);
-    color: var(--color-ink);
-  }
-  .rail-btn.is-active {
-    background: var(--color-surface);
-    color: var(--color-accent);
-    box-shadow: 0 1px 2px rgba(40, 30, 18, 0.06);
-  }
-  .rail-btn.disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-</style>

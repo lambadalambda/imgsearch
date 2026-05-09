@@ -36,6 +36,8 @@ export interface SearchResult {
   description?: string;
   tags?: string[];
   is_anchor?: boolean;
+  /** Tag-based searches set this to "tag" so the UI can suppress similarity badges. */
+  search_source?: "tag" | "embedding" | string;
 }
 
 export interface SearchDebug {
@@ -104,4 +106,6 @@ export interface Pin {
   durationMs?: number;
   /** Whether this is the anchor of a similar-search. */
   isAnchor?: boolean;
+  /** Whether this pin is currently flagged as NSFW (best-effort, derived from tags). */
+  isNSFW?: boolean;
 }

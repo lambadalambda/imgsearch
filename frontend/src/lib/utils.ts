@@ -43,7 +43,13 @@ export function deriveTitle(record: { description?: string; original_name?: stri
   return record.original_name ?? "Untitled";
 }
 
+function tagsIncludeNSFW(tags: string[] | undefined): boolean {
+  if (!tags?.length) return false;
+  return tags.some((tag) => tag.toLowerCase() === "nsfw");
+}
+
 export function pinFromImage(record: ImageRecord): Pin {
+  const tags = record.tags ?? [];
   return {
     key: `image:${record.image_id}`,
     imageId: record.image_id,
@@ -54,11 +60,13 @@ export function pinFromImage(record: ImageRecord): Pin {
     height: record.height,
     title: deriveTitle(record),
     filename: record.original_name,
-    tags: record.tags ?? [],
+    tags,
+    isNSFW: tagsIncludeNSFW(tags),
   };
 }
 
 export function pinFromVideo(record: VideoRecord): Pin {
+  const tags = record.tags ?? [];
   return {
     key: `video:${record.video_id}`,
     imageId: record.image_id,
@@ -72,14 +80,19 @@ export function pinFromVideo(record: VideoRecord): Pin {
     height: record.height,
     title: deriveTitle(record),
     filename: record.original_name,
-    tags: record.tags ?? [],
+    tags,
     durationMs: record.duration_ms,
+    isNSFW: tagsIncludeNSFW(tags),
   };
 }
 
 export function pinFromSearchResult(record: SearchResult): Pin {
   const thumb = mediaUrl(record.preview_path || record.storage_path);
   const media = mediaUrl(record.storage_path);
+  const tags = record.tags ?? [];
+  // Tag-based search results have no meaningful similarity score — `distance: 0`
+  // would otherwise render as "100%". Skip the badge entirely for those.
+  const score = record.search_source === "tag" ? undefined : matchScore(record.distance);
   return {
     key: `${record.media_type}:${record.video_id ?? record.image_id}`,
     imageId: record.image_id,
@@ -91,11 +104,12 @@ export function pinFromSearchResult(record: SearchResult): Pin {
     height: record.height,
     title: deriveTitle(record),
     filename: record.original_name,
-    tags: record.tags ?? [],
-    matchScore: matchScore(record.distance),
+    tags,
+    matchScore: score,
     matchTimestampMs: record.match_timestamp_ms,
     durationMs: record.duration_ms,
     isAnchor: record.is_anchor,
+    isNSFW: tagsIncludeNSFW(tags),
   };
 }
 
