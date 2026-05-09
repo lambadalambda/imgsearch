@@ -3,6 +3,10 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(ui): let the mobile Feed playback progress bar span the available viewport width instead of capping it to a short strip.
+- fix(ui): keep similar-video Feed sessions from ending early after short batches by searching a wider frame window and retrying until a batch is truly empty.
+- feat(ui): make the similar-video Feed start with a small seed queue, lazily append session-adapted batches, and keep feedback private to the current browser session.
+- feat(ui): add a session-local similar-video Feed mode with a stateless similar-video search endpoint, fullscreen muted `playsinline` playback, local feedback classification, mobile/keyboard controls, and smoke/backend coverage.
 - fix(dev): make `mise run serve:8b:annotator-26b` use the same autorestart watcher wrapper as the default serve task.
 - feat(import): convert GIF imports to MP4 with `ffmpeg`, including GIFs discovered from 4chan thread imports, and add shell regression coverage.
 - ux(ui): show portrait video thumbnails as contained full-height frames over a blurred duplicate backdrop using preview-frame dimensions when available.

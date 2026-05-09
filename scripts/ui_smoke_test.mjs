@@ -15,11 +15,43 @@ const contentTypes = new Map([
 
 let imageRequestsWithNSFW = 0;
 let videoRequests = 0;
+const similarVideoRequests = [];
 let deletedImages = 0;
 let releaseLandscapePreview;
 const landscapePreviewRelease = new Promise((resolve) => {
   releaseLandscapePreview = resolve;
 });
+let releaseThirdSimilarRequest;
+let markThirdSimilarRequestReady;
+let thirdSimilarRequestHeld = false;
+let thirdSimilarRequestActive = false;
+let thirdSimilarRequestReleased = false;
+let overlappingSimilarRequest = false;
+const thirdSimilarRequestReady = new Promise((resolve) => {
+  markThirdSimilarRequestReady = resolve;
+});
+const thirdSimilarRequestRelease = new Promise((resolve) => {
+  releaseThirdSimilarRequest = resolve;
+});
+
+function releaseHeldThirdSimilarRequest() {
+  thirdSimilarRequestReleased = true;
+  releaseThirdSimilarRequest();
+}
+
+async function withTimeout(promise, timeoutMS, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(typeof message === 'function' ? message() : message)), timeoutMS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function json(res, status, payload) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -327,6 +359,273 @@ async function assertMobileCardActionsFit(mobileGrid) {
   await assertCardActionsFit(mobileGrid.locator('.card').first(), 'mobile');
 }
 
+async function assertAdaptiveVideoFeed(page) {
+  await page.getByRole('tab', { name: /Videos/ }).click();
+  await page.locator('#videos-panel').waitFor({ state: 'visible' });
+  const firstVideoCard = page.locator('#videos-grid .card').first();
+  const feedButton = firstVideoCard.locator('.feed-action');
+  await feedButton.waitFor();
+  const feedLabel = (await feedButton.textContent() || '').trim();
+  if (feedLabel !== 'Feed') {
+    throw new Error(`video feed action label is ${JSON.stringify(feedLabel)}, want "Feed"`);
+  }
+
+  await feedButton.click();
+  const feed = page.locator('#video-feed:not([hidden])');
+  await feed.waitFor();
+  const feedState = await feed.evaluate((element) => ({
+    currentIndex: element.dataset.currentIndex,
+    total: element.dataset.total,
+    bodyLocked: document.body.classList.contains('feed-open'),
+    shellInert: document.querySelector('.shell')?.hasAttribute('inert') || false,
+    touchAction: getComputedStyle(element).touchAction,
+  }));
+  if (feedState.currentIndex !== '0' || feedState.total !== '5') {
+    throw new Error(`unexpected initial feed state: ${JSON.stringify(feedState)}`);
+  }
+  if (!feedState.bodyLocked || !feedState.shellInert || feedState.touchAction !== 'none') {
+    throw new Error(`feed overlay did not lock the page correctly: ${JSON.stringify(feedState)}`);
+  }
+  const videoSrc = await feed.locator('#video-feed-player').getAttribute('src');
+  if (!videoSrc || !videoSrc.includes('/media/videos/clip-1')) {
+    throw new Error(`feed did not start from seed video: ${JSON.stringify(videoSrc)}`);
+  }
+  const initialFeedText = await feed.evaluate((element) => ({
+    label: (element.querySelector('#feed-seed-label')?.textContent || '').trim(),
+    hint: (element.querySelector('#feed-hint')?.textContent || '').trim(),
+    hintHidden: element.querySelector('#feed-hint')?.hidden || false,
+  }));
+  if (initialFeedText.label !== 'Similar in your library' || !initialFeedText.hint.includes('Private to this session') || initialFeedText.hintHidden) {
+    throw new Error(`feed does not frame the session as local/private: ${JSON.stringify(initialFeedText)}`);
+  }
+  const progressWidth = await feed.evaluate((element) => {
+    const progress = element.querySelector('.feed-progress')?.getBoundingClientRect();
+    const feedRect = element.getBoundingClientRect();
+    return {
+      progressWidth: progress?.width || 0,
+      feedWidth: feedRect.width,
+      viewportWidth: window.innerWidth,
+    };
+  });
+  if (progressWidth.viewportWidth <= 760 && progressWidth.progressWidth < progressWidth.feedWidth * 0.8) {
+    throw new Error(`feed progress bar is too narrow on mobile: ${JSON.stringify(progressWidth)}`);
+  }
+
+  const pagerState = await feed.locator('.feed-track').evaluate((track) => ({
+    transform: getComputedStyle(track).transform,
+    transition: getComputedStyle(track).transitionDuration,
+    slideCount: track.querySelectorAll('.feed-slide').length,
+    currentSrc: track.querySelector('.feed-slide-current video')?.getAttribute('src') || '',
+    nextSrc: track.querySelector('.feed-slide-next video')?.getAttribute('src') || '',
+  }));
+  if (pagerState.slideCount !== 3 || !pagerState.currentSrc.includes('/media/videos/clip-1') || !pagerState.nextSrc.includes('/media/videos/clip-2')) {
+    throw new Error(`feed pager did not prepare current and next slides: ${JSON.stringify(pagerState)}`);
+  }
+  await feed.locator('#video-feed-player').evaluate((video) => {
+    Object.defineProperty(video, 'duration', { value: 1, configurable: true });
+    video.currentTime = 0.9;
+    video.dispatchEvent(new Event('play'));
+  });
+  const dragState = await feed.evaluate((element) => {
+    const track = element.querySelector('.feed-track');
+    track.querySelector('.feed-slide-next video').dataset.promoteProbe = 'incoming-next';
+    const touchInit = (type, y) => {
+      const touch = new Touch({ identifier: 1, target: element, clientX: 180, clientY: y });
+      return new TouchEvent(type, { bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] });
+    };
+    element.dispatchEvent(touchInit('touchstart', 620));
+    element.dispatchEvent(touchInit('touchmove', 460));
+    const duringDrag = {
+      transform: getComputedStyle(track).transform,
+      transition: getComputedStyle(track).transitionDuration,
+      dragging: element.dataset.dragging,
+      currentTop: track.querySelector('.feed-slide-current').getBoundingClientRect().top,
+      nextTop: track.querySelector('.feed-slide-next').getBoundingClientRect().top,
+      viewportHeight: element.getBoundingClientRect().height,
+    };
+    element.dispatchEvent(touchInit('touchend', 420));
+    const afterRelease = {
+      transform: getComputedStyle(track).transform,
+      transition: getComputedStyle(track).transitionDuration,
+      currentIndex: element.dataset.currentIndex,
+    };
+    return { duringDrag, afterRelease };
+  });
+  if (dragState.duringDrag.dragging !== '1' || dragState.duringDrag.transform === 'none' || dragState.duringDrag.transition !== '0s') {
+    throw new Error(`feed pager does not follow drag smoothly: ${JSON.stringify(dragState)}`);
+  }
+  if (dragState.duringDrag.currentTop >= 0 || dragState.duringDrag.nextTop >= dragState.duringDrag.viewportHeight) {
+    throw new Error(`feed pager does not reveal the adjacent slide during drag: ${JSON.stringify(dragState)}`);
+  }
+  if (dragState.afterRelease.transition === '0s') {
+    throw new Error(`feed pager did not snap after release: ${JSON.stringify(dragState)}`);
+  }
+  await page.waitForFunction(() => document.getElementById('video-feed')?.dataset.currentIndex === '1');
+  const promotedVideo = await feed.locator('.feed-track').evaluate((track) => ({
+    currentProbe: track.querySelector('.feed-slide-current video')?.dataset.promoteProbe || '',
+    currentID: track.querySelector('.feed-slide-current video')?.id || '',
+    currentSrc: track.querySelector('.feed-slide-current video')?.getAttribute('src') || '',
+  }));
+  if (promotedVideo.currentProbe !== 'incoming-next' || promotedVideo.currentID !== 'video-feed-player' || !promotedVideo.currentSrc.includes('/media/videos/clip-2')) {
+    throw new Error(`feed reloaded instead of promoting the visible incoming video: ${JSON.stringify(promotedVideo)}`);
+  }
+  const afterSwipePosition = (await feed.locator('.feed-position').textContent() || '').trim();
+  if (!afterSwipePosition.includes('2 / 5')) {
+    throw new Error(`feed position did not advance after smooth swipe: ${JSON.stringify(afterSwipePosition)}`);
+  }
+  const hintAfterSwipe = await feed.evaluate((element) => ({
+    hidden: element.querySelector('#feed-hint')?.hidden || false,
+    seen: window.localStorage.getItem('imgsearch.feedHintSeen'),
+  }));
+  if (!hintAfterSwipe.hidden || hintAfterSwipe.seen !== '1') {
+    throw new Error(`feed hint was not dismissed persistently after first swipe: ${JSON.stringify(hintAfterSwipe)}`);
+  }
+  const ignoredControlDrag = await feed.evaluate((element) => {
+    const button = element.querySelector('#feed-next');
+    const touchInit = (target, type, y) => {
+      const touch = new Touch({ identifier: 3, target, clientX: 180, clientY: y });
+      return new TouchEvent(type, { bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] });
+    };
+    button.dispatchEvent(touchInit(button, 'touchstart', 620));
+    element.dispatchEvent(touchInit(element, 'touchmove', 440));
+    element.dispatchEvent(touchInit(element, 'touchend', 400));
+    return {
+      currentIndex: element.dataset.currentIndex,
+      dragging: element.dataset.dragging || '',
+      transform: getComputedStyle(element.querySelector('.feed-track')).transform,
+    };
+  });
+  if (ignoredControlDrag.currentIndex !== '1' || ignoredControlDrag.dragging === '1') {
+    throw new Error(`feed treated control touch as a swipe: ${JSON.stringify(ignoredControlDrag)}`);
+  }
+  await page.waitForTimeout(380);
+  const tapToggle = await feed.evaluate((element) => {
+    const video = element.querySelector('#video-feed-player');
+    const originalPlay = video.play;
+    const originalPause = video.pause;
+    const calls = [];
+    video.play = () => {
+      calls.push('play');
+      return Promise.resolve();
+    };
+    video.pause = () => {
+      calls.push('pause');
+    };
+    element.querySelector('.feed-slide-current').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    video.play = originalPlay;
+    video.pause = originalPause;
+    return calls;
+  });
+  if (tapToggle.length === 0) {
+    throw new Error(`tap on video did not toggle playback: ${JSON.stringify(tapToggle)}`);
+  }
+
+  const quickSkip = await page.evaluate(() => window.__feedTestClassify?.({
+    playbackStarted: true,
+    watchMs: 500,
+    dwellMs: 500,
+    completionRatio: 0.02,
+    action: 'next',
+  }));
+  if (quickSkip?.signal !== 'soft-negative') {
+    throw new Error(`quick skip classified incorrectly: ${JSON.stringify(quickSkip)}`);
+  }
+  const noPlayback = await page.evaluate(() => window.__feedTestClassify?.({
+    playbackStarted: false,
+    watchMs: 0,
+    dwellMs: 300,
+    completionRatio: 0,
+    action: 'next',
+  }));
+  if (noPlayback?.signal !== 'neutral') {
+    throw new Error(`unstarted playback classified incorrectly: ${JSON.stringify(noPlayback)}`);
+  }
+  const completed = await page.evaluate(() => window.__feedTestClassify?.({
+    playbackStarted: true,
+    watchMs: 9000,
+    dwellMs: 9000,
+    completionRatio: 0.82,
+    action: 'next',
+  }));
+  if (completed?.signal !== 'positive') {
+    throw new Error(`watch-through classified incorrectly: ${JSON.stringify(completed)}`);
+  }
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await feed.getByRole('button', { name: 'Next video' }).focus();
+  await page.keyboard.press('Space');
+  const reducedMotionTransition = await feed.locator('.feed-track').evaluate((track) => getComputedStyle(track).transitionDuration);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  if (reducedMotionTransition !== '0s') {
+    throw new Error(`feed snap ignores reduced-motion preference: ${JSON.stringify(reducedMotionTransition)}`);
+  }
+  await page.waitForFunction(() => document.getElementById('video-feed')?.dataset.currentIndex === '2');
+  await page.waitForFunction(() => document.getElementById('video-feed')?.dataset.total === '8');
+  const positionText = (await feed.locator('.feed-position').textContent() || '').trim();
+  if (!positionText.includes('3 / 8')) {
+    throw new Error(`feed position did not advance: ${JSON.stringify(positionText)}`);
+  }
+  if (similarVideoRequests.length < 2) {
+    throw new Error(`feed did not lazy-load a second batch: ${JSON.stringify(similarVideoRequests)}`);
+  }
+  const firstRequest = similarVideoRequests[0];
+  const secondRequest = similarVideoRequests[1];
+  if (firstRequest.limit !== '4') {
+    throw new Error(`initial feed request limit is wrong: ${JSON.stringify(firstRequest)}`);
+  }
+  if (secondRequest.limit !== '3' || !secondRequest.seen.includes(1) || !secondRequest.seen.includes(5)) {
+    throw new Error(`lazy feed request did not send queued IDs: ${JSON.stringify(secondRequest)}`);
+  }
+  if (!secondRequest.preferTags.includes('seed-liked')) {
+    throw new Error(`lazy feed request did not include positive tag preference: ${JSON.stringify(secondRequest)}`);
+  }
+  const nextButton = feed.getByRole('button', { name: 'Next video' });
+  const advanceTo = async (index) => {
+    await nextButton.click();
+    await page.waitForFunction((expected) => document.getElementById('video-feed')?.dataset.currentIndex === expected, String(index));
+  };
+  await advanceTo(3);
+  await advanceTo(4);
+  await advanceTo(5);
+  await withTimeout(thirdSimilarRequestReady, 3000, () => `third feed lookahead request never started: ${JSON.stringify(similarVideoRequests)}`);
+  await advanceTo(6);
+  await advanceTo(7);
+  await nextButton.click();
+  if (overlappingSimilarRequest) {
+    throw new Error(`feed started an overlapping lookahead request: ${JSON.stringify(similarVideoRequests)}`);
+  }
+  releaseHeldThirdSimilarRequest();
+  await page.waitForFunction(() => {
+    const feedElement = document.getElementById('video-feed');
+    return feedElement?.dataset.currentIndex === '8' && feedElement?.dataset.total === '13';
+  });
+  if (overlappingSimilarRequest) {
+    throw new Error(`feed started an overlapping lookahead request: ${JSON.stringify(similarVideoRequests)}`);
+  }
+  const tailLoadedPosition = (await feed.locator('.feed-position').textContent() || '').trim();
+  if (!tailLoadedPosition.includes('9 / 13')) {
+    throw new Error(`feed did not continue after a short pending tail batch: ${JSON.stringify(tailLoadedPosition)}`);
+  }
+  const thirdRequest = similarVideoRequests[2];
+  if (!thirdRequest || thirdRequest.limit !== '3' || !thirdRequest.seen.includes(8)) {
+    throw new Error(`tail lookahead request did not exclude the queued tail: ${JSON.stringify(thirdRequest)}`);
+  }
+  const fourthRequest = similarVideoRequests[3];
+  if (!fourthRequest || fourthRequest.limit !== '3' || !fourthRequest.seen.includes(10)) {
+    throw new Error(`short feed batch incorrectly exhausted the session: ${JSON.stringify(similarVideoRequests)}`);
+  }
+  await feed.getByRole('button', { name: 'Exit feed' }).click();
+  await page.locator('#video-feed').waitFor({ state: 'hidden' });
+  const unlocked = await page.evaluate(() => ({
+    bodyLocked: document.body.classList.contains('feed-open'),
+    shellInert: document.querySelector('.shell')?.hasAttribute('inert') || false,
+    videosVisible: !document.getElementById('videos-panel')?.hidden,
+  }));
+  if (unlocked.bodyLocked || unlocked.shellInert || !unlocked.videosVisible) {
+    throw new Error(`feed exit did not restore browsing context: ${JSON.stringify(unlocked)}`);
+  }
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
@@ -397,10 +696,72 @@ const server = createServer(async (req, res) => {
           ...(firstVideo ? { width: 1920, height: 1080 } : { width: 320, height: 180 }),
           frame_count: 1,
           index_state: 'done',
+          tags: firstVideo ? ['seed-liked'] : ['similar', `clip-${id}`],
           created_at: '2026-04-24T00:00:00Z',
         };
       });
       json(res, 200, { videos, total: 50 });
+      return;
+    }
+    if (url.pathname === '/api/search/similar-videos') {
+      const seedID = Number(url.searchParams.get('video_id') || 0);
+      const limit = Math.max(0, Number(url.searchParams.get('limit') || 0));
+      const seen = (url.searchParams.get('seen') || '')
+        .split(',')
+        .map((part) => Number(part.trim()))
+        .filter((id) => Number.isFinite(id) && id > 0);
+      similarVideoRequests.push({
+        seedID,
+        limit: url.searchParams.get('limit') || '',
+        seen,
+        preferTags: (url.searchParams.get('prefer_tags') || '').split(',').filter(Boolean),
+        avoidTags: (url.searchParams.get('avoid_tags') || '').split(',').filter(Boolean),
+      });
+      const requestNumber = similarVideoRequests.length;
+      const seenSet = new Set(seen);
+      if (thirdSimilarRequestActive && requestNumber > 3) {
+        overlappingSimilarRequest = true;
+      }
+      if (requestNumber === 3) {
+        thirdSimilarRequestHeld = true;
+        thirdSimilarRequestActive = true;
+        markThirdSimilarRequestReady();
+        await thirdSimilarRequestRelease;
+      }
+      const candidatePool = requestNumber === 3
+        ? [2, 3, 4, 5, 6, 7, 8, 9, 10]
+        : [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+      const candidates = candidatePool
+        .filter((id) => id !== seedID && !seenSet.has(id))
+        .slice(0, limit);
+      json(res, 200, {
+        results: candidates.map((id, index) => ({
+          image_id: 100 + id,
+          media_type: 'video',
+          video_id: id,
+          original_name: `clip-${id}.mp4`,
+          storage_path: `videos/clip-${id}`,
+          preview_path: id === 2 ? 'videos/landscape-preview-2.svg' : 'videos/portrait-preview-1.svg',
+          mime_type: 'video/mp4',
+          duration_ms: 12000,
+          width: id === 3 ? 1080 : 1280,
+          height: id === 3 ? 1920 : 720,
+          frame_count: 1,
+          distance: 0.1 + index * 0.05,
+          match_timestamp_ms: index * 1000,
+          description: `Similar clip ${id}`,
+          tags: id === 1 ? ['seed-liked'] : ['similar', `clip-${id}`],
+        })),
+        total: candidates.length,
+      });
+      if (requestNumber === 3) {
+        thirdSimilarRequestActive = false;
+      }
+      return;
+    }
+    if (/^\/media\/videos\/clip-\d+$/.test(url.pathname)) {
+      res.writeHead(204);
+      res.end();
       return;
     }
     if (url.pathname === '/api/stats') {
@@ -582,6 +943,7 @@ try {
   await mobilePage.goto(baseURL, { waitUntil: 'domcontentloaded' });
   const mobileGrid = mobilePage.locator('#gallery-grid');
   await mobileGrid.locator('.card').first().waitFor();
+  await assertAdaptiveVideoFeed(mobilePage);
   await assertMobileCardActionsFit(mobileGrid);
   const mobileColumns = await mobileGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').filter(Boolean).length);
   if (mobileColumns < 2) {
@@ -617,6 +979,7 @@ try {
 
   console.log('UI smoke checks passed');
 } finally {
+  releaseHeldThirdSimilarRequest();
   if (browser) {
     await browser.close();
   }

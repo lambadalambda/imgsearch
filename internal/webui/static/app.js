@@ -103,6 +103,25 @@ const videoModal = document.getElementById('video-modal');
 const videoElement = document.getElementById('video-player');
 const videoCaption = document.getElementById('video-caption');
 const videoCloseButton = document.getElementById('video-close');
+const videoFeed = document.getElementById('video-feed');
+const feedTrack = document.getElementById('feed-track');
+const feedVideo = document.getElementById('video-feed-player');
+const feedPrevVideo = document.getElementById('video-feed-prev-player');
+const feedNextVideo = document.getElementById('video-feed-next-player');
+const feedTopbar = document.querySelector('#video-feed .feed-topbar');
+const feedControls = document.querySelector('#video-feed .feed-controls');
+const feedSeedLabel = document.getElementById('feed-seed-label');
+const feedExitButton = document.getElementById('feed-exit');
+const feedPrevButton = document.getElementById('feed-prev');
+const feedNextButton = document.getElementById('feed-next');
+const feedPlayToggleButton = document.getElementById('feed-play-toggle');
+const feedMuteToggleButton = document.getElementById('feed-mute-toggle');
+const feedInfo = document.getElementById('feed-info');
+const feedPosition = document.getElementById('feed-position');
+const feedHint = document.getElementById('feed-hint');
+const feedProgressBar = document.getElementById('feed-progress-bar');
+const feedEnd = document.getElementById('feed-end');
+const feedEndBackButton = document.getElementById('feed-end-back');
 
 const liveConnectionBadge = document.getElementById('live-connection');
 const liveConnectionLabel = document.getElementById('live-connection-label');
@@ -125,6 +144,64 @@ let tagSuggestionDebounceTimer = null;
 let bulkImageDeleteInFlight = false;
 const liveReconnectDelayMaxMs = 30000;
 const nsfwPreferenceStorageKey = 'imgsearch.showNSFW';
+const feedHintSeenStorageKey = 'imgsearch.feedHintSeen';
+const feedState = {
+  queue: [],
+  currentIndex: 0,
+  muted: true,
+  loading: false,
+  playbackStarted: false,
+  itemStartedAt: 0,
+  watchStartedAt: 0,
+  accumulatedWatchMs: 0,
+  sessionID: '',
+  events: [],
+  seenVideoIDs: new Set(),
+  tagScores: new Map(),
+  touchStartX: 0,
+  touchStartY: 0,
+  touchCurrentY: 0,
+  touchStartedAt: 0,
+  touchActive: false,
+  dragging: false,
+  isPaging: false,
+  snapTimer: null,
+  snapToken: 0,
+  suppressClickUntil: 0,
+  loadingMore: false,
+  exhausted: false,
+  candidateRequestToken: 0,
+  feedbackRecordedIndex: -1,
+  lookaheadPromise: null,
+  rejectedCandidateIDs: new Set(),
+};
+const feedSnapDurationMS = 220;
+const feedInitialCandidateLimit = 4;
+const feedBatchSize = 3;
+const feedFetchAheadThreshold = 2;
+const feedTagScoreMin = -3;
+const feedTagScoreMax = 5;
+const feedTagScoreDecay = 0.9;
+const feedPreferenceThreshold = 0.25;
+
+function localPreference(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function setLocalPreference(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+  }
+}
+
+function prefersReducedMotion() {
+  return Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
 
 function setStatus(target, message, kind) {
   if (!target) {
@@ -465,6 +542,35 @@ function videoMetaMarkup(item, mode) {
   return `<div class="video-meta"><p class="timestamp">${details.join(' • ')}</p></div>`;
 }
 
+function canPlayFeedItem(item) {
+  const probeVideo = activeFeedVideo() || feedVideo;
+  if (!probeVideo || typeof probeVideo.canPlayType !== 'function') {
+    return true;
+  }
+  const mimeType = item && typeof item.mime_type === 'string' && item.mime_type.trim()
+    ? item.mime_type.trim()
+    : 'video/mp4';
+  return probeVideo.canPlayType(mimeType) !== '';
+}
+
+function feedActionMarkup(item, safeName, mediaType) {
+  const videoID = Number(item.video_id || 0);
+  if (mediaType !== 'video' || videoID <= 0 || !item.storage_path || !canPlayFeedItem(item)) {
+    return '';
+  }
+
+  return `<button
+    class="ghost thumb-action feed-action"
+    data-feed-video-id="${escapeHTML(String(videoID))}"
+    data-feed-image-id="${escapeHTML(String(item.image_id || ''))}"
+    data-feed-name="${safeName}"
+    data-feed-storage-path="${escapeHTML(item.storage_path || '')}"
+    data-feed-preview-path="${escapeHTML(item.preview_path || '')}"
+    data-feed-mime-type="${escapeHTML(item.mime_type || 'video/mp4')}"
+    aria-label="Open similar video feed for ${safeName}"
+  >Feed</button>`;
+}
+
 function stateClass(indexState) {
   if (indexState === 'done') {
     return 'state done';
@@ -735,8 +841,10 @@ function cardActionMarkup(item, mode, safeName, isNSFWTagged, canSearchSimilar, 
     : mode === 'videos'
       ? `<button class="ghost thumb-action reannotate-action" data-reannotate-kind="video" data-reannotate-id="${item.video_id}" data-reannotate-name="${safeName}" title="Re-annotate" aria-label="Re-annotate ${safeName}">Annotate</button>`
       : '';
+  const feedButton = feedActionMarkup(item, safeName, mediaType);
 
   return `
+    ${feedButton}
     <button class="ghost thumb-action similar-action" data-image-id="${escapeHTML(String(item.image_id ?? ''))}" aria-label="${similarAriaLabel}" ${disabled} ${title}>${actionLabel}</button>
     ${nsfwToggleButton}
     ${reannotateButton}
@@ -1182,12 +1290,20 @@ function setOverlayState(kind, active) {
   if (kind === 'video') {
     document.body.classList.toggle('lightbox-open', active);
   }
+  if (kind === 'feed') {
+    document.body.classList.toggle('feed-open', active);
+  }
 
   if (!shell) {
     return;
   }
 
-  const hasOverlay = Boolean((uploadModal && !uploadModal.hidden) || (lightbox && !lightbox.hidden) || (videoModal && !videoModal.hidden));
+  const hasOverlay = Boolean(
+    (uploadModal && !uploadModal.hidden)
+    || (lightbox && !lightbox.hidden)
+    || (videoModal && !videoModal.hidden)
+    || (videoFeed && !videoFeed.hidden),
+  );
   if (hasOverlay) {
     shell.setAttribute('inert', '');
     shell.setAttribute('aria-hidden', 'true');
@@ -1205,7 +1321,7 @@ function focusableElements(container) {
     container.querySelectorAll(
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
     ),
-  ).filter((element) => !element.hasAttribute('hidden'));
+  ).filter((element) => !element.hasAttribute('hidden') && !element.closest('[hidden], [inert], [aria-hidden="true"]'));
 }
 
 function trapFocus(event, container) {
@@ -1373,6 +1489,854 @@ function closeVideoPlayer() {
     lastFocusedElement.focus();
   }
   lastFocusedElement = null;
+}
+
+function feedIsOpen() {
+  return Boolean(videoFeed && !videoFeed.hidden);
+}
+
+function feedVideoElements() {
+  if (!feedTrack) {
+    return [feedPrevVideo, feedVideo, feedNextVideo].filter(Boolean);
+  }
+  return Array.from(feedTrack.querySelectorAll('.video-feed-video'));
+}
+
+function feedSlide(role) {
+  return feedTrack ? feedTrack.querySelector(`.feed-slide-${role}`) : null;
+}
+
+function feedVideoForRole(role) {
+  return feedSlide(role)?.querySelector('.video-feed-video') || null;
+}
+
+function activeFeedVideo() {
+  return feedVideoForRole('current') || document.getElementById('video-feed-player');
+}
+
+function assignFeedVideoRole(video, role) {
+  if (!video) {
+    return;
+  }
+  if (role === 'current') {
+    video.id = 'video-feed-player';
+    video.preload = 'auto';
+    video.autoplay = true;
+    video.muted = feedState.muted;
+    return;
+  }
+  video.id = role === 'prev' ? 'video-feed-prev-player' : 'video-feed-next-player';
+  video.preload = 'metadata';
+  video.autoplay = false;
+  video.muted = true;
+}
+
+function feedVideoID(item) {
+  const id = Number(item && item.video_id);
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+function feedImageID(item) {
+  const id = Number(item && item.image_id);
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+function normalizeFeedItem(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const tags = Array.isArray(source.tags)
+    ? source.tags.filter((tag) => typeof tag === 'string' && tag.trim() !== '').map((tag) => tag.trim())
+    : [];
+  return {
+    ...source,
+    media_type: 'video',
+    video_id: feedVideoID(source),
+    image_id: feedImageID(source),
+    storage_path: typeof source.storage_path === 'string' ? source.storage_path : '',
+    preview_path: typeof source.preview_path === 'string' ? source.preview_path : '',
+    original_name: normalizeText(source.original_name) || `Video #${feedVideoID(source) || '?'}`,
+    description: normalizeText(source.description),
+    transcript_text: normalizeText(source.transcript_text),
+    mime_type: source.mime_type || 'video/mp4',
+    duration_ms: Number(source.duration_ms || 0),
+    tags,
+    index_state: source.index_state || 'done',
+  };
+}
+
+function feedItemTitle(item) {
+  return normalizeText(item.description) || normalizeText(item.original_name) || `Video #${feedVideoID(item)}`;
+}
+
+function newFeedSessionID() {
+  return `feed-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function classifyFeedFeedback(metrics) {
+  const playbackStarted = Boolean(metrics && metrics.playbackStarted);
+  const action = metrics && typeof metrics.action === 'string' ? metrics.action : '';
+  const watchMs = Math.max(0, Number(metrics && metrics.watchMs) || 0);
+  const dwellMs = Math.max(0, Number(metrics && metrics.dwellMs) || 0);
+  const completionRatio = Math.max(0, Math.min(1, Number(metrics && metrics.completionRatio) || 0));
+
+  if (!playbackStarted) {
+    return { signal: 'neutral', reason: 'playback-not-started' };
+  }
+  if (completionRatio >= 0.75 || action === 'ended') {
+    return { signal: 'positive', reason: 'watch-through' };
+  }
+  if (action === 'next' && watchMs < 3000 && dwellMs < 3000 && completionRatio < 0.2) {
+    return { signal: 'soft-negative', reason: 'quick-skip' };
+  }
+  return { signal: 'neutral', reason: 'ambiguous' };
+}
+
+if (typeof window !== 'undefined') {
+  window.__feedTestClassify = classifyFeedFeedback;
+}
+
+function markFeedPlaybackStarted() {
+  if (!feedIsOpen()) {
+    return;
+  }
+  feedState.playbackStarted = true;
+  if (feedState.watchStartedAt <= 0) {
+    feedState.watchStartedAt = performance.now();
+  }
+  updateFeedControlLabels();
+}
+
+function accumulateFeedWatchTime() {
+  if (feedState.watchStartedAt <= 0) {
+    return;
+  }
+  feedState.accumulatedWatchMs += Math.max(0, performance.now() - feedState.watchStartedAt);
+  feedState.watchStartedAt = 0;
+}
+
+function feedCompletionRatio(item) {
+  const currentVideo = activeFeedVideo();
+  if (!currentVideo) {
+    return 0;
+  }
+  const durationSeconds = Number.isFinite(currentVideo.duration) && currentVideo.duration > 0
+    ? currentVideo.duration
+    : Number(item && item.duration_ms) / 1000;
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(1, Number(currentVideo.currentTime || 0) / durationSeconds));
+}
+
+function currentFeedMetrics(action) {
+  const now = performance.now();
+  const current = feedState.queue[feedState.currentIndex] || {};
+  const activeWatchMs = feedState.playbackStarted && feedState.watchStartedAt > 0
+    ? Math.max(0, now - feedState.watchStartedAt)
+    : 0;
+  return {
+    action,
+    playbackStarted: feedState.playbackStarted,
+    watchMs: feedState.accumulatedWatchMs + activeWatchMs,
+    dwellMs: feedState.itemStartedAt > 0 ? Math.max(0, now - feedState.itemStartedAt) : 0,
+    completionRatio: feedCompletionRatio(current),
+  };
+}
+
+function feedItemAffinity(item) {
+  if (!(feedState.tagScores instanceof Map) || feedState.tagScores.size === 0) {
+    return 0;
+  }
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  return tags.reduce((score, tag) => score + (feedState.tagScores.get(tag.toLowerCase()) || 0), 0);
+}
+
+function feedItemPreferenceRankScore(item, order) {
+  const distance = Number(item && item.distance);
+  const visualScore = Number.isFinite(distance) ? -distance : -order;
+  const affinityNudge = Math.max(-0.08, Math.min(0.08, feedItemAffinity(item) * 0.02));
+  return visualScore + affinityNudge;
+}
+
+function clampFeedTagScore(score) {
+  return Math.max(feedTagScoreMin, Math.min(feedTagScoreMax, Number(score) || 0));
+}
+
+function decayFeedTagScores() {
+  if (!(feedState.tagScores instanceof Map) || feedState.tagScores.size === 0) {
+    return;
+  }
+  for (const [tag, score] of feedState.tagScores.entries()) {
+    const nextScore = clampFeedTagScore(score * feedTagScoreDecay);
+    if (Math.abs(nextScore) < 0.05) {
+      feedState.tagScores.delete(tag);
+    } else {
+      feedState.tagScores.set(tag, nextScore);
+    }
+  }
+}
+
+function feedPreferenceTags(direction) {
+  if (!(feedState.tagScores instanceof Map) || feedState.tagScores.size === 0) {
+    return [];
+  }
+  return Array.from(feedState.tagScores.entries())
+    .filter(([, score]) => direction === 'prefer' ? score >= feedPreferenceThreshold : score <= -feedPreferenceThreshold)
+    .sort((left, right) => Math.abs(right[1]) - Math.abs(left[1]) || left[0].localeCompare(right[0]))
+    .slice(0, 12)
+    .map(([tag]) => tag);
+}
+
+function feedExcludedVideoIDs() {
+  const excluded = new Set(feedState.seenVideoIDs || []);
+  for (const id of feedState.rejectedCandidateIDs || []) {
+    excluded.add(id);
+  }
+  for (const item of feedState.queue || []) {
+    const id = feedVideoID(item);
+    if (id > 0) {
+      excluded.add(id);
+    }
+  }
+  return Array.from(excluded).filter((id) => Number(id) > 0);
+}
+
+function rerankFutureFeedItems(currentIndex) {
+  const start = currentIndex + 2;
+  if (start >= feedState.queue.length) {
+    return;
+  }
+  const ranked = feedState.queue.slice(start)
+    .map((item, order) => ({ item, order, score: feedItemPreferenceRankScore(item, order) }))
+    .sort((left, right) => (right.score - left.score) || (left.order - right.order));
+  feedState.queue.splice(start, ranked.length, ...ranked.map((entry) => entry.item));
+}
+
+function recordFeedFeedback(action) {
+  const current = feedState.queue[feedState.currentIndex];
+  if (!current) {
+    return { signal: 'neutral', reason: 'missing-current' };
+  }
+  if (feedState.feedbackRecordedIndex === feedState.currentIndex) {
+    return { signal: 'neutral', reason: 'already-recorded' };
+  }
+  feedState.feedbackRecordedIndex = feedState.currentIndex;
+  const metrics = currentFeedMetrics(action);
+  const result = classifyFeedFeedback(metrics);
+  feedState.events.push({
+    session_id: feedState.sessionID,
+    video_id: feedVideoID(current),
+    queue_position: feedState.currentIndex + 1,
+    playback_started: metrics.playbackStarted,
+    watch_ms: Math.round(metrics.watchMs),
+    dwell_ms: Math.round(metrics.dwellMs),
+    video_duration_ms: Math.round(Number(current.duration_ms || 0) || (activeFeedVideo() && Number.isFinite(activeFeedVideo().duration) ? activeFeedVideo().duration * 1000 : 0)),
+    completion_ratio: metrics.completionRatio,
+    action,
+    signal: result.signal,
+    timestamp: new Date().toISOString(),
+  });
+  const weight = result.signal === 'positive' ? 1 : result.signal === 'soft-negative' ? -0.5 : 0;
+  if (weight !== 0) {
+    for (const tag of current.tags || []) {
+      const key = String(tag).toLowerCase();
+      feedState.tagScores.set(key, clampFeedTagScore((feedState.tagScores.get(key) || 0) + weight));
+    }
+    rerankFutureFeedItems(feedState.currentIndex);
+  }
+  return result;
+}
+
+function updateFeedQueueMetadata() {
+  if (videoFeed) {
+    videoFeed.dataset.currentIndex = String(feedState.currentIndex);
+    videoFeed.dataset.total = String(feedState.queue.length);
+  }
+  if (feedPosition) {
+    feedPosition.textContent = `${feedState.currentIndex + 1} / ${feedState.queue.length}`;
+  }
+}
+
+function updateFeedProgress() {
+  if (!feedProgressBar) {
+    return;
+  }
+  const current = feedState.queue[feedState.currentIndex] || {};
+  feedProgressBar.style.width = `${Math.round(feedCompletionRatio(current) * 100)}%`;
+}
+
+function feedViewportHeight() {
+  if (videoFeed && videoFeed.clientHeight > 0) {
+    return videoFeed.clientHeight;
+  }
+  return Math.max(1, window.innerHeight || 1);
+}
+
+function setFeedTrackOffset(offsetY, animate) {
+  if (!feedTrack) {
+    return false;
+  }
+  const shouldAnimate = Boolean(animate && !prefersReducedMotion());
+  feedTrack.style.transition = shouldAnimate ? `transform ${feedSnapDurationMS}ms cubic-bezier(0.22, 0.72, 0.18, 1)` : 'none';
+  feedTrack.style.transform = `translate3d(0, ${Math.round(offsetY)}px, 0)`;
+  return shouldAnimate;
+}
+
+function resetFeedTrack() {
+  feedState.snapToken += 1;
+  if (feedState.snapTimer !== null) {
+    window.clearTimeout(feedState.snapTimer);
+    feedState.snapTimer = null;
+  }
+  feedState.dragging = false;
+  feedState.touchActive = false;
+  feedState.isPaging = false;
+  if (videoFeed) {
+    delete videoFeed.dataset.dragging;
+  }
+  setFeedTrackOffset(0, false);
+}
+
+function clearFeedVideoElement(video) {
+  if (!video) {
+    return;
+  }
+  video.pause();
+  video.removeAttribute('src');
+  video.poster = '';
+  video.load();
+}
+
+function setFeedVideoElement(video, item, autoplay, preservePlayback = false) {
+  if (!video) {
+    return;
+  }
+  if (!item) {
+    clearFeedVideoElement(video);
+    return;
+  }
+  const source = toMediaURL(item.storage_path);
+  const poster = item.preview_path ? toMediaURL(item.preview_path) : '';
+  if (!source) {
+    clearFeedVideoElement(video);
+    return;
+  }
+  if (!preservePlayback) {
+    video.pause();
+  }
+  video.muted = true;
+  video.playsInline = true;
+  video.autoplay = Boolean(autoplay);
+  video.poster = poster;
+  if (video.getAttribute('src') !== source) {
+    video.setAttribute('src', source);
+    video.load();
+  }
+  if (autoplay) {
+    video.muted = feedState.muted;
+    void video.play().catch(() => {
+      updateFeedControlLabels();
+    });
+  }
+}
+
+function renderFeedSlides() {
+  const current = feedState.queue[feedState.currentIndex] || null;
+  const previous = feedState.currentIndex > 0 ? feedState.queue[feedState.currentIndex - 1] : null;
+  const next = feedState.currentIndex < feedState.queue.length - 1 ? feedState.queue[feedState.currentIndex + 1] : null;
+  assignFeedVideoRole(feedVideoForRole('current'), 'current');
+  assignFeedVideoRole(feedVideoForRole('prev'), 'prev');
+  assignFeedVideoRole(feedVideoForRole('next'), 'next');
+  setFeedVideoElement(feedVideoForRole('current'), current, true);
+  setFeedVideoElement(feedVideoForRole('prev'), previous, false);
+  setFeedVideoElement(feedVideoForRole('next'), next, false);
+}
+
+function warmFeedNeighbor(direction) {
+  const video = direction === 'next' ? feedVideoForRole('next') : feedVideoForRole('prev');
+  if (!video || !video.getAttribute('src')) {
+    return;
+  }
+  video.muted = true;
+  video.playsInline = true;
+  void video.play().catch(() => {});
+}
+
+function pauseFeedNeighbors() {
+  feedVideoForRole('prev')?.pause();
+  feedVideoForRole('next')?.pause();
+}
+
+function promoteFeedVideo(direction) {
+  const currentSlide = feedSlide('current');
+  const prevSlide = feedSlide('prev');
+  const nextSlide = feedSlide('next');
+  const currentVideo = feedVideoForRole('current');
+  const previousVideo = feedVideoForRole('prev');
+  const nextVideo = feedVideoForRole('next');
+  if (!currentSlide || !prevSlide || !nextSlide || !currentVideo || !previousVideo || !nextVideo) {
+    renderFeedSlides();
+    return;
+  }
+
+  if (direction === 'next') {
+    currentVideo.pause();
+    prevSlide.append(currentVideo);
+    currentSlide.append(nextVideo);
+    nextSlide.append(previousVideo);
+  } else {
+    currentVideo.pause();
+    nextSlide.append(currentVideo);
+    currentSlide.append(previousVideo);
+    prevSlide.append(nextVideo);
+  }
+
+  assignFeedVideoRole(feedVideoForRole('current'), 'current');
+  assignFeedVideoRole(feedVideoForRole('prev'), 'prev');
+  assignFeedVideoRole(feedVideoForRole('next'), 'next');
+  const current = feedState.queue[feedState.currentIndex] || null;
+  const previous = feedState.currentIndex > 0 ? feedState.queue[feedState.currentIndex - 1] : null;
+  const next = feedState.currentIndex < feedState.queue.length - 1 ? feedState.queue[feedState.currentIndex + 1] : null;
+  setFeedVideoElement(feedVideoForRole('current'), current, true, true);
+  setFeedVideoElement(feedVideoForRole('prev'), previous, false);
+  setFeedVideoElement(feedVideoForRole('next'), next, false);
+}
+
+function updateFeedControlLabels() {
+  const currentVideo = activeFeedVideo();
+  if (feedPlayToggleButton && currentVideo) {
+    const paused = currentVideo.paused;
+    feedPlayToggleButton.textContent = paused ? 'Play' : 'Pause';
+    feedPlayToggleButton.setAttribute('aria-label', paused ? 'Play video' : 'Pause video');
+  }
+  if (feedMuteToggleButton && currentVideo) {
+    const muted = Boolean(currentVideo.muted);
+    feedMuteToggleButton.textContent = muted ? 'Unmute' : 'Mute';
+    feedMuteToggleButton.setAttribute('aria-label', muted ? 'Unmute video' : 'Mute video');
+  }
+  if (feedPrevButton) {
+    feedPrevButton.disabled = feedState.currentIndex <= 0;
+  }
+}
+
+function setFeedChromeActive(active) {
+  for (const element of [feedTopbar, feedControls]) {
+    if (!element) {
+      continue;
+    }
+    element.hidden = !active;
+    element.querySelectorAll('button').forEach((button) => {
+      button.disabled = !active;
+    });
+    if (active) {
+      element.removeAttribute('inert');
+      element.removeAttribute('aria-hidden');
+    } else {
+      element.setAttribute('inert', '');
+      element.setAttribute('aria-hidden', 'true');
+    }
+  }
+}
+
+function renderFeedItem(options = {}) {
+  if (!feedIsOpen() || !activeFeedVideo()) {
+    return;
+  }
+  const current = feedState.queue[feedState.currentIndex];
+  if (!current) {
+    showFeedEnd();
+    return;
+  }
+
+  feedState.playbackStarted = false;
+  feedState.itemStartedAt = performance.now();
+  feedState.watchStartedAt = 0;
+  feedState.accumulatedWatchMs = 0;
+  feedState.seenVideoIDs.add(feedVideoID(current));
+
+  if (videoFeed) {
+    updateFeedQueueMetadata();
+  }
+  if (feedEnd) {
+    feedEnd.hidden = true;
+  }
+  setFeedChromeActive(true);
+  if (feedInfo) {
+    feedInfo.hidden = false;
+  }
+  if (feedHint) {
+    if (feedState.currentIndex > 0) {
+      setLocalPreference(feedHintSeenStorageKey, '1');
+    }
+    feedHint.hidden = feedState.currentIndex > 0 || localPreference(feedHintSeenStorageKey) === '1';
+  }
+  if (feedSeedLabel) {
+    feedSeedLabel.textContent = 'Similar in your library';
+  }
+  announceLiveChange(`Now showing ${feedItemTitle(current)}, video ${feedState.currentIndex + 1} of ${feedState.queue.length}.`);
+
+  resetFeedTrack();
+  if (options.renderSlides !== false) {
+    renderFeedSlides();
+  }
+  updateFeedProgress();
+  updateFeedControlLabels();
+  const currentVideo = activeFeedVideo();
+  if (currentVideo && !currentVideo.paused) {
+    markFeedPlaybackStarted();
+  }
+  void ensureFeedLookahead();
+}
+
+function showFeedEnd() {
+  if (!videoFeed) {
+    return;
+  }
+  resetFeedTrack();
+  feedVideoElements().forEach((video) => video.pause());
+  if (feedInfo) {
+    feedInfo.hidden = true;
+  }
+  setFeedChromeActive(false);
+  if (feedEnd) {
+    feedEnd.hidden = false;
+  }
+  announceLiveChange('No more similar videos.');
+  videoFeed.dataset.currentIndex = String(Math.max(0, feedState.queue.length - 1));
+  videoFeed.dataset.total = String(feedState.queue.length);
+  if (feedEndBackButton) {
+    feedEndBackButton.focus();
+  }
+}
+
+function closeVideoFeed() {
+  if (!videoFeed || videoFeed.hidden) {
+    return;
+  }
+  accumulateFeedWatchTime();
+  feedVideoElements().forEach(clearFeedVideoElement);
+  videoFeed.hidden = true;
+  setFeedChromeActive(true);
+  resetFeedTrack();
+  videoFeed.removeAttribute('data-current-index');
+  videoFeed.removeAttribute('data-total');
+  setOverlayState('feed', false);
+  feedState.queue = [];
+  feedState.currentIndex = 0;
+  feedState.loading = false;
+  feedState.loadingMore = false;
+  feedState.exhausted = false;
+  feedState.candidateRequestToken += 1;
+  feedState.feedbackRecordedIndex = -1;
+  feedState.lookaheadPromise = null;
+  feedState.rejectedCandidateIDs = new Set();
+  feedState.playbackStarted = false;
+  feedState.itemStartedAt = 0;
+  feedState.watchStartedAt = 0;
+  feedState.accumulatedWatchMs = 0;
+  feedState.sessionID = '';
+  feedState.events = [];
+  feedState.seenVideoIDs = new Set();
+  feedState.tagScores = new Map();
+  feedState.touchStartX = 0;
+  feedState.touchStartY = 0;
+  feedState.touchCurrentY = 0;
+  feedState.touchStartedAt = 0;
+  feedState.touchActive = false;
+  feedState.suppressClickUntil = 0;
+  if (lastFocusedElement) {
+    lastFocusedElement.focus();
+  }
+  announceLiveChange('Closed similar video feed.');
+  lastFocusedElement = null;
+}
+
+function findFeedSeedItem(button) {
+  const videoID = Number(button.dataset.feedVideoId || 0);
+  const imageID = Number(button.dataset.feedImageId || 0);
+  const pools = [state.results, state.videos];
+  if (imageID > 0) {
+    for (const pool of pools) {
+      const found = (Array.isArray(pool) ? pool : []).find((item) => feedVideoID(item) === videoID && feedImageID(item) === imageID);
+      if (found) {
+        return normalizeFeedItem(found);
+      }
+    }
+  }
+  for (const pool of pools) {
+    const found = (Array.isArray(pool) ? pool : []).find((item) => feedVideoID(item) === videoID);
+    if (found) {
+      return normalizeFeedItem(found);
+    }
+  }
+  return normalizeFeedItem({
+    video_id: videoID,
+    image_id: imageID,
+    original_name: button.dataset.feedName || `Video #${videoID}`,
+    storage_path: button.dataset.feedStoragePath || '',
+    preview_path: button.dataset.feedPreviewPath || '',
+    mime_type: button.dataset.feedMimeType || 'video/mp4',
+  });
+}
+
+async function fetchSimilarVideoCandidates(seedItem, limit) {
+  decayFeedTagScores();
+  const params = applyNSFWQuery(new URLSearchParams({
+    video_id: String(feedVideoID(seedItem)),
+    limit: String(limit),
+  }));
+  const imageID = feedImageID(seedItem);
+  if (imageID > 0) {
+    params.set('seed_image_id', String(imageID));
+  }
+  const seen = feedExcludedVideoIDs();
+  if (seen.length > 0) {
+    params.set('seen', seen.join(','));
+  }
+  const preferTags = feedPreferenceTags('prefer');
+  if (preferTags.length > 0) {
+    params.set('prefer_tags', preferTags.join(','));
+  }
+  const avoidTags = feedPreferenceTags('avoid');
+  if (avoidTags.length > 0) {
+    params.set('avoid_tags', avoidTags.join(','));
+  }
+  const response = await fetch(`/api/search/similar-videos?${params.toString()}`);
+  const rawBody = await response.text();
+  let payload = {};
+  if (rawBody) {
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      payload = { error: rawBody };
+    }
+  }
+  if (!response.ok) {
+    throw new Error(payload.error || response.statusText || 'Similar video feed failed');
+  }
+  return Array.isArray(payload.results) ? payload.results.map(normalizeFeedItem) : [];
+}
+
+function appendFeedCandidates(candidates) {
+  const queuedIDs = new Set((feedState.queue || []).map(feedVideoID).filter((id) => id > 0));
+  let appended = 0;
+  for (const candidate of candidates || []) {
+    const id = feedVideoID(candidate);
+    if (id <= 0 || queuedIDs.has(id)) {
+      continue;
+    }
+    if (!candidate.storage_path || !canPlayFeedItem(candidate)) {
+      feedState.rejectedCandidateIDs.add(id);
+      continue;
+    }
+    queuedIDs.add(id);
+    feedState.queue.push(candidate);
+    appended += 1;
+  }
+  return appended;
+}
+
+async function ensureFeedLookahead() {
+  if (!feedIsOpen() || feedState.loading || feedState.exhausted) {
+    return 0;
+  }
+  if (feedState.loadingMore && feedState.lookaheadPromise) {
+    return feedState.lookaheadPromise;
+  }
+  const remainingAhead = feedState.queue.length - feedState.currentIndex - 1;
+  if (remainingAhead > feedFetchAheadThreshold) {
+    return 0;
+  }
+
+  feedState.loadingMore = true;
+  const token = ++feedState.candidateRequestToken;
+  feedState.lookaheadPromise = (async () => {
+    try {
+      const seed = feedState.queue[0];
+      if (!seed || feedVideoID(seed) <= 0) {
+        return 0;
+      }
+      const candidates = await fetchSimilarVideoCandidates(seed, feedBatchSize);
+      if (token !== feedState.candidateRequestToken || !feedIsOpen()) {
+        return 0;
+      }
+      const beforeLength = feedState.queue.length;
+      const appended = appendFeedCandidates(candidates);
+      if (appended === 0 && candidates.length === 0) {
+        feedState.exhausted = true;
+      }
+      if (appended > 0) {
+        updateFeedQueueMetadata();
+        if (feedState.currentIndex >= beforeLength - 1) {
+          renderFeedSlides();
+        }
+      }
+      return appended;
+    } catch {
+      return 0;
+    } finally {
+      if (token === feedState.candidateRequestToken) {
+        feedState.loadingMore = false;
+        feedState.lookaheadPromise = null;
+      }
+    }
+  })();
+  return feedState.lookaheadPromise;
+}
+
+async function startVideoFeed(seedItem) {
+  if (!videoFeed || !activeFeedVideo() || feedState.loading) {
+    return;
+  }
+  const seed = normalizeFeedItem(seedItem);
+  if (feedVideoID(seed) <= 0 || !seed.storage_path) {
+    throw new Error('Could not resolve selected video.');
+  }
+  if (!canPlayFeedItem(seed)) {
+    throw new Error('This video format cannot play in the browser feed.');
+  }
+
+  feedState.loading = true;
+  feedState.queue = [seed];
+  feedState.currentIndex = 0;
+  feedState.sessionID = newFeedSessionID();
+  feedState.events = [];
+  feedState.seenVideoIDs = new Set([feedVideoID(seed)]);
+  feedState.tagScores = new Map();
+  feedState.loadingMore = false;
+  feedState.exhausted = false;
+  feedState.feedbackRecordedIndex = -1;
+  feedState.lookaheadPromise = null;
+  feedState.rejectedCandidateIDs = new Set();
+  const token = ++feedState.candidateRequestToken;
+  const candidates = await fetchSimilarVideoCandidates(seed, feedInitialCandidateLimit);
+  if (token !== feedState.candidateRequestToken) {
+    return;
+  }
+  const appended = appendFeedCandidates(candidates);
+  feedState.exhausted = appended === 0 && candidates.length === 0;
+
+  lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  videoFeed.hidden = false;
+  setOverlayState('feed', true);
+  feedState.loading = false;
+  renderFeedItem();
+  if (feedNextButton) {
+    feedNextButton.focus();
+  }
+}
+
+function advanceVideoFeed(action) {
+  if (!feedIsOpen()) {
+    return;
+  }
+  snapFeedPager('next', action || 'next');
+}
+
+function previousVideoFeed() {
+  if (!feedIsOpen()) {
+    return;
+  }
+  snapFeedPager('prev', 'prev');
+}
+
+function toggleFeedPlayback() {
+  const currentVideo = activeFeedVideo();
+  if (!currentVideo) {
+    return;
+  }
+  if (currentVideo.paused) {
+    void currentVideo.play().catch(() => updateFeedControlLabels());
+  } else {
+    currentVideo.pause();
+  }
+  updateFeedControlLabels();
+}
+
+function snapFeedPager(direction, action) {
+  if (!feedIsOpen() || feedState.isPaging) {
+    return;
+  }
+  const isNext = direction === 'next';
+  if (!isNext && feedState.currentIndex <= 0) {
+    settleFeedPagerBack();
+    return;
+  }
+  accumulateFeedWatchTime();
+  recordFeedFeedback(action || (isNext ? 'next' : 'prev'));
+  if (isNext && feedState.currentIndex >= feedState.queue.length - 1) {
+    feedState.isPaging = true;
+    void ensureFeedLookahead().then((appended) => {
+      feedState.isPaging = false;
+      if (!feedIsOpen()) {
+        return;
+      }
+      if (appended > 0 && feedState.currentIndex < feedState.queue.length - 1) {
+        snapFeedPager('next', action || 'next');
+        return;
+      }
+      if (feedState.exhausted) {
+        showFeedEnd();
+      } else {
+        settleFeedPagerBack();
+      }
+    });
+    return;
+  }
+
+  feedState.isPaging = true;
+  const snapToken = ++feedState.snapToken;
+  feedState.dragging = false;
+  if (videoFeed) {
+    delete videoFeed.dataset.dragging;
+  }
+  warmFeedNeighbor(isNext ? 'next' : 'prev');
+  const animated = setFeedTrackOffset(isNext ? -feedViewportHeight() : feedViewportHeight(), true);
+  const finish = () => {
+    if (!feedState.isPaging || feedState.snapToken !== snapToken) {
+      return;
+    }
+    feedState.isPaging = false;
+    feedState.currentIndex += isNext ? 1 : -1;
+    promoteFeedVideo(isNext ? 'next' : 'prev');
+    renderFeedItem({ renderSlides: false });
+  };
+  if (feedState.snapTimer !== null) {
+    window.clearTimeout(feedState.snapTimer);
+  }
+  feedState.snapTimer = window.setTimeout(finish, (animated ? feedSnapDurationMS : 0) + 60);
+  if (feedTrack) {
+    feedTrack.addEventListener('transitionend', finish, { once: true });
+  }
+}
+
+function settleFeedPagerBack() {
+  if (!feedIsOpen()) {
+    return;
+  }
+  feedState.dragging = false;
+  if (videoFeed) {
+    delete videoFeed.dataset.dragging;
+  }
+  setFeedTrackOffset(0, true);
+  pauseFeedNeighbors();
+}
+
+function attachFeedHandler(target, statusTarget) {
+  target.addEventListener('click', async (event) => {
+    const button = event.target.closest('.feed-action');
+    if (!button || button.disabled || !target.contains(button)) {
+      return;
+    }
+
+    try {
+      setStatus(statusTarget, 'Loading similar video feed...', 'info');
+      await startVideoFeed(findFeedSeedItem(button));
+      setStatus(statusTarget, `Loaded ${feedState.queue.length} similar video(s).`, 'success');
+    } catch (err) {
+      feedState.loading = false;
+      setStatus(statusTarget, err.message || 'Could not start video feed', 'error');
+    }
+  });
 }
 
 function openUploadModal() {
@@ -2693,6 +3657,8 @@ clearResultsButton.addEventListener('click', () => {
 attachSimilarHandler(galleryGrid);
 attachSimilarHandler(videosGrid);
 attachSimilarHandler(resultsGrid);
+attachFeedHandler(videosGrid, videosStatus);
+attachFeedHandler(resultsGrid, searchStatus);
 attachTagChipSearchHandler(galleryGrid);
 attachTagChipSearchHandler(videosGrid);
 attachTagChipSearchHandler(resultsGrid);
@@ -2713,6 +3679,171 @@ if (lightboxCloseButton) {
 
 if (videoCloseButton) {
   videoCloseButton.addEventListener('click', closeVideoPlayer);
+}
+
+if (feedExitButton) {
+  feedExitButton.addEventListener('click', closeVideoFeed);
+}
+
+if (feedEndBackButton) {
+  feedEndBackButton.addEventListener('click', closeVideoFeed);
+}
+
+if (feedNextButton) {
+  feedNextButton.addEventListener('click', () => advanceVideoFeed('next'));
+}
+
+if (feedPrevButton) {
+  feedPrevButton.addEventListener('click', previousVideoFeed);
+}
+
+if (feedPlayToggleButton && feedVideo) {
+  feedPlayToggleButton.addEventListener('click', () => {
+    toggleFeedPlayback();
+  });
+}
+
+if (feedMuteToggleButton && activeFeedVideo()) {
+  feedMuteToggleButton.addEventListener('click', () => {
+    const currentVideo = activeFeedVideo();
+    feedState.muted = !currentVideo.muted;
+    currentVideo.muted = feedState.muted;
+    updateFeedControlLabels();
+  });
+}
+
+feedVideoElements().forEach((video) => {
+  video.addEventListener('play', () => {
+    if (video === activeFeedVideo()) {
+      markFeedPlaybackStarted();
+    }
+  });
+  video.addEventListener('playing', () => {
+    if (video === activeFeedVideo()) {
+      markFeedPlaybackStarted();
+    }
+  });
+  video.addEventListener('pause', () => {
+    if (video === activeFeedVideo()) {
+      accumulateFeedWatchTime();
+      updateFeedControlLabels();
+    }
+  });
+  video.addEventListener('timeupdate', () => {
+    if (video === activeFeedVideo()) {
+      updateFeedProgress();
+    }
+  });
+  video.addEventListener('loadedmetadata', () => {
+    if (video === activeFeedVideo()) {
+      updateFeedProgress();
+    }
+  });
+  video.addEventListener('ended', () => {
+    if (video === activeFeedVideo()) {
+      advanceVideoFeed('ended');
+    }
+  });
+  video.addEventListener('error', () => {
+    if (video === activeFeedVideo()) {
+      updateFeedControlLabels();
+    }
+  });
+});
+
+if (videoFeed) {
+  videoFeed.addEventListener('touchstart', (event) => {
+    if (event.target.closest('.feed-control') || feedState.isPaging || (feedEnd && !feedEnd.hidden)) {
+      feedState.touchActive = false;
+      return;
+    }
+    const touch = event.changedTouches && event.changedTouches[0];
+    if (!touch) {
+      return;
+    }
+    feedState.touchStartX = touch.clientX;
+    feedState.touchStartY = touch.clientY;
+    feedState.touchCurrentY = touch.clientY;
+    feedState.touchStartedAt = performance.now();
+    feedState.touchActive = true;
+    feedState.dragging = false;
+  }, { passive: true });
+  videoFeed.addEventListener('touchmove', (event) => {
+    if (!feedState.touchActive) {
+      return;
+    }
+    const touch = event.changedTouches && event.changedTouches[0];
+    if (!touch) {
+      return;
+    }
+    const dx = touch.clientX - feedState.touchStartX;
+    const dy = touch.clientY - feedState.touchStartY;
+    if (!feedState.dragging) {
+      if (Math.abs(dy) < 8 || Math.abs(dy) < Math.abs(dx) * 1.15) {
+        return;
+      }
+      feedState.dragging = true;
+      if (videoFeed) {
+        videoFeed.dataset.dragging = '1';
+      }
+    }
+    event.preventDefault();
+    feedState.touchCurrentY = touch.clientY;
+    const height = feedViewportHeight();
+    const hasNext = feedState.currentIndex < feedState.queue.length - 1;
+    const hasPrevious = feedState.currentIndex > 0;
+    const resisted = (dy < 0 && !hasNext) || (dy > 0 && !hasPrevious) ? dy * 0.28 : dy;
+    const offset = Math.max(-height, Math.min(height, resisted));
+    if (dy < 0 && hasNext) {
+      warmFeedNeighbor('next');
+    } else if (dy > 0 && hasPrevious) {
+      warmFeedNeighbor('prev');
+    }
+    setFeedTrackOffset(offset, false);
+  }, { passive: false });
+  videoFeed.addEventListener('touchend', (event) => {
+    if (!feedState.touchActive) {
+      return;
+    }
+    feedState.touchActive = false;
+    if (!feedState.dragging) {
+      return;
+    }
+    const touch = event.changedTouches && event.changedTouches[0];
+    const endY = touch ? touch.clientY : feedState.touchCurrentY;
+    const dy = endY - feedState.touchStartY;
+    const elapsed = Math.max(1, performance.now() - feedState.touchStartedAt);
+    const velocity = dy / elapsed;
+    const threshold = Math.max(72, feedViewportHeight() * 0.16);
+    event.preventDefault();
+    feedState.suppressClickUntil = performance.now() + 350;
+    if ((dy < -threshold || velocity < -0.65) && feedState.currentIndex < feedState.queue.length - 1) {
+      advanceVideoFeed('next');
+    } else if ((dy > threshold || velocity > 0.65) && feedState.currentIndex > 0) {
+      previousVideoFeed();
+    } else if (dy < -threshold && feedState.currentIndex >= feedState.queue.length - 1) {
+      advanceVideoFeed('next');
+    } else {
+      settleFeedPagerBack();
+    }
+  }, { passive: false });
+  videoFeed.addEventListener('touchcancel', () => {
+    feedState.touchActive = false;
+    feedState.suppressClickUntil = performance.now() + 350;
+    settleFeedPagerBack();
+  });
+  videoFeed.addEventListener('click', (event) => {
+    if (!feedIsOpen() || feedState.isPaging || (feedEnd && !feedEnd.hidden)) {
+      return;
+    }
+    if (performance.now() < feedState.suppressClickUntil) {
+      return;
+    }
+    if (event.target.closest('.feed-control, .feed-topbar, .feed-info, .feed-end')) {
+      return;
+    }
+    toggleFeedPlayback();
+  });
 }
 
 if (lightbox) {
@@ -2738,7 +3869,38 @@ window.addEventListener('resize', () => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (lightbox && !lightbox.hidden) {
+  if (videoFeed && !videoFeed.hidden) {
+    trapFocus(event, videoFeed);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeVideoFeed();
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      advanceVideoFeed('next');
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      previousVideoFeed();
+      return;
+    }
+    const shortcutTarget = event.target instanceof HTMLElement
+      ? event.target.closest('button, input, select, textarea, [role="button"], [contenteditable="true"]')
+      : null;
+    const currentVideo = activeFeedVideo();
+    if ((event.key === ' ' || event.key.toLowerCase() === 'k') && currentVideo && !shortcutTarget) {
+      event.preventDefault();
+      if (currentVideo.paused) {
+        void currentVideo.play().catch(() => updateFeedControlLabels());
+      } else {
+        currentVideo.pause();
+      }
+      updateFeedControlLabels();
+      return;
+    }
+  } else if (lightbox && !lightbox.hidden) {
     trapFocus(event, lightbox);
   } else if (videoModal && !videoModal.hidden) {
     trapFocus(event, videoModal);

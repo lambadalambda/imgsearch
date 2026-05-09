@@ -46,6 +46,14 @@ This should be implemented as an adaptive local video browser, not a social feed
 - Candidate MVP algorithm: start with a fixed candidate pool from the seed video, maintain session positive/negative event lists, score remaining candidates by seed similarity plus recent-positive similarity minus soft negative similarity, then apply seen and diversity penalties.
 - Candidate future enhancement: persist optional local watch events for long-term personalization, with clear history deletion and private/incognito mode.
 
+## Implementation Progress
+
+- Added `GET /api/search/similar-videos` as a stateless local candidate endpoint that seeds from an indexed video frame, filters seen/seed videos, dedupes by video, respects NSFW visibility, and returns video metadata for the feed UI.
+- Added video-card and video-result `Feed` actions that open a fullscreen raw muted `playsinline` video overlay with button, keyboard, and swipe navigation plus a clear end state.
+- Kept adaptation session-local in browser memory: feed events carry a session ID, queue position, watch/dwell/completion metrics, action, timestamp, and classified signal; quick skips require playback plus low dwell/completion, high completion/natural end is positive, and reranking only affects later unseen queue items.
+- Added Playwright smoke coverage for mobile feed entry, page locking, feedback classification, next/keyboard navigation, queue exhaustion, and exit restoration, plus Go coverage for the similar-video endpoint and indexed seed-frame selection.
+- Remaining before archiving: decide whether the broader acceptance criteria need stronger near-duplicate/diversity handling and dedicated JS unit tests beyond the smoke classifier assertions.
+
 ## References
 
 - https://newsroom.tiktok.com/en-us/how-tiktok-recommends-videos-for-you

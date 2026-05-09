@@ -82,12 +82,15 @@ func (f *fakeEmbedder) prompts() []string {
 }
 
 type fakeIndex struct {
-	hits        []vectorindex.SearchHit
-	similarHits []vectorindex.SearchHit
-	similarErr  error
-	searchVec   []float32
-	searchCalls int
-	debug       vectorindex.SearchDebug
+	hits                 []vectorindex.SearchHit
+	similarHits          []vectorindex.SearchHit
+	similarHitsByImageID map[int64][]vectorindex.SearchHit
+	similarErr           error
+	similarImageIDs      []int64
+	similarLimits        []int
+	searchVec            []float32
+	searchCalls          int
+	debug                vectorindex.SearchDebug
 }
 
 func (f *fakeIndex) Upsert(context.Context, int64, int64, []float32) error { return nil }
@@ -98,10 +101,24 @@ func (f *fakeIndex) Search(ctx context.Context, _ int64, query []float32, _ int)
 	f.searchVec = append([]float32(nil), query...)
 	return f.hits, nil
 }
-func (f *fakeIndex) SearchByImageID(ctx context.Context, _ int64, _ int64, _ int) ([]vectorindex.SearchHit, error) {
+func (f *fakeIndex) SearchByImageID(ctx context.Context, _ int64, imageID int64, limit int) ([]vectorindex.SearchHit, error) {
 	vectorindex.SetSearchDebug(ctx, f.debug)
+	f.similarImageIDs = append(f.similarImageIDs, imageID)
+	f.similarLimits = append(f.similarLimits, limit)
 	if f.similarErr != nil {
 		return nil, f.similarErr
+	}
+	if f.similarHitsByImageID != nil {
+		if hits, ok := f.similarHitsByImageID[imageID]; ok {
+			if limit > 0 && len(hits) > limit {
+				return hits[:limit], nil
+			}
+			return hits, nil
+		}
+		return nil, vectorindex.ErrNotFound
+	}
+	if limit > 0 && len(f.similarHits) > limit {
+		return f.similarHits[:limit], nil
 	}
 	return f.similarHits, nil
 }
@@ -692,6 +709,499 @@ UPDATE images SET tags_json = '["portrait","nsfw"]' WHERE id = 2;
 	}
 	if len(includeResp.Results) != 2 {
 		t.Fatalf("expected nsfw similar result restored with include_nsfw=1, got %+v", includeResp.Results)
+	}
+}
+
+func TestSimilarVideoSearchReturnsVideoCandidatesWithMetadata(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES
+  (10, 'seed-frame', 'seed-frame.jpg', 'images/seed-frame', 'image/jpeg', 640, 360),
+  (20, 'cand-frame-a', 'cand-frame-a.jpg', 'images/cand-frame-a', 'image/jpeg', 640, 360),
+  (21, 'cand-frame-b', 'cand-frame-b.jpg', 'images/cand-frame-b', 'image/jpeg', 640, 360),
+  (30, 'hidden-frame', 'hidden-frame.jpg', 'images/hidden-frame', 'image/jpeg', 640, 360);
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, description, tags_json)
+VALUES
+  (1, 'seed-video', 'seed.mp4', 'videos/seed.mp4', 'video/mp4', 9000, 1280, 720, 1, 'Seed video', '["seed"]'),
+  (2, 'candidate-video', 'candidate.mp4', 'videos/candidate.mp4', 'video/mp4', 12000, 1080, 1920, 2, 'Candidate video', '["candidate","portrait"]'),
+  (3, 'hidden-video', 'hidden.mp4', 'videos/hidden.mp4', 'video/mp4', 8000, 1280, 720, 1, 'Hidden video', '["nsfw"]');
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES
+  (1, 10, 0, 0),
+  (2, 20, 0, 1000),
+  (2, 21, 1, 4000),
+  (3, 30, 0, 1000);
+`); err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (10, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 0})); err != nil {
+		t.Fatalf("seed frame embedding: %v", err)
+	}
+	idx := &fakeIndex{similarHitsByImageID: map[int64][]vectorindex.SearchHit{
+		10: {
+			{ImageID: 10, ModelID: 1, Distance: 0.01},
+			{ImageID: 21, ModelID: 1, Distance: 0.08},
+			{ImageID: 20, ModelID: 1, Distance: 0.10},
+			{ImageID: 30, ModelID: 1, Distance: 0.12},
+		},
+	}}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: idx})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar-videos?video_id=1&limit=10", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(idx.similarImageIDs) != 1 || idx.similarImageIDs[0] != 10 {
+		t.Fatalf("expected seed frame 10 search, got %v", idx.similarImageIDs)
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("expected one visible deduped candidate, got %+v", resp.Results)
+	}
+	got := resp.Results[0]
+	if got.MediaType != "video" || got.VideoID != 2 || got.ImageID != 21 {
+		t.Fatalf("unexpected candidate identity: %+v", got)
+	}
+	if got.OriginalName != "candidate.mp4" || got.StoragePath != "videos/candidate.mp4" || got.PreviewPath != "images/cand-frame-b" {
+		t.Fatalf("unexpected candidate paths: %+v", got)
+	}
+	if got.DurationMS != 12000 || got.Width != 1080 || got.Height != 1920 || got.FrameCount != 2 || got.MatchTimestampMS != 4000 {
+		t.Fatalf("missing video feed metadata: %+v", got)
+	}
+	if got.Description != "Candidate video" || len(got.Tags) != 2 || got.Tags[0] != "candidate" {
+		t.Fatalf("missing video annotations: %+v", got)
+	}
+
+	includeReq := httptest.NewRequest(http.MethodGet, "/api/search/similar-videos?video_id=1&limit=10&include_nsfw=1", nil)
+	includeRR := httptest.NewRecorder()
+	h.ServeHTTP(includeRR, includeReq)
+	if includeRR.Code != http.StatusOK {
+		t.Fatalf("include status: got=%d body=%s", includeRR.Code, includeRR.Body.String())
+	}
+	var includeResp SearchResponse
+	if err := json.Unmarshal(includeRR.Body.Bytes(), &includeResp); err != nil {
+		t.Fatalf("decode include response: %v", err)
+	}
+	if len(includeResp.Results) != 2 || includeResp.Results[1].VideoID != 3 {
+		t.Fatalf("expected nsfw candidate restored with include_nsfw=1, got %+v", includeResp.Results)
+	}
+}
+
+func TestSimilarVideoSearchUsesExplicitSeedFrameAndSeenFilter(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES
+  (10, 'seed-a', 'seed-a.jpg', 'images/seed-a', 'image/jpeg', 640, 360),
+  (11, 'seed-b', 'seed-b.jpg', 'images/seed-b', 'image/jpeg', 640, 360),
+  (20, 'seen-frame', 'seen-frame.jpg', 'images/seen-frame', 'image/jpeg', 640, 360),
+  (30, 'fresh-frame', 'fresh-frame.jpg', 'images/fresh-frame', 'image/jpeg', 640, 360);
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES
+  (1, 'seed-video', 'seed.mp4', 'videos/seed.mp4', 'video/mp4', 9000, 1280, 720, 2),
+  (2, 'seen-video', 'seen.mp4', 'videos/seen.mp4', 'video/mp4', 12000, 1280, 720, 1),
+  (3, 'fresh-video', 'fresh.mp4', 'videos/fresh.mp4', 'video/mp4', 8000, 1280, 720, 1);
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES
+  (1, 10, 0, 0),
+  (1, 11, 1, 5000),
+  (2, 20, 0, 1000),
+  (3, 30, 0, 1000);
+`); err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (11, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 0})); err != nil {
+		t.Fatalf("seed frame embedding: %v", err)
+	}
+	idx := &fakeIndex{similarHitsByImageID: map[int64][]vectorindex.SearchHit{
+		11: {
+			{ImageID: 20, ModelID: 1, Distance: 0.02},
+			{ImageID: 30, ModelID: 1, Distance: 0.03},
+		},
+	}}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: idx})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar-videos?video_id=1&seed_image_id=11&seen=2&limit=10", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(idx.similarImageIDs) != 1 || idx.similarImageIDs[0] != 11 {
+		t.Fatalf("expected explicit seed frame 11 search, got %v", idx.similarImageIDs)
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 1 || resp.Results[0].VideoID != 3 {
+		t.Fatalf("expected seen video filtered from feed results, got %+v", resp.Results)
+	}
+}
+
+func TestSimilarVideoSearchReranksBySessionTagPreferences(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES
+  (10, 'seed-frame', 'seed-frame.jpg', 'images/seed-frame', 'image/jpeg', 640, 360),
+  (20, 'near-avoided-frame', 'near-avoided-frame.jpg', 'images/near-avoided-frame', 'image/jpeg', 640, 360),
+  (30, 'preferred-frame', 'preferred-frame.jpg', 'images/preferred-frame', 'image/jpeg', 640, 360),
+  (40, 'plain-frame', 'plain-frame.jpg', 'images/plain-frame', 'image/jpeg', 640, 360);
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, tags_json)
+VALUES
+  (1, 'seed-video', 'seed.mp4', 'videos/seed.mp4', 'video/mp4', 9000, 1280, 720, 1, '["seed"]'),
+  (2, 'near-avoided-video', 'near-avoided.mp4', 'videos/near-avoided.mp4', 'video/mp4', 9000, 1280, 720, 1, '["avoid-me"]'),
+  (3, 'preferred-video', 'preferred.mp4', 'videos/preferred.mp4', 'video/mp4', 9000, 1280, 720, 1, '["liked"]'),
+  (4, 'plain-video', 'plain.mp4', 'videos/plain.mp4', 'video/mp4', 9000, 1280, 720, 1, '["plain"]');
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES
+  (1, 10, 0, 0),
+  (2, 20, 0, 1000),
+  (3, 30, 0, 1000),
+  (4, 40, 0, 1000);
+`); err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (10, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 0})); err != nil {
+		t.Fatalf("seed frame embedding: %v", err)
+	}
+	idx := &fakeIndex{similarHitsByImageID: map[int64][]vectorindex.SearchHit{
+		10: {
+			{ImageID: 10, ModelID: 1, Distance: 0.01},
+			{ImageID: 20, ModelID: 1, Distance: 0.02},
+			{ImageID: 40, ModelID: 1, Distance: 0.03},
+			{ImageID: 30, ModelID: 1, Distance: 0.04},
+		},
+	}}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: idx})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar-videos?video_id=1&limit=3&prefer_tags=liked&avoid_tags=avoid-me", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	got := make([]int64, 0, len(resp.Results))
+	for _, result := range resp.Results {
+		got = append(got, result.VideoID)
+	}
+	want := []int64{3, 4, 2}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("preference rerank order: got=%v want=%v results=%+v", got, want, resp.Results)
+	}
+}
+
+func TestSimilarVideoSearchReranksBeforeLimit(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES
+  (10, 'seed-frame', 'seed-frame.jpg', 'images/seed-frame', 'image/jpeg', 640, 360),
+  (20, 'near-frame', 'near-frame.jpg', 'images/near-frame', 'image/jpeg', 640, 360),
+  (30, 'plain-frame', 'plain-frame.jpg', 'images/plain-frame', 'image/jpeg', 640, 360),
+  (40, 'preferred-frame', 'preferred-frame.jpg', 'images/preferred-frame', 'image/jpeg', 640, 360);
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, tags_json)
+VALUES
+  (1, 'seed-video', 'seed.mp4', 'videos/seed.mp4', 'video/mp4', 9000, 1280, 720, 1, '["seed"]'),
+  (2, 'near-video', 'near.mp4', 'videos/near.mp4', 'video/mp4', 9000, 1280, 720, 1, '["plain"]'),
+  (3, 'plain-video', 'plain.mp4', 'videos/plain.mp4', 'video/mp4', 9000, 1280, 720, 1, '["plain"]'),
+  (4, 'preferred-video', 'preferred.mp4', 'videos/preferred.mp4', 'video/mp4', 9000, 1280, 720, 1, '["liked"]');
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES
+  (1, 10, 0, 0),
+  (2, 20, 0, 1000),
+  (3, 30, 0, 1000),
+  (4, 40, 0, 1000);
+`); err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (10, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 0})); err != nil {
+		t.Fatalf("seed frame embedding: %v", err)
+	}
+	idx := &fakeIndex{similarHitsByImageID: map[int64][]vectorindex.SearchHit{
+		10: {
+			{ImageID: 10, ModelID: 1, Distance: 0.01},
+			{ImageID: 20, ModelID: 1, Distance: 0.02},
+			{ImageID: 30, ModelID: 1, Distance: 0.03},
+			{ImageID: 40, ModelID: 1, Distance: 0.04},
+		},
+	}}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: idx})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar-videos?video_id=1&limit=2&prefer_tags=liked", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(idx.similarLimits) != 1 || idx.similarLimits[0] != similarVideoSearchMinWindow {
+		t.Fatalf("similar-video search limit: got=%v want [%d]", idx.similarLimits, similarVideoSearchMinWindow)
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	got := make([]int64, 0, len(resp.Results))
+	for _, result := range resp.Results {
+		got = append(got, result.VideoID)
+	}
+	want := []int64{4, 2}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("preference rerank before limit: got=%v want=%v results=%+v", got, want, resp.Results)
+	}
+}
+
+func TestSimilarVideoSearchWindowReachesPastSeenVideoFrames(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	var imageValues []string
+	var videoFrameValues []string
+	imageValues = append(imageValues, "(10, 'seed-frame', 'seed-frame.jpg', 'images/seed-frame', 'image/jpeg', 640, 360)")
+	videoFrameValues = append(videoFrameValues, "(1, 10, 0, 0)")
+	for i := 0; i < 40; i++ {
+		imageID := 100 + i
+		imageValues = append(imageValues, fmt.Sprintf("(%d, 'seen-frame-%d', 'seen-frame-%d.jpg', 'images/seen-frame-%d', 'image/jpeg', 640, 360)", imageID, i, i, i))
+		videoFrameValues = append(videoFrameValues, fmt.Sprintf("(2, %d, %d, %d)", imageID, i, i*1000))
+	}
+	imageValues = append(imageValues, "(300, 'fresh-frame', 'fresh-frame.jpg', 'images/fresh-frame', 'image/jpeg', 640, 360)")
+	videoFrameValues = append(videoFrameValues, "(3, 300, 0, 1000)")
+
+	if _, err := dbConn.Exec(fmt.Sprintf(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES %s;
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES
+  (1, 'seed-video', 'seed.mp4', 'videos/seed.mp4', 'video/mp4', 9000, 1280, 720, 1),
+  (2, 'seen-video', 'seen.mp4', 'videos/seen.mp4', 'video/mp4', 9000, 1280, 720, 40),
+  (3, 'fresh-video', 'fresh.mp4', 'videos/fresh.mp4', 'video/mp4', 9000, 1280, 720, 1);
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES %s;
+`, strings.Join(imageValues, ",\n"), strings.Join(videoFrameValues, ",\n"))); err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (10, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 0})); err != nil {
+		t.Fatalf("seed frame embedding: %v", err)
+	}
+	hits := make([]vectorindex.SearchHit, 0, 41)
+	for i := 0; i < 40; i++ {
+		hits = append(hits, vectorindex.SearchHit{ImageID: int64(100 + i), ModelID: 1, Distance: 0.01 + float64(i)*0.001})
+	}
+	hits = append(hits, vectorindex.SearchHit{ImageID: 300, ModelID: 1, Distance: 0.20})
+	idx := &fakeIndex{similarHitsByImageID: map[int64][]vectorindex.SearchHit{10: hits}}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: idx})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar-videos?video_id=1&seen=2&limit=3", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(idx.similarLimits) != 1 || idx.similarLimits[0] <= 40 {
+		t.Fatalf("similar-video search window did not account for frame fanout: got %v", idx.similarLimits)
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 1 || resp.Results[0].VideoID != 3 {
+		t.Fatalf("expected fresh video after seen video frame fanout, got %+v", resp.Results)
+	}
+}
+
+func TestSimilarVideoSearchTagPreferenceCannotSwampVisualSimilarity(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES
+  (10, 'seed-frame', 'seed-frame.jpg', 'images/seed-frame', 'image/jpeg', 640, 360),
+  (20, 'near-frame', 'near-frame.jpg', 'images/near-frame', 'image/jpeg', 640, 360),
+  (30, 'far-tagged-frame', 'far-tagged-frame.jpg', 'images/far-tagged-frame', 'image/jpeg', 640, 360);
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, tags_json)
+VALUES
+  (1, 'seed-video', 'seed.mp4', 'videos/seed.mp4', 'video/mp4', 9000, 1280, 720, 1, '["seed"]'),
+  (2, 'near-video', 'near.mp4', 'videos/near.mp4', 'video/mp4', 9000, 1280, 720, 1, '["plain"]'),
+  (3, 'far-tagged-video', 'far-tagged.mp4', 'videos/far-tagged.mp4', 'video/mp4', 9000, 1280, 720, 1, '["liked-a","liked-b","liked-c","liked-d","liked-e"]');
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES
+  (1, 10, 0, 0),
+  (2, 20, 0, 1000),
+  (3, 30, 0, 1000);
+`); err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (10, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 0})); err != nil {
+		t.Fatalf("seed frame embedding: %v", err)
+	}
+	idx := &fakeIndex{similarHitsByImageID: map[int64][]vectorindex.SearchHit{
+		10: {
+			{ImageID: 10, ModelID: 1, Distance: 0.01},
+			{ImageID: 20, ModelID: 1, Distance: 0.02},
+			{ImageID: 30, ModelID: 1, Distance: 0.40},
+		},
+	}}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: idx})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar-videos?video_id=1&limit=2&prefer_tags=liked-a,liked-b,liked-c,liked-d,liked-e", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 2 || resp.Results[0].VideoID != 2 {
+		t.Fatalf("preferred tags should not swamp a much closer visual match, got %+v", resp.Results)
+	}
+}
+
+func TestSimilarVideoSearchUsesFirstIndexedSeedFrame(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES
+  (10, 'seed-a', 'seed-a.jpg', 'images/seed-a', 'image/jpeg', 640, 360),
+  (11, 'seed-b', 'seed-b.jpg', 'images/seed-b', 'image/jpeg', 640, 360),
+  (30, 'fresh-frame', 'fresh-frame.jpg', 'images/fresh-frame', 'image/jpeg', 640, 360);
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES
+  (1, 'seed-video', 'seed.mp4', 'videos/seed.mp4', 'video/mp4', 9000, 1280, 720, 2),
+  (3, 'fresh-video', 'fresh.mp4', 'videos/fresh.mp4', 'video/mp4', 8000, 1280, 720, 1);
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES
+  (1, 10, 0, 0),
+  (1, 11, 1, 5000),
+  (3, 30, 0, 1000);
+`); err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob)
+VALUES (11, 1, 2, ?)
+`, vectorindex.FloatsToBlob([]float32{1, 0})); err != nil {
+		t.Fatalf("seed frame embedding: %v", err)
+	}
+	idx := &fakeIndex{similarHitsByImageID: map[int64][]vectorindex.SearchHit{
+		11: {{ImageID: 30, ModelID: 1, Distance: 0.03}},
+	}}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: idx})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar-videos?video_id=1&limit=10", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(idx.similarImageIDs) != 1 || idx.similarImageIDs[0] != 11 {
+		t.Fatalf("expected first indexed seed frame 11 search, got %v", idx.similarImageIDs)
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 1 || resp.Results[0].VideoID != 3 {
+		t.Fatalf("expected fresh video result, got %+v", resp.Results)
+	}
+}
+
+func TestSimilarVideoSearchRejectsInvalidSeed(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar-videos?video_id=999", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
+	}
+}
+
+func TestSimilarVideoSearchRejectsSeedFrameFromAnotherVideo(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES
+  (10, 'seed-a', 'seed-a.jpg', 'images/seed-a', 'image/jpeg', 640, 360),
+  (20, 'seed-b', 'seed-b.jpg', 'images/seed-b', 'image/jpeg', 640, 360);
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES
+  (1, 'video-a', 'a.mp4', 'videos/a.mp4', 'video/mp4', 9000, 1280, 720, 1),
+  (2, 'video-b', 'b.mp4', 'videos/b.mp4', 'video/mp4', 9000, 1280, 720, 1);
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES
+  (1, 10, 0, 0),
+  (2, 20, 0, 0);
+`); err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar-videos?video_id=1&seed_image_id=20", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
 	}
 }
 

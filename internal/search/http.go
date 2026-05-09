@@ -37,6 +37,10 @@ type SearchResult struct {
 	TranscriptText   string   `json:"transcript_text,omitempty"`
 	SearchSource     string   `json:"search_source,omitempty"`
 	MimeType         string   `json:"mime_type,omitempty"`
+	DurationMS       int64    `json:"duration_ms,omitempty"`
+	Width            int      `json:"width,omitempty"`
+	Height           int      `json:"height,omitempty"`
+	FrameCount       int      `json:"frame_count,omitempty"`
 	Distance         float64  `json:"distance"`
 	OriginalName     string   `json:"original_name"`
 	StoragePath      string   `json:"storage_path"`
@@ -68,12 +72,22 @@ type TagCloudResponse struct {
 
 const maxNegativePromptChars = 500
 
+const (
+	similarVideoSearchMinWindow       = 256
+	similarVideoSearchLimitMultiplier = 64
+	similarVideoSearchSeenAllowance   = 8
+	similarVideoSearchMaxWindow       = 4000
+)
+
 var errNegativePromptNearZero = errors.New("negative prompt too similar to query")
+var errSeedFrameNotInVideo = errors.New("seed_image_id does not belong to video")
+var errSeedFrameNotIndexed = errors.New("seed video frame not indexed")
 
 func NewHandler(h *Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/search/text", h.handleTextSearch)
 	mux.HandleFunc("/api/search/similar", h.handleSimilarSearch)
+	mux.HandleFunc("/api/search/similar-videos", h.handleSimilarVideoSearch)
 	mux.HandleFunc("/api/search/tags", h.handleTagSearch)
 	mux.HandleFunc("/api/search/tag-cloud", h.handleTagCloud)
 	return mux
@@ -260,6 +274,232 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: int64(len(results)), Debug: buildSearchDebugResponse(start, indexDebug)})
 }
 
+func (h *Handler) handleSimilarVideoSearch(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	if r.Method != http.MethodGet {
+		httputil.WriteMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if h == nil || h.DB == nil || h.Index == nil {
+		httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
+		return
+	}
+
+	videoIDStr := r.URL.Query().Get("video_id")
+	if videoIDStr == "" {
+		httputil.WriteJSONError(w, http.StatusBadRequest, "missing video_id")
+		return
+	}
+	videoID, err := strconv.ParseInt(videoIDStr, 10, 64)
+	if err != nil || videoID <= 0 {
+		httputil.WriteJSONError(w, http.StatusBadRequest, "invalid video_id")
+		return
+	}
+
+	seedImageID, err := h.similarVideoSeedImageID(r.Context(), videoID, r.URL.Query().Get("seed_image_id"))
+	if err != nil {
+		if errors.Is(err, errSeedFrameNotInVideo) {
+			httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if errors.Is(err, errSeedFrameNotIndexed) {
+			httputil.WriteJSONError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			httputil.WriteJSONError(w, http.StatusNotFound, "seed video has no indexed frames")
+			return
+		}
+		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	includeNSFW := httputil.ParseIncludeNSFWQuery(r)
+	seenVideoIDs := parseSeenVideoIDs(r.URL.Query().Get("seen"))
+	seenVideoIDs[videoID] = struct{}{}
+	preferTags := parseCommaSeparatedTags(r.URL.Query().Get("prefer_tags"))
+	avoidTags := parseCommaSeparatedTags(r.URL.Query().Get("avoid_tags"))
+	limit := httputil.ParseLimitQuery(r, 40)
+	searchLimit := similarVideoSearchWindow(limit, len(seenVideoIDs))
+
+	indexDebug := vectorindex.SearchDebug{}
+	searchCtx := vectorindex.WithSearchDebug(r.Context(), &indexDebug)
+	hits, err := h.Index.SearchByImageID(searchCtx, h.ModelID, seedImageID, searchLimit)
+	if err != nil {
+		if errors.Is(err, vectorindex.ErrNotFound) {
+			httputil.WriteJSONError(w, http.StatusNotFound, "seed video frame not indexed")
+			return
+		}
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "search failed")
+		return
+	}
+
+	enriched, err := h.enrich(r.Context(), hits, includeNSFW)
+	if err != nil {
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "result enrich failed")
+		return
+	}
+
+	results := make([]SearchResult, 0, limit)
+	for _, result := range enriched {
+		if result.MediaType != "video" || result.VideoID <= 0 {
+			continue
+		}
+		if _, seen := seenVideoIDs[result.VideoID]; seen {
+			continue
+		}
+		seenVideoIDs[result.VideoID] = struct{}{}
+		results = append(results, result)
+	}
+	rerankSimilarVideoResults(results, preferTags, avoidTags)
+	if len(results) > limit {
+		results = results[:limit]
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: int64(len(results)), Debug: buildSearchDebugResponse(start, indexDebug)})
+}
+
+func similarVideoSearchWindow(limit int, seenVideoCount int) int {
+	if limit <= 0 {
+		limit = 40
+	}
+	if seenVideoCount < 0 {
+		seenVideoCount = 0
+	}
+	searchLimit := limit*similarVideoSearchLimitMultiplier + seenVideoCount*similarVideoSearchSeenAllowance
+	if searchLimit < similarVideoSearchMinWindow {
+		return similarVideoSearchMinWindow
+	}
+	if searchLimit > similarVideoSearchMaxWindow {
+		return similarVideoSearchMaxWindow
+	}
+	return searchLimit
+}
+
+func (h *Handler) similarVideoSeedImageID(ctx context.Context, videoID int64, seedImageIDRaw string) (int64, error) {
+	seedImageIDRaw = strings.TrimSpace(seedImageIDRaw)
+	if seedImageIDRaw != "" {
+		seedImageID, err := strconv.ParseInt(seedImageIDRaw, 10, 64)
+		if err != nil || seedImageID <= 0 {
+			return 0, fmt.Errorf("invalid seed_image_id")
+		}
+		var found int64
+		if err := h.DB.QueryRowContext(ctx, `
+SELECT vf.image_id
+FROM video_frames vf
+WHERE vf.video_id = ?
+  AND vf.image_id = ?
+LIMIT 1
+`, videoID, seedImageID).Scan(&found); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return 0, errSeedFrameNotInVideo
+			}
+			return 0, err
+		}
+		var embedded int64
+		if err := h.DB.QueryRowContext(ctx, `
+SELECT ie.image_id
+FROM image_embeddings ie
+WHERE ie.image_id = ?
+  AND ie.model_id = ?
+LIMIT 1
+`, found, h.ModelID).Scan(&embedded); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return 0, errSeedFrameNotIndexed
+			}
+			return 0, err
+		}
+		return embedded, nil
+	}
+
+	var imageID int64
+	if err := h.DB.QueryRowContext(ctx, `
+SELECT vf.image_id
+FROM video_frames vf
+JOIN image_embeddings ie ON ie.image_id = vf.image_id
+  AND ie.model_id = ?
+WHERE vf.video_id = ?
+ORDER BY vf.frame_index ASC, vf.image_id ASC
+LIMIT 1
+`, h.ModelID, videoID).Scan(&imageID); err != nil {
+		return 0, err
+	}
+	return imageID, nil
+}
+
+func parseSeenVideoIDs(raw string) map[int64]struct{} {
+	seen := make(map[int64]struct{})
+	if strings.TrimSpace(raw) == "" {
+		return seen
+	}
+	parts := strings.Split(raw, ",")
+	for _, part := range parts {
+		if len(seen) >= 1000 {
+			break
+		}
+		id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		seen[id] = struct{}{}
+	}
+	return seen
+}
+
+func parseCommaSeparatedTags(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	return normalizeTagFilters(strings.Split(raw, ","))
+}
+
+func rerankSimilarVideoResults(results []SearchResult, preferTags []string, avoidTags []string) {
+	preferSet := tagSet(preferTags)
+	avoidSet := tagSet(avoidTags)
+	if len(preferSet) == 0 && len(avoidSet) == 0 {
+		return
+	}
+
+	sort.SliceStable(results, func(i, j int) bool {
+		left := similarVideoPreferenceScore(results[i], preferSet, avoidSet)
+		right := similarVideoPreferenceScore(results[j], preferSet, avoidSet)
+		if left == right {
+			return results[i].Distance < results[j].Distance
+		}
+		return left > right
+	})
+}
+
+func similarVideoPreferenceScore(result SearchResult, preferTags map[string]struct{}, avoidTags map[string]struct{}) float64 {
+	const tagWeight = 0.08
+	const maxTagInfluence = 0.12
+	score := -result.Distance
+	tagInfluence := 0.0
+	for _, tag := range normalizeTagFilters(result.Tags) {
+		if _, ok := preferTags[tag]; ok {
+			tagInfluence += tagWeight
+		}
+		if _, ok := avoidTags[tag]; ok {
+			tagInfluence -= tagWeight
+		}
+	}
+	if tagInfluence > maxTagInfluence {
+		tagInfluence = maxTagInfluence
+	} else if tagInfluence < -maxTagInfluence {
+		tagInfluence = -maxTagInfluence
+	}
+	score += tagInfluence
+	return score
+}
+
+func tagSet(tags []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(tags))
+	for _, tag := range normalizeTagFilters(tags) {
+		set[tag] = struct{}{}
+	}
+	return set
+}
+
 func buildSearchDebugResponse(start time.Time, info vectorindex.SearchDebug) *SearchDebugResponse {
 	durationMS := time.Since(start).Milliseconds()
 	if durationMS < 0 {
@@ -378,9 +618,13 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 	       v.storage_path,
 	       v.mime_type,
 	       COALESCE(v.description, ''),
-	       COALESCE(v.tags_json, '[]'),
-	       COALESCE(v.transcript_text, ''),
-	       vf.timestamp_ms
+		       COALESCE(v.tags_json, '[]'),
+		       COALESCE(v.transcript_text, ''),
+		       vf.timestamp_ms,
+		       COALESCE(v.duration_ms, 0),
+		       COALESCE(v.width, 0),
+		       COALESCE(v.height, 0),
+		       COALESCE(v.frame_count, 0)
 	FROM images i
 	LEFT JOIN video_frames vf ON vf.image_id = i.id
 	LEFT JOIN videos v ON v.id = vf.video_id
@@ -419,13 +663,17 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 		videoTags           []string
 		videoTranscriptText sql.NullString
 		timestampMS         sql.NullInt64
+		videoDurationMS     sql.NullInt64
+		videoWidth          sql.NullInt64
+		videoHeight         sql.NullInt64
+		videoFrameCount     sql.NullInt64
 	}
 	byID := make(map[int64][]mediaRow, len(ids))
 	for rows.Next() {
 		var row mediaRow
 		var tagsJSON string
 		var videoTagsJSON string
-		if err := rows.Scan(&row.imageID, &row.originalName, &row.storagePath, &row.mimeType, &row.description, &tagsJSON, &row.videoID, &row.videoOriginalName, &row.videoStoragePath, &row.videoMimeType, &row.videoDescription, &videoTagsJSON, &row.videoTranscriptText, &row.timestampMS); err != nil {
+		if err := rows.Scan(&row.imageID, &row.originalName, &row.storagePath, &row.mimeType, &row.description, &tagsJSON, &row.videoID, &row.videoOriginalName, &row.videoStoragePath, &row.videoMimeType, &row.videoDescription, &videoTagsJSON, &row.videoTranscriptText, &row.timestampMS, &row.videoDurationMS, &row.videoWidth, &row.videoHeight, &row.videoFrameCount); err != nil {
 			return nil, fmt.Errorf("scan enriched image row: %w", err)
 		}
 		tags, err := tagutil.DecodeJSON(tagsJSON)
@@ -485,6 +733,10 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 				result.TranscriptText = row.videoTranscriptText.String
 				result.PreviewPath = filepath.ToSlash(row.storagePath)
 				result.MatchTimestampMS = row.timestampMS.Int64
+				result.DurationMS = row.videoDurationMS.Int64
+				result.Width = int(row.videoWidth.Int64)
+				result.Height = int(row.videoHeight.Int64)
+				result.FrameCount = int(row.videoFrameCount.Int64)
 			}
 			results = append(results, result)
 			if !row.videoID.Valid {

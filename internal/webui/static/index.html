@@ -231,6 +231,40 @@
       </div>
     </div>
 
+    <div id="video-feed" class="video-feed" role="dialog" aria-modal="true" aria-label="Similar video feed" hidden>
+      <div id="feed-track" class="feed-track">
+        <div class="feed-slide feed-slide-current" data-feed-slot="current">
+          <video id="video-feed-player" class="video-feed-video" muted autoplay playsinline preload="auto"></video>
+        </div>
+        <div class="feed-slide feed-slide-prev" data-feed-slot="prev" aria-hidden="true">
+          <video id="video-feed-prev-player" class="video-feed-video" muted playsinline preload="metadata"></video>
+        </div>
+        <div class="feed-slide feed-slide-next" data-feed-slot="next" aria-hidden="true">
+          <video id="video-feed-next-player" class="video-feed-video" muted playsinline preload="metadata"></video>
+        </div>
+      </div>
+      <div class="feed-topbar">
+        <p id="feed-seed-label" class="feed-seed-label">Similar in your library</p>
+        <button id="feed-exit" type="button" class="feed-control feed-exit" aria-label="Exit feed">Exit</button>
+      </div>
+      <div class="feed-controls" aria-label="Feed controls">
+        <button id="feed-prev" type="button" class="feed-control" aria-label="Previous video">Prev</button>
+        <button id="feed-next" type="button" class="feed-control" aria-label="Next video">Next</button>
+        <button id="feed-play-toggle" type="button" class="feed-control" aria-label="Pause video">Pause</button>
+        <button id="feed-mute-toggle" type="button" class="feed-control" aria-label="Unmute video">Unmute</button>
+      </div>
+      <div id="feed-info" class="feed-info">
+        <p id="feed-position" class="feed-position">1 / 1</p>
+        <p id="feed-hint" class="feed-hint">Swipe up for next. Private to this session.</p>
+        <div class="feed-progress" aria-hidden="true"><span id="feed-progress-bar"></span></div>
+      </div>
+      <div id="feed-end" class="feed-end" hidden>
+        <h2>No more similar videos</h2>
+        <p>This session has reached the end of the local similar-video queue.</p>
+        <button id="feed-end-back" type="button" class="feed-control">Back to videos</button>
+      </div>
+    </div>
+
     <div id="live-announcer" class="sr-only" role="status" aria-live="polite"></div>
   </body>
 </html>
