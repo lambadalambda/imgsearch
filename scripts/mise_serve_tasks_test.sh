@@ -14,6 +14,7 @@ assert_contains() {
 
 assert_contains '[tasks.serve]'
 assert_contains 'mise watch serve:run --restart'
+assert_contains '--no-vcs-ignore --watch cmd --watch internal'
 assert_contains '[tasks."serve:8b:annotator-26b"]'
 assert_contains 'mise watch serve:8b:annotator-26b:run --restart'
 assert_contains '[tasks."serve:8b:annotator-26b:run"]'

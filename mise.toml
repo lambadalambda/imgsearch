@@ -45,7 +45,7 @@ run = "RUN_SQLITE_VECTOR_INTEGRATION=1 SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-
 
 [tasks.serve]
 description = "Run imgsearch with autorestart on source and static asset changes"
-run = "mise watch serve:run --restart --stop-signal SIGTERM --debounce 300ms --watch cmd --watch internal --watch go.mod --watch go.sum --watch mise.toml --watch scripts/ensure_sqlite_vector_ready.sh --watch scripts/ensure_llama_cpp_native_build.sh --watch scripts/resolve_onnxruntime_lib.sh --exts go,html,css,js,toml,sh"
+run = "mise watch serve:run --restart --stop-signal SIGTERM --debounce 300ms --no-vcs-ignore --watch cmd --watch internal --watch go.mod --watch go.sum --watch mise.toml --watch scripts/ensure_sqlite_vector_ready.sh --watch scripts/ensure_llama_cpp_native_build.sh --watch scripts/resolve_onnxruntime_lib.sh --exts go,html,css,js,toml,sh"
 
 [tasks."serve:run"]
 description = "Run imgsearch with the native llama.cpp embedder once"
@@ -65,7 +65,7 @@ run = "scripts/ensure_sqlite_vector_ready.sh; scripts/ensure_llama_cpp_native_bu
 
 [tasks."serve:8b:annotator-26b"]
 description = "Run imgsearch with the 8B native embedder and 26B Gemma annotator, autorestarting on source and static asset changes"
-run = "mise watch serve:8b:annotator-26b:run --restart --stop-signal SIGTERM --debounce 300ms --watch cmd --watch internal --watch go.mod --watch go.sum --watch mise.toml --watch scripts/ensure_sqlite_vector_ready.sh --watch scripts/ensure_llama_cpp_native_build.sh --watch scripts/resolve_onnxruntime_lib.sh --exts go,html,css,js,toml,sh"
+run = "mise watch serve:8b:annotator-26b:run --restart --stop-signal SIGTERM --debounce 300ms --no-vcs-ignore --watch cmd --watch internal --watch go.mod --watch go.sum --watch mise.toml --watch scripts/ensure_sqlite_vector_ready.sh --watch scripts/ensure_llama_cpp_native_build.sh --watch scripts/resolve_onnxruntime_lib.sh --exts go,html,css,js,toml,sh"
 
 [tasks."serve:8b:annotator-26b:run"]
 description = "Run imgsearch with the 8B native embedder and 26B Gemma annotator once"
