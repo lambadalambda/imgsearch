@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(frontend): add an in-app Atelier Upload modal with drag-drop, click-to-pick, per-file row states (pending/uploading/created/duplicate/failed), and an automatic library refresh when at least one file was queued for indexing; the legacy upload remains available at `/legacy`.
 - ux(ui): polish overall design with a search-icon search field, lighter segmented tabs, softer card hover elevation, smaller pill-shaped match/duration badges, muted toolbar status text, and tighter mobile thumbnail action chips.
 - ux(ui): simplify the mobile top chrome by compacting search actions, hiding secondary status clutter, and keeping tab labels readable.
 - fix(ui): let the mobile Feed playback progress bar span the available viewport width instead of capping it to a short strip.

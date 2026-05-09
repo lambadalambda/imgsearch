@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { mode, headline, includeNSFW, setLibrary } from "../lib/stores";
+  import { mode, headline, includeNSFW, openUpload, setLibrary } from "../lib/stores";
 
   function goHome(event: Event) {
     event.preventDefault();
@@ -45,12 +45,15 @@
         />
         <span>{$includeNSFW ? "NSFW: Shown" : "NSFW: Hidden"}</span>
       </label>
-      <a
-        href="/legacy"
-        class="inline-flex items-center px-[14px] py-2 bg-ink text-[#fffdf8] border border-ink rounded-full text-[13.5px] font-medium no-underline transition-colors duration-150 ease-soft hover:bg-[#2d2924]"
+      <button
+        type="button"
+        data-upload-trigger
+        onclick={() => openUpload()}
+        class="inline-flex items-center gap-1.5 px-[14px] py-2 bg-ink text-[#fffdf8] border border-ink rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-[#2d2924]"
       >
-        Upload (legacy)
-      </a>
+        <span aria-hidden="true" class="text-[15px] leading-none">+</span>
+        <span>Upload</span>
+      </button>
     </div>
   </div>
 </header>

@@ -116,6 +116,7 @@ let reannotateCount = 0;
 let deleteCount = 0;
 const tagSearchRequests = [];
 const imagesRequests = [];
+const uploadRequests = [];
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
@@ -201,6 +202,39 @@ const server = createServer(async (req, res) => {
       deleteCount += 1;
       res.writeHead(204);
       res.end();
+      return;
+    }
+    if (url.pathname === "/api/upload" && req.method === "POST") {
+      // We don't need to fully parse multipart; counting the per-part
+      // `name="file"; filename="..."` headers is enough for the smoke test
+      // to know what filenames the client sent.
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const body = Buffer.concat(chunks).toString("binary");
+      const filenames = Array.from(
+        body.matchAll(/name="file";\s*filename="([^"]*)"/g),
+        (m) => m[1] || "unknown",
+      );
+      uploadRequests.push({ filenames });
+      const uploads = filenames.map((name, i) => {
+        // Mark the second file as duplicate so the row-state mapping is
+        // exercised; the rest are reported as "created".
+        const duplicate = i === 1;
+        return {
+          filename: name,
+          media_type: "image",
+          image_id: 9000 + i,
+          sha256: `deadbeef${i.toString(16).padStart(2, "0")}`,
+          duplicate,
+        };
+      });
+      const duplicates = uploads.filter((u) => u.duplicate).length;
+      jsonResponse(res, uploads.length === 1 ? 201 : 207, {
+        uploads,
+        created: uploads.length - duplicates,
+        duplicates,
+        failed: 0,
+      });
       return;
     }
     if (url.pathname.startsWith("/media/")) {
@@ -367,6 +401,75 @@ try {
   if (lastRequest.offset === 0) {
     throw new Error(`expected load-more to request a non-zero offset, got ${JSON.stringify(lastRequest)}`);
   }
+
+  // 7b. Upload flow — open modal via header trigger, attach two files, submit,
+  //     verify per-file row states (created + duplicate), summary, and that
+  //     the library re-fetches via the dataEpoch bump.
+  const imagesRequestsBeforeUpload = imagesRequests.length;
+  await page.locator('[data-upload-trigger]').first().click();
+  await page.locator("[data-upload-modal]").waitFor({ state: "visible", timeout: 5000 });
+
+  await page.locator("[data-upload-input]").setInputFiles([
+    {
+      name: "alpha.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "base64",
+      ),
+    },
+    {
+      name: "beta.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        "base64",
+      ),
+    },
+  ]);
+  await page.waitForFunction(
+    () => document.querySelectorAll("[data-upload-row]").length === 2,
+    {},
+    { timeout: 5000 },
+  );
+
+  await page.locator("[data-upload-submit]").click();
+  await page.waitForFunction(
+    () =>
+      Array.from(document.querySelectorAll("[data-upload-row]")).every((row) => {
+        const s = row.getAttribute("data-upload-state");
+        return s === "created" || s === "duplicate" || s === "failed";
+      }),
+    {},
+    { timeout: 5000 },
+  );
+
+  if (uploadRequests.length !== 1) {
+    throw new Error(`expected one /api/upload request, got ${uploadRequests.length}`);
+  }
+  const sentNames = uploadRequests[0].filenames;
+  if (sentNames.length !== 2 || sentNames[0] !== "alpha.png" || sentNames[1] !== "beta.png") {
+    throw new Error(`unexpected upload filenames: ${JSON.stringify(sentNames)}`);
+  }
+
+  const states = await page
+    .locator("[data-upload-row]")
+    .evaluateAll((rows) => rows.map((r) => r.getAttribute("data-upload-state")));
+  if (states[0] !== "created" || states[1] !== "duplicate") {
+    throw new Error(`expected [created, duplicate] row states, got ${JSON.stringify(states)}`);
+  }
+
+  await page.locator("[data-upload-summary]").waitFor({ state: "visible", timeout: 2000 });
+
+  // dataEpoch bump should have triggered a fresh /api/images call.
+  if (imagesRequests.length <= imagesRequestsBeforeUpload) {
+    throw new Error(
+      `expected library to re-fetch after upload, /api/images count stayed at ${imagesRequests.length}`,
+    );
+  }
+
+  await page.locator("[data-upload-close]").click();
+  await page.locator("[data-upload-modal]").waitFor({ state: "hidden", timeout: 5000 });
 
   // 8. Rail "Library" returns to library mode and clears query.
   await page.locator('a[aria-label="imgsearch home"]').click();

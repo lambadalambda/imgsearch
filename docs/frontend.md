@@ -7,8 +7,8 @@ The web UI is in transition. Two shells coexist:
   `internal/webui/atelier/dist/`.
 - **Legacy** at `/legacy` — the original `internal/webui/static/`
   vanilla-JS shell. Kept as a fallback for unported features (Feed mode,
-  upload, bulk select/delete, tags explorer, ops menu, live status, NSFW
-  flagging) and for one-click rollback if the new SPA misbehaves.
+  bulk select/delete, tags explorer, ops menu, live status) and for
+  one-click rollback if the new SPA misbehaves.
 
 Both shells share the same backend API at `/api/*` and media serving at
 `/media/*`.
@@ -26,17 +26,20 @@ The first cut of the Atelier SPA covers:
 - NSFW filter toggled in the header (passes `include_nsfw=1`)
 - Mobile layout with the rail collapsing to a top dock and the masonry
   collapsing to a single column
+- Per-pin actions: Find similar, Flag NSFW (optimistic), Re-annotate, Delete
+- Tag chip search via `/api/search/tags` synced to `?tag=`
+- Pagination via the `Load more` button (offset bumps in 48-pin pages)
+- Upload modal (multi-select + drag-drop) hitting `POST /api/upload` with
+  per-file row states (pending → uploading → created/duplicate/failed)
 
 The following still live in `/legacy` for now and will be ported in
 follow-ups:
 
 - Feed mode (similar-video swipe player)
-- Upload UI
 - Bulk select / delete
 - Tags explorer page
 - Ops menu (retry stuck, refresh, queue stats)
 - Live update connection badge
-- Per-pin NSFW flag toggle, re-annotate, delete
 
 ## Build pipeline
 
@@ -121,5 +124,10 @@ mise run build:frontend            # rebuilds dist
 - **Two embed declarations** rather than versioned URL prefixes: legacy and
   Atelier ship together in the same Go binary so we can roll back to the
   legacy UI by visiting `/legacy` without a redeploy.
-- **MVP first**: the SPA does *not* yet replicate Feed, Upload, bulk
-  delete, or live status. Each of those is a separate follow-up issue.
+- **MVP first**: the SPA does *not* yet replicate Feed, bulk select, or
+  live status. Each of those is a separate follow-up issue.
+- **Upload as a modal** rather than a route: dragging files into the page
+  feels lighter than a navigation, and a modal keeps the masonry context
+  visible behind the dimmed backdrop. After a successful batch we bump
+  `dataEpoch` so the library re-fetches in place rather than the user
+  having to reload.

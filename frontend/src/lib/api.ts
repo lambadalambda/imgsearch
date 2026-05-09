@@ -3,6 +3,7 @@ import type {
   SearchResponse,
   StatsResponse,
   TagCloudResponse,
+  UploadBatchResponse,
   VideosPage,
 } from "./types";
 
@@ -191,6 +192,57 @@ export async function deleteMedia(kind: MediaKind, id: number): Promise<void> {
     }
     throw new ApiError(response.status, message);
   }
+}
+
+/** Backend caps from internal/upload/http.go. Keep in sync. */
+export const UPLOAD_MAX_FILES = 32;
+export const UPLOAD_MAX_BYTES = 64 * 1024 * 1024; // 64 MiB request body
+
+export const UPLOAD_ACCEPT =
+  "image/png,image/jpeg,image/webp,image/avif,video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv";
+
+export interface UploadOptions {
+  signal?: AbortSignal;
+}
+
+/**
+ * POST one multipart batch to /api/upload (field name "file"). The backend
+ * returns the same JSON envelope for 200/201/207 success and for 400 when
+ * every file failed; in either case we surface the per-file results so the
+ * UI can render row-level states. Network/auth errors throw ApiError.
+ */
+export async function uploadFiles(
+  files: File[],
+  opts: UploadOptions = {},
+): Promise<UploadBatchResponse> {
+  const form = new FormData();
+  for (const file of files) {
+    form.append("file", file, file.name);
+  }
+  const response = await fetch("/api/upload", {
+    method: "POST",
+    credentials: "same-origin",
+    body: form,
+    signal: opts.signal,
+  });
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    /* ignore */
+  }
+  if (
+    payload &&
+    typeof payload === "object" &&
+    Array.isArray((payload as { uploads?: unknown }).uploads)
+  ) {
+    return payload as UploadBatchResponse;
+  }
+  let message = response.statusText || "upload failed";
+  if (payload && typeof payload === "object" && "error" in payload) {
+    message = String((payload as { error: unknown }).error);
+  }
+  throw new ApiError(response.status, message);
 }
 
 export { ApiError };

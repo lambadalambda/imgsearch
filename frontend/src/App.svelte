@@ -5,6 +5,7 @@
   import QuickRow from "./components/QuickRow.svelte";
   import Masonry from "./components/Masonry.svelte";
   import Lightbox from "./components/Lightbox.svelte";
+  import Upload from "./components/Upload.svelte";
 
   import { untrack } from "svelte";
   import { get } from "svelte/store";
@@ -17,6 +18,7 @@
     topTags,
     pageBump,
     bumpPage,
+    dataEpoch,
   } from "./lib/stores";
   import {
     ApiError,
@@ -52,6 +54,9 @@
     const state = $mode;
     const includeNsfw = $includeNSFW;
     const bump = $pageBump;
+    // Subscribe to dataEpoch so successful uploads (or other refresh events)
+    // can force a fresh, replacing fetch without changing mode.
+    void $dataEpoch;
     const token = ++currentRequestToken;
 
     // First request for a (mode, includeNSFW) pair starts at offset 0 and
@@ -159,7 +164,10 @@
     if ($resultsMeta.error) return `Couldn't load: ${$resultsMeta.error}`;
     if ($mode.mode === "search") return `No matches for "${$mode.query ?? ""}".`;
     if ($mode.mode === "similar") return "No similar items found in your library.";
-    return "Library is empty. Upload some media via the legacy UI.";
+    if ($mode.mode === "tag" && $mode.tags?.length) {
+      return `No items tagged ${$mode.tags.join(", ")}.`;
+    }
+    return "Library is empty. Click Upload to add some media.";
   });
 </script>
 
@@ -197,3 +205,4 @@
 </div>
 
 <Lightbox />
+<Upload />

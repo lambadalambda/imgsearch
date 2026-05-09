@@ -81,6 +81,23 @@ export interface StatsResponse {
   job_kinds?: unknown;
 }
 
+export interface UploadEntry {
+  filename: string;
+  media_type: MediaType;
+  image_id?: number;
+  video_id?: number;
+  sha256?: string;
+  duplicate?: boolean;
+  error?: string;
+}
+
+export interface UploadBatchResponse {
+  uploads: UploadEntry[];
+  created: number;
+  duplicates: number;
+  failed: number;
+}
+
 /** A unified pin used by the masonry grid, abstracting over images, videos,
  *  and search results. */
 export interface Pin {

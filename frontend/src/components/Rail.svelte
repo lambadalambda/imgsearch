@@ -1,6 +1,6 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
-  import { mode, setLibrary } from "../lib/stores";
+  import { mode, openUpload, setLibrary, uploadOpen } from "../lib/stores";
 
   type RailItem = {
     id: "library" | "search" | "tags" | "feed" | "upload";
@@ -27,10 +27,9 @@
     { id: "feed", label: "Feed (soon)", disabled: true },
     {
       id: "upload",
-      label: "Upload (legacy)",
-      onClick: () => {
-        window.location.href = "/legacy";
-      },
+      label: "Upload",
+      onClick: () => openUpload(),
+      activeWhen: () => $uploadOpen,
     },
   ];
 
@@ -64,6 +63,7 @@
       disabled={item.disabled}
       title={item.label}
       aria-label={item.label}
+      data-upload-trigger={item.id === "upload" ? "" : undefined}
       onclick={() => item.onClick?.()}
     >
       <Icon name={item.id} class="w-[19px] h-[19px]" />

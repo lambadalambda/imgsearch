@@ -127,6 +127,25 @@ export function bumpPage(): void {
   pageBump.update((n) => n + 1);
 }
 
+/** Drives a fresh (replacing) data fetch — bumped after successful uploads
+ *  so newly indexed media surfaces in the library without a page reload. */
+export const dataEpoch = writable<number>(0);
+
+export function bumpDataEpoch(): void {
+  dataEpoch.update((n) => n + 1);
+}
+
+/** Whether the in-app Upload modal is open. */
+export const uploadOpen = writable<boolean>(false);
+
+export function openUpload(): void {
+  uploadOpen.set(true);
+}
+
+export function closeUpload(): void {
+  uploadOpen.set(false);
+}
+
 export function getMode(): AppMode {
   return get(mode);
 }
