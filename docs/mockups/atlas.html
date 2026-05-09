@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Atlas — imgsearch redesign</title>
+    <style>
+      :root {
+        --bg: #0b0b0d;
+        --bg-2: #0f0f12;
+        --surface: #131318;
+        --surface-2: #1a1a20;
+        --surface-3: #22222a;
+        --line: #23232a;
+        --line-2: #2e2e37;
+        --ink: #ededf0;
+        --ink-2: #f7f7fa;
+        --muted: #8b8b94;
+        --muted-2: #5f5f68;
+        --accent: #8ab4f8;
+        --accent-2: #c5d8fc;
+        --good: #7dd3a1;
+        --warn: #f0b86e;
+        --bad: #f08a8a;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 14px/1.5 -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+        font-feature-settings: "ss01", "kern";
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      .mono {
+        font-family: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-feature-settings: "tnum", "zero";
+      }
+      .app {
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        min-height: 100vh;
+      }
+
+      /* Topbar with single command bar */
+      .topbar {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 20px;
+        align-items: center;
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 100%);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        backdrop-filter: blur(12px);
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        font: 600 13px/1 "SF Mono", monospace;
+        letter-spacing: 0.04em;
+        color: var(--ink-2);
+      }
+      .brand-mark {
+        width: 18px; height: 18px;
+        border-radius: 5px;
+        background: linear-gradient(135deg, var(--accent) 0%, #6ea0f1 100%);
+        box-shadow: 0 0 12px rgba(138, 180, 248, 0.4);
+      }
+      .cmd {
+        position: relative;
+        max-width: 760px;
+        justify-self: center;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px 9px 36px;
+        border: 1px solid var(--line-2);
+        background: var(--surface);
+        border-radius: 10px;
+        transition: border-color 140ms ease, box-shadow 140ms ease;
+      }
+      .cmd:focus-within {
+        border-color: color-mix(in oklab, var(--accent) 60%, var(--line-2) 40%);
+        box-shadow: 0 0 0 4px rgba(138, 180, 248, 0.10);
+      }
+      .cmd::before {
+        content: "";
+        position: absolute;
+        left: 12px; top: 50%;
+        width: 16px; height: 16px;
+        transform: translateY(-50%);
+        background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b8b94' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m20 20-3.5-3.5'/></svg>") no-repeat center / contain;
+      }
+      .cmd input {
+        flex: 1 1 auto;
+        background: transparent;
+        border: 0;
+        outline: 0;
+        color: var(--ink);
+        font: 14px/1 inherit;
+        min-width: 0;
+      }
+      .cmd input::placeholder { color: var(--muted-2); }
+      .cmd .kbd { display: inline-flex; gap: 3px; }
+      .cmd kbd {
+        font: 600 10px/1 "SF Mono", monospace;
+        color: var(--muted);
+        background: var(--surface-2);
+        border: 1px solid var(--line-2);
+        border-radius: 4px;
+        padding: 3px 5px;
+      }
+      .topright {
+        display: inline-flex;
+        align-items: center;
+        gap: 14px;
+        color: var(--muted);
+      }
+      .stat {
+        font: 500 12px/1 "SF Mono", monospace;
+        color: var(--muted);
+      }
+      .stat strong { color: var(--ink); font-weight: 600; }
+      .live {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .live::before {
+        content: "";
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: var(--good);
+        box-shadow: 0 0 0 4px rgba(125, 211, 161, 0.12);
+      }
+      .icon-btn {
+        background: transparent;
+        border: 1px solid var(--line-2);
+        color: var(--muted);
+        font: 500 12px/1 inherit;
+        padding: 7px 11px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+      }
+      .icon-btn:hover { background: var(--surface-2); color: var(--ink); border-color: var(--line-2); }
+
+      /* Facets row: subtle filter chips */
+      .facets {
+        display: flex;
+        gap: 6px;
+        padding: 12px 24px 14px;
+        border-bottom: 1px solid var(--line);
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .facets::-webkit-scrollbar { display: none; }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--muted);
+        font: 500 12px/1 inherit;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+      }
+      .chip:hover { background: var(--surface); color: var(--ink); }
+      .chip.active {
+        background: var(--surface-2);
+        color: var(--ink-2);
+        border-color: var(--line-2);
+      }
+      .chip .count {
+        font: 600 11px/1 "SF Mono", monospace;
+        color: var(--muted-2);
+      }
+      .chip.active .count { color: var(--muted); }
+      .facets-spacer { flex: 1; }
+      .facet-meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted-2);
+        font-size: 12px;
+      }
+
+      /* Grid */
+      .stage {
+        padding: 18px 24px 80px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 10px;
+      }
+      .tile {
+        position: relative;
+        aspect-ratio: 16 / 10;
+        overflow: hidden;
+        border-radius: 8px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        cursor: pointer;
+        transition: transform 180ms cubic-bezier(0.2,0.7,0.2,1), border-color 180ms ease, box-shadow 180ms ease;
+      }
+      .tile img {
+        width: 100%; height: 100%;
+        object-fit: cover;
+        display: block;
+        transition: transform 320ms cubic-bezier(0.2,0.7,0.2,1), filter 220ms ease;
+      }
+      .tile:hover {
+        border-color: var(--line-2);
+        box-shadow: 0 18px 40px -20px rgba(0,0,0,0.6);
+      }
+      .tile:hover img { transform: scale(1.03); filter: brightness(0.78); }
+      .tile-meta {
+        position: absolute;
+        inset: auto 0 0 0;
+        padding: 10px 11px;
+        background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.78) 80%);
+        color: var(--ink-2);
+        opacity: 0;
+        transform: translateY(6px);
+        transition: opacity 180ms ease, transform 180ms ease;
+      }
+      .tile:hover .tile-meta { opacity: 1; transform: none; }
+      .tile-title {
+        margin: 0 0 6px;
+        font-size: 12.5px;
+        font-weight: 600;
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .tile-tags {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+        font: 500 10px/1 "SF Mono", monospace;
+        color: rgba(255,255,255,0.78);
+      }
+      .tile-tags span {
+        background: rgba(255,255,255,0.12);
+        border-radius: 999px;
+        padding: 3px 7px;
+        text-transform: lowercase;
+      }
+      .tile-corner {
+        position: absolute;
+        top: 8px; right: 8px;
+        display: inline-flex;
+        gap: 4px;
+        opacity: 0;
+        transition: opacity 160ms ease;
+      }
+      .tile:hover .tile-corner { opacity: 1; }
+      .tile-corner button {
+        background: rgba(15,15,18,0.8);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255,255,255,0.14);
+        color: var(--ink-2);
+        font: 500 11px/1 inherit;
+        padding: 5px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .tile-corner button:hover { background: rgba(35,35,42,0.95); }
+
+      /* Match overlay for similar results */
+      .tile-match {
+        position: absolute;
+        bottom: 8px; left: 8px;
+        font: 600 10.5px/1 "SF Mono", monospace;
+        color: var(--ink-2);
+        background: rgba(0,0,0,0.55);
+        backdrop-filter: blur(6px);
+        padding: 4px 7px;
+        border-radius: 999px;
+        letter-spacing: 0.04em;
+      }
+      .tile.video::after {
+        content: "▶";
+        position: absolute;
+        bottom: 8px; right: 8px;
+        font-size: 9px;
+        color: var(--ink-2);
+        background: rgba(0,0,0,0.6);
+        padding: 4px 7px;
+        border-radius: 999px;
+      }
+
+      /* Status bar */
+      .statusbar {
+        position: sticky;
+        bottom: 0;
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        padding: 9px 24px;
+        background: var(--bg-2);
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font: 500 11.5px/1 "SF Mono", monospace;
+        z-index: 5;
+      }
+      .statusbar .sep { color: var(--muted-2); }
+      .statusbar a { color: var(--accent); text-decoration: none; }
+      .statusbar a:hover { text-decoration: underline; }
+      .pgsel {
+        margin-left: auto;
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+        color: var(--muted);
+      }
+      .pgsel button {
+        background: transparent;
+        border: 1px solid var(--line-2);
+        color: var(--muted);
+        padding: 4px 8px;
+        border-radius: 5px;
+        font: inherit;
+        cursor: pointer;
+      }
+      .pgsel button:hover { background: var(--surface); color: var(--ink); }
+
+      /* Empty / suggestion state when query is "" */
+      .suggestion {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 0 24px 14px;
+        font-size: 12px;
+        color: var(--muted-2);
+      }
+      .suggestion a {
+        color: var(--muted);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px 10px;
+        text-decoration: none;
+      }
+      .suggestion a:hover { color: var(--ink); border-color: var(--line-2); background: var(--surface-2); }
+
+      @media (max-width: 720px) {
+        .topbar { grid-template-columns: 1fr; gap: 10px; padding: 10px 12px; }
+        .topright { justify-self: end; }
+        .brand { justify-self: start; }
+        .cmd { justify-self: stretch; }
+        .stage { padding: 14px 12px 80px; }
+        .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+        .facets { padding: 10px 12px; }
+        .suggestion { margin: 0 12px 10px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <span class="brand"><span class="brand-mark"></span>imgsearch</span>
+        <label class="cmd">
+          <input type="search" placeholder="Search 8,691 images and 1,460 videos · paste an image or describe a scene" value="cute cosplay" />
+          <span class="kbd"><kbd>⌘</kbd><kbd>K</kbd></span>
+        </label>
+        <div class="topright">
+          <span class="live">live</span>
+          <button class="icon-btn">Upload</button>
+        </div>
+      </header>
+
+      <nav class="facets" aria-label="Facets">
+        <button class="chip active">All <span class="count">10,151</span></button>
+        <button class="chip">Images <span class="count">8,691</span></button>
+        <button class="chip">Videos <span class="count">1,460</span></button>
+        <button class="chip">Tags</button>
+        <button class="chip">Similar to selection</button>
+        <span class="facets-spacer"></span>
+        <span class="facet-meta">match ≥ 40%</span>
+        <span class="facet-meta">·</span>
+        <span class="facet-meta">newest first</span>
+        <span class="facet-meta">·</span>
+        <span class="facet-meta">NSFW hidden</span>
+      </nav>
+
+      <main class="stage">
+        <div class="suggestion">
+          <span>Try:</span>
+          <a href="#">cute cosplay</a>
+          <a href="#">tag:meme</a>
+          <a href="#">portrait shot</a>
+          <a href="#">red collar cat</a>
+          <a href="#">brave_screenshot</a>
+          <a href="#">video tag:cat</a>
+        </div>
+
+        <section class="grid" aria-label="Results">
+          <article class="tile">
+            <img alt="" src="https://picsum.photos/seed/atlas-1/640/400" />
+            <span class="tile-match">94%</span>
+            <div class="tile-corner"><button>Open</button><button>Similar</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">A close-up of a tabby cat looking at the camera</h3>
+              <div class="tile-tags"><span>cat</span><span>portrait</span><span>indoor</span></div>
+            </div>
+          </article>
+          <article class="tile video">
+            <img alt="" src="https://picsum.photos/seed/atlas-2/640/400" />
+            <span class="tile-match">88%</span>
+            <div class="tile-corner"><button>Open</button><button>Feed</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">Cosplayer dancing in front of neon backdrop</h3>
+              <div class="tile-tags"><span>cosplay</span><span>neon</span><span>video</span></div>
+            </div>
+          </article>
+          <article class="tile">
+            <img alt="" src="https://picsum.photos/seed/atlas-3/640/400" />
+            <span class="tile-match">81%</span>
+            <div class="tile-corner"><button>Open</button><button>Similar</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">Pomeranian on a sunlit lawn</h3>
+              <div class="tile-tags"><span>dog</span><span>outdoor</span><span>portrait</span></div>
+            </div>
+          </article>
+          <article class="tile">
+            <img alt="" src="https://picsum.photos/seed/atlas-4/640/400" />
+            <span class="tile-match">79%</span>
+            <div class="tile-corner"><button>Open</button><button>Similar</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">Anime girl with twin tails in a cherry-blossom park</h3>
+              <div class="tile-tags"><span>anime</span><span>spring</span><span>portrait</span></div>
+            </div>
+          </article>
+          <article class="tile video">
+            <img alt="" src="https://picsum.photos/seed/atlas-5/640/400" />
+            <span class="tile-match">76%</span>
+            <div class="tile-corner"><button>Open</button><button>Feed</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">Stage performance with backlit silhouette</h3>
+              <div class="tile-tags"><span>concert</span><span>stage</span><span>video</span></div>
+            </div>
+          </article>
+          <article class="tile">
+            <img alt="" src="https://picsum.photos/seed/atlas-6/640/400" />
+            <span class="tile-match">73%</span>
+            <div class="tile-corner"><button>Open</button><button>Similar</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">Studio portrait of a young woman wearing a red collar</h3>
+              <div class="tile-tags"><span>portrait</span><span>studio</span><span>red</span></div>
+            </div>
+          </article>
+          <article class="tile">
+            <img alt="" src="https://picsum.photos/seed/atlas-7/640/400" />
+            <span class="tile-match">71%</span>
+            <div class="tile-corner"><button>Open</button><button>Similar</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">Snowy mountain ridge at golden hour</h3>
+              <div class="tile-tags"><span>landscape</span><span>mountain</span><span>snow</span></div>
+            </div>
+          </article>
+          <article class="tile">
+            <img alt="" src="https://picsum.photos/seed/atlas-8/640/400" />
+            <span class="tile-match">68%</span>
+            <div class="tile-corner"><button>Open</button><button>Similar</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">A meme: surprised pikachu in a kitchen</h3>
+              <div class="tile-tags"><span>meme</span><span>pikachu</span><span>indoor</span></div>
+            </div>
+          </article>
+          <article class="tile video">
+            <img alt="" src="https://picsum.photos/seed/atlas-9/640/400" />
+            <span class="tile-match">65%</span>
+            <div class="tile-corner"><button>Open</button><button>Feed</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">Skateboarder doing a kickflip over a curb</h3>
+              <div class="tile-tags"><span>skateboard</span><span>street</span><span>video</span></div>
+            </div>
+          </article>
+          <article class="tile">
+            <img alt="" src="https://picsum.photos/seed/atlas-10/640/400" />
+            <span class="tile-match">63%</span>
+            <div class="tile-corner"><button>Open</button><button>Similar</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">Vintage newspaper clipping with bold headline</h3>
+              <div class="tile-tags"><span>newspaper</span><span>vintage</span><span>text</span></div>
+            </div>
+          </article>
+          <article class="tile">
+            <img alt="" src="https://picsum.photos/seed/atlas-11/640/400" />
+            <span class="tile-match">61%</span>
+            <div class="tile-corner"><button>Open</button><button>Similar</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">Bowl of ramen on a wooden table</h3>
+              <div class="tile-tags"><span>food</span><span>ramen</span><span>indoor</span></div>
+            </div>
+          </article>
+          <article class="tile">
+            <img alt="" src="https://picsum.photos/seed/atlas-12/640/400" />
+            <span class="tile-match">59%</span>
+            <div class="tile-corner"><button>Open</button><button>Similar</button></div>
+            <div class="tile-meta">
+              <h3 class="tile-title">Two-panel comic about debugging</h3>
+              <div class="tile-tags"><span>comic</span><span>code</span><span>humor</span></div>
+            </div>
+          </article>
+        </section>
+      </main>
+
+      <footer class="statusbar mono">
+        <span><strong style="color: var(--ink);">241</strong> matches for "cute cosplay"</span>
+        <span class="sep">·</span>
+        <span>embed=clip-vit-l/14</span>
+        <span class="sep">·</span>
+        <span>index <strong style="color: var(--good);">idle</strong></span>
+        <span class="sep">·</span>
+        <span><a href="#">why these?</a></span>
+        <span class="pgsel">
+          <button>↑ newer</button>
+          <span>page 1 / 11</span>
+          <button>older ↓</button>
+        </span>
+      </footer>
+    </div>
+  </body>
+</html>

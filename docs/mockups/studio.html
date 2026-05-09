@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Studio — imgsearch redesign</title>
+    <style>
+      :root {
+        --bg: #1f1f23;
+        --panel: #28282d;
+        --panel-2: #2e2e34;
+        --panel-3: #34343c;
+        --line: #3a3a42;
+        --line-2: #45454e;
+        --ink: #e8e8eb;
+        --ink-2: #fafafd;
+        --muted: #9b9ba2;
+        --muted-2: #6e6e76;
+        --accent: #5fa3f5;
+        --accent-2: #cfe4ff;
+        --good: #6ed18b;
+        --warn: #e8b86a;
+        --bad: #e88a8a;
+        --selection: rgba(95,163,245,0.18);
+        --selection-edge: rgba(95,163,245,0.55);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 13px/1.5 -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+        font-feature-settings: "ss01", "kern";
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        overflow: hidden;
+      }
+      .mono {
+        font-family: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+        font-feature-settings: "tnum", "zero";
+      }
+
+      .app {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        height: 100vh;
+      }
+
+      /* Toolbar */
+      .toolbar {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 14px;
+        padding: 8px 12px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        padding-right: 12px;
+        border-right: 1px solid var(--line);
+        margin-right: 6px;
+      }
+      .brand .mark {
+        width: 22px; height: 22px;
+        border-radius: 5px;
+        background: linear-gradient(135deg, var(--accent) 0%, #2f78d6 100%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+      }
+      .brand b { font-weight: 600; color: var(--ink-2); letter-spacing: -0.005em; }
+
+      .tools-left, .tools-right {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .tbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: transparent;
+        border: 1px solid transparent;
+        color: var(--ink);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font: 500 12.5px/1 inherit;
+        cursor: pointer;
+        transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
+      }
+      .tbtn:hover { background: var(--panel-2); border-color: var(--line); }
+      .tbtn.active { background: var(--panel-3); color: var(--ink-2); border-color: var(--line-2); }
+      .tbtn svg { width: 15px; height: 15px; opacity: 0.85; }
+      .tbtn .meta { color: var(--muted); font-size: 11.5px; }
+      .tdivider { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+
+      /* Search field in toolbar */
+      .toolbar .search {
+        position: relative;
+        display: flex;
+        align-items: center;
+        max-width: 520px;
+        width: 100%;
+        justify-self: center;
+      }
+      .toolbar .search input {
+        width: 100%;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        color: var(--ink);
+        padding: 7px 10px 7px 32px;
+        border-radius: 6px;
+        font: 13px/1 inherit;
+        outline: 0;
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+      }
+      .toolbar .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(95,163,245,0.16); }
+      .toolbar .search::before {
+        content: "";
+        position: absolute;
+        left: 10px; top: 50%; width: 14px; height: 14px;
+        transform: translateY(-50%);
+        background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239b9ba2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m20 20-3.5-3.5'/></svg>") no-repeat center / contain;
+      }
+      .toolbar .search .kbd {
+        position: absolute;
+        right: 8px;
+        font: 600 10px/1 "SF Mono", monospace;
+        color: var(--muted);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        padding: 2px 5px;
+      }
+
+      /* Body: 3 panes */
+      .body {
+        display: grid;
+        grid-template-columns: 240px 1fr 320px;
+        min-height: 0;
+      }
+
+      /* Sidebar */
+      .sidebar {
+        background: var(--panel);
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .sb-section {
+        padding: 12px 12px 6px;
+        border-top: 1px solid var(--line);
+      }
+      .sb-section:first-child { border-top: 0; }
+      .sb-title {
+        margin: 0 0 6px;
+        color: var(--muted);
+        font: 600 10.5px/1 "SF Mono", monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .sb-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+      .sb-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 5px;
+        color: var(--ink);
+        cursor: pointer;
+        transition: background 100ms ease, color 100ms ease;
+      }
+      .sb-item:hover { background: var(--panel-2); }
+      .sb-item.active { background: var(--panel-3); color: var(--ink-2); }
+      .sb-item svg { width: 14px; height: 14px; opacity: 0.78; }
+      .sb-item .grow { flex: 1; min-width: 0; }
+      .sb-item .count { color: var(--muted); font: 500 11.5px/1 "SF Mono", monospace; }
+      .sb-item.active .count { color: var(--ink); }
+      .sb-tag-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--muted-2);
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+      }
+      .sb-tag-dot.t-cat { background: #e8b86a; }
+      .sb-tag-dot.t-portrait { background: #e88a8a; }
+      .sb-tag-dot.t-landscape { background: #6ed18b; }
+      .sb-tag-dot.t-meme { background: #b58af0; }
+      .sb-tag-dot.t-cosplay { background: #5fa3f5; }
+      .sb-tag-dot.t-food { background: #f0a76a; }
+
+      /* Main grid */
+      .main {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 0;
+        background: var(--bg);
+      }
+      .breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .breadcrumb a { color: var(--muted); text-decoration: none; }
+      .breadcrumb a:hover { color: var(--ink); }
+      .breadcrumb .sep { opacity: 0.5; }
+      .breadcrumb b { color: var(--ink); font-weight: 500; }
+      .bc-spacer { flex: 1; }
+      .bc-meta { color: var(--muted-2); font: 500 11.5px/1 "SF Mono", monospace; }
+
+      .grid-wrap {
+        overflow: auto;
+        padding: 12px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+        gap: 6px;
+      }
+      .cell {
+        position: relative;
+        aspect-ratio: 16 / 11;
+        border-radius: 4px;
+        overflow: hidden;
+        background: var(--panel-2);
+        cursor: pointer;
+        outline: 1px solid transparent;
+        transition: outline-color 120ms ease, transform 120ms ease;
+      }
+      .cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .cell:hover { outline-color: var(--line-2); }
+      .cell.is-selected {
+        outline: 2px solid var(--selection-edge);
+        box-shadow: 0 0 0 4px var(--selection);
+      }
+      .cell .badge {
+        position: absolute;
+        bottom: 4px; left: 4px;
+        font: 600 10px/1 "SF Mono", monospace;
+        color: var(--ink-2);
+        background: rgba(0,0,0,0.6);
+        backdrop-filter: blur(4px);
+        padding: 3px 6px;
+        border-radius: 3px;
+      }
+      .cell .vbadge {
+        position: absolute;
+        bottom: 4px; right: 4px;
+        font: 600 10px/1 "SF Mono", monospace;
+        color: var(--ink-2);
+        background: rgba(0,0,0,0.6);
+        backdrop-filter: blur(4px);
+        padding: 3px 6px;
+        border-radius: 3px;
+      }
+      .cell .check {
+        position: absolute;
+        top: 5px; left: 5px;
+        width: 16px; height: 16px;
+        border-radius: 4px;
+        background: rgba(0,0,0,0.55);
+        border: 1px solid rgba(255,255,255,0.4);
+        opacity: 0;
+        transition: opacity 120ms ease;
+      }
+      .cell:hover .check, .cell.is-selected .check { opacity: 1; }
+      .cell.is-selected .check {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .cell.is-selected .check::after {
+        content: "✓";
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font: 700 11px/1 inherit;
+        color: #fff;
+      }
+
+      /* Inspector */
+      .inspector {
+        background: var(--panel);
+        border-left: 1px solid var(--line);
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .insp-preview {
+        background: #0d0d10;
+        aspect-ratio: 16 / 10;
+        position: relative;
+      }
+      .insp-preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
+      .insp-overlay {
+        position: absolute;
+        bottom: 8px;
+        left: 8px;
+        right: 8px;
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+      }
+      .insp-overlay button {
+        font: 500 11px/1 inherit;
+        background: rgba(15,15,18,0.78);
+        backdrop-filter: blur(8px);
+        color: var(--ink-2);
+        border: 1px solid rgba(255,255,255,0.14);
+        padding: 5px 8px;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      .insp-overlay button:hover { background: rgba(35,35,42,0.95); }
+      .insp-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+      .insp-tab {
+        flex: 1;
+        text-align: center;
+        padding: 8px 0;
+        font: 500 12px/1 inherit;
+        color: var(--muted);
+        background: transparent;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        cursor: pointer;
+        transition: color 100ms ease, border-color 100ms ease;
+      }
+      .insp-tab:hover { color: var(--ink); }
+      .insp-tab.active { color: var(--ink-2); border-color: var(--accent); }
+
+      .insp-content {
+        overflow: auto;
+        padding: 12px 14px 8px;
+        display: grid;
+        gap: 14px;
+      }
+      .insp-block { display: grid; gap: 4px; }
+      .insp-label {
+        margin: 0;
+        color: var(--muted);
+        font: 600 10.5px/1 "SF Mono", monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .insp-value {
+        margin: 0;
+        color: var(--ink);
+        font-size: 12.5px;
+        line-height: 1.45;
+        word-break: break-word;
+      }
+      .insp-value.mono { font: 12px/1.4 "SF Mono", monospace; color: var(--ink); }
+      .insp-grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px 14px;
+      }
+      .insp-tags {
+        display: flex; flex-wrap: wrap; gap: 4px;
+      }
+      .insp-tag {
+        font: 500 11.5px/1 inherit;
+        color: var(--ink);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 9px;
+      }
+      .insp-tag.is-removed { color: var(--bad); border-color: rgba(232,138,138,0.4); background: rgba(232,138,138,0.08); text-decoration: line-through; }
+      .insp-row { display: flex; align-items: center; gap: 6px; }
+      .insp-stat {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 4px rgba(110,209,139,0.16); }
+
+      .insp-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        padding: 10px 12px 12px;
+        border-top: 1px solid var(--line);
+        background: var(--panel);
+      }
+      .insp-actions .tbtn {
+        justify-content: center;
+        background: var(--panel-2);
+        border-color: var(--line);
+        padding: 8px 10px;
+      }
+      .insp-actions .tbtn.primary { background: var(--accent); border-color: var(--accent); color: #0d1f33; }
+      .insp-actions .tbtn.primary:hover { background: #4a8de0; }
+      .insp-actions .tbtn.danger { color: var(--bad); }
+
+      /* Status bar */
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 6px 12px;
+        background: var(--panel);
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font: 500 11px/1 "SF Mono", monospace;
+      }
+      .status .grow { flex: 1; }
+      .status .seg { display: inline-flex; align-items: center; gap: 6px; }
+      .status .seg .ind {
+        width: 6px; height: 6px; border-radius: 50%;
+        background: var(--good);
+      }
+      .status a { color: var(--accent); text-decoration: none; }
+      .status a:hover { text-decoration: underline; }
+
+      @media (max-width: 1100px) {
+        .body { grid-template-columns: 64px 1fr 280px; }
+        .sidebar .sb-section { padding: 10px 8px 6px; }
+        .sb-item { padding: 6px; gap: 6px; }
+        .sb-item .grow { display: none; }
+        .sb-item .count { display: none; }
+        .sb-title { display: none; }
+      }
+      @media (max-width: 720px) {
+        body { overflow: auto; }
+        .toolbar { grid-template-columns: 1fr auto; gap: 8px; padding: 6px 8px; }
+        .toolbar .brand { padding-right: 8px; margin-right: 0; }
+        .toolbar .tools-left { display: none; }
+        .toolbar .search { grid-column: 1 / -1; max-width: none; justify-self: stretch; }
+        .toolbar .search .kbd { display: none; }
+        .body { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+        .sidebar { display: none; }
+        .inspector { display: none; }
+        .grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 4px; }
+        .breadcrumb { font-size: 11.5px; padding: 6px 10px; flex-wrap: wrap; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <!-- Top toolbar -->
+      <header class="toolbar">
+        <div class="brand">
+          <span class="mark"></span>
+          <b>imgsearch</b>
+        </div>
+
+        <div class="tools-left" role="toolbar" aria-label="View tools">
+          <button class="tbtn active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/></svg>
+            Grid
+          </button>
+          <button class="tbtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            List
+          </button>
+          <span class="tdivider"></span>
+          <button class="tbtn">Sort: matches</button>
+          <button class="tbtn">Filters <span class="meta">3</span></button>
+          <span class="tdivider"></span>
+          <button class="tbtn">Select <span class="meta">⌘A</span></button>
+          <button class="tbtn">Tag</button>
+          <button class="tbtn">Annotate</button>
+          <button class="tbtn">Find similar</button>
+          <button class="tbtn" style="color: var(--bad);">Delete</button>
+        </div>
+
+        <label class="search">
+          <input type="search" placeholder="Search · paste image · /tag · &quot;exact phrase&quot;" value="cute cosplay" />
+          <span class="kbd">⌘K</span>
+        </label>
+
+        <div class="tools-right">
+          <button class="tbtn">Upload</button>
+          <button class="tbtn">…</button>
+        </div>
+      </header>
+
+      <!-- 3-pane body -->
+      <div class="body">
+        <!-- Sidebar -->
+        <aside class="sidebar" aria-label="Library navigation">
+          <section class="sb-section">
+            <h3 class="sb-title">Library</h3>
+            <ul class="sb-list">
+              <li class="sb-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/></svg>
+                <span class="grow">All media</span>
+                <span class="count">10,151</span>
+              </li>
+              <li class="sb-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                <span class="grow">Images</span>
+                <span class="count">8,691</span>
+              </li>
+              <li class="sb-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                <span class="grow">Videos</span>
+                <span class="count">1,460</span>
+              </li>
+              <li class="sb-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><path d="M3 6h18"/><path d="M3 18h12"/></svg>
+                <span class="grow">Recent uploads</span>
+                <span class="count">128</span>
+              </li>
+            </ul>
+          </section>
+          <section class="sb-section">
+            <h3 class="sb-title">Saved</h3>
+            <ul class="sb-list">
+              <li class="sb-item"><span class="sb-tag-dot t-cosplay"></span><span class="grow">cosplay weekly</span><span class="count">42</span></li>
+              <li class="sb-item"><span class="sb-tag-dot t-portrait"></span><span class="grow">portrait reference</span><span class="count">316</span></li>
+              <li class="sb-item"><span class="sb-tag-dot t-landscape"></span><span class="grow">landscape mood</span><span class="count">89</span></li>
+              <li class="sb-item"><span class="sb-tag-dot t-meme"></span><span class="grow">meme vault</span><span class="count">2,104</span></li>
+            </ul>
+          </section>
+          <section class="sb-section">
+            <h3 class="sb-title">Tags · top 20</h3>
+            <ul class="sb-list">
+              <li class="sb-item"><span class="sb-tag-dot t-cat"></span><span class="grow">cat</span><span class="count">624</span></li>
+              <li class="sb-item"><span class="sb-tag-dot t-portrait"></span><span class="grow">portrait</span><span class="count">418</span></li>
+              <li class="sb-item"><span class="sb-tag-dot t-landscape"></span><span class="grow">landscape</span><span class="count">271</span></li>
+              <li class="sb-item"><span class="sb-tag-dot t-meme"></span><span class="grow">meme</span><span class="count">2,104</span></li>
+              <li class="sb-item"><span class="sb-tag-dot t-food"></span><span class="grow">food</span><span class="count">132</span></li>
+              <li class="sb-item"><span class="sb-tag-dot t-cosplay"></span><span class="grow">cosplay</span><span class="count">88</span></li>
+            </ul>
+          </section>
+          <section class="sb-section">
+            <h3 class="sb-title">Smart</h3>
+            <ul class="sb-list">
+              <li class="sb-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h6"/></svg>
+                <span class="grow">Untagged</span><span class="count">214</span>
+              </li>
+              <li class="sb-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span class="grow">Awaiting index</span><span class="count">8</span>
+              </li>
+              <li class="sb-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-6-6"/><circle cx="11" cy="11" r="8"/><path d="M8 11h6"/><path d="M11 8v6"/></svg>
+                <span class="grow">Saved searches</span><span class="count">7</span>
+              </li>
+            </ul>
+          </section>
+        </aside>
+
+        <!-- Main grid -->
+        <main class="main">
+          <nav class="breadcrumb" aria-label="Path">
+            <a href="#">Library</a><span class="sep">›</span>
+            <a href="#">All media</a><span class="sep">›</span>
+            <b>Search · "cute cosplay"</b>
+            <span class="bc-spacer"></span>
+            <span class="bc-meta">241 matches · 3 selected · sort: similarity</span>
+          </nav>
+
+          <div class="grid-wrap">
+            <div class="grid">
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-1/360/240" /><span class="check"></span><span class="badge">94%</span></div>
+              <div class="cell is-selected"><img alt="" src="https://picsum.photos/seed/studio-2/360/240" /><span class="check"></span><span class="badge">88%</span><span class="vbadge">0:12</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-3/360/240" /><span class="check"></span><span class="badge">86%</span></div>
+              <div class="cell is-selected"><img alt="" src="https://picsum.photos/seed/studio-4/360/240" /><span class="check"></span><span class="badge">81%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-5/360/240" /><span class="check"></span><span class="badge">79%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-6/360/240" /><span class="check"></span><span class="badge">76%</span><span class="vbadge">0:38</span></div>
+              <div class="cell is-selected"><img alt="" src="https://picsum.photos/seed/studio-7/360/240" /><span class="check"></span><span class="badge">73%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-8/360/240" /><span class="check"></span><span class="badge">71%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-9/360/240" /><span class="check"></span><span class="badge">68%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-10/360/240" /><span class="check"></span><span class="badge">65%</span><span class="vbadge">0:09</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-11/360/240" /><span class="check"></span><span class="badge">63%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-12/360/240" /><span class="check"></span><span class="badge">61%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-13/360/240" /><span class="check"></span><span class="badge">59%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-14/360/240" /><span class="check"></span><span class="badge">57%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-15/360/240" /><span class="check"></span><span class="badge">55%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-16/360/240" /><span class="check"></span><span class="badge">53%</span><span class="vbadge">0:24</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-17/360/240" /><span class="check"></span><span class="badge">52%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-18/360/240" /><span class="check"></span><span class="badge">50%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-19/360/240" /><span class="check"></span><span class="badge">48%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-20/360/240" /><span class="check"></span><span class="badge">46%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-21/360/240" /><span class="check"></span><span class="badge">44%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-22/360/240" /><span class="check"></span><span class="badge">42%</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-23/360/240" /><span class="check"></span><span class="badge">41%</span><span class="vbadge">0:05</span></div>
+              <div class="cell"><img alt="" src="https://picsum.photos/seed/studio-24/360/240" /><span class="check"></span><span class="badge">40%</span></div>
+            </div>
+          </div>
+        </main>
+
+        <!-- Inspector -->
+        <aside class="inspector" aria-label="Selected item details">
+          <div class="insp-preview">
+            <img alt="" src="https://picsum.photos/seed/studio-2/720/440" />
+            <div class="insp-overlay">
+              <button>Open original</button>
+              <button>Find similar</button>
+            </div>
+          </div>
+          <div class="insp-tabs" role="tablist">
+            <button class="insp-tab active" role="tab">Info</button>
+            <button class="insp-tab" role="tab">Tags</button>
+            <button class="insp-tab" role="tab">Embedding</button>
+            <button class="insp-tab" role="tab">History</button>
+          </div>
+          <div class="insp-content">
+            <div class="insp-block">
+              <h4 class="insp-label">Title</h4>
+              <p class="insp-value">A cosplayer in a colorful outfit twirling on stage with motion blur</p>
+            </div>
+
+            <div class="insp-grid-2">
+              <div class="insp-block">
+                <h4 class="insp-label">Filename</h4>
+                <p class="insp-value mono">cosplay_stage_2024-08-12_0045.mp4</p>
+              </div>
+              <div class="insp-block">
+                <h4 class="insp-label">ID</h4>
+                <p class="insp-value mono">vid#1187</p>
+              </div>
+              <div class="insp-block">
+                <h4 class="insp-label">Dimensions</h4>
+                <p class="insp-value mono">1920 × 1080 · 30 fps</p>
+              </div>
+              <div class="insp-block">
+                <h4 class="insp-label">Duration</h4>
+                <p class="insp-value mono">00:00:12.41</p>
+              </div>
+              <div class="insp-block">
+                <h4 class="insp-label">Indexed</h4>
+                <p class="insp-value"><span class="insp-stat"><span class="dot"></span>2024-08-13 09:14</span></p>
+              </div>
+              <div class="insp-block">
+                <h4 class="insp-label">Match</h4>
+                <p class="insp-value mono">88.4 % @ 0:04 · clip-vit-l/14</p>
+              </div>
+            </div>
+
+            <div class="insp-block">
+              <h4 class="insp-label">Tags</h4>
+              <div class="insp-tags">
+                <span class="insp-tag">cosplay</span>
+                <span class="insp-tag">stage</span>
+                <span class="insp-tag">motion-blur</span>
+                <span class="insp-tag">video</span>
+                <span class="insp-tag">portrait</span>
+                <span class="insp-tag">colorful</span>
+                <span class="insp-tag is-removed">nsfw</span>
+                <span class="insp-tag" style="color: var(--accent)">+ add tag</span>
+              </div>
+            </div>
+
+            <div class="insp-block">
+              <h4 class="insp-label">Path</h4>
+              <p class="insp-value mono">data/videos/9b/9b1c8…cosplay.mp4</p>
+            </div>
+          </div>
+          <div class="insp-actions">
+            <button class="tbtn primary">Find similar</button>
+            <button class="tbtn">Open in Feed</button>
+            <button class="tbtn">Re-annotate</button>
+            <button class="tbtn">Reveal in finder</button>
+            <button class="tbtn">Flag NSFW</button>
+            <button class="tbtn danger">Delete</button>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Status bar -->
+      <footer class="status mono">
+        <span class="seg"><span class="ind"></span>live</span>
+        <span>index <a href="#">idle</a></span>
+        <span>10,151 items · 3 selected</span>
+        <span>241 matches · embed=clip-vit-l/14</span>
+        <span class="grow"></span>
+        <span>memory · 1.4 GB / 8 GB</span>
+        <span>p99 search 64 ms</span>
+        <span>v0.42.0</span>
+      </footer>
+    </div>
+  </body>
+</html>

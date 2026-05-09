@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>imgsearch — redesign mockups</title>
+    <style>
+      :root {
+        --bg: #f6f1e8;
+        --surface: #ffffff;
+        --line: #e3dccd;
+        --line-2: #c8bfac;
+        --ink: #1f1c17;
+        --muted: #6c645a;
+        --muted-2: #8c8478;
+        --accent: #c2492a;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.55 "Inter", -apple-system, system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .page {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 56px 28px 80px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font: 600 32px/1.15 "Iowan Old Style", "Source Serif Pro", Georgia, serif;
+        letter-spacing: -0.015em;
+      }
+      .lede {
+        margin: 0 0 28px;
+        color: var(--muted);
+        max-width: 60ch;
+      }
+      .lede code {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 1px 6px;
+        font: 13px/1 "SF Mono", monospace;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 18px;
+      }
+      .card {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        overflow: hidden;
+        text-decoration: none;
+        color: inherit;
+        transition: transform 200ms cubic-bezier(0.2,0.7,0.2,1), box-shadow 200ms ease, border-color 200ms ease;
+      }
+      .card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 22px 50px -22px rgba(40,30,18,0.22);
+        border-color: var(--line-2);
+      }
+      .card .preview {
+        height: 168px;
+        position: relative;
+        display: grid;
+        place-items: center;
+        font: 700 22px/1 "Inter", sans-serif;
+        letter-spacing: -0.01em;
+      }
+      .card .preview small {
+        display: block;
+        margin-top: 6px;
+        font: 500 11px/1 "SF Mono", monospace;
+        opacity: 0.7;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .card-body { padding: 16px 18px 14px; }
+      .card-body h2 {
+        margin: 0 0 6px;
+        font: 600 18px/1.2 "Iowan Old Style", "Source Serif Pro", Georgia, serif;
+        letter-spacing: -0.01em;
+      }
+      .card-body p {
+        margin: 0 0 10px;
+        color: var(--muted);
+        font-size: 13.5px;
+      }
+      .card-body .meta {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        font: 500 11.5px/1 "SF Mono", monospace;
+        color: var(--muted-2);
+        text-transform: lowercase;
+      }
+      .card-body .meta span {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px 8px;
+      }
+      .card-cta {
+        padding: 12px 18px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 13.5px;
+        letter-spacing: 0.005em;
+      }
+      .card-cta::after { content: "→"; }
+
+      /* Per-direction preview tones */
+      .preview-atlas {
+        background: linear-gradient(135deg, #0e0e12 0%, #1a1a22 100%);
+        color: #e6e6ec;
+      }
+      .preview-atlas::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 30% 30%, rgba(138,180,248,0.18) 0%, transparent 40%),
+          radial-gradient(circle at 80% 70%, rgba(138,180,248,0.10) 0%, transparent 35%);
+      }
+      .preview-atlas span { position: relative; text-align: center; }
+      .preview-atelier {
+        background: linear-gradient(135deg, #fdf6ea 0%, #f1e2cc 100%);
+        color: #1f1c17;
+      }
+      .preview-atelier::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 80% 30%, rgba(194,73,42,0.12) 0%, transparent 50%);
+      }
+      .preview-atelier span { position: relative; text-align: center; }
+      .preview-studio {
+        background: linear-gradient(135deg, #2c2c34 0%, #1c1c22 100%);
+        color: #ededf0;
+      }
+      .preview-studio::before {
+        content: "";
+        position: absolute;
+        inset: 12px 12px 12px 12px;
+        border-radius: 8px;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0) 50%),
+          repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0 1px, transparent 1px 28px);
+        border: 1px solid rgba(255,255,255,0.08);
+      }
+      .preview-studio span { position: relative; text-align: center; }
+
+      footer {
+        margin-top: 48px;
+        padding-top: 22px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+      }
+      footer code {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 1px 6px;
+        font: 12.5px/1 "SF Mono", monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <h1>imgsearch — redesign mockups</h1>
+      <p class="lede">Three directions exploring different IA, density, and feel. Each is a single self-contained HTML file. Open in a browser, resize for mobile, compare against the live app at <code>http://localhost:8081</code>.</p>
+
+      <div class="grid">
+        <a class="card" href="atlas.html">
+          <div class="preview preview-atlas">
+            <span>Atlas<small>dark · command-bar · minimal</small></span>
+          </div>
+          <div class="card-body">
+            <h2>Atlas</h2>
+            <p>One command bar drives everything. Library is a quiet backdrop; metadata reveals on hover. For the user who thinks of this as a search tool first.</p>
+            <div class="meta">
+              <span>linear</span><span>raycast</span><span>mubi</span><span>density · low</span>
+            </div>
+          </div>
+          <div class="card-cta">Open mockup</div>
+        </a>
+
+        <a class="card" href="atelier.html">
+          <div class="preview preview-atelier">
+            <span>Atelier<small>warm · masonry · mood board</small></span>
+          </div>
+          <div class="card-body">
+            <h2>Atelier</h2>
+            <p>Sidebar nav + masonry of varied-height pins. Tags as collections. For the user who thinks of this as a personal mood board.</p>
+            <div class="meta">
+              <span>are.na</span><span>pinterest</span><span>cosmos</span><span>density · medium</span>
+            </div>
+          </div>
+          <div class="card-cta">Open mockup</div>
+        </a>
+
+        <a class="card" href="studio.html">
+          <div class="preview preview-studio">
+            <span>Studio<small>three-pane · dense · pro tool</small></span>
+          </div>
+          <div class="card-body">
+            <h2>Studio</h2>
+            <p>Library tree • Grid • Inspector. Selection-aware actions, persistent metadata. For the user who thinks of this as a media library tool.</p>
+            <div class="meta">
+              <span>lightroom</span><span>bridge</span><span>finder</span><span>density · high</span>
+            </div>
+          </div>
+          <div class="card-cta">Open mockup</div>
+        </a>
+      </div>
+
+      <footer>
+        Each mockup is static HTML/CSS only — no scripts, no fetches except <code>picsum.photos</code> placeholder thumbnails. Edit the files in <code>docs/mockups/</code> to iterate.
+      </footer>
+    </main>
+  </body>
+</html>
