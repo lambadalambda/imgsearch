@@ -67,9 +67,15 @@ jobs:
         run: |
           brew install vips
 
-      - name: Build llama.cpp runtime libraries
+      - name: Build Linux llama.cpp runtime libraries
+        if: runner.os == 'Linux'
         env:
           IMGSEARCH_LLAMA_CMAKE_ARGS: -DGGML_NATIVE=OFF
+        run: |
+          scripts/ensure_llama_cpp_native_build.sh
+
+      - name: Build macOS llama.cpp runtime libraries
+        if: runner.os == 'macOS'
         run: |
           scripts/ensure_llama_cpp_native_build.sh
 
