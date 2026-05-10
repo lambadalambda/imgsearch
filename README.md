@@ -8,6 +8,10 @@ It runs as a small local web app that:
 - keeps data on your machine,
 - uses a built-in default multimodal embedding setup.
 
+## Screenshot
+
+![imgsearch Atelier library view with search controls, media cards, and indexing status](docs/screenshot.webp)
+
 ## Quick Start
 
 ### Use the Release
