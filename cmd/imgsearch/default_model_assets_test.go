@@ -99,6 +99,110 @@ func TestEnsureDefaultAssetPairDownloadsMissingDefaults(t *testing.T) {
 	}
 }
 
+func TestEnsureKnownAssetPairDownloadsAlternateKnownPair(t *testing.T) {
+	tmp := t.TempDir()
+	defaultPair := knownModelAssetPair{
+		modelPath:  filepath.Join(tmp, "8b", "model.gguf"),
+		modelURL:   "http://example.invalid/8b-model.gguf",
+		mmprojPath: filepath.Join(tmp, "8b", "mmproj.gguf"),
+		mmprojURL:  "http://example.invalid/8b-mmproj.gguf",
+	}
+	altPair := knownModelAssetPair{
+		modelPath:  filepath.Join(tmp, "2b", "model.gguf"),
+		modelURL:   "",
+		mmprojPath: filepath.Join(tmp, "2b", "mmproj.gguf"),
+		mmprojURL:  "",
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/2b-model.gguf":
+			_, _ = w.Write([]byte("2b-model-bytes"))
+		case "/2b-mmproj.gguf":
+			_, _ = w.Write([]byte("2b-mmproj-bytes"))
+		default:
+			t.Fatalf("unexpected request path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	altPair.modelURL = server.URL + "/2b-model.gguf"
+	altPair.mmprojURL = server.URL + "/2b-mmproj.gguf"
+
+	resolvedModelPath, resolvedMMProjPath, err := ensureKnownAssetPair(
+		context.Background(),
+		server.Client(),
+		altPair.modelPath,
+		defaultPair.mmprojPath,
+		[]knownModelAssetPair{defaultPair, altPair},
+	)
+	if err != nil {
+		t.Fatalf("ensure known asset pair: %v", err)
+	}
+	if resolvedModelPath != altPair.modelPath {
+		t.Fatalf("resolved model path: got=%q want=%q", resolvedModelPath, altPair.modelPath)
+	}
+	if resolvedMMProjPath != altPair.mmprojPath {
+		t.Fatalf("resolved mmproj path: got=%q want=%q", resolvedMMProjPath, altPair.mmprojPath)
+	}
+
+	modelContent, err := os.ReadFile(altPair.modelPath)
+	if err != nil {
+		t.Fatalf("read downloaded model asset: %v", err)
+	}
+	if string(modelContent) != "2b-model-bytes" {
+		t.Fatalf("unexpected model asset content: %q", string(modelContent))
+	}
+	mmprojContent, err := os.ReadFile(altPair.mmprojPath)
+	if err != nil {
+		t.Fatalf("read downloaded mmproj asset: %v", err)
+	}
+	if string(mmprojContent) != "2b-mmproj-bytes" {
+		t.Fatalf("unexpected mmproj asset content: %q", string(mmprojContent))
+	}
+}
+
+func TestSelectKnownAssetPairRecognizes2BSearchModelPath(t *testing.T) {
+	pair, resolvedModelPath, resolvedMMProjPath := selectKnownAssetPair(
+		llamaNativeSearch2BModelPath,
+		defaultLlamaNativeMMProjPath,
+		llamaNativeSearchAssetPairs,
+	)
+	if pair.modelPath != llamaNativeSearch2BModelPath {
+		t.Fatalf("selected model path: got=%q want=%q", pair.modelPath, llamaNativeSearch2BModelPath)
+	}
+	if resolvedModelPath != llamaNativeSearch2BModelPath {
+		t.Fatalf("resolved model path: got=%q want=%q", resolvedModelPath, llamaNativeSearch2BModelPath)
+	}
+	if resolvedMMProjPath != llamaNativeSearch2BMMProjPath {
+		t.Fatalf("resolved mmproj path: got=%q want=%q", resolvedMMProjPath, llamaNativeSearch2BMMProjPath)
+	}
+}
+
+func TestSelectKnownAssetPairRecognizesAbsolute2BSearchPaths(t *testing.T) {
+	absModelPath, err := filepath.Abs(llamaNativeSearch2BModelPath)
+	if err != nil {
+		t.Fatalf("absolute model path: %v", err)
+	}
+	absMMProjPath, err := filepath.Abs(llamaNativeSearch2BMMProjPath)
+	if err != nil {
+		t.Fatalf("absolute mmproj path: %v", err)
+	}
+
+	pair, resolvedModelPath, resolvedMMProjPath := selectKnownAssetPair(
+		absModelPath,
+		absMMProjPath,
+		llamaNativeSearchAssetPairs,
+	)
+	if pair.modelPath != llamaNativeSearch2BModelPath {
+		t.Fatalf("selected model path: got=%q want=%q", pair.modelPath, llamaNativeSearch2BModelPath)
+	}
+	if resolvedModelPath != absModelPath {
+		t.Fatalf("resolved model path: got=%q want=%q", resolvedModelPath, absModelPath)
+	}
+	if resolvedMMProjPath != absMMProjPath {
+		t.Fatalf("resolved mmproj path: got=%q want=%q", resolvedMMProjPath, absMMProjPath)
+	}
+}
+
 func TestEnsureDefaultLlamaNativeAnnotatorAssetsForVariantRejectsUnknownVariant(t *testing.T) {
 	_, _, err := ensureDefaultLlamaNativeAnnotatorAssetsForVariant(context.Background(), "weird", "", "")
 	if err == nil {

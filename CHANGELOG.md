@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(runtime): auto-download the known Qwen3-VL-Embedding-2B search model and matching mmproj when selected for low-VRAM setups.
 - docs(readme): document embedding and annotation model choices, manual downloads, and reindexing caveats for low-VRAM setups.
 - docs(readme): add an optimized WebP screenshot preview to the README.
 - docs(readme): add CPU-only, low-VRAM, search-only, and high-memory run profiles with concrete runtime flags.

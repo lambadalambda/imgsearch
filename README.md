@@ -101,7 +101,7 @@ Search embedding models:
 | Model | Dimensions | Best For | Download |
 | --- | ---: | --- | --- |
 | Qwen3-VL-Embedding-8B-Q4_K_M | 4096 | Default quality profile for good GPUs and high-memory unified-memory systems | Auto-downloaded at default paths |
-| Qwen3-VL-Embedding-2B-Q6_K | 2048 | CPU-only and low-VRAM systems | Manual download |
+| Qwen3-VL-Embedding-2B-Q6_K | 2048 | CPU-only and low-VRAM systems | Auto-downloaded when the 2B paths below are selected |
 
 Annotation models:
 
@@ -129,7 +129,7 @@ curl -L -o ./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf \
   https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf
 ```
 
-Manual download for the smaller 2B search model:
+The smaller 2B search model is also auto-downloaded when you run with the 2B model path and `-llama-native-dimensions 2048`. Optional manual pre-download:
 
 ```bash
 mkdir -p ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF

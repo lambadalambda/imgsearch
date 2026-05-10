@@ -16,6 +16,10 @@ const (
 	defaultLlamaNativeModelPath                    = "./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
 	defaultLlamaNativeMMProjPath                   = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
 	defaultLlamaNativeDimensions                   = 4096
+	llamaNativeSearch2BModelPath                   = "./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf"
+	llamaNativeSearch2BMMProjPath                  = "./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf"
+	llamaNativeSearch2BModelURL                    = "https://huggingface.co/VesNFF/Qwen3-VL-Embedding-2B-GGUF/resolve/main/Qwen3-VL-Embedding-2B-Q6_K.gguf"
+	llamaNativeSearch2BMMProjURL                   = "https://huggingface.co/VesNFF/Qwen3-VL-Embedding-2B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-2B-f16.gguf"
 	defaultLlamaNativeEmbedderContextSize          = 512
 	defaultLlamaNativeAnnotationTemperature        = 1.0
 	defaultLlamaNativeAnnotationSeed         int64 = -1
@@ -45,17 +49,100 @@ const (
 	defaultDownloadProgressPeriod                  = 5 * time.Second
 )
 
+type knownModelAssetPair struct {
+	modelPath  string
+	modelURL   string
+	mmprojPath string
+	mmprojURL  string
+}
+
+var llamaNativeSearchAssetPairs = []knownModelAssetPair{
+	{
+		modelPath:  defaultLlamaNativeModelPath,
+		modelURL:   defaultLlamaNativeModelURL,
+		mmprojPath: defaultLlamaNativeMMProjPath,
+		mmprojURL:  defaultLlamaNativeMMProjURL,
+	},
+	{
+		modelPath:  llamaNativeSearch2BModelPath,
+		modelURL:   llamaNativeSearch2BModelURL,
+		mmprojPath: llamaNativeSearch2BMMProjPath,
+		mmprojURL:  llamaNativeSearch2BMMProjURL,
+	},
+}
+
 func ensureDefaultLlamaNativeAssets(ctx context.Context, modelPath string, mmprojPath string) (string, string, error) {
-	return ensureDefaultAssetPair(
+	return ensureKnownAssetPair(
 		ctx,
 		nil,
 		modelPath,
 		mmprojPath,
-		defaultLlamaNativeModelPath,
-		defaultLlamaNativeModelURL,
-		defaultLlamaNativeMMProjPath,
-		defaultLlamaNativeMMProjURL,
+		llamaNativeSearchAssetPairs,
 	)
+}
+
+func ensureKnownAssetPair(ctx context.Context, httpClient *http.Client, modelPath string, mmprojPath string, pairs []knownModelAssetPair) (string, string, error) {
+	pair, resolvedModelPath, resolvedMMProjPath := selectKnownAssetPair(modelPath, mmprojPath, pairs)
+	return ensureDefaultAssetPair(
+		ctx,
+		httpClient,
+		resolvedModelPath,
+		resolvedMMProjPath,
+		pair.modelPath,
+		pair.modelURL,
+		pair.mmprojPath,
+		pair.mmprojURL,
+	)
+}
+
+func selectKnownAssetPair(modelPath string, mmprojPath string, pairs []knownModelAssetPair) (knownModelAssetPair, string, string) {
+	if len(pairs) == 0 {
+		return knownModelAssetPair{}, strings.TrimSpace(modelPath), strings.TrimSpace(mmprojPath)
+	}
+	defaultPair := pairs[0]
+	resolvedModelPath := strings.TrimSpace(modelPath)
+	if resolvedModelPath == "" {
+		resolvedModelPath = defaultPair.modelPath
+	}
+	resolvedMMProjPath := strings.TrimSpace(mmprojPath)
+	if resolvedMMProjPath == "" {
+		resolvedMMProjPath = defaultPair.mmprojPath
+	}
+
+	for _, pair := range pairs {
+		modelMatches := sameAssetPath(resolvedModelPath, pair.modelPath)
+		mmprojMatches := sameAssetPath(resolvedMMProjPath, pair.mmprojPath)
+		modelIsDefault := sameAssetPath(resolvedModelPath, defaultPair.modelPath)
+		mmprojIsDefault := sameAssetPath(resolvedMMProjPath, defaultPair.mmprojPath)
+		switch {
+		case modelMatches && mmprojMatches:
+			return pair, resolvedModelPath, resolvedMMProjPath
+		case modelMatches && mmprojIsDefault:
+			return pair, resolvedModelPath, pair.mmprojPath
+		case modelIsDefault && mmprojMatches:
+			return pair, pair.modelPath, resolvedMMProjPath
+		}
+	}
+
+	return defaultPair, resolvedModelPath, resolvedMMProjPath
+}
+
+func sameAssetPath(left string, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" || right == "" {
+		return left == right
+	}
+	return cleanAbsAssetPath(left) == cleanAbsAssetPath(right)
+}
+
+func cleanAbsAssetPath(path string) string {
+	cleaned := filepath.Clean(strings.TrimSpace(path))
+	abs, err := filepath.Abs(cleaned)
+	if err != nil {
+		return cleaned
+	}
+	return abs
 }
 
 func ensureDefaultLlamaNativeAnnotatorAssets(ctx context.Context, modelPath string, mmprojPath string) (string, string, error) {
@@ -152,7 +239,7 @@ func ensureDefaultModelAsset(ctx context.Context, httpClient *http.Client, path 
 	if resolvedPath == "" {
 		resolvedPath = defaultPath
 	}
-	if resolvedPath != defaultPath {
+	if !sameAssetPath(resolvedPath, defaultPath) {
 		return resolvedPath, nil
 	}
 	if err := ensureRegularFile(resolvedPath); err == nil {
