@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -99,6 +100,89 @@ WHERE id = 3
 	if len(resp.Images[0].Tags) != 2 || resp.Images[0].Tags[0] != "gallery" {
 		t.Fatalf("unexpected tags: %v", resp.Images[0].Tags)
 	}
+}
+
+func TestListImagesRandomOrderIsStableAcrossPages(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	for id := int64(4); id <= 12; id++ {
+		if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES (?, ?, ?, ?, 'image/jpeg', 10, 10)
+`, id, fmt.Sprintf("extra-%d", id), fmt.Sprintf("extra-%d.jpg", id), fmt.Sprintf("images/extra-%d", id)); err != nil {
+			t.Fatalf("seed extra image %d: %v", id, err)
+		}
+	}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	firstPage := imageIDsForRequest(t, h, "/api/images?limit=5&offset=0&order=random&seed=7")
+	secondPage := imageIDsForRequest(t, h, "/api/images?limit=7&offset=5&order=random&seed=7")
+	fullPage := imageIDsForRequest(t, h, "/api/images?limit=20&offset=0&order=random&seed=7")
+	otherSeedPage := imageIDsForRequest(t, h, "/api/images?limit=20&offset=0&order=random&seed=1200000000")
+
+	paged := append(append([]int64{}, firstPage...), secondPage...)
+	if !reflect.DeepEqual(paged, fullPage) {
+		t.Fatalf("expected seeded random pages to match full order: pages=%v full=%v", paged, fullPage)
+	}
+	if reflect.DeepEqual(fullPage, []int64{12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}) {
+		t.Fatalf("expected seeded random order, got newest-first order %v", fullPage)
+	}
+	if isInt64Rotation(fullPage, otherSeedPage) {
+		t.Fatalf("expected different seeds to produce more than a rotated order: seed7=%v other=%v", fullPage, otherSeedPage)
+	}
+	if len(fullPage) != 12 {
+		t.Fatalf("expected all 12 images, got %v", fullPage)
+	}
+	seen := map[int64]bool{}
+	for _, id := range fullPage {
+		if seen[id] {
+			t.Fatalf("expected no duplicate images in seeded random order, got %v", fullPage)
+		}
+		seen[id] = true
+	}
+}
+
+func isInt64Rotation(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 {
+		return true
+	}
+	for offset := range a {
+		matched := true
+		for i := range a {
+			if a[(i+offset)%len(a)] != b[i] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func imageIDsForRequest(t *testing.T, h http.Handler, path string) []int64 {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status for %s: got=%d body=%s", path, rr.Code, rr.Body.String())
+	}
+
+	var resp ListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response for %s: %v", path, err)
+	}
+	ids := make([]int64, 0, len(resp.Images))
+	for _, item := range resp.Images {
+		ids = append(ids, item.ImageID)
+	}
+	return ids
 }
 
 func TestListImagesRejectsInvalidMethod(t *testing.T) {

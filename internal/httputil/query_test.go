@@ -95,3 +95,42 @@ func TestParseIncludeNSFWQuery(t *testing.T) {
 		t.Fatalf("invalid include_nsfw: got=%v want=false", got)
 	}
 }
+
+func TestParseOrderQuery(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/images", nil)
+	if got := ParseOrderQuery(req, "newest", "newest", "random"); got != "newest" {
+		t.Fatalf("missing order: got=%q want=newest", got)
+	}
+
+	req = httptest.NewRequest("GET", "/api/images?order=random", nil)
+	if got := ParseOrderQuery(req, "newest", "newest", "random"); got != "random" {
+		t.Fatalf("random order: got=%q want=random", got)
+	}
+
+	req = httptest.NewRequest("GET", "/api/images?order=RANDOM", nil)
+	if got := ParseOrderQuery(req, "newest", "newest", "random"); got != "random" {
+		t.Fatalf("case-insensitive order: got=%q want=random", got)
+	}
+
+	req = httptest.NewRequest("GET", "/api/images?order=shuffle", nil)
+	if got := ParseOrderQuery(req, "newest", "newest", "random"); got != "newest" {
+		t.Fatalf("unknown order fallback: got=%q want=newest", got)
+	}
+}
+
+func TestParseInt64Query(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/images", nil)
+	if got := ParseInt64Query(req, "seed", 9); got != 9 {
+		t.Fatalf("missing int64: got=%d want=9", got)
+	}
+
+	req = httptest.NewRequest("GET", "/api/images?seed=1200000000", nil)
+	if got := ParseInt64Query(req, "seed", 9); got != 1200000000 {
+		t.Fatalf("valid int64: got=%d want=1200000000", got)
+	}
+
+	req = httptest.NewRequest("GET", "/api/images?seed=nope", nil)
+	if got := ParseInt64Query(req, "seed", 9); got != 9 {
+		t.Fatalf("invalid int64 fallback: got=%d want=9", got)
+	}
+}

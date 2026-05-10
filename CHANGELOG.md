@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(frontend): make the Atelier library request a seeded random discovery order by default, while keeping Load More pagination stable across the same shuffled sequence.
+- fix(frontend): reset Atelier pagination when the data key changes so uploads, filters, and mode changes replace from offset 0 after Load More instead of appending stale pages.
 - fix(frontend): preserve search and similar-result ranking across the first masonry row in Atelier instead of letting CSS columns fill results top-to-bottom by column.
 - fix(dev): make `mise run serve` and `serve:8b:annotator-26b` watch ignored embedded Atelier dist assets so `npm run build` output triggers autorestart.
 - feat(frontend): make the Atelier Rail Feed button start a similar-video Feed from a random playable video instead of only focusing an on-card Feed action.

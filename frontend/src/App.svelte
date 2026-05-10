@@ -34,6 +34,16 @@
   import type { Pin } from "./lib/types";
 
   const PAGE_SIZE = 48;
+  const RANDOM_SEED_MAX = 0x80000000;
+
+  function newLibrarySeed(): number {
+    if (globalThis.crypto?.getRandomValues) {
+      const values = new Uint32Array(1);
+      globalThis.crypto.getRandomValues(values);
+      return values[0] & 0x7fffffff;
+    }
+    return Math.floor(Math.random() * RANDOM_SEED_MAX);
+  }
 
   // Stats are cheap and useful in the search bar, so fetch them immediately.
   // Tag cloud is deferred until after the first page load because its JSON tag
@@ -49,10 +59,13 @@
 
   let currentRequestToken = 0;
   let currentOffset = 0;
+  let lastPageBump = 0;
+  let lastDataKey = "";
   let canLoadMore = $state(false);
   let loadingMore = $state(false);
   let firstPageLoaded = $state(false);
   let tagCloudStarted = false;
+  let libraryRandomSeed = newLibrarySeed();
 
   $effect(() => {
     if (!firstPageLoaded || tagCloudStarted) return;
@@ -76,24 +89,37 @@
     const bump = $pageBump;
     // Subscribe to dataEpoch so successful uploads (or other refresh events)
     // can force a fresh, replacing fetch without changing mode.
-    void $dataEpoch;
+    const epoch = $dataEpoch;
+    const dataKey = [
+      state.mode,
+      state.query ?? "",
+      state.similarTo ?? "",
+      state.tags?.join("\u0000") ?? "",
+      state.tagMode ?? "",
+      includeNsfw ? "1" : "0",
+      epoch,
+    ].join("\u0001");
     const token = ++currentRequestToken;
 
-    // First request for a (mode, includeNSFW) pair starts at offset 0 and
-    // replaces. "Load more" calls bumpPage(); we keep the same mode but
-    // continue from the next offset and append.
+    // First request for a data key starts at offset 0 and replaces. "Load more"
+    // calls bumpPage(); only a new bump on the same key appends.
     let appending = false;
     untrack(() => {
-      if (bump > 0) {
+      if (bump > lastPageBump && dataKey === lastDataKey) {
         appending = true;
       } else {
         currentOffset = 0;
+        libraryRandomSeed = newLibrarySeed();
       }
+      lastPageBump = bump;
+      lastDataKey = dataKey;
       const previous = get(resultsMeta);
       resultsMeta.set({ total: previous.total, loading: !appending, error: undefined });
     });
     if (appending) {
       loadingMore = true;
+    } else {
+      canLoadMore = false;
     }
 
     const start = performance.now();
@@ -139,6 +165,8 @@
           const response = await listImages({
             limit: PAGE_SIZE,
             offset: currentOffset,
+            order: "random",
+            seed: libraryRandomSeed,
             includeNSFW: includeNsfw,
             signal: ac.signal,
           });
@@ -179,7 +207,7 @@
   });
 
   function loadMore() {
-    if (!canLoadMore || loadingMore) return;
+    if (!canLoadMore || loadingMore || get(resultsMeta).loading) return;
     bumpPage();
   }
 

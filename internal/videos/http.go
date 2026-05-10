@@ -46,7 +46,17 @@ type ListResponse struct {
 	Total  int64       `json:"total"`
 }
 
+const (
+	listOrderNewest = "newest"
+	listOrderRandom = "random"
+	randomOrderMask = int64(2147483647)
+)
+
 func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool) (ListResponse, error) {
+	return listWithOrder(ctx, db, modelID, limit, offset, includeNSFW, listOrderNewest, 0)
+}
+
+func listWithOrder(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool, order string, seed int64) (ListResponse, error) {
 	if db == nil {
 		return ListResponse{}, fmt.Errorf("videos database unavailable")
 	}
@@ -59,6 +69,14 @@ func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int,
 	includeNSFWInt := boolToInt(includeNSFW)
 	videoHasNSFWCountExpr := nsfwsql.VideoHasNSFW("v.id", "v.tags_json", "tag", "vtag")
 	videoHasNSFWListExpr := nsfwsql.VideoHasNSFW("v.id", "v.tags_json", "tag_nsfw", "vtag_nsfw")
+	orderClause := "v.id DESC"
+	args := []any{modelID, jobkind.EmbedImage, modelID, jobkind.TranscribeVideo, modelID, jobkind.AnnotateVideo, includeNSFWInt}
+	if order == listOrderRandom {
+		seed = seed & randomOrderMask
+		orderClause = "((((v.id * 1103515245 + ?) & 2147483647) | (((v.id * 1103515245 + ?) & 2147483647) >> 16)) * 1103515245 + 12345) & 2147483647 ASC, v.id ASC"
+		args = append(args, seed, seed)
+	}
+	args = append(args, limit, offset)
 
 	var total int64
 	if err := db.QueryRowContext(ctx, fmt.Sprintf(`
@@ -144,9 +162,9 @@ LEFT JOIN transcript_jobs tj ON tj.video_id = v.id
 LEFT JOIN annotation_jobs aj ON aj.video_id = v.id
 LEFT JOIN preview_frames p ON p.video_id = v.id AND p.rn = 1
 WHERE (? = 1 OR NOT (%s))
-ORDER BY v.id DESC
+ORDER BY %s
 LIMIT ? OFFSET ?
-`, videoHasNSFWListExpr), modelID, jobkind.EmbedImage, modelID, jobkind.TranscribeVideo, modelID, jobkind.AnnotateVideo, includeNSFWInt, limit, offset)
+`, videoHasNSFWListExpr, orderClause), args...)
 	if err != nil {
 		return ListResponse{}, fmt.Errorf("query videos: %w", err)
 	}
@@ -207,8 +225,10 @@ func NewHandler(h *Handler) http.Handler {
 			limit := httputil.ParseLimitQuery(r, 50)
 			offset := httputil.ParseOffsetQuery(r, 0)
 			includeNSFW := httputil.ParseIncludeNSFWQuery(r)
+			order := httputil.ParseOrderQuery(r, listOrderNewest, listOrderNewest, listOrderRandom)
+			seed := httputil.ParseInt64Query(r, "seed", 0)
 
-			resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset, includeNSFW)
+			resp, err := listWithOrder(r.Context(), h.DB, h.ModelID, limit, offset, includeNSFW, order, seed)
 			if err != nil {
 				httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
 				return

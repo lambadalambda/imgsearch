@@ -39,7 +39,17 @@ type ListResponse struct {
 	Total  int64       `json:"total"`
 }
 
+const (
+	listOrderNewest = "newest"
+	listOrderRandom = "random"
+	randomOrderMask = int64(2147483647)
+)
+
 func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool) (ListResponse, error) {
+	return listWithOrder(ctx, db, modelID, limit, offset, includeNSFW, listOrderNewest, 0)
+}
+
+func listWithOrder(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool, order string, seed int64) (ListResponse, error) {
 	if db == nil {
 		return ListResponse{}, fmt.Errorf("images database unavailable")
 	}
@@ -51,6 +61,14 @@ func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int,
 	}
 	includeNSFWInt := boolToInt(includeNSFW)
 	imageHasNSFWExpr := nsfwsql.TagsJSONHasNSFW("i.tags_json", "tag")
+	orderClause := "i.id DESC"
+	args := []any{modelID, jobkind.EmbedImage, includeNSFWInt}
+	if order == listOrderRandom {
+		seed = seed & randomOrderMask
+		orderClause = "((((i.id * 1103515245 + ?) & 2147483647) | (((i.id * 1103515245 + ?) & 2147483647) >> 16)) * 1103515245 + 12345) & 2147483647 ASC, i.id ASC"
+		args = append(args, seed, seed)
+	}
+	args = append(args, limit, offset)
 
 	var total int64
 	if err := db.QueryRowContext(ctx, fmt.Sprintf(`
@@ -82,9 +100,9 @@ WHERE NOT EXISTS (
 	WHERE vf.image_id = i.id
 )
 	AND (? = 1 OR NOT (%s))
-ORDER BY i.id DESC
+ORDER BY %s
 LIMIT ? OFFSET ?
-`, imageHasNSFWExpr), modelID, jobkind.EmbedImage, includeNSFWInt, limit, offset)
+`, imageHasNSFWExpr, orderClause), args...)
 	if err != nil {
 		return ListResponse{}, fmt.Errorf("query images: %w", err)
 	}
@@ -142,8 +160,10 @@ func NewHandler(h *Handler) http.Handler {
 			limit := httputil.ParseLimitQuery(r, 50)
 			offset := httputil.ParseOffsetQuery(r, 0)
 			includeNSFW := httputil.ParseIncludeNSFWQuery(r)
+			order := httputil.ParseOrderQuery(r, listOrderNewest, listOrderNewest, listOrderRandom)
+			seed := httputil.ParseInt64Query(r, "seed", 0)
 
-			resp, err := List(r.Context(), h.DB, h.ModelID, limit, offset, includeNSFW)
+			resp, err := listWithOrder(r.Context(), h.DB, h.ModelID, limit, offset, includeNSFW, order, seed)
 			if err != nil {
 				httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
 				return

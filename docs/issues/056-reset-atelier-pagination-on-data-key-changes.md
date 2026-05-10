@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open.
+Open; core pagination state fix landed, but mode-change-specific coverage is still pending.
 
 ## Summary
 
@@ -27,10 +27,10 @@ After `Load more` is used once, the Atelier data effect treats future fetches as
 ## Acceptance Criteria
 
 - [ ] Add Atelier smoke or unit coverage for changing mode after Load More.
-- [ ] Add coverage for an upload/data refresh after Load More replacing the collection.
-- [ ] Track the last handled page bump separately from the current data key.
-- [ ] Reset `currentOffset` and replace pins whenever mode/query/tags/NSFW/dataEpoch changes.
-- [ ] Preserve append behavior only for an actual new Load More request on the same data key.
+- [x] Add coverage for an upload/data refresh after Load More replacing the collection.
+- [x] Track the last handled page bump separately from the current data key.
+- [x] Reset `currentOffset` and replace pins whenever mode/query/tags/NSFW/dataEpoch changes.
+- [x] Preserve append behavior only for an actual new Load More request on the same data key.
 
 ## Related Files
 

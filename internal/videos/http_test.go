@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -122,6 +124,89 @@ func TestListVideosReturnsResults(t *testing.T) {
 	if len(resp.Videos[1].Tags) != 3 || resp.Videos[1].Tags[0] != "concert" {
 		t.Fatalf("expected video tags in video list, got %+v", resp.Videos[1])
 	}
+}
+
+func TestListVideosRandomOrderIsStableAcrossPages(t *testing.T) {
+	dbConn := setupVideosDB(t)
+	for id := int64(3); id <= 12; id++ {
+		if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (?, ?, ?, ?, 'video/mp4', 1000, 640, 480, 0)
+`, id, fmt.Sprintf("v-extra-%d", id), fmt.Sprintf("extra-%d.mp4", id), fmt.Sprintf("videos/extra-%d", id)); err != nil {
+			t.Fatalf("seed extra video %d: %v", id, err)
+		}
+	}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	firstPage := videoIDsForRequest(t, h, "/api/videos?limit=5&offset=0&order=random&seed=7")
+	secondPage := videoIDsForRequest(t, h, "/api/videos?limit=7&offset=5&order=random&seed=7")
+	fullPage := videoIDsForRequest(t, h, "/api/videos?limit=20&offset=0&order=random&seed=7")
+	otherSeedPage := videoIDsForRequest(t, h, "/api/videos?limit=20&offset=0&order=random&seed=1200000000")
+
+	paged := append(append([]int64{}, firstPage...), secondPage...)
+	if !reflect.DeepEqual(paged, fullPage) {
+		t.Fatalf("expected seeded random pages to match full order: pages=%v full=%v", paged, fullPage)
+	}
+	if reflect.DeepEqual(fullPage, []int64{12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1}) {
+		t.Fatalf("expected seeded random order, got newest-first order %v", fullPage)
+	}
+	if isInt64Rotation(fullPage, otherSeedPage) {
+		t.Fatalf("expected different seeds to produce more than a rotated order: seed7=%v other=%v", fullPage, otherSeedPage)
+	}
+	if len(fullPage) != 12 {
+		t.Fatalf("expected both videos without duplicates, got %v", fullPage)
+	}
+	seen := map[int64]bool{}
+	for _, id := range fullPage {
+		if seen[id] {
+			t.Fatalf("expected no duplicate videos in seeded random order, got %v", fullPage)
+		}
+		seen[id] = true
+	}
+}
+
+func isInt64Rotation(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 {
+		return true
+	}
+	for offset := range a {
+		matched := true
+		for i := range a {
+			if a[(i+offset)%len(a)] != b[i] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func videoIDsForRequest(t *testing.T, h http.Handler, path string) []int64 {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status for %s: got=%d body=%s", path, rr.Code, rr.Body.String())
+	}
+
+	var resp ListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response for %s: %v", path, err)
+	}
+	ids := make([]int64, 0, len(resp.Videos))
+	for _, item := range resp.Videos {
+		ids = append(ids, item.VideoID)
+	}
+	return ids
 }
 
 func TestListVideosRejectsInvalidMethod(t *testing.T) {

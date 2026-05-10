@@ -45,6 +45,8 @@ export interface ListImagesOptions {
   limit?: number;
   offset?: number;
   includeNSFW?: boolean;
+  order?: "newest" | "random";
+  seed?: number;
   signal?: AbortSignal;
 }
 
@@ -52,6 +54,12 @@ export async function listImages(opts: ListImagesOptions = {}): Promise<ImagesPa
   const params = new URLSearchParams();
   params.set("limit", String(opts.limit ?? 24));
   params.set("offset", String(opts.offset ?? 0));
+  if (opts.order) {
+    params.set("order", opts.order);
+  }
+  if (opts.seed !== undefined) {
+    params.set("seed", String(opts.seed));
+  }
   if (opts.includeNSFW) {
     params.set("include_nsfw", "1");
   }
@@ -62,6 +70,12 @@ export async function listVideos(opts: ListImagesOptions = {}): Promise<VideosPa
   const params = new URLSearchParams();
   params.set("limit", String(opts.limit ?? 24));
   params.set("offset", String(opts.offset ?? 0));
+  if (opts.order) {
+    params.set("order", opts.order);
+  }
+  if (opts.seed !== undefined) {
+    params.set("seed", String(opts.seed));
+  }
   if (opts.includeNSFW) {
     params.set("include_nsfw", "1");
   }

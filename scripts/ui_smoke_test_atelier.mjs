@@ -62,7 +62,7 @@ function jsonResponse(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-const sampleImages = Array.from({ length: 96 }, (_, i) => ({
+const sampleImages = Array.from({ length: 144 }, (_, i) => ({
   image_id: 1000 + i,
   original_name: `sample-${i}.jpg`,
   storage_path: `images/sample-${i}`,
@@ -201,7 +201,9 @@ const server = createServer(async (req, res) => {
       requestOrder.push("images");
       const limit = Number(url.searchParams.get("limit") || 24);
       const offset = Number(url.searchParams.get("offset") || 0);
-      imagesRequests.push({ limit, offset });
+      const order = url.searchParams.get("order") || "";
+      const seed = url.searchParams.get("seed") || "";
+      imagesRequests.push({ limit, offset, order, seed });
       jsonResponse(res, 200, {
         images: sampleImages.slice(offset, offset + limit),
         total: sampleImages.length,
@@ -376,6 +378,12 @@ try {
   if (firstTagCloudRequest >= 0 && firstTagCloudRequest < firstImagesRequest) {
     throw new Error(
       `expected first /api/images request before tag-cloud bootstrap, got order ${JSON.stringify(requestOrder)}`,
+    );
+  }
+  const initialImagesRequest = imagesRequests[0];
+  if (initialImagesRequest.order !== "random" || !initialImagesRequest.seed) {
+    throw new Error(
+      `expected initial library request to use seeded random order, got ${JSON.stringify(initialImagesRequest)}`,
     );
   }
 
@@ -584,6 +592,7 @@ try {
 
   // 7. Load more — ensure clicking it grows the masonry.
   const beforeLoadMore = await page.locator("[data-pin]").count();
+  const libraryRequestBeforeLoadMore = imagesRequests[imagesRequests.length - 1];
   await page.locator("[data-load-more]").click();
   await page.waitForFunction(
     (before) => document.querySelectorAll("[data-pin]").length > before,
@@ -597,11 +606,17 @@ try {
   if (lastRequest.offset === 0) {
     throw new Error(`expected load-more to request a non-zero offset, got ${JSON.stringify(lastRequest)}`);
   }
+  if (lastRequest.order !== "random" || lastRequest.seed !== libraryRequestBeforeLoadMore.seed) {
+    throw new Error(
+      `expected load-more to keep seeded random order ${JSON.stringify(libraryRequestBeforeLoadMore)}, got ${JSON.stringify(lastRequest)}`,
+    );
+  }
 
   // 7b. Upload flow — open modal via header trigger, attach two files, submit,
   //     verify per-file row states (created + duplicate), summary, and that
   //     the library re-fetches via the dataEpoch bump.
   const imagesRequestsBeforeUpload = imagesRequests.length;
+  const libraryRequestBeforeUpload = imagesRequests[imagesRequests.length - 1];
   await page.locator('[data-upload-trigger]').first().click();
   await page.locator("[data-upload-modal]").waitFor({ state: "visible", timeout: 5000 });
 
@@ -662,6 +677,21 @@ try {
     throw new Error(
       `expected library to re-fetch after upload, /api/images count stayed at ${imagesRequests.length}`,
     );
+  }
+  const uploadRefreshRequest = imagesRequests[imagesRequests.length - 1];
+  if (uploadRefreshRequest.offset !== 0 || uploadRefreshRequest.order !== "random" || !uploadRefreshRequest.seed) {
+    throw new Error(
+      `expected upload refresh after ${JSON.stringify(libraryRequestBeforeUpload)} to replace with seeded random first page, got ${JSON.stringify(uploadRefreshRequest)}`,
+    );
+  }
+  await page.waitForFunction(
+    () => document.querySelectorAll("[data-pin]").length <= 48,
+    {},
+    { timeout: 5000 },
+  );
+  const postUploadPinCount = await page.locator("[data-pin]").count();
+  if (postUploadPinCount > 48) {
+    throw new Error(`expected upload refresh to replace pins, got ${postUploadPinCount} rendered pins`);
   }
 
   await page.locator("[data-upload-close]").click();

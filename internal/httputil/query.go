@@ -53,3 +53,32 @@ func ParseIncludeNSFWQuery(r *http.Request) bool {
 	}
 	return parsed
 }
+
+// ParseOrderQuery parses the "order" query parameter against a small allow-list.
+// Missing or unknown values fall back to the provided default.
+func ParseOrderQuery(r *http.Request, fallback string, allowed ...string) string {
+	v := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("order")))
+	if v == "" {
+		return fallback
+	}
+	for _, candidate := range allowed {
+		if v == strings.ToLower(candidate) {
+			return v
+		}
+	}
+	return fallback
+}
+
+// ParseInt64Query parses a named int64 query parameter.
+// Missing or invalid values fall back to the provided default.
+func ParseInt64Query(r *http.Request, name string, fallback int64) int64 {
+	v := strings.TrimSpace(r.URL.Query().Get(name))
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
