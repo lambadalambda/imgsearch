@@ -415,6 +415,49 @@ try {
 
   // 2. Search flow.
   await page.locator("#atelier-search").fill("warm portrait");
+  const searchInputType = await page.locator("#atelier-search").getAttribute("type");
+  if (searchInputType !== "text") {
+    throw new Error(`expected Atelier search input to avoid the native browser clear button, got type=${JSON.stringify(searchInputType)}`);
+  }
+  const searchInputRole = await page.locator("#atelier-search").getAttribute("role");
+  if (searchInputRole !== "searchbox") {
+    throw new Error(`expected Atelier search input to preserve searchbox semantics, got role=${JSON.stringify(searchInputRole)}`);
+  }
+  const searchInputLabel = await page.locator("#atelier-search").getAttribute("aria-label");
+  if (searchInputLabel !== "Search library") {
+    throw new Error(`expected Atelier search input to have an accessible label, got aria-label=${JSON.stringify(searchInputLabel)}`);
+  }
+  const clearButtonCount = await page.locator('button[aria-label="Clear search"]').count();
+  if (clearButtonCount !== 1) {
+    throw new Error(`expected one custom clear search button, got ${clearButtonCount}`);
+  }
+  const valueAfterComposingEscape = await page.locator("#atelier-search").evaluate((input) => {
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    Object.defineProperty(event, "isComposing", { value: true });
+    input.dispatchEvent(event);
+    return input.value;
+  });
+  if (valueAfterComposingEscape !== "warm portrait") {
+    throw new Error(`expected composing Escape to preserve search input, got ${JSON.stringify(valueAfterComposingEscape)}`);
+  }
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(
+    () => window.location.search === "" && document.querySelector("#atelier-search")?.value === "",
+    {},
+    { timeout: 5000 },
+  );
+  const clearButtonCountAfterEscape = await page.locator('button[aria-label="Clear search"]').count();
+  if (clearButtonCountAfterEscape !== 0) {
+    throw new Error(`expected Escape to hide the clear search button, got ${clearButtonCountAfterEscape}`);
+  }
+  await page.locator("#atelier-search").fill("warm portrait");
+  await page.locator('button[aria-label="Clear search"]').click();
+  await page.waitForFunction(() => document.querySelector("#atelier-search")?.value === "", {}, { timeout: 5000 });
+  const clearButtonCountAfterClick = await page.locator('button[aria-label="Clear search"]').count();
+  if (clearButtonCountAfterClick !== 0) {
+    throw new Error(`expected clicking clear to hide the clear search button, got ${clearButtonCountAfterClick}`);
+  }
+  await page.locator("#atelier-search").fill("warm portrait");
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => /\?q=/.test(window.location.search), {}, { timeout: 5000 });
   await page.locator("[data-pin-match]").first().waitFor({ state: "visible", timeout: 5000 });
@@ -441,6 +484,22 @@ try {
       `expected visual top row to preserve search rank ${JSON.stringify(expectedTopRowMatches)}, got ${JSON.stringify(visualTopRowMatches)}`,
     );
   }
+
+  await page.locator("#atelier-search").focus();
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(
+    () => window.location.search === "" && document.querySelector("#atelier-search")?.value === "",
+    {},
+    { timeout: 5000 },
+  );
+  const clearedSearchHeadline = (await page.locator("h1").first().textContent() || "").trim();
+  if (clearedSearchHeadline !== "Library") {
+    throw new Error(`expected Escape to return to library mode, got ${JSON.stringify(clearedSearchHeadline)}`);
+  }
+  await page.locator("#atelier-search").fill("warm portrait");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => /\?q=/.test(window.location.search), {}, { timeout: 5000 });
+  await page.locator("[data-pin-match]").first().waitFor({ state: "visible", timeout: 5000 });
 
   // 2b. Feed flow — search results include video pins; clicking the Feed
   //     corner action on one opens the fullscreen overlay, kicks a

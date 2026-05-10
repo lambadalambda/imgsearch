@@ -15,6 +15,22 @@ pkg_root="${repo_root}/${dist_dir}/${pkg_name}"
 llama_lib_dir="${IMGSEARCH_LLAMA_LIB_DIR:-${repo_root}/deps/llama.cpp/build/bin}"
 sqlite_vector_dir="${repo_root}/tools/sqlite-vector"
 
+build_atelier_frontend() {
+  if [[ "${IMGSEARCH_SKIP_FRONTEND_BUILD:-0}" == "1" ]]; then
+    return
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "npm is required to build the Atelier frontend for release packaging" >&2
+    echo "set IMGSEARCH_SKIP_FRONTEND_BUILD=1 only when internal/webui/atelier/dist is already populated" >&2
+    exit 1
+  fi
+  (
+    cd "${repo_root}/frontend"
+    npm ci --no-audit --no-fund --silent
+    npm run build
+  )
+}
+
 if [[ ! -d "${llama_lib_dir}" ]]; then
   echo "llama.cpp library directory not found: ${llama_lib_dir}" >&2
   echo "set IMGSEARCH_LLAMA_LIB_DIR when packaging from explicit cross-built artifacts" >&2
@@ -123,6 +139,8 @@ bundle_linux_runtime_deps() {
 rm -rf "${pkg_root}"
 mkdir -p "${pkg_root}/lib" "${pkg_root}/models" "${pkg_root}/tools/sqlite-vector"
 
+build_atelier_frontend
+
 (
   cd "${repo_root}"
   go build -trimpath -ldflags='-s -w' -o "${pkg_root}/imgsearch" ./cmd/imgsearch
@@ -155,13 +173,15 @@ Contents:
 First run:
 1. On Linux, run ./run.sh (or the preset wrappers) so bundled shared libraries are used.
 2. On macOS, run ./imgsearch
-3. The default 8B Qwen GGUF files and default Gemma annotator files are downloaded automatically if missing.
+3. The default 2B Qwen GGUF files and default Gemma e4b annotator files are downloaded automatically if missing.
 4. Add --enable-annotations=false if you want to skip loading the Gemma annotator.
 
 Modes:
- - ./run.sh           start the HTTP server and background worker in one process.
- - ./run-api.sh       start the HTTP server only, with annotations disabled.
- - ./run-worker.sh    start the background worker only.
+ - ./run.sh                    start the HTTP server and background worker in one process.
+ - ./run-api.sh                start the HTTP server only, with annotations disabled.
+ - ./run-worker.sh             start the background worker only.
+ - ./run-8b.sh                 start with the higher-memory 8B search model.
+ - ./run-8b-annotator-26b.sh   start with the 8B search model and 26B annotator.
 
 Notes:
  - The app auto-discovers sqlite-vector from ./tools/sqlite-vector/vector.
@@ -212,7 +232,8 @@ case "$(uname -s)" in
 set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-exec "$script_dir/imgsearch" "$@"
+export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
+exec "$script_dir/imgsearch" -vector-backend sqlite-vector "$@"
 EOF
 
     cat > "${pkg_root}/run-8b.sh" <<'EOF'
@@ -221,7 +242,12 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
-exec "$script_dir/imgsearch" -vector-backend sqlite-vector "$@"
+exec "$script_dir/imgsearch" \
+  -vector-backend sqlite-vector \
+  -llama-native-model-path "$script_dir/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf" \
+  -llama-native-mmproj-path "$script_dir/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf" \
+  -llama-native-dimensions 4096 \
+  "$@"
 EOF
 
     cat > "${pkg_root}/run-api.sh" <<'EOF'
@@ -248,7 +274,13 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
-exec "$script_dir/imgsearch" -vector-backend sqlite-vector -llama-native-annotator-variant 26b "$@"
+exec "$script_dir/imgsearch" \
+  -vector-backend sqlite-vector \
+  -llama-native-model-path "$script_dir/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf" \
+  -llama-native-mmproj-path "$script_dir/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf" \
+  -llama-native-dimensions 4096 \
+  -llama-native-annotator-variant 26b \
+  "$@"
 EOF
 
     chmod +x "${pkg_root}/run.sh" "${pkg_root}/run-8b.sh" "${pkg_root}/run-api.sh" "${pkg_root}/run-worker.sh" "${pkg_root}/run-8b-annotator-26b.sh"

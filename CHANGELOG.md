@@ -3,6 +3,9 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(frontend): avoid the browser-native search cancel control so Atelier shows only one clear button in the search bar.
+- fix(release): build rolling-release llama.cpp libraries with portable CPU flags instead of runner-native instruction sets that can SIGILL on other x86_64 machines.
+- fix(release): build the Atelier frontend during release packaging so the default `/` UI is embedded like the legacy shell.
 - feat(runtime): make Qwen3-VL-Embedding-2B the default search model with the existing Gemma `e4b` annotator, keeping 8B available as an explicit higher-memory profile.
 - feat(runtime): auto-download the known Qwen3-VL-Embedding-2B search model and matching mmproj when selected for low-VRAM setups.
 - docs(readme): document embedding and annotation model choices, manual downloads, and reindexing caveats for low-VRAM setups.

@@ -21,7 +21,7 @@ run = "cd frontend && npm install --no-audit --no-fund --silent && npm run check
 
 [tasks."test:scripts"]
 description = "Run shell script regression tests"
-run = "scripts/import_images_4chan_test.sh && scripts/import_images_gif_test.sh && scripts/run_imgsearch_cuda_container_test.sh && scripts/resolve_onnxruntime_lib_test.sh && scripts/mise_serve_tasks_test.sh"
+run = "scripts/import_images_4chan_test.sh && scripts/import_images_gif_test.sh && scripts/run_imgsearch_cuda_container_test.sh && scripts/resolve_onnxruntime_lib_test.sh && scripts/mise_serve_tasks_test.sh && scripts/release_packaging_test.sh"
 
 [tasks."test:full"]
 description = "Run Go, script, and browser smoke tests"

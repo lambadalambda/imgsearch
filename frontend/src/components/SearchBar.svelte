@@ -37,6 +37,13 @@
     setLibrary();
     inputEl?.focus();
   }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key !== "Escape" || event.isComposing || !value) return;
+    event.preventDefault();
+    event.stopPropagation();
+    clear();
+  }
 </script>
 
 <div
@@ -55,10 +62,14 @@
     <input
       id="atelier-search"
       bind:this={inputEl}
-      type="search"
+      type="text"
+      enterkeyhint="search"
+      role="searchbox"
+      aria-label="Search library"
       autocomplete="off"
       placeholder="Search by description, paste a tag, or open similar from a pin"
       bind:value
+      onkeydown={handleKeydown}
       class="flex-1 min-w-0 bg-transparent border-0 outline-none text-ink text-base leading-[1.4] py-1 placeholder:text-muted-2"
     />
     {#if value}
