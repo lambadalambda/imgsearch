@@ -12,7 +12,7 @@
    - `mise run llama-cpp-native-build`
 4. Start the app with native embedding + sqlite-vector:
    - `go run ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
-5. On first run, if `./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf` or `./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf` are missing, imgsearch downloads them automatically from `lainsoykaf/Qwen3-VL-Embedding-8B-GGUF` on Hugging Face.
+5. On first run, if `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf` or `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf` are missing, imgsearch downloads them automatically from `VesNFF/Qwen3-VL-Embedding-2B-GGUF` on Hugging Face.
 6. Open the UI:
    - `http://127.0.0.1:8080/`
 
@@ -27,8 +27,8 @@ Process modes:
 - `-mode=worker` is the matching split-process worker configuration.
 
 One-command startup:
-- `mise run serve`
-- `mise run "serve:8b"`
+- `mise run serve` uses the default 2B search model and `e4b` annotator.
+- `mise run "serve:8b"` uses the 8B search model and `e4b` annotator.
 - `mise run "serve:smoke"` for a local startup smoke check that waits for `/healthz`
 
 Browser UI smoke tests:
@@ -42,7 +42,7 @@ Script regression tests:
 - `mise run "test:full"` runs Go tests, script tests, and browser smoke tests.
 
 Optional native tuning env vars for `mise run serve`:
-- `LLAMA_NATIVE_IMAGE_MAX_SIDE` default `512`
+- `LLAMA_NATIVE_IMAGE_MAX_SIDE` default `384`
 - `LLAMA_NATIVE_IMAGE_MAX_TOKENS` default `0`
 
 Reset local database files:
@@ -72,7 +72,7 @@ Convenience tasks:
 
 Notes:
 
-- Native defaults target `lainsoykaf/Qwen3-VL-Embedding-8B-GGUF` at `4096` dimensions.
+- Native defaults target `VesNFF/Qwen3-VL-Embedding-2B-GGUF` at `2048` dimensions. Use the 8B paths with `-llama-native-dimensions 4096` or `mise run "serve:8b"` for the higher-memory search profile.
 - Native path defaults to `-llama-native-image-max-side 384` to reduce normal indexing latency while keeping fixture retrieval quality green.
 - Native image embedding preprocesses every image through libvips (via `github.com/cshum/vipsgen`) and writes a temporary JPEG before mtmd, which avoids WEBP/AVIF decode failures in llama.cpp input handling.
 - Native prompting uses Qwen chat-template style framing (`system` + `user` + assistant generation prompt) for text and image embeddings.

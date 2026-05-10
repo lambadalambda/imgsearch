@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(runtime): make Qwen3-VL-Embedding-2B the default search model with the existing Gemma `e4b` annotator, keeping 8B available as an explicit higher-memory profile.
 - feat(runtime): auto-download the known Qwen3-VL-Embedding-2B search model and matching mmproj when selected for low-VRAM setups.
 - docs(readme): document embedding and annotation model choices, manual downloads, and reindexing caveats for low-VRAM setups.
 - docs(readme): add an optimized WebP screenshot preview to the README.

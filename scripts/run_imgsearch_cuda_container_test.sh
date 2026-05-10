@@ -53,6 +53,21 @@ if [[ "$default_addr" != "127.0.0.1:8080" ]]; then
   echo "expected default addr 127.0.0.1:8080, got '$default_addr'" >&2
   exit 1
 fi
+default_model="$(extract_flag_value "-llama-native-model-path" "$args_file")"
+if [[ "$default_model" != "$tmp_dir/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf" ]]; then
+  echo "expected default 2B model path, got '$default_model'" >&2
+  exit 1
+fi
+default_mmproj="$(extract_flag_value "-llama-native-mmproj-path" "$args_file")"
+if [[ "$default_mmproj" != "$tmp_dir/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf" ]]; then
+  echo "expected default 2B mmproj path, got '$default_mmproj'" >&2
+  exit 1
+fi
+default_dims="$(extract_flag_value "-llama-native-dimensions" "$args_file")"
+if [[ "$default_dims" != "2048" ]]; then
+  echo "expected default dimensions 2048, got '$default_dims'" >&2
+  exit 1
+fi
 
 : >"$args_file"
 IMGSEARCH_TEST_ARGS_FILE="$args_file" \

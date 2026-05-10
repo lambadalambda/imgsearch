@@ -13,13 +13,19 @@ import (
 )
 
 const (
-	defaultLlamaNativeModelPath                    = "./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
-	defaultLlamaNativeMMProjPath                   = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
-	defaultLlamaNativeDimensions                   = 4096
 	llamaNativeSearch2BModelPath                   = "./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf"
 	llamaNativeSearch2BMMProjPath                  = "./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf"
 	llamaNativeSearch2BModelURL                    = "https://huggingface.co/VesNFF/Qwen3-VL-Embedding-2B-GGUF/resolve/main/Qwen3-VL-Embedding-2B-Q6_K.gguf"
 	llamaNativeSearch2BMMProjURL                   = "https://huggingface.co/VesNFF/Qwen3-VL-Embedding-2B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-2B-f16.gguf"
+	llamaNativeSearch8BModelPath                   = "./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
+	llamaNativeSearch8BMMProjPath                  = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
+	llamaNativeSearch8BModelURL                    = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
+	llamaNativeSearch8BMMProjURL                   = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
+	defaultLlamaNativeModelPath                    = llamaNativeSearch2BModelPath
+	defaultLlamaNativeMMProjPath                   = llamaNativeSearch2BMMProjPath
+	defaultLlamaNativeDimensions                   = 2048
+	defaultLlamaNativeModelURL                     = llamaNativeSearch2BModelURL
+	defaultLlamaNativeMMProjURL                    = llamaNativeSearch2BMMProjURL
 	defaultLlamaNativeEmbedderContextSize          = 512
 	defaultLlamaNativeAnnotationTemperature        = 1.0
 	defaultLlamaNativeAnnotationSeed         int64 = -1
@@ -27,8 +33,6 @@ const (
 	defaultLlamaNativeFlashAttnType                = -1
 	defaultLlamaNativeCacheTypeK                   = -1
 	defaultLlamaNativeCacheTypeV                   = -1
-	defaultLlamaNativeModelURL                     = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
-	defaultLlamaNativeMMProjURL                    = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
 	defaultLlamaNativeAnnotatorVariant             = "e4b"
 	llamaNativeAnnotatorVariant26B                 = "26b"
 	defaultLlamaNativeAnnotatorModelPath           = "./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf"
@@ -64,10 +68,10 @@ var llamaNativeSearchAssetPairs = []knownModelAssetPair{
 		mmprojURL:  defaultLlamaNativeMMProjURL,
 	},
 	{
-		modelPath:  llamaNativeSearch2BModelPath,
-		modelURL:   llamaNativeSearch2BModelURL,
-		mmprojPath: llamaNativeSearch2BMMProjPath,
-		mmprojURL:  llamaNativeSearch2BMMProjURL,
+		modelPath:  llamaNativeSearch8BModelPath,
+		modelURL:   llamaNativeSearch8BModelURL,
+		mmprojPath: llamaNativeSearch8BMMProjPath,
+		mmprojURL:  llamaNativeSearch8BMMProjURL,
 	},
 }
 

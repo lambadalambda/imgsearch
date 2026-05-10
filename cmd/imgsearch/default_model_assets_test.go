@@ -203,6 +203,23 @@ func TestSelectKnownAssetPairRecognizesAbsolute2BSearchPaths(t *testing.T) {
 	}
 }
 
+func TestSelectKnownAssetPairRecognizes8BSearchModelPath(t *testing.T) {
+	pair, resolvedModelPath, resolvedMMProjPath := selectKnownAssetPair(
+		llamaNativeSearch8BModelPath,
+		defaultLlamaNativeMMProjPath,
+		llamaNativeSearchAssetPairs,
+	)
+	if pair.modelPath != llamaNativeSearch8BModelPath {
+		t.Fatalf("selected model path: got=%q want=%q", pair.modelPath, llamaNativeSearch8BModelPath)
+	}
+	if resolvedModelPath != llamaNativeSearch8BModelPath {
+		t.Fatalf("resolved model path: got=%q want=%q", resolvedModelPath, llamaNativeSearch8BModelPath)
+	}
+	if resolvedMMProjPath != llamaNativeSearch8BMMProjPath {
+		t.Fatalf("resolved mmproj path: got=%q want=%q", resolvedMMProjPath, llamaNativeSearch8BMMProjPath)
+	}
+}
+
 func TestEnsureDefaultLlamaNativeAnnotatorAssetsForVariantRejectsUnknownVariant(t *testing.T) {
 	_, _, err := ensureDefaultLlamaNativeAnnotatorAssetsForVariant(context.Background(), "weird", "", "")
 	if err == nil {

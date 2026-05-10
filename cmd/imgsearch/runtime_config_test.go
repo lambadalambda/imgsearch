@@ -70,7 +70,13 @@ func TestParseRuntimeConfigKeepsFlagDefaults(t *testing.T) {
 	if cfg.DataDir != "./data" || cfg.Addr != "127.0.0.1:8080" || cfg.Mode != runtimeModeAll {
 		t.Fatalf("unexpected basic defaults: %+v", cfg)
 	}
-	if cfg.LlamaNativeDimensions != defaultLlamaNativeDimensions || cfg.LlamaNativeImageMaxSide != 384 || cfg.ResolvedLlamaNativeImageMaxSide != 384 {
+	if cfg.LlamaNativeModelPath != llamaNativeSearch2BModelPath || cfg.LlamaNativeMMProjPath != llamaNativeSearch2BMMProjPath {
+		t.Fatalf("unexpected native model defaults: %+v", cfg)
+	}
+	if cfg.AnnotatorVariant != defaultLlamaNativeAnnotatorVariant {
+		t.Fatalf("unexpected annotator default: %+v", cfg)
+	}
+	if cfg.LlamaNativeDimensions != 2048 || defaultLlamaNativeDimensions != 2048 || cfg.LlamaNativeImageMaxSide != 384 || cfg.ResolvedLlamaNativeImageMaxSide != 384 {
 		t.Fatalf("unexpected native defaults: %+v", cfg)
 	}
 	if cfg.VectorBackend != vectorBackendAuto || !cfg.EnableAnnotations {
