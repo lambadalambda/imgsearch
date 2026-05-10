@@ -35,14 +35,15 @@
 
   const PAGE_SIZE = 48;
 
-  // Bootstrap: stats + top tags. Don't block rendering on failure.
+  // Stats are cheap and useful in the search bar, so fetch them immediately.
+  // Tag cloud is deferred until after the first page load because its JSON tag
+  // scan can otherwise monopolize the single SQLite connection before images.
   void (async () => {
     try {
-      const [s, t] = await Promise.all([getStats(), listTagCloud({ limit: 16 })]);
+      const s = await getStats();
       stats.set({ images: s.standalone_images_total ?? s.images_total, videos: s.videos_total });
-      topTags.set(t.tags);
     } catch (err) {
-      console.warn("bootstrap failed", err);
+      console.warn("stats bootstrap failed", err);
     }
   })();
 
@@ -50,6 +51,24 @@
   let currentOffset = 0;
   let canLoadMore = $state(false);
   let loadingMore = $state(false);
+  let firstPageLoaded = $state(false);
+  let tagCloudStarted = false;
+
+  $effect(() => {
+    if (!firstPageLoaded || tagCloudStarted) return;
+    tagCloudStarted = true;
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const t = await listTagCloud({ limit: 16, signal: ac.signal });
+        topTags.set(t.tags);
+      } catch (err) {
+        if ((err as { name?: string }).name === "AbortError") return;
+        console.warn("tag cloud bootstrap failed", err);
+      }
+    })();
+    return () => ac.abort();
+  });
 
   $effect(() => {
     const state = $mode;
@@ -138,6 +157,9 @@
         }
         canLoadMore = nextPins.length === PAGE_SIZE && currentOffset < total;
         resultsMeta.set({ total, durationMs: performance.now() - start, loading: false });
+        if (!firstPageLoaded && !appending) {
+          firstPageLoaded = true;
+        }
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
         if (token !== currentRequestToken) return;

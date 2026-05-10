@@ -81,6 +81,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [ ] P3 Filter Upload drop files client-side: `docs/issues/063-filter-upload-drop-files-client-side.md`
 - [ ] P3 Ignore Feed touch gestures from chrome controls: `docs/issues/064-ignore-feed-touch-gestures-from-chrome.md`
 - [x] P1 Preserve result rank across masonry rows: `docs/issues/065-preserve-result-rank-across-masonry-rows.md`
+- [ ] P2 Optimize tag cloud handling: `docs/issues/066-optimize-tag-cloud-handling.md`
 
 ## Notes
 

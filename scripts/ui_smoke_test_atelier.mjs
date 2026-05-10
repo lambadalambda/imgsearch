@@ -173,6 +173,7 @@ const imagesRequests = [];
 const videosRequests = [];
 const uploadRequests = [];
 const similarVideoRequests = [];
+const requestOrder = [];
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
@@ -186,6 +187,7 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/api/search/tag-cloud") {
+      requestOrder.push("tag-cloud");
       jsonResponse(res, 200, {
         tags: [
           { tag: "portrait", count: 24 },
@@ -196,6 +198,7 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/api/images") {
+      requestOrder.push("images");
       const limit = Number(url.searchParams.get("limit") || 24);
       const offset = Number(url.searchParams.get("offset") || 0);
       imagesRequests.push({ limit, offset });
@@ -364,6 +367,16 @@ try {
   const headline = (await page.locator("h1").first().textContent() || "").trim();
   if (headline !== "Library") {
     throw new Error(`expected library headline, got ${JSON.stringify(headline)}`);
+  }
+  const firstImagesRequest = requestOrder.indexOf("images");
+  const firstTagCloudRequest = requestOrder.indexOf("tag-cloud");
+  if (firstImagesRequest < 0) {
+    throw new Error(`expected initial /api/images request, got order ${JSON.stringify(requestOrder)}`);
+  }
+  if (firstTagCloudRequest >= 0 && firstTagCloudRequest < firstImagesRequest) {
+    throw new Error(
+      `expected first /api/images request before tag-cloud bootstrap, got order ${JSON.stringify(requestOrder)}`,
+    );
   }
 
   // 1b. Rail Feed launcher — starts from a random video even though the
