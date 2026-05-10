@@ -92,13 +92,92 @@ Set `IMGSEARCH_ADDR=0.0.0.0:8080` only when you intentionally want remote access
 
 Full instructions are in `docs/podman-cuda-ubuntu.md`.
 
-## System Recommendations
+## Models And Downloads
 
-The default profile targets a reasonably capable local machine: Qwen3-VL-Embedding-8B for search, GPU offload enabled when available, and the smaller Gemma annotator enabled. If that does not fit your machine, reduce memory in this order: disable annotations, reduce GPU layers, reduce batch size, reduce image size.
+Model choice matters more than most runtime knobs. If you are memory constrained, switch to the smaller search model and disable annotations before tuning GPU layers or batch size.
+
+Search embedding models:
+
+| Model | Dimensions | Best For | Download |
+| --- | ---: | --- | --- |
+| Qwen3-VL-Embedding-8B-Q4_K_M | 4096 | Default quality profile for good GPUs and high-memory unified-memory systems | Auto-downloaded at default paths |
+| Qwen3-VL-Embedding-2B-Q6_K | 2048 | CPU-only and low-VRAM systems | Manual download |
+
+Annotation models:
+
+| Model | Variant | Best For | Download |
+| --- | --- | --- | --- |
+| Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P | `e4b` | Default descriptions/tags with lower memory than 26B | Auto-downloaded when annotations are enabled |
+| gemma-4-26b-a4b-it-heretic.q4_k_m | `26b` | Richer descriptions/tags on high-memory systems | Auto-downloaded with `-llama-native-annotator-variant 26b` |
+
+Vision models require two files: the base `.gguf` and the matching `mmproj-*.gguf`. Do not mix 2B and 8B model files, and keep `-llama-native-dimensions` matched to the embedding model (`4096` for 8B, `2048` for 2B).
+
+Default 8B search files are downloaded automatically when these paths are missing:
+
+```text
+./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf
+./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf
+```
+
+Manual pre-download for the default 8B search model:
+
+```bash
+mkdir -p ./models/Qwen
+curl -L -o ./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf \
+  https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf
+curl -L -o ./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf \
+  https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf
+```
+
+Manual download for the smaller 2B search model:
+
+```bash
+mkdir -p ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF
+curl -L -o ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf \
+  https://huggingface.co/VesNFF/Qwen3-VL-Embedding-2B-GGUF/resolve/main/Qwen3-VL-Embedding-2B-Q6_K.gguf
+curl -L -o ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf \
+  https://huggingface.co/VesNFF/Qwen3-VL-Embedding-2B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-2B-f16.gguf
+```
+
+The default `e4b` and optional `26b` annotators are also downloaded automatically when their default paths are used. Skip annotation downloads and model loading with:
+
+```bash
+./imgsearch -enable-annotations=false
+```
+
+Manual pre-download for the default `e4b` annotator:
+
+```bash
+mkdir -p ./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive
+curl -L -o ./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf \
+  https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf
+curl -L -o ./models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf \
+  https://huggingface.co/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/resolve/main/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf
+```
+
+Manual pre-download for the `26b` annotator:
+
+```bash
+mkdir -p ./models/nohurry/gemma-4-26B-A4B-it-heretic-GUFF
+curl -L -o ./models/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/gemma-4-26b-a4b-it-heretic.q4_k_m.gguf \
+  https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26b-a4b-it-heretic.q4_k_m.gguf
+curl -L -o ./models/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf \
+  https://huggingface.co/nohurry/gemma-4-26B-A4B-it-heretic-GUFF/resolve/main/gemma-4-26B-A4B-it-heretic-mmproj.f16.gguf
+```
+
+If automatic downloads fail, use the direct URLs in `cmd/imgsearch/default_model_assets.go` to pre-stage the files under `./models/`.
+
+### Switching Models Reindexes Your Library
+
+`imgsearch` versions the embedding configuration. Changing the search model path, mmproj path, embedding dimensions, image size, image token cap, or retrieval instructions creates a new model version.
+
+On startup after a model/config change, the app removes old embeddings and queues the library for re-embedding. Images and videos stay in the library, but search results are incomplete until the worker catches up. For large libraries, change model settings during idle time or back up `./data` first.
+
+## System Recommendations
 
 ### Good GPU Or Unified Memory
 
-Use this when you have a modern Apple Silicon system with enough unified memory, or a CUDA GPU with comfortable VRAM headroom.
+Use the default 8B search model plus the default `e4b` annotator:
 
 ```bash
 ./imgsearch
@@ -112,50 +191,36 @@ mise run serve
 
 This gives the best out-of-box experience: image/video search, background indexing, and generated descriptions/tags.
 
-### CPU-Only
+### CPU-Only Or Low VRAM
 
-Use this on machines without usable GPU acceleration, or when GPU drivers are unavailable. Indexing will be much slower, but the UI and already-indexed search remain usable.
-
-```bash
-./imgsearch \
-  -enable-annotations=false \
-  -llama-native-use-gpu=false \
-  -llama-native-gpu-layers 0 \
-  -llama-native-batch-size 128 \
-  -llama-native-context-size 512 \
-  -llama-native-image-max-side 320
-```
-
-If you really want CPU annotations too, remove `-enable-annotations=false` and add:
-
-```bash
--llama-native-annotator-use-gpu=false -llama-native-annotator-gpu-layers 0
-```
-
-Expect annotations on CPU to be slow. For most CPU-only systems, search-only indexing is the practical profile.
-
-### Low VRAM GPU
-
-Use this when the default profile starts but crashes, gets killed, or reports GPU out-of-memory errors. The exact layer count is hardware dependent; start low and increase only after the queue drains reliably.
+Use the 2B search model first. It is the biggest memory reduction, and it matters more than small layer/batch tuning.
 
 ```bash
 ./imgsearch \
-  -enable-annotations=false \
-  -llama-native-gpu-layers 20 \
-  -llama-native-batch-size 128 \
-  -llama-native-context-size 512 \
-  -llama-native-image-max-side 320
+  -llama-native-model-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf \
+  -llama-native-mmproj-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf \
+  -llama-native-dimensions 2048 \
+  -enable-annotations=false
 ```
 
-If this still fails, set `-llama-native-gpu-layers 0` or switch to the CPU-only command. If it is stable and you want more speed, try raising `-llama-native-gpu-layers` gradually.
-
-For `mise run serve`, the equivalent embedder knobs are environment variables:
+For CPU-only, add:
 
 ```bash
-LLAMA_NATIVE_GPU_LAYERS=20 \
-LLAMA_NATIVE_BATCH_SIZE=128 \
-LLAMA_NATIVE_CONTEXT_SIZE=512 \
-LLAMA_NATIVE_IMAGE_MAX_SIDE=320 \
+-llama-native-use-gpu=false -llama-native-gpu-layers 0
+```
+
+If a low-VRAM GPU still runs out of memory with the 2B model, add smaller runtime knobs:
+
+```bash
+-llama-native-gpu-layers 20 -llama-native-batch-size 128 -llama-native-image-max-side 320
+```
+
+For `mise run serve`, the equivalent 2B embedder overrides are:
+
+```bash
+LLAMA_NATIVE_MODEL_PATH="$(pwd)/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf" \
+LLAMA_NATIVE_MMPROJ_PATH="$(pwd)/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf" \
+LLAMA_NATIVE_DIMS=2048 \
 mise run serve
 ```
 
@@ -163,17 +228,17 @@ Use direct `./imgsearch` or `go run ./cmd/imgsearch` when you also need flags su
 
 ### Search-Only Server
 
-Use this when you mainly care about similarity/text search and want to avoid loading the annotation model entirely.
+Use this when you mainly care about similarity/text search and want to avoid loading any annotation model:
 
 ```bash
 ./imgsearch -enable-annotations=false
 ```
 
-This still embeds images and videos for search. It skips generated descriptions/tags, which is the largest memory and latency reduction.
+This still embeds images and videos for search. It skips generated descriptions/tags, which is usually the largest memory and latency reduction after switching to a smaller search model.
 
 ### Large GPU And Better Annotations
 
-The default annotator variant is the smaller `e4b` profile. On larger GPUs or high-memory unified-memory systems, you can try the 26B annotator for richer descriptions:
+On larger GPUs or high-memory unified-memory systems, you can try the 26B annotator for richer descriptions:
 
 ```bash
 ./imgsearch -llama-native-annotator-variant 26b
@@ -192,16 +257,15 @@ This is the heaviest local profile. If interactive search latency matters, run t
 ./imgsearch -mode=worker -llama-native-annotator-variant 26b
 ```
 
-Both processes must point at the same `-data-dir` if you split them.
-On a single GPU, split mode can still increase total memory if API and worker run at the same time; if memory is tight, run the worker as a batch backfill job and stop it before latency-sensitive searches.
+Both processes must point at the same `-data-dir` if you split them. On a single GPU, split mode can still increase total memory if API and worker run at the same time; if memory is tight, run the worker as a batch backfill job and stop it before latency-sensitive searches.
 
 ### Quick Tuning Reference
 
 | Symptom | First change to try |
 | --- | --- |
-| GPU out of memory on startup | Add `-enable-annotations=false` |
+| GPU out of memory on startup | Switch to the 2B search model or add `-enable-annotations=false` |
 | GPU out of memory while embedding | Lower `-llama-native-gpu-layers`, then lower `-llama-native-batch-size` |
-| System memory pressure on CPU | Add `-enable-annotations=false` and lower `-llama-native-image-max-side` |
+| System memory pressure on CPU | Use the 2B model, disable annotations, and lower `-llama-native-image-max-side` |
 | Indexing is too slow but stable | Raise `-llama-native-gpu-layers` or `-llama-native-batch-size` one step at a time |
 | Descriptions/tags are not needed | Keep `-enable-annotations=false` permanently |
 
