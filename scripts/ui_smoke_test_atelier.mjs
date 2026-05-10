@@ -91,7 +91,7 @@ const sampleVideos = Array.from({ length: 6 }, (_, i) => ({
   height: 1280,
   duration_ms: 8500,
   description: `Short cinematic clip ${i} of cats playing in warm light.`,
-  tags: ["video", "cat", "warm-tone"],
+  tags: i === 0 ? ["seed-only"] : i === 1 || i === 4 ? ["cat", "warm-tone", "rerank-target"] : ["video", `clip-${i}`],
 }));
 
 function searchResults(seedOffset = 0) {
@@ -140,7 +140,7 @@ function similarVideoResults(excludeIds) {
       width: video.width,
       height: video.height,
       duration_ms: video.duration_ms,
-      distance: 0.1 + i * 0.04,
+      distance: video.video_id === 204 ? 0.13 : 0.1 + i * 0.04,
       original_name: video.original_name,
       description: video.description,
       tags: video.tags,
@@ -240,8 +240,24 @@ const server = createServer(async (req, res) => {
       const avoidTags = (url.searchParams.get("avoid_tags") || "")
         .split(",")
         .filter(Boolean);
+      const positiveImageIds = (url.searchParams.get("positive_image_ids") || "")
+        .split(",")
+        .map(Number)
+        .filter((n) => !Number.isNaN(n) && n > 0);
+      const softNegativeImageIds = (url.searchParams.get("soft_negative_image_ids") || "")
+        .split(",")
+        .map(Number)
+        .filter((n) => !Number.isNaN(n) && n > 0);
       const limit = Number(url.searchParams.get("limit") || 12);
-      similarVideoRequests.push({ videoId, seenIds, preferTags, avoidTags, limit });
+      similarVideoRequests.push({
+        videoId,
+        seenIds,
+        preferTags,
+        avoidTags,
+        positiveImageIds,
+        softNegativeImageIds,
+        limit,
+      });
       const candidates = similarVideoResults([videoId, ...seenIds]).slice(0, limit);
       jsonResponse(res, 200, {
         results: candidates,
@@ -537,6 +553,11 @@ try {
       `expected seen list to include the seed videoId, got ${JSON.stringify(firstFeedRequest)}`,
     );
   }
+  if (firstFeedRequest.positiveImageIds.length !== 0 || firstFeedRequest.softNegativeImageIds.length !== 0) {
+    throw new Error(
+      `expected initial Feed request to have no vector feedback ids, got ${JSON.stringify(firstFeedRequest)}`,
+    );
+  }
 
   // ArrowDown advances. Read the data-feed-current-index attr before/after.
   const overlayHandle = await page.locator("[data-feed-overlay]").elementHandle();
@@ -547,12 +568,59 @@ try {
     (before) => {
       const overlay = document.querySelector("[data-feed-overlay]");
       const idx = Number(overlay?.getAttribute("data-feed-current-index") || 0);
-      return idx > before;
+      return idx === before + 1;
     },
     beforeIdx,
     { timeout: 5000 },
   );
+  const firstCandidateSrc = await page.locator('video[data-feed-current="true"]').evaluate((video) => {
+    video.pause();
+    return video.getAttribute("src") || "";
+  });
+  if (!firstCandidateSrc.includes("/media/videos/clip-1")) {
+    throw new Error(`expected first Feed advance to land on clip-1, got ${JSON.stringify(firstCandidateSrc)}`);
+  }
 
+  // Synthetic playback events classify the current item as positive and should
+  // affect only a later lookahead request, not the current/next queue entries.
+  await page.evaluate(() => {
+    const video = document.querySelector('video[data-feed-current="true"]');
+    if (!video) throw new Error("current Feed video missing");
+    Object.defineProperty(video, "duration", { value: 1, configurable: true });
+    video.currentTime = 0.9;
+    video.dispatchEvent(new Event("play"));
+  });
+  await page.keyboard.press("ArrowDown");
+  await page.waitForFunction(
+    () => Number(document.querySelector("[data-feed-overlay]")?.getAttribute("data-feed-current-index") || 0) === 2,
+    {},
+    { timeout: 5000 },
+  );
+  const rerankedBufferedSrc = await page.locator('video[data-feed-current="true"]').getAttribute("src");
+  if (!rerankedBufferedSrc?.includes("/media/videos/clip-4")) {
+    throw new Error(`expected buffered future queue to promote clip-4 after feedback, got ${JSON.stringify(rerankedBufferedSrc)}`);
+  }
+  const vectorFeedbackDeadline = Date.now() + 5000;
+  while (similarVideoRequests.length <= baselineSimilarVideos + 1 && Date.now() < vectorFeedbackDeadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const vectorFeedbackRequest = similarVideoRequests.slice(baselineSimilarVideos + 1).find((request) => request.positiveImageIds.length > 0);
+  if (!vectorFeedbackRequest) {
+    throw new Error(
+      `expected a later Feed request to include positive_image_ids, got ${JSON.stringify(similarVideoRequests.slice(baselineSimilarVideos))}`,
+    );
+  }
+  const expectedPositiveImageId = sampleVideos.find((video) => video.video_id !== firstFeedRequest.videoId)?.image_id;
+  if (
+    !expectedPositiveImageId ||
+    vectorFeedbackRequest.positiveImageIds.length !== 1 ||
+    !vectorFeedbackRequest.positiveImageIds.includes(expectedPositiveImageId) ||
+    vectorFeedbackRequest.softNegativeImageIds.includes(expectedPositiveImageId)
+  ) {
+    throw new Error(
+      `expected positive vector feedback for image ${expectedPositiveImageId} without cross-list overlap, got ${JSON.stringify(vectorFeedbackRequest)}`,
+    );
+  }
   await page.keyboard.press("Escape");
   await page.locator("[data-feed-overlay]").waitFor({ state: "hidden", timeout: 5000 });
 

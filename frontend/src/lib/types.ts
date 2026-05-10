@@ -117,6 +117,8 @@ export interface Pin {
   tags: string[];
   /** 0-1 similarity (1 - distance) when this pin came from a search result. */
   matchScore?: number;
+  /** Raw backend vector distance; lower is closer. Used for Feed reranking. */
+  distance?: number;
   /** Match offset within a video, when applicable. */
   matchTimestampMs?: number;
   /** Duration in ms for video pins. */

@@ -76,7 +76,7 @@ This is a lightweight working checklist for system issues and cleanup found duri
 - [ ] P1 Align Atelier tag all-mode with backend parameters: `docs/issues/058-align-atelier-tag-all-mode-with-backend.md`
 - [ ] P2 Handle Feed fetch errors without ending the session: `docs/issues/059-handle-feed-fetch-errors-without-exhaustion.md`
 - [ ] P2 Abort Feed lookahead requests on close: `docs/issues/060-abort-feed-lookahead-requests-on-close.md`
-- [ ] P2 Port Feed buffer reranking or document the divergence: `docs/issues/061-port-feed-buffer-reranking-or-document-divergence.md`
+- [x] P2 Port Feed buffer reranking or document the divergence: `docs/issues/061-port-feed-buffer-reranking-or-document-divergence.md`
 - [ ] P2 Surface Rail Feed empty and unplayable states: `docs/issues/062-surface-rail-feed-empty-unplayable-states.md`
 - [ ] P3 Filter Upload drop files client-side: `docs/issues/063-filter-upload-drop-files-client-side.md`
 - [ ] P3 Ignore Feed touch gestures from chrome controls: `docs/issues/064-ignore-feed-touch-gestures-from-chrome.md`

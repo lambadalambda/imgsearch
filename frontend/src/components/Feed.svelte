@@ -11,10 +11,12 @@
     FEED_BATCH_SIZE,
     FEED_FETCH_AHEAD_THRESHOLD,
     FEED_INITIAL_LIMIT,
+    FEED_VECTOR_FEEDBACK_MAX_IDS,
     applyFeedFeedback,
     classifyFeedFeedback,
     decayFeedTagScores,
     feedPreferenceTags,
+    type FeedClass,
     type FeedMetrics,
   } from "../lib/feed";
   import Icon from "./Icon.svelte";
@@ -38,7 +40,8 @@
    *     legacy uses the original seed so the session has a stable centre).
    *   - Per-tag preference scores decay 0.9 each fetch and clamp to the
    *     legacy bounds; prefer/avoid CSV is sent on every batch.
-   *   - All state is wiped on close. Feedback never leaves the tab.
+   *   - Vector feedback keeps only recent frame IDs in memory and sends them
+   *     with later batch requests; all local feedback state is wiped on close.
    */
 
   // Tunables ----------------------------------------------------------------
@@ -70,6 +73,8 @@
   const seenVideoIDs = new Set<number>();
   const rejectedVideoIDs = new Set<number>(); // unplayable / failed candidates
   const tagScores = new Map<string, number>();
+  let positiveFeedbackImageIDs: number[] = [];
+  let softNegativeFeedbackImageIDs: number[] = [];
 
   let candidateRequestToken = 0;
   let lookaheadPromise: Promise<void> | null = null;
@@ -124,6 +129,8 @@
     seenVideoIDs.clear();
     rejectedVideoIDs.clear();
     tagScores.clear();
+    positiveFeedbackImageIDs = [];
+    softNegativeFeedbackImageIDs = [];
     if (seed.videoId) seenVideoIDs.add(seed.videoId);
     feedbackRecordedIndex = -1;
     progress = 0;
@@ -150,6 +157,8 @@
     seenVideoIDs.clear();
     rejectedVideoIDs.clear();
     tagScores.clear();
+    positiveFeedbackImageIDs = [];
+    softNegativeFeedbackImageIDs = [];
     feedbackRecordedIndex = -1;
     accumulatedWatchMs = 0;
     progress = 0;
@@ -251,18 +260,18 @@
   async function advance(action: "next" | "ended"): Promise<void> {
     if (loading) return;
     if (currentIndex >= queue.length - 1) {
+      recordFeedbackForCurrent(action);
       // We're at the tail — try to refill before bailing so a single tap
       // on the Next button feels responsive even when the lookahead has
-      // not started yet.
+      // not started yet. Feedback is recorded first so the refill can use
+      // the item the user just watched or skipped.
       await ensureLookahead();
       if (currentIndex >= queue.length - 1) {
-        if (exhausted) {
-          recordFeedbackForCurrent(action);
-        }
         return;
       }
+    } else {
+      recordFeedbackForCurrent(action);
     }
-    recordFeedbackForCurrent(action);
     currentIndex += 1;
     syncAssignments();
     progress = 0;
@@ -309,7 +318,51 @@
     };
     const { klass } = classifyFeedFeedback(metrics);
     applyFeedFeedback(tagScores, item.tags ?? [], klass);
+    recordVectorFeedback(item, klass);
+    if (klass !== "neutral") rerankFutureItems(currentIndex);
     feedbackRecordedIndex = currentIndex;
+  }
+
+  function rerankFutureItems(sourceIndex: number): void {
+    if (tagScores.size === 0) return;
+    const start = sourceIndex + 2;
+    if (start >= queue.length) return;
+    const ranked = queue.slice(start)
+      .map((item, order) => ({ item, order, score: feedItemPreferenceRankScore(item, order) }))
+      .sort((left, right) => (right.score - left.score) || (left.order - right.order));
+    queue = [...queue.slice(0, start), ...ranked.map((entry) => entry.item)];
+  }
+
+  function feedItemPreferenceRankScore(item: Pin, order: number): number {
+    const visualScore = Number.isFinite(item.distance) ? -item.distance! : -order;
+    const affinityNudge = Math.max(-0.08, Math.min(0.08, feedItemAffinity(item) * 0.02));
+    return visualScore + affinityNudge;
+  }
+
+  function feedItemAffinity(item: Pin): number {
+    return (item.tags ?? []).reduce((score, tag) => {
+      return score + (tagScores.get(tag.toLowerCase()) ?? 0);
+    }, 0);
+  }
+
+  function recordVectorFeedback(item: Pin, klass: FeedClass): void {
+    const imageID = item.imageId;
+    if (!imageID || imageID <= 0) return;
+    if (klass === "positive") {
+      positiveFeedbackImageIDs = appendRecentFeedbackID(positiveFeedbackImageIDs, imageID);
+      softNegativeFeedbackImageIDs = softNegativeFeedbackImageIDs.filter((id) => id !== imageID);
+      return;
+    }
+    if (klass === "soft-negative") {
+      softNegativeFeedbackImageIDs = appendRecentFeedbackID(softNegativeFeedbackImageIDs, imageID);
+      positiveFeedbackImageIDs = positiveFeedbackImageIDs.filter((id) => id !== imageID);
+    }
+  }
+
+  function appendRecentFeedbackID(ids: number[], imageID: number): number[] {
+    const next = ids.filter((id) => id !== imageID);
+    next.push(imageID);
+    return next.slice(-FEED_VECTOR_FEEDBACK_MAX_IDS);
   }
 
   function accumulateSinceWatch(): number {
@@ -353,6 +406,8 @@
       seenIds,
       preferTags: prefer,
       avoidTags: avoid,
+      positiveImageIds: positiveFeedbackImageIDs,
+      softNegativeImageIds: softNegativeFeedbackImageIDs,
       includeNSFW: $includeNSFW,
     };
     const token = ++candidateRequestToken;

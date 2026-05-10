@@ -151,5 +151,12 @@ mise run build:frontend            # rebuilds dist
 - **Feed feedback is session-local**: tag preference scores live in a
   `Map` inside the component, decay 0.9 per fetch, clamp to the same
   `[-3, +5]` bounds as the legacy classifier, and disappear with the
-  tab. Closing the overlay wipes everything. The only thing that ever
-  reaches the server is the `prefer_tags` / `avoid_tags` CSV.
+  tab. Closing the overlay wipes everything. Batch requests send derived
+  `prefer_tags` / `avoid_tags` CSVs and recent positive / soft-negative
+  frame IDs so the backend can build a temporary adapted query vector;
+  stored embeddings and user profiles are never mutated. Vector feedback uses
+  a capped recent-ID window rather than the tag-score decay curve; the backend
+  keeps its influence bounded with a normalized delta cap. Both shells also
+  rerank already-buffered future items after tag feedback starting at
+  `currentIndex + 2`, so the current and immediately preloaded next item stay
+  stable.

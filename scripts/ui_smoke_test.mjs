@@ -592,6 +592,12 @@ async function assertAdaptiveVideoFeed(page) {
     throw new Error(`watch-through classified incorrectly: ${JSON.stringify(completed)}`);
   }
 
+  await feed.locator('#video-feed-player').evaluate((video) => {
+    Object.defineProperty(video, 'duration', { value: 1, configurable: true });
+    video.currentTime = 0.9;
+    video.dispatchEvent(new Event('play'));
+  });
+
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await feed.getByRole('button', { name: 'Next video' }).focus();
   await page.keyboard.press('Space');
@@ -619,6 +625,9 @@ async function assertAdaptiveVideoFeed(page) {
   }
   if (!secondRequest.preferTags.includes('seed-liked')) {
     throw new Error(`lazy feed request did not include positive tag preference: ${JSON.stringify(secondRequest)}`);
+  }
+  if (secondRequest.positiveImageIds.length !== 1 || !secondRequest.positiveImageIds.includes(102) || secondRequest.softNegativeImageIds.length !== 0) {
+    throw new Error(`lazy feed request did not include exact positive feedback image id: ${JSON.stringify(secondRequest)}`);
   }
   const nextButton = feed.getByRole('button', { name: 'Next video' });
   const advanceTo = async (index) => {
@@ -757,6 +766,14 @@ const server = createServer(async (req, res) => {
         seen,
         preferTags: (url.searchParams.get('prefer_tags') || '').split(',').filter(Boolean),
         avoidTags: (url.searchParams.get('avoid_tags') || '').split(',').filter(Boolean),
+        positiveImageIds: (url.searchParams.get('positive_image_ids') || '')
+          .split(',')
+          .map((part) => Number(part.trim()))
+          .filter((id) => Number.isFinite(id) && id > 0),
+        softNegativeImageIds: (url.searchParams.get('soft_negative_image_ids') || '')
+          .split(',')
+          .map((part) => Number(part.trim()))
+          .filter((id) => Number.isFinite(id) && id > 0),
       });
       const requestNumber = similarVideoRequests.length;
       const seenSet = new Set(seen);

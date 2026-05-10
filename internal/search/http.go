@@ -78,6 +78,12 @@ const (
 	similarVideoSearchLimitMultiplier = 64
 	similarVideoSearchSeenAllowance   = 8
 	similarVideoSearchMaxWindow       = 4000
+	similarVideoFeedbackMaxImageIDs   = 8
+
+	similarVideoFeedbackPositiveWeight     = 0.35
+	similarVideoFeedbackSoftNegativeWeight = 0.15
+	similarVideoFeedbackMaxDeltaNorm       = 0.35
+	similarVideoFeedbackMinNorm            = 1e-12
 )
 
 var errNegativePromptNearZero = errors.New("negative prompt too similar to query")
@@ -373,12 +379,15 @@ func (h *Handler) handleSimilarVideoSearch(w http.ResponseWriter, r *http.Reques
 	seenVideoIDs[videoID] = struct{}{}
 	preferTags := parseCommaSeparatedTags(r.URL.Query().Get("prefer_tags"))
 	avoidTags := parseCommaSeparatedTags(r.URL.Query().Get("avoid_tags"))
+	positiveImageIDs := parseSimilarVideoFeedbackImageIDs(r.URL.Query().Get("positive_image_ids"))
+	softNegativeImageIDs := parseSimilarVideoFeedbackImageIDs(r.URL.Query().Get("soft_negative_image_ids"))
+	softNegativeImageIDs = removeFeedbackImageIDOverlap(softNegativeImageIDs, positiveImageIDs)
 	limit := httputil.ParseLimitQuery(r, 40)
 	searchLimit := similarVideoSearchWindow(limit, len(seenVideoIDs))
 
 	indexDebug := vectorindex.SearchDebug{}
 	searchCtx := vectorindex.WithSearchDebug(r.Context(), &indexDebug)
-	hits, err := h.Index.SearchByImageID(searchCtx, h.ModelID, seedImageID, searchLimit)
+	hits, err := h.similarVideoSearchHits(searchCtx, seedImageID, seenVideoIDs, positiveImageIDs, softNegativeImageIDs, searchLimit)
 	if err != nil {
 		if errors.Is(err, vectorindex.ErrNotFound) {
 			httputil.WriteJSONError(w, http.StatusNotFound, "seed video frame not indexed")
@@ -428,6 +437,203 @@ func similarVideoSearchWindow(limit int, seenVideoCount int) int {
 		return similarVideoSearchMaxWindow
 	}
 	return searchLimit
+}
+
+func (h *Handler) similarVideoSearchHits(ctx context.Context, seedImageID int64, seenVideoIDs map[int64]struct{}, positiveImageIDs []int64, softNegativeImageIDs []int64, limit int) ([]vectorindex.SearchHit, error) {
+	if len(positiveImageIDs) == 0 && len(softNegativeImageIDs) == 0 {
+		return h.Index.SearchByImageID(ctx, h.ModelID, seedImageID, limit)
+	}
+
+	seedVec, err := h.loadImageEmbeddingVector(ctx, seedImageID)
+	if err != nil {
+		return nil, err
+	}
+	positiveVectors, err := h.similarVideoFeedbackVectors(ctx, positiveImageIDs, seenVideoIDs, seedImageID, len(seedVec))
+	if err != nil {
+		return nil, err
+	}
+	softNegativeVectors, err := h.similarVideoFeedbackVectors(ctx, softNegativeImageIDs, seenVideoIDs, seedImageID, len(seedVec))
+	if err != nil {
+		return nil, err
+	}
+	query, usedFeedback, err := buildSimilarVideoFeedbackQuery(seedVec, positiveVectors, softNegativeVectors)
+	if err != nil || !usedFeedback {
+		return h.Index.SearchByImageID(ctx, h.ModelID, seedImageID, limit)
+	}
+
+	hits, err := h.Index.Search(ctx, h.ModelID, query, limit+1)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]vectorindex.SearchHit, 0, len(hits))
+	for _, hit := range hits {
+		if hit.ImageID == seedImageID {
+			continue
+		}
+		filtered = append(filtered, hit)
+		if limit > 0 && len(filtered) >= limit {
+			break
+		}
+	}
+	return filtered, nil
+}
+
+func (h *Handler) loadImageEmbeddingVector(ctx context.Context, imageID int64) ([]float32, error) {
+	var dim int
+	var blob []byte
+	if err := h.DB.QueryRowContext(ctx, `
+SELECT dim, vector_blob
+FROM image_embeddings
+WHERE image_id = ? AND model_id = ?
+LIMIT 1
+`, imageID, h.ModelID).Scan(&dim, &blob); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, vectorindex.ErrNotFound
+		}
+		return nil, fmt.Errorf("load image embedding vector: %w", err)
+	}
+	vec := vectorindex.BlobToFloats(blob)
+	if len(vec) == 0 {
+		return nil, fmt.Errorf("decode image embedding vector for image %d", imageID)
+	}
+	if dim != len(vec) {
+		return nil, fmt.Errorf("image embedding dimension mismatch for image %d: dim=%d len=%d", imageID, dim, len(vec))
+	}
+	return vec, nil
+}
+
+func (h *Handler) similarVideoFeedbackVectors(ctx context.Context, imageIDs []int64, seenVideoIDs map[int64]struct{}, seedImageID int64, expectedDim int) ([][]float32, error) {
+	if len(imageIDs) == 0 {
+		return nil, nil
+	}
+	vectors := make([][]float32, 0, len(imageIDs))
+	for _, imageID := range imageIDs {
+		if imageID <= 0 || imageID == seedImageID {
+			continue
+		}
+		var videoID int64
+		var dim int
+		var blob []byte
+		if err := h.DB.QueryRowContext(ctx, `
+SELECT vf.video_id, ie.dim, ie.vector_blob
+FROM video_frames vf
+JOIN image_embeddings ie ON ie.image_id = vf.image_id
+  AND ie.model_id = ?
+WHERE vf.image_id = ?
+LIMIT 1
+`, h.ModelID, imageID).Scan(&videoID, &dim, &blob); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return nil, fmt.Errorf("load feedback image embedding vector: %w", err)
+		}
+		if _, seen := seenVideoIDs[videoID]; !seen {
+			continue
+		}
+		vec := vectorindex.BlobToFloats(blob)
+		if len(vec) == 0 || dim != len(vec) || len(vec) != expectedDim {
+			continue
+		}
+		vectors = append(vectors, vec)
+	}
+	return vectors, nil
+}
+
+func buildSimilarVideoFeedbackQuery(seed []float32, positiveVectors [][]float32, softNegativeVectors [][]float32) ([]float32, bool, error) {
+	seedUnit, ok := normalizedFloat32Vector(seed)
+	if !ok {
+		return nil, false, fmt.Errorf("seed embedding vector has near-zero norm")
+	}
+	delta := make([]float64, len(seedUnit))
+	usedFeedback := false
+	if addMeanVector(delta, positiveVectors, len(seedUnit), similarVideoFeedbackPositiveWeight) {
+		usedFeedback = true
+	}
+	if addMeanVector(delta, softNegativeVectors, len(seedUnit), -similarVideoFeedbackSoftNegativeWeight) {
+		usedFeedback = true
+	}
+	if !usedFeedback {
+		return seedUnit, false, nil
+	}
+
+	deltaNorm := vectorNorm64(delta)
+	if deltaNorm > similarVideoFeedbackMaxDeltaNorm {
+		scale := similarVideoFeedbackMaxDeltaNorm / deltaNorm
+		for i := range delta {
+			delta[i] *= scale
+		}
+	}
+
+	query := make([]float32, len(seedUnit))
+	var squareNorm float64
+	for i := range seedUnit {
+		v := float64(seedUnit[i]) + delta[i]
+		query[i] = float32(v)
+		squareNorm += v * v
+	}
+	if squareNorm < similarVideoFeedbackMinNorm {
+		return seedUnit, true, nil
+	}
+	invNorm := float32(1 / math.Sqrt(squareNorm))
+	for i := range query {
+		query[i] *= invNorm
+	}
+	return query, true, nil
+}
+
+func addMeanVector(dst []float64, vectors [][]float32, expectedDim int, weight float64) bool {
+	if len(vectors) == 0 || expectedDim <= 0 || weight == 0 {
+		return false
+	}
+	mean := make([]float64, expectedDim)
+	count := 0
+	for _, vec := range vectors {
+		if len(vec) != expectedDim {
+			continue
+		}
+		unit, ok := normalizedFloat32Vector(vec)
+		if !ok {
+			continue
+		}
+		for i, v := range unit {
+			mean[i] += float64(v)
+		}
+		count++
+	}
+	if count == 0 {
+		return false
+	}
+	for i := range mean {
+		dst[i] += weight * mean[i] / float64(count)
+	}
+	return true
+}
+
+func normalizedFloat32Vector(vec []float32) ([]float32, bool) {
+	if len(vec) == 0 {
+		return nil, false
+	}
+	var squareNorm float64
+	for _, v := range vec {
+		squareNorm += float64(v) * float64(v)
+	}
+	if squareNorm < similarVideoFeedbackMinNorm {
+		return nil, false
+	}
+	unit := make([]float32, len(vec))
+	invNorm := float32(1 / math.Sqrt(squareNorm))
+	for i, v := range vec {
+		unit[i] = v * invNorm
+	}
+	return unit, true
+}
+
+func vectorNorm64(vec []float64) float64 {
+	var squareNorm float64
+	for _, v := range vec {
+		squareNorm += v * v
+	}
+	return math.Sqrt(squareNorm)
 }
 
 func (h *Handler) similarVideoSeedImageID(ctx context.Context, videoID int64, seedImageIDRaw string) (int64, error) {
@@ -498,6 +704,48 @@ func parseSeenVideoIDs(raw string) map[int64]struct{} {
 		seen[id] = struct{}{}
 	}
 	return seen
+}
+
+func parseSimilarVideoFeedbackImageIDs(raw string) []int64 {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	ids := make([]int64, 0, len(parts))
+	seen := make(map[int64]struct{}, len(parts))
+	for _, part := range parts {
+		if len(ids) >= similarVideoFeedbackMaxImageIDs {
+			break
+		}
+		id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func removeFeedbackImageIDOverlap(ids []int64, excluded []int64) []int64 {
+	if len(ids) == 0 || len(excluded) == 0 {
+		return ids
+	}
+	excludedSet := make(map[int64]struct{}, len(excluded))
+	for _, id := range excluded {
+		excludedSet[id] = struct{}{}
+	}
+	out := ids[:0]
+	for _, id := range ids {
+		if _, ok := excludedSet[id]; ok {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
 }
 
 func parseCommaSeparatedTags(raw string) []string {

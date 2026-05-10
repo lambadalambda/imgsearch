@@ -4,8 +4,8 @@
  * Mirrors the legacy implementation in `internal/webui/static/app.js`
  * (classifyFeedFeedback / recordFeedFeedback / decayFeedTagScores /
  * feedPreferenceTags) so the Atelier port produces the same prefer/avoid
- * tag list for `/api/search/similar-videos`. None of this is ever sent to
- * the server beyond the derived tag CSVs — feedback decays with the tab.
+ * tag list for `/api/search/similar-videos`. Vector feedback separately sends
+ * recent frame IDs for session-local query adaptation; nothing is persisted.
  */
 
 /** Per-item playback metrics gathered while the item was visible. */
@@ -36,6 +36,7 @@ export const FEED_TAG_SCORE_DECAY = 0.9;
 export const FEED_TAG_SCORE_DROP = 0.05;
 export const FEED_PREFERENCE_THRESHOLD = 0.25;
 export const FEED_PREFERENCE_MAX_TAGS = 12;
+export const FEED_VECTOR_FEEDBACK_MAX_IDS = 8;
 
 /** Lazy-batching constants. */
 export const FEED_INITIAL_LIMIT = 4;
@@ -77,12 +78,13 @@ export function applyFeedFeedback(
   const weight = klass === "positive" ? 1 : klass === "soft-negative" ? -0.5 : 0;
   if (weight === 0) return scores;
   for (const tag of tags) {
+    const key = tag.toLowerCase();
     const next = clamp(
-      (scores.get(tag) ?? 0) + weight,
+      (scores.get(key) ?? 0) + weight,
       FEED_TAG_SCORE_MIN,
       FEED_TAG_SCORE_MAX,
     );
-    scores.set(tag, next);
+    scores.set(key, next);
   }
   return scores;
 }

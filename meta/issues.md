@@ -1,1 +1,2 @@
 - [ ] [Add mobile adaptive similar-video feed mode](issues/add-mobile-adaptive-similar-video-feed-mode.md)
+- [ ] [Add session-local vector feedback to Feed recommendations](issues/add-session-local-vector-feedback-to-feed-recommendations.md)

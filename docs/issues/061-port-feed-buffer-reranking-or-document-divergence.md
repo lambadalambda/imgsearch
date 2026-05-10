@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Completed.
 
 ## Summary
 
@@ -27,11 +27,18 @@ The legacy Feed reranked already-buffered future queue items after feedback. The
 
 ## Acceptance Criteria
 
-- [ ] Decide whether in-buffer reranking is required for Atelier parity.
-- [ ] If required, add a pure or component-level test for reranking `queue[currentIndex+2...]` after feedback.
-- [ ] Preserve the current and immediately preloaded next item to avoid playback instability.
-- [ ] Mirror or intentionally revise the legacy scoring formula.
-- [ ] If not required, document the deliberate divergence in `docs/frontend.md`.
+- [x] Decide whether in-buffer reranking is required for Atelier parity.
+- [x] If required, add a pure or component-level test for reranking `queue[currentIndex+2...]` after feedback.
+- [x] Preserve the current and immediately preloaded next item to avoid playback instability.
+- [x] Mirror or intentionally revise the legacy scoring formula.
+- [x] If not required, document the deliberate divergence in `docs/frontend.md`.
+
+## Resolution
+
+- Atelier now reranks already-buffered future items starting at `currentIndex + 2` after positive or soft-negative tag feedback.
+- The scoring mirrors legacy: visual score plus a clamped tag-affinity nudge.
+- Current and immediately preloaded next items remain stable.
+- Browser smoke coverage verifies a buffered future item with matching feedback tags is promoted while the current/next path remains stable.
 
 ## Related Files
 

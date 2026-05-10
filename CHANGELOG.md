@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(feed): adapt later similar-video Feed batches with bounded session-local vector feedback from watched and quick-skipped frames while keeping stored embeddings immutable.
+- feat(feed): rerank Atelier's already-buffered future Feed items after session feedback while preserving the current and immediately preloaded next video.
 - fix(frontend): avoid the browser-native search cancel control so Atelier shows only one clear button in the search bar.
 - fix(release): build rolling-release llama.cpp libraries with portable CPU flags instead of runner-native instruction sets that can SIGILL on other x86_64 machines.
 - fix(release): build the Atelier frontend during release packaging so the default `/` UI is embedded like the legacy shell.

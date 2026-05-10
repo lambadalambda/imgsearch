@@ -158,6 +158,8 @@ const feedState = {
   events: [],
   seenVideoIDs: new Set(),
   tagScores: new Map(),
+  positiveFeedbackImageIDs: [],
+  softNegativeFeedbackImageIDs: [],
   touchStartX: 0,
   touchStartY: 0,
   touchCurrentY: 0,
@@ -183,6 +185,7 @@ const feedTagScoreMin = -3;
 const feedTagScoreMax = 5;
 const feedTagScoreDecay = 0.9;
 const feedPreferenceThreshold = 0.25;
+const feedVectorFeedbackMaxImageIDs = 8;
 
 function localPreference(key) {
   try {
@@ -1686,6 +1689,28 @@ function feedPreferenceTags(direction) {
     .map(([tag]) => tag);
 }
 
+function appendRecentFeedFeedbackImageID(ids, imageID) {
+  const next = (Array.isArray(ids) ? ids : []).filter((id) => id !== imageID);
+  next.push(imageID);
+  return next.slice(-feedVectorFeedbackMaxImageIDs);
+}
+
+function recordFeedVectorFeedback(item, signal) {
+  const imageID = feedImageID(item);
+  if (imageID <= 0) {
+    return;
+  }
+  if (signal === 'positive') {
+    feedState.positiveFeedbackImageIDs = appendRecentFeedFeedbackImageID(feedState.positiveFeedbackImageIDs, imageID);
+    feedState.softNegativeFeedbackImageIDs = (feedState.softNegativeFeedbackImageIDs || []).filter((id) => id !== imageID);
+    return;
+  }
+  if (signal === 'soft-negative') {
+    feedState.softNegativeFeedbackImageIDs = appendRecentFeedFeedbackImageID(feedState.softNegativeFeedbackImageIDs, imageID);
+    feedState.positiveFeedbackImageIDs = (feedState.positiveFeedbackImageIDs || []).filter((id) => id !== imageID);
+  }
+}
+
 function feedExcludedVideoIDs() {
   const excluded = new Set(feedState.seenVideoIDs || []);
   for (const id of feedState.rejectedCandidateIDs || []) {
@@ -1737,6 +1762,7 @@ function recordFeedFeedback(action) {
   });
   const weight = result.signal === 'positive' ? 1 : result.signal === 'soft-negative' ? -0.5 : 0;
   if (weight !== 0) {
+    recordFeedVectorFeedback(current, result.signal);
     for (const tag of current.tags || []) {
       const key = String(tag).toLowerCase();
       feedState.tagScores.set(key, clampFeedTagScore((feedState.tagScores.get(key) || 0) + weight));
@@ -2037,6 +2063,8 @@ function closeVideoFeed() {
   feedState.events = [];
   feedState.seenVideoIDs = new Set();
   feedState.tagScores = new Map();
+  feedState.positiveFeedbackImageIDs = [];
+  feedState.softNegativeFeedbackImageIDs = [];
   feedState.touchStartX = 0;
   feedState.touchStartY = 0;
   feedState.touchCurrentY = 0;
@@ -2099,6 +2127,12 @@ async function fetchSimilarVideoCandidates(seedItem, limit) {
   const avoidTags = feedPreferenceTags('avoid');
   if (avoidTags.length > 0) {
     params.set('avoid_tags', avoidTags.join(','));
+  }
+  if (Array.isArray(feedState.positiveFeedbackImageIDs) && feedState.positiveFeedbackImageIDs.length > 0) {
+    params.set('positive_image_ids', feedState.positiveFeedbackImageIDs.join(','));
+  }
+  if (Array.isArray(feedState.softNegativeFeedbackImageIDs) && feedState.softNegativeFeedbackImageIDs.length > 0) {
+    params.set('soft_negative_image_ids', feedState.softNegativeFeedbackImageIDs.join(','));
   }
   const response = await fetch(`/api/search/similar-videos?${params.toString()}`);
   const rawBody = await response.text();
@@ -2202,6 +2236,8 @@ async function startVideoFeed(seedItem) {
   feedState.events = [];
   feedState.seenVideoIDs = new Set([feedVideoID(seed)]);
   feedState.tagScores = new Map();
+  feedState.positiveFeedbackImageIDs = [];
+  feedState.softNegativeFeedbackImageIDs = [];
   feedState.loadingMore = false;
   feedState.exhausted = false;
   feedState.feedbackRecordedIndex = -1;

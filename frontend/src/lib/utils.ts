@@ -107,6 +107,7 @@ export function pinFromSearchResult(record: SearchResult): Pin {
     filename: record.original_name,
     tags,
     matchScore: score,
+    distance: record.distance,
     matchTimestampMs: record.match_timestamp_ms,
     durationMs: record.duration_ms,
     isAnchor: record.is_anchor,

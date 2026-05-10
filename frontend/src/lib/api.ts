@@ -128,6 +128,8 @@ export interface SimilarVideoOptions {
   seenIds?: number[];
   preferTags?: string[];
   avoidTags?: string[];
+  positiveImageIds?: number[];
+  softNegativeImageIds?: number[];
   includeNSFW?: boolean;
   signal?: AbortSignal;
 }
@@ -149,6 +151,12 @@ export async function searchSimilarVideos(
   }
   if (opts.avoidTags && opts.avoidTags.length > 0) {
     params.set("avoid_tags", opts.avoidTags.join(","));
+  }
+  if (opts.positiveImageIds && opts.positiveImageIds.length > 0) {
+    params.set("positive_image_ids", opts.positiveImageIds.join(","));
+  }
+  if (opts.softNegativeImageIds && opts.softNegativeImageIds.length > 0) {
+    params.set("soft_negative_image_ids", opts.softNegativeImageIds.join(","));
   }
   if (opts.includeNSFW) {
     params.set("include_nsfw", "1");
