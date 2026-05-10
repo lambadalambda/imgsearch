@@ -137,7 +137,7 @@
     data-pin-anchor={pin.isAnchor ? "true" : undefined}
     data-pin-nsfw={nsfwFlagged ? "true" : undefined}
     class="relative bg-surface border border-line rounded-card overflow-hidden shadow-card cursor-pointer transition-[transform,box-shadow] duration-200 ease-soft hover:-translate-y-0.5 hover:shadow-elev group {pin.isAnchor
-      ? 'border-accent/60 [box-shadow:0_0_0_1px_var(--color-accent-soft),var(--shadow-card)]'
+      ? 'outline outline-2 outline-accent/80 outline-offset-2 [box-shadow:0_0_0_1px_var(--color-accent-soft),var(--shadow-card)]'
       : ''}"
     onkeydown={handleMenuKey}
   >
@@ -177,9 +177,10 @@
       {/if}
       {#if pin.isAnchor}
         <span
+          data-pin-anchor-label
           class="absolute top-2 left-2 text-[10.5px] font-semibold leading-none text-accent-strong bg-accent-soft px-[9px] py-1 rounded-full uppercase tracking-[0.04em]"
         >
-          Anchor
+          Search image
         </span>
       {/if}
     </button>

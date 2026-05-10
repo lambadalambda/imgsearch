@@ -46,6 +46,7 @@ type SearchResult struct {
 	StoragePath      string   `json:"storage_path"`
 	Description      string   `json:"description,omitempty"`
 	Tags             []string `json:"tags,omitempty"`
+	IsAnchor         bool     `json:"is_anchor,omitempty"`
 }
 
 type SearchResponse struct {
@@ -243,8 +244,13 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 	includeNSFW := httputil.ParseIncludeNSFWQuery(r)
 
 	limit := httputil.ParseLimitQuery(r, 20)
+	anchor, err := h.similarSearchAnchor(r.Context(), imageID, includeNSFW)
+	if err != nil {
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "result enrich failed")
+		return
+	}
 	searchLimit := limit
-	if !includeNSFW {
+	if !includeNSFW || (anchor != nil && anchor.MediaType == "video") {
 		searchLimit = limit * 8
 		if searchLimit > 200 {
 			searchLimit = 200
@@ -267,11 +273,59 @@ func (h *Handler) handleSimilarSearch(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "result enrich failed")
 		return
 	}
-	if len(results) > limit {
-		results = results[:limit]
+	results = filterSimilarSearchAnchor(results, imageID, anchor)
+	candidateLimit := limit
+	if anchor != nil {
+		candidateLimit--
+	}
+	if candidateLimit < 0 {
+		candidateLimit = 0
+	}
+	if len(results) > candidateLimit {
+		results = results[:candidateLimit]
+	}
+	if anchor != nil {
+		results = append([]SearchResult{*anchor}, results...)
 	}
 
 	httputil.WriteJSON(w, http.StatusOK, SearchResponse{Results: results, Total: int64(len(results)), Debug: buildSearchDebugResponse(start, indexDebug)})
+}
+
+func (h *Handler) similarSearchAnchor(ctx context.Context, imageID int64, includeNSFW bool) (*SearchResult, error) {
+	anchorResults, err := h.enrich(ctx, []vectorindex.SearchHit{{ImageID: imageID, ModelID: h.ModelID, Distance: 0}}, includeNSFW)
+	if err != nil {
+		return nil, err
+	}
+	if len(anchorResults) == 0 {
+		return nil, nil
+	}
+	anchor := anchorResults[0]
+	anchor.Distance = 0
+	anchor.IsAnchor = true
+	return &anchor, nil
+}
+
+func filterSimilarSearchAnchor(results []SearchResult, imageID int64, anchor *SearchResult) []SearchResult {
+	filtered := results[:0]
+	for _, result := range results {
+		result.IsAnchor = false
+		if anchor != nil {
+			if sameSearchResultUnit(result, *anchor) {
+				continue
+			}
+		} else if result.ImageID == imageID {
+			continue
+		}
+		filtered = append(filtered, result)
+	}
+	return filtered
+}
+
+func sameSearchResultUnit(left SearchResult, right SearchResult) bool {
+	if left.MediaType == "video" || right.MediaType == "video" {
+		return left.MediaType == "video" && right.MediaType == "video" && left.VideoID > 0 && left.VideoID == right.VideoID
+	}
+	return left.ImageID == right.ImageID
 }
 
 func (h *Handler) handleSimilarVideoSearch(w http.ResponseWriter, r *http.Request) {

@@ -544,11 +544,106 @@ func TestSimilarSearchReturnsResults(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if len(resp.Results) != 1 || resp.Results[0].ImageID != 2 {
+	if len(resp.Results) != 2 {
 		t.Fatalf("unexpected results: %+v", resp.Results)
 	}
-	if resp.Results[0].Width != 100 || resp.Results[0].Height != 100 {
-		t.Fatalf("expected image dimensions on similar result, got %+v", resp.Results[0])
+	if resp.Results[0].ImageID != 1 || !resp.Results[0].IsAnchor {
+		t.Fatalf("expected search anchor first, got %+v", resp.Results)
+	}
+	if resp.Results[0].Distance != 0 {
+		t.Fatalf("expected anchor distance=0, got %+v", resp.Results[0])
+	}
+	if resp.Results[1].ImageID != 2 || resp.Results[1].IsAnchor {
+		t.Fatalf("expected candidate second, got %+v", resp.Results)
+	}
+	if resp.Results[1].Width != 100 || resp.Results[1].Height != 100 {
+		t.Fatalf("expected image dimensions on similar result, got %+v", resp.Results[1])
+	}
+}
+
+func TestSimilarSearchHonorsLimitWithAnchor(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	h := NewHandler(&Handler{
+		DB:      dbConn,
+		ModelID: 1,
+		DataDir: "/tmp",
+		Index: &fakeIndex{similarHits: []vectorindex.SearchHit{
+			{ImageID: 2, ModelID: 1, Distance: 0.1},
+		}},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar?image_id=1&limit=1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Results) != 1 || resp.Results[0].ImageID != 1 || !resp.Results[0].IsAnchor {
+		t.Fatalf("expected limit=1 to return only the anchor, got %+v", resp.Results)
+	}
+}
+
+func TestSimilarSearchVideoAnchorFiltersSameVideoFramesAndBackfills(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES
+  (10, 'seed-frame', 'seed-frame.jpg', 'images/seed-frame', 'image/jpeg', 640, 360),
+  (11, 'same-video-frame-a', 'same-video-frame-a.jpg', 'images/same-video-frame-a', 'image/jpeg', 640, 360),
+  (12, 'same-video-frame-b', 'same-video-frame-b.jpg', 'images/same-video-frame-b', 'image/jpeg', 640, 360);
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (7, 'vid', 'clip.mp4', 'videos/vid', 'video/mp4', 12000, 1280, 720, 3);
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES
+  (7, 10, 0, 1000),
+  (7, 11, 1, 5000),
+  (7, 12, 2, 9000);
+`); err != nil {
+		t.Fatalf("seed video frames: %v", err)
+	}
+	idx := &fakeIndex{similarHits: []vectorindex.SearchHit{
+		{ImageID: 11, ModelID: 1, Distance: 0.01},
+		{ImageID: 12, ModelID: 1, Distance: 0.02},
+		{ImageID: 2, ModelID: 1, Distance: 0.30},
+	}}
+	h := NewHandler(&Handler{
+		DB:      dbConn,
+		ModelID: 1,
+		DataDir: "/tmp",
+		Index:   idx,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/search/similar?image_id=10&limit=2&include_nsfw=1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(idx.similarLimits) != 1 || idx.similarLimits[0] <= 2 {
+		t.Fatalf("expected video anchor search to overfetch, got limits %v", idx.similarLimits)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("expected anchor plus one backfilled candidate, got %+v", resp.Results)
+	}
+	if resp.Results[0].MediaType != "video" || resp.Results[0].VideoID != 7 || !resp.Results[0].IsAnchor {
+		t.Fatalf("expected video anchor first, got %+v", resp.Results)
+	}
+	if resp.Results[1].ImageID != 2 || resp.Results[1].MediaType != "image" || resp.Results[1].IsAnchor {
+		t.Fatalf("expected non-anchor image candidate after filtering same-video frames, got %+v", resp.Results)
 	}
 }
 

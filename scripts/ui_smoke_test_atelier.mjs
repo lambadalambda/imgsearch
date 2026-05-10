@@ -530,6 +530,14 @@ try {
   await firstPin.locator('[data-pin-action="similar"]').click();
   await page.waitForFunction(() => /\?similar=/.test(window.location.search), {}, { timeout: 5000 });
   await page.locator("[data-pin-anchor]").waitFor({ state: "visible", timeout: 5000 });
+  const similarFirstIsAnchor = await page.locator("[data-pin]").first().getAttribute("data-pin-anchor");
+  if (similarFirstIsAnchor !== "true") {
+    throw new Error("expected similar search to keep the search image as the first anchored pin");
+  }
+  const anchorLabel = (await page.locator("[data-pin-anchor-label]").first().textContent() || "").trim();
+  if (anchorLabel !== "Search image") {
+    throw new Error(`expected clear similar-search anchor label, got ${JSON.stringify(anchorLabel)}`);
+  }
   const similarHeadline = (await page.locator("h1").first().textContent() || "").trim();
   if (similarHeadline !== "Similar in your library") {
     throw new Error(`expected similar headline, got ${JSON.stringify(similarHeadline)}`);
