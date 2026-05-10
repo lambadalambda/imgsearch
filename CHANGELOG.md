@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- docs(readme): add CPU-only, low-VRAM, search-only, and high-memory run profiles with concrete runtime flags.
 - fix(search): keep the seed image/video as the first Atelier similar-search result and mark it with a distinct `Search image` treatment.
 - feat(frontend): make the Atelier library request a seeded random discovery order by default, while keeping Load More pagination stable across the same shuffled sequence.
 - fix(frontend): reset Atelier pagination when the data key changes so uploads, filters, and mode changes replace from offset 0 after Load More instead of appending stale pages.

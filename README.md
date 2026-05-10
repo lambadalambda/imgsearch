@@ -88,6 +88,119 @@ Set `IMGSEARCH_ADDR=0.0.0.0:8080` only when you intentionally want remote access
 
 Full instructions are in `docs/podman-cuda-ubuntu.md`.
 
+## System Recommendations
+
+The default profile targets a reasonably capable local machine: Qwen3-VL-Embedding-8B for search, GPU offload enabled when available, and the smaller Gemma annotator enabled. If that does not fit your machine, reduce memory in this order: disable annotations, reduce GPU layers, reduce batch size, reduce image size.
+
+### Good GPU Or Unified Memory
+
+Use this when you have a modern Apple Silicon system with enough unified memory, or a CUDA GPU with comfortable VRAM headroom.
+
+```bash
+./imgsearch
+```
+
+From a source checkout, the matching developer command is:
+
+```bash
+mise run serve
+```
+
+This gives the best out-of-box experience: image/video search, background indexing, and generated descriptions/tags.
+
+### CPU-Only
+
+Use this on machines without usable GPU acceleration, or when GPU drivers are unavailable. Indexing will be much slower, but the UI and already-indexed search remain usable.
+
+```bash
+./imgsearch \
+  -enable-annotations=false \
+  -llama-native-use-gpu=false \
+  -llama-native-gpu-layers 0 \
+  -llama-native-batch-size 128 \
+  -llama-native-context-size 512 \
+  -llama-native-image-max-side 320
+```
+
+If you really want CPU annotations too, remove `-enable-annotations=false` and add:
+
+```bash
+-llama-native-annotator-use-gpu=false -llama-native-annotator-gpu-layers 0
+```
+
+Expect annotations on CPU to be slow. For most CPU-only systems, search-only indexing is the practical profile.
+
+### Low VRAM GPU
+
+Use this when the default profile starts but crashes, gets killed, or reports GPU out-of-memory errors. The exact layer count is hardware dependent; start low and increase only after the queue drains reliably.
+
+```bash
+./imgsearch \
+  -enable-annotations=false \
+  -llama-native-gpu-layers 20 \
+  -llama-native-batch-size 128 \
+  -llama-native-context-size 512 \
+  -llama-native-image-max-side 320
+```
+
+If this still fails, set `-llama-native-gpu-layers 0` or switch to the CPU-only command. If it is stable and you want more speed, try raising `-llama-native-gpu-layers` gradually.
+
+For `mise run serve`, the equivalent embedder knobs are environment variables:
+
+```bash
+LLAMA_NATIVE_GPU_LAYERS=20 \
+LLAMA_NATIVE_BATCH_SIZE=128 \
+LLAMA_NATIVE_CONTEXT_SIZE=512 \
+LLAMA_NATIVE_IMAGE_MAX_SIDE=320 \
+mise run serve
+```
+
+Use direct `./imgsearch` or `go run ./cmd/imgsearch` when you also need flags such as `-enable-annotations=false`.
+
+### Search-Only Server
+
+Use this when you mainly care about similarity/text search and want to avoid loading the annotation model entirely.
+
+```bash
+./imgsearch -enable-annotations=false
+```
+
+This still embeds images and videos for search. It skips generated descriptions/tags, which is the largest memory and latency reduction.
+
+### Large GPU And Better Annotations
+
+The default annotator variant is the smaller `e4b` profile. On larger GPUs or high-memory unified-memory systems, you can try the 26B annotator for richer descriptions:
+
+```bash
+./imgsearch -llama-native-annotator-variant 26b
+```
+
+From a source checkout:
+
+```bash
+mise run "serve:8b:annotator-26b"
+```
+
+This is the heaviest local profile. If interactive search latency matters, run the UI/API without annotations and run a worker separately when you want to backfill annotations:
+
+```bash
+./imgsearch -mode=api -enable-annotations=false
+./imgsearch -mode=worker -llama-native-annotator-variant 26b
+```
+
+Both processes must point at the same `-data-dir` if you split them.
+On a single GPU, split mode can still increase total memory if API and worker run at the same time; if memory is tight, run the worker as a batch backfill job and stop it before latency-sensitive searches.
+
+### Quick Tuning Reference
+
+| Symptom | First change to try |
+| --- | --- |
+| GPU out of memory on startup | Add `-enable-annotations=false` |
+| GPU out of memory while embedding | Lower `-llama-native-gpu-layers`, then lower `-llama-native-batch-size` |
+| System memory pressure on CPU | Add `-enable-annotations=false` and lower `-llama-native-image-max-side` |
+| Indexing is too slow but stable | Raise `-llama-native-gpu-layers` or `-llama-native-batch-size` one step at a time |
+| Descriptions/tags are not needed | Keep `-enable-annotations=false` permanently |
+
 ## Notes
 
 - The app binds to `127.0.0.1:8080` by default.
