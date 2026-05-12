@@ -654,6 +654,16 @@ function setActiveTab(name) {
   clearResultsButton.disabled = state.results.length === 0;
 }
 
+function scrollResultsToTop() {
+  if (!resultsGrid) {
+    return;
+  }
+  requestAnimationFrame(() => {
+    const target = resultsGrid.querySelector('.card') || resultsGrid;
+    target.scrollIntoView({ block: 'start' });
+  });
+}
+
 function applyNSFWPreference(nextValue) {
   state.showNSFW = Boolean(nextValue);
   if (showNSFWToggle) {
@@ -2585,6 +2595,7 @@ async function runSimilarSearch(imageID, anchorHint) {
   state.resultsProvenance = `Similar images for #${imageID}`;
   renderResults();
   setActiveTab('results');
+  scrollResultsToTop();
   setStatus(searchStatus, `Similar search returned ${state.results.length} result(s).${formatSearchDebugSuffix(payload.debug)}`, 'success');
 }
 

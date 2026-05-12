@@ -2,6 +2,7 @@ package upload
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"path/filepath"
 
@@ -88,6 +89,11 @@ func NewHandler(svc *Service) http.Handler {
 				failed++
 				if errors.Is(err, ErrUnsupportedFormat) {
 					uploads = append(uploads, UploadResponse{Filename: filename, Error: "unsupported media format"})
+					continue
+				}
+				log.Printf("upload failed filename=%q: %v", filename, err)
+				if errors.Is(err, ErrVideoProcessingFailed) {
+					uploads = append(uploads, UploadResponse{Filename: filename, Error: "video processing failed"})
 					continue
 				}
 				uploads = append(uploads, UploadResponse{Filename: filename, Error: "upload failed"})

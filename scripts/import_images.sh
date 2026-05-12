@@ -129,7 +129,7 @@ convert_with_vips() {
 convert_gif_to_mp4() {
   local src="$1"
   local dst="$2"
-  ffmpeg -y -loglevel error -i "$src" -movflags +faststart -pix_fmt yuv420p -vf "fps=15,scale=trunc(iw/2)*2:trunc(ih/2)*2" "$dst"
+  ffmpeg -nostdin -y -loglevel error -i "$src" -movflags +faststart -pix_fmt yuv420p -vf "fps=15,scale=trunc(iw/2)*2:trunc(ih/2)*2" "$dst"
 }
 
 retry_delay_seconds() {
@@ -170,7 +170,7 @@ download_url_with_retry() {
     local http_code=""
 
     : > "$output_path"
-    if ! http_code="$(curl -sS "$@" -D "$header_file" -o "$output_path" -w "%{http_code}" "$url" 2>"$curl_err_file")"; then
+    if ! http_code="$(curl -sS "$@" -D "$header_file" -o "$output_path" -w "%{http_code}" "$url" </dev/null 2>"$curl_err_file")"; then
       if (( attempt >= http_max_attempts )); then
         return 1
       fi
@@ -227,7 +227,7 @@ import sys
 
 board = sys.argv[1]
 payload = json.loads(os.environ["THREAD_JSON"])
-allowed = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".webm"}
+allowed = {".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif", ".mp4", ".webm"}
 seen = set()
 for post in payload.get("posts", []):
     tim = post.get("tim")
@@ -298,7 +298,7 @@ upload_once() {
   local escaped_src="${src//\\/\\\\}"
   escaped_src="${escaped_src//\"/\\\"}"
   : > "$resp_file"
-  curl -sS -o "$resp_file" -w "%{http_code}" "${api_auth_args[@]}" -F "file=@\"${escaped_src}\"" "$upload_url"
+  curl -sS -o "$resp_file" -w "%{http_code}" "${api_auth_args[@]}" -F "file=@\"${escaped_src}\"" "$upload_url" </dev/null
 }
 
 file_size_bytes() {

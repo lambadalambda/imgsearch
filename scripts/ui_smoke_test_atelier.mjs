@@ -11,7 +11,8 @@
  *      shows match badges on result pins.
  *   3. Clicking a tag chip moves to ?tag=foo and runs a tag-restricted
  *      search (no similarity badges).
- *   4. Clicking "Similar" on a pin switches to similar mode keyed on its id.
+ *   4. Clicking "Similar" on a pin switches to similar mode keyed on its id
+ *      and scrolls back to the first result.
  *   5. The lightbox opens when a pin is clicked and closes via Escape.
  *   6. The pin overflow menu exposes Flag NSFW / Re-annotate / Delete and
  *      Delete optimistically removes the pin from the masonry.
@@ -651,12 +652,28 @@ try {
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
   await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
 
-  // 4. Similar flow via the corner action.
-  const firstPin = page.locator("[data-pin]").first();
-  await firstPin.hover();
-  await firstPin.locator('[data-pin-action="similar"]').click();
+  // 4. Similar flow via the corner action. Trigger from a lower card to prove
+  //    the new result set scrolls back to its first image.
+  const similarSeedPin = page.locator("[data-pin]").nth(20);
+  await similarSeedPin.scrollIntoViewIfNeeded();
+  const scrollBeforeSimilar = await page.evaluate(() => window.scrollY);
+  if (scrollBeforeSimilar < 100) {
+    throw new Error(`expected test page to be scrolled before Similar, got ${scrollBeforeSimilar}`);
+  }
+  await similarSeedPin.hover();
+  await similarSeedPin.locator('[data-pin-action="similar"]').click();
   await page.waitForFunction(() => /\?similar=/.test(window.location.search), {}, { timeout: 5000 });
   await page.locator("[data-pin-anchor]").waitFor({ state: "visible", timeout: 5000 });
+  await page.waitForFunction(
+    () => {
+      const firstPin = document.querySelector("[data-results-grid] [data-pin]");
+      if (!firstPin) return false;
+      const top = firstPin.getBoundingClientRect().top;
+      return top >= 0 && top < Math.min(260, window.innerHeight * 0.4);
+    },
+    {},
+    { timeout: 5000 },
+  );
   const similarFirstIsAnchor = await page.locator("[data-pin]").first().getAttribute("data-pin-anchor");
   if (similarFirstIsAnchor !== "true") {
     throw new Error("expected similar search to keep the search image as the first anchored pin");

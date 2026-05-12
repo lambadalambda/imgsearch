@@ -3,6 +3,11 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(upload): fall back to copy-and-remove storage moves when temp uploads cross filesystem boundaries such as sshfs or rclone mounts.
+- fix(ui): scroll similar-search results back to the first result when Similar is triggered from lower in the gallery or lightbox.
+- fix(import): include MP4 attachments discovered from 4chan thread JSON instead of filtering them out before download.
+- fix(import): prevent curl and ffmpeg subprocesses from consuming importer loop stdin so 4chan imports continue after a failed media download or GIF conversion.
+- fix(upload): report video processing failures separately from generic upload failures and log server-side details for troubleshooting failed converted GIF/video imports.
 - feat(feed): adapt later similar-video Feed batches with bounded session-local vector feedback from watched and quick-skipped frames while keeping stored embeddings immutable.
 - feat(feed): rerank Atelier's already-buffered future Feed items after session feedback while preserving the current and immediately preloaded next video.
 - fix(frontend): avoid the browser-native search cancel control so Atelier shows only one clear button in the search bar.

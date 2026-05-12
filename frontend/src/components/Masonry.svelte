@@ -101,7 +101,7 @@
   const masonryClass = `${gridClass} [grid-auto-rows:8px]`;
 </script>
 
-<section class="px-5 sm:px-9 pb-16 pt-2" aria-label="Results">
+<section data-results class="px-5 sm:px-9 pb-16 pt-2" aria-label="Results">
   {#if loading && pins.length === 0}
     <div class={gridClass}>
       {#each Array.from({ length: 12 }) as _, index (index)}
@@ -114,7 +114,7 @@
   {:else if pins.length === 0}
     <p class="my-6 text-muted text-[14.5px]">{emptyMessage}</p>
   {:else}
-    <div class={masonryClass}>
+    <div data-results-grid class={`${masonryClass} scroll-mt-24`}>
       {#each pins as pin (pin.key)}
         <div
           class="min-w-0"

@@ -93,11 +93,15 @@ if [[ "$url" == "https://a.4cdn.org/v/thread/737156945.json" ]]; then
     emit_response "429" "" "0"
     exit 0
   fi
-  emit_response "200" '{"posts":[{"no":1,"tim":1111111111111,"ext":".jpg"},{"no":2,"tim":2222222222222,"ext":".webm"},{"no":3,"tim":3333333333333,"ext":".png"},{"no":4,"tim":4444444444444,"ext":".gif"}]}'
+  if [[ "${IMGSEARCH_TEST_FAIL_GIF_DOWNLOAD:-}" == "1" ]]; then
+    emit_response "200" '{"posts":[{"no":1,"tim":1111111111111,"ext":".jpg"},{"no":2,"tim":2222222222222,"ext":".webm"},{"no":3,"tim":3333333333333,"ext":".png"},{"no":4,"tim":4444444444444,"ext":".gif"},{"no":5,"tim":5555555555555,"ext":".png"}]}'
+    exit 0
+  fi
+  emit_response "200" '{"posts":[{"no":1,"tim":1111111111111,"ext":".jpg"},{"no":2,"tim":2222222222222,"ext":".webm"},{"no":3,"tim":3333333333333,"ext":".png"},{"no":4,"tim":4444444444444,"ext":".gif"},{"no":5,"tim":5555555555555,"ext":".mp4"}]}'
   exit 0
 fi
 
-if [[ "$url" == "https://i.4cdn.org/v/1111111111111.jpg" || "$url" == "https://i.4cdn.org/v/2222222222222.webm" || "$url" == "https://i.4cdn.org/v/3333333333333.png" || "$url" == "https://i.4cdn.org/v/4444444444444.gif" ]]; then
+if [[ "$url" == "https://i.4cdn.org/v/1111111111111.jpg" || "$url" == "https://i.4cdn.org/v/2222222222222.webm" || "$url" == "https://i.4cdn.org/v/3333333333333.png" || "$url" == "https://i.4cdn.org/v/4444444444444.gif" || "$url" == "https://i.4cdn.org/v/5555555555555.mp4" || "$url" == "https://i.4cdn.org/v/5555555555555.png" ]]; then
   if [[ "$url" == "https://i.4cdn.org/v/1111111111111.jpg" ]]; then
     first_try_flag="$state_dir/media-jpg-first"
     if [[ -n "$state_dir" && ! -f "$first_try_flag" ]]; then
@@ -106,11 +110,26 @@ if [[ "$url" == "https://i.4cdn.org/v/1111111111111.jpg" || "$url" == "https://i
       exit 0
     fi
   fi
+  if [[ "${IMGSEARCH_TEST_FAIL_GIF_DOWNLOAD:-}" == "1" && "$url" == "https://i.4cdn.org/v/4444444444444.gif" ]]; then
+    while IFS= read -r _; do
+      :
+    done
+    emit_response "404" ""
+    exit 0
+  fi
   emit_response "200" "img"
   exit 0
 fi
 
 if [[ "$url" == "http://127.0.0.1:8080/api/upload" ]]; then
+  if [[ "${IMGSEARCH_TEST_FAIL_FIRST_UPLOAD:-}" == "1" ]]; then
+    first_upload_flag="$state_dir/upload-first"
+    if [[ -n "$state_dir" && ! -f "$first_upload_flag" ]]; then
+      touch "$first_upload_flag"
+      emit_response "400" '{"uploads":[{"filename":"broken.mp4","error":"upload failed"}],"created":0,"duplicates":0,"failed":1}'
+      exit 0
+    fi
+  fi
   emit_response "201" '{"created":1}'
   exit 0
 fi
@@ -161,7 +180,7 @@ if [[ "$status" -ne 0 ]]; then
   exit 1
 fi
 
-if [[ "$output" != *"Import summary: total=4 created=4 duplicates=0 converted=1 failed=0"* ]]; then
+if [[ "$output" != *"Import summary: total=5 created=5 duplicates=0 converted=1 failed=0"* ]]; then
   echo "unexpected summary output" >&2
   printf '%s\n' "$output" >&2
   exit 1
@@ -187,6 +206,12 @@ fi
 
 if ! grep -q "https://i.4cdn.org/v/4444444444444.gif" "$mock_log"; then
   echo "expected full media download URL for gif" >&2
+  cat "$mock_log" >&2
+  exit 1
+fi
+
+if ! grep -q "https://i.4cdn.org/v/5555555555555.mp4" "$mock_log"; then
+  echo "expected full media download URL for mp4" >&2
   cat "$mock_log" >&2
   exit 1
 fi
@@ -249,3 +274,92 @@ if grep -q "s.jpg" "$mock_log"; then
 fi
 
 echo "ok"
+
+partial_log="$tmp_dir/partial-curl.log"
+partial_state_dir="$tmp_dir/partial-state"
+partial_sleep_log="$tmp_dir/partial-sleep.log"
+mkdir -p "$partial_state_dir"
+
+set +e
+partial_output="$({
+  unset IMGSEARCH_IMPORT_API_KEY IMGSEARCH_API_KEY
+  IMGSEARCH_TEST_CURL_LOG="$partial_log" \
+    IMGSEARCH_TEST_SLEEP_LOG="$partial_sleep_log" \
+    IMGSEARCH_TEST_STATE_DIR="$partial_state_dir" \
+    IMGSEARCH_TEST_FAIL_FIRST_UPLOAD=1 \
+    IMGSEARCH_IMPORT_HTTP_RETRY_DELAY_SECONDS=0 \
+    IMGSEARCH_IMPORT_4CHAN_MIN_DELAY_SECONDS=5 \
+    IMGSEARCH_IMPORT_4CHAN_JITTER_SECONDS=2 \
+    PATH="$mock_bin:$PATH" \
+    "$repo_root/scripts/import_images.sh" "https://boards.4chan.org/v/thread/737156945" "http://127.0.0.1:8080"
+} 2>&1)"
+partial_status=$?
+set -e
+
+if [[ "$partial_status" -eq 0 ]]; then
+  echo "expected partial upload failure to return non-zero" >&2
+  printf '%s\n' "$partial_output" >&2
+  exit 1
+fi
+
+if [[ "$partial_output" != *"Import summary: total=5 created=4 duplicates=0 converted=1 failed=1"* ]]; then
+  echo "unexpected partial-failure summary output" >&2
+  printf '%s\n' "$partial_output" >&2
+  exit 1
+fi
+
+partial_upload_count="$(grep -c "http://127.0.0.1:8080/api/upload" "$partial_log" || true)"
+if [[ "$partial_upload_count" -ne 5 ]]; then
+  echo "expected all media uploads to be attempted after one failed upload, got $partial_upload_count" >&2
+  cat "$partial_log" >&2
+  exit 1
+fi
+
+echo "partial failure path ok"
+
+download_failure_log="$tmp_dir/download-failure-curl.log"
+download_failure_state_dir="$tmp_dir/download-failure-state"
+download_failure_sleep_log="$tmp_dir/download-failure-sleep.log"
+mkdir -p "$download_failure_state_dir"
+
+set +e
+download_failure_output="$({
+  unset IMGSEARCH_IMPORT_API_KEY IMGSEARCH_API_KEY
+  IMGSEARCH_TEST_CURL_LOG="$download_failure_log" \
+    IMGSEARCH_TEST_SLEEP_LOG="$download_failure_sleep_log" \
+    IMGSEARCH_TEST_STATE_DIR="$download_failure_state_dir" \
+    IMGSEARCH_TEST_FAIL_GIF_DOWNLOAD=1 \
+    IMGSEARCH_IMPORT_HTTP_RETRY_DELAY_SECONDS=0 \
+    IMGSEARCH_IMPORT_4CHAN_MIN_DELAY_SECONDS=5 \
+    IMGSEARCH_IMPORT_4CHAN_JITTER_SECONDS=2 \
+    PATH="$mock_bin:$PATH" \
+    "$repo_root/scripts/import_images.sh" "https://boards.4chan.org/v/thread/737156945" "http://127.0.0.1:8080"
+} 2>&1)"
+download_failure_status=$?
+set -e
+
+if [[ "$download_failure_status" -ne 0 ]]; then
+  echo "expected failed 4chan media download to be skipped without failing import" >&2
+  printf '%s\n' "$download_failure_output" >&2
+  exit 1
+fi
+
+if [[ "$download_failure_output" != *"SKIP https://i.4cdn.org/v/4444444444444.gif (download failed)"* ]]; then
+  echo "expected skipped GIF download message" >&2
+  printf '%s\n' "$download_failure_output" >&2
+  exit 1
+fi
+
+if [[ "$download_failure_output" != *"Import summary: total=4 created=4 duplicates=0 converted=0 failed=0"* ]]; then
+  echo "unexpected failed-download summary output" >&2
+  printf '%s\n' "$download_failure_output" >&2
+  exit 1
+fi
+
+if ! grep -q "https://i.4cdn.org/v/5555555555555.png" "$download_failure_log"; then
+  echo "expected import to continue downloading media after failed GIF" >&2
+  cat "$download_failure_log" >&2
+  exit 1
+fi
+
+echo "download failure path ok"

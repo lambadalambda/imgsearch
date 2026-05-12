@@ -20,7 +20,10 @@ import (
 	"imgsearch/internal/jobkind"
 )
 
-var ErrUnsupportedFormat = errors.New("unsupported image format")
+var (
+	ErrUnsupportedFormat     = errors.New("unsupported image format")
+	ErrVideoProcessingFailed = errors.New("video processing failed")
+)
 
 func isSupportedImageMime(mime string) bool {
 	switch mime {
@@ -274,7 +277,7 @@ ON CONFLICT DO NOTHING
 	}
 
 	if !out.Duplicate {
-		if err := os.Rename(tmpPath, storageAbs); err != nil {
+		if err := moveFile(tmpPath, storageAbs); err != nil {
 			_ = tx.Rollback()
 			return StoreResult{}, fmt.Errorf("move upload to storage: %w", err)
 		}
@@ -317,10 +320,10 @@ func (s *Service) storeVideo(ctx context.Context, originalName string, tmpDir st
 	}
 	sample, err := sampler.Sample(ctx, tmpPath, frameCount, frameTmpDir)
 	if err != nil {
-		return StoreResult{}, err
+		return StoreResult{}, fmt.Errorf("%w: %v", ErrVideoProcessingFailed, err)
 	}
 	if len(sample.Frames) == 0 {
-		return StoreResult{}, fmt.Errorf("video sampling produced no frames")
+		return StoreResult{}, fmt.Errorf("%w: video sampling produced no frames", ErrVideoProcessingFailed)
 	}
 
 	tx, err := s.DB.BeginTx(ctx, nil)
@@ -381,7 +384,7 @@ ON CONFLICT DO NOTHING
 		return StoreResult{}, fmt.Errorf("insert video annotation job: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, storageAbs); err != nil {
+	if err := moveFile(tmpPath, storageAbs); err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("move upload to video storage: %w", err)
 	}
@@ -457,7 +460,7 @@ ON CONFLICT DO NOTHING
 	}
 
 	if rows > 0 {
-		if err := os.Rename(frame.Path, storageAbs); err != nil {
+		if err := moveFile(frame.Path, storageAbs); err != nil {
 			return 0, "", fmt.Errorf("move sampled frame to storage: %w", err)
 		}
 		return imageID, storageAbs, nil

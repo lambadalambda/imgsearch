@@ -102,6 +102,34 @@ func TestUploadHandlerReturnsCreatedForNewVideo(t *testing.T) {
 	}
 }
 
+func TestUploadHandlerReportsVideoProcessingFailure(t *testing.T) {
+	svc, _ := setupService(t)
+	svc.VideoSampler = &fakeVideoSampler{err: fmt.Errorf("sampler failed")}
+	h := NewHandler(svc)
+
+	body, contentType := multipartBody(t, "clip.mp4", mp4Bytes())
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+	}
+
+	var resp UploadBatchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Failed != 1 || len(resp.Uploads) != 1 {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if resp.Uploads[0].Error != "video processing failed" {
+		t.Fatalf("expected video processing error, got %+v", resp.Uploads[0])
+	}
+}
+
 func TestUploadHandlerAcceptsWEBPAndAVIF(t *testing.T) {
 	tests := []struct {
 		name     string

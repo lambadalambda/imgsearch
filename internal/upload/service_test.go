@@ -95,11 +95,15 @@ type fakeVideoSampler struct {
 	width      int
 	height     int
 	frames     int
+	err        error
 }
 
 func (f *fakeVideoSampler) Sample(ctx context.Context, videoPath string, frameCount int, tmpDir string) (VideoSample, error) {
 	_ = ctx
 	_ = videoPath
+	if f.err != nil {
+		return VideoSample{}, f.err
+	}
 	out := VideoSample{DurationMS: f.durationMS, Width: f.width, Height: f.height}
 	for i := 0; i < f.frames && i < frameCount; i++ {
 		framePath := filepath.Join(tmpDir, "frame-"+string(rune('a'+i))+".png")

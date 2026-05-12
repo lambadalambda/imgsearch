@@ -8,7 +8,7 @@
   import Upload from "./components/Upload.svelte";
   import Feed from "./components/Feed.svelte";
 
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { get } from "svelte/store";
   import {
     mode,
@@ -66,6 +66,16 @@
   let firstPageLoaded = $state(false);
   let tagCloudStarted = false;
   let libraryRandomSeed = newLibrarySeed();
+
+  function scrollSimilarResultsToTop(): void {
+    if (typeof document === "undefined") return;
+    void tick().then(() => {
+      const target =
+        document.querySelector<HTMLElement>("[data-results-grid]") ??
+        document.querySelector<HTMLElement>("[data-results]");
+      target?.scrollIntoView({ block: "start" });
+    });
+  }
 
   $effect(() => {
     if (!firstPageLoaded || tagCloudStarted) return;
@@ -182,6 +192,9 @@
         } else {
           pins.set(nextPins);
           currentOffset = nextPins.length;
+          if (state.mode === "similar") {
+            scrollSimilarResultsToTop();
+          }
         }
         canLoadMore = nextPins.length === PAGE_SIZE && currentOffset < total;
         resultsMeta.set({ total, durationMs: performance.now() - start, loading: false });
