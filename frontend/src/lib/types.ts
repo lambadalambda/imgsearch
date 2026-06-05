@@ -75,13 +75,49 @@ export interface TagCloudResponse {
   tags: TagCloudEntry[];
 }
 
+export interface QueueStats {
+  total: number;
+  tracked: number;
+  missing: number;
+  annotations_missing: number;
+  runnable: number;
+  pending: number;
+  leased: number;
+  done: number;
+  failed: number;
+  oldest_runnable_age_seconds: number;
+}
+
+export interface JobKindStats {
+  tracked: number;
+  runnable: number;
+  pending: number;
+  leased: number;
+  done: number;
+  failed: number;
+  oldest_runnable_age_seconds: number;
+}
+
+export interface FailureItem {
+  job_id: number;
+  kind: string;
+  media_type: MediaType;
+  image_id?: number;
+  video_id?: number;
+  original_name: string;
+  attempts: number;
+  last_error: string;
+  updated_at: string;
+}
+
 export interface StatsResponse {
   images_total: number;
   standalone_images_total: number;
   video_frame_images_total?: number;
   videos_total: number;
-  queue?: unknown;
-  job_kinds?: unknown;
+  queue?: QueueStats;
+  job_kinds?: Record<string, JobKindStats>;
+  recent_failures?: FailureItem[];
 }
 
 export interface UploadEntry {

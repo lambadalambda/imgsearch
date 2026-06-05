@@ -3,6 +3,7 @@
   import Header from "./components/Header.svelte";
   import SearchBar from "./components/SearchBar.svelte";
   import QuickRow from "./components/QuickRow.svelte";
+  import StatisticsPane from "./components/StatisticsPane.svelte";
   import Masonry from "./components/Masonry.svelte";
   import Lightbox from "./components/Lightbox.svelte";
   import Upload from "./components/Upload.svelte";
@@ -84,7 +85,7 @@
   void (async () => {
     try {
       const s = await getStats();
-      stats.set({ images: s.standalone_images_total ?? s.images_total, videos: s.videos_total });
+      stats.set({ ...s, images: s.standalone_images_total ?? s.images_total, videos: s.videos_total });
     } catch (err) {
       console.warn("stats bootstrap failed", err);
     }
@@ -308,6 +309,10 @@
     <Header />
     <SearchBar />
     <QuickRow />
+
+    {#if $mode.mode === "library"}
+      <StatisticsPane />
+    {/if}
 
     <div class="px-5 sm:px-9 mt-3 mb-1 text-[12.5px] text-muted-2 flex flex-wrap gap-2 items-center">
       {#if $resultsMeta.loading}

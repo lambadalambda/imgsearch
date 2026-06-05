@@ -1,5 +1,5 @@
 import { writable, derived, get } from "svelte/store";
-import type { Pin } from "./types";
+import type { Pin, StatsResponse } from "./types";
 
 export type ViewMode = "library" | "search" | "similar" | "tag";
 export type LibrarySort = "random" | "newest";
@@ -96,7 +96,12 @@ export const libraryMedia = writable<LibraryMedia>("all");
 
 export const lightboxPin = writable<Pin | null>(null);
 
-export const stats = writable<{ images: number; videos: number } | null>(null);
+export interface StatsSnapshot extends StatsResponse {
+  images: number;
+  videos: number;
+}
+
+export const stats = writable<StatsSnapshot | null>(null);
 
 export const topTags = writable<Array<{ tag: string; count: number }>>([]);
 

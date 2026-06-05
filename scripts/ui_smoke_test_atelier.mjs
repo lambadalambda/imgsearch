@@ -181,9 +181,34 @@ const server = createServer(async (req, res) => {
   try {
     if (url.pathname === "/api/stats") {
       jsonResponse(res, 200, {
-        images_total: sampleImages.length,
+        images_total: sampleImages.length + 18,
         standalone_images_total: sampleImages.length,
+        video_frame_images_total: 18,
         videos_total: 7,
+        queue: {
+          total: 150,
+          tracked: 147,
+          missing: 3,
+          annotations_missing: 9,
+          runnable: 14,
+          pending: 21,
+          leased: 3,
+          done: 72,
+          failed: 2,
+          oldest_runnable_age_seconds: 3600,
+        },
+        job_kinds: {
+          embed_image: {
+            tracked: 147,
+            runnable: 14,
+            pending: 21,
+            leased: 3,
+            done: 72,
+            failed: 2,
+            oldest_runnable_age_seconds: 3600,
+          },
+        },
+        recent_failures: [],
       });
       return;
     }
@@ -417,6 +442,27 @@ try {
     );
   }
 
+  const statsPane = page.locator("[data-stats-pane]");
+  await statsPane.waitFor({ state: "visible", timeout: 5000 });
+  await statsPane.getByText("portrait").waitFor({ state: "visible", timeout: 5000 });
+  const statsText = (await statsPane.textContent()) || "";
+  for (const expected of [
+    "Statistics",
+    "Media ingested",
+    "144 images",
+    "7 videos",
+    "18 video frames",
+    "Image processing",
+    "72 / 150 processed",
+    "Most frequent tags",
+    "portrait",
+    "cat",
+  ]) {
+    if (!statsText.includes(expected)) {
+      throw new Error(`expected statistics pane to include ${JSON.stringify(expected)}, got ${JSON.stringify(statsText)}`);
+    }
+  }
+
   const imageOnlyStart = imagesRequests.length;
   await mediaSelect.selectOption("images");
   const imageOnlyDeadline = Date.now() + 5000;
@@ -436,6 +482,14 @@ try {
   while (videosRequests.length <= videoOnlyStart && Date.now() < videoOnlyDeadline) {
     await new Promise((r) => setTimeout(r, 50));
   }
+  await page.waitForFunction(
+    () => {
+      const pins = Array.from(document.querySelectorAll("[data-pin]"));
+      return pins.length > 0 && pins.every((pin) => pin.getAttribute("data-pin-media-type") === "video");
+    },
+    {},
+    { timeout: 5000 },
+  );
   const videoOnlyTypes = await page
     .locator("[data-pin]")
     .evaluateAll((pins) => pins.map((pin) => pin.getAttribute("data-pin-media-type")));

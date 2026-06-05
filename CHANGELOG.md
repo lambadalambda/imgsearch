@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(ui): add an Atelier statistics pane with ingested media counts, image processing progress, queue state, and frequent tags.
 - feat(ui): add a library sort selector with Random as the default and Recently added as an alternate order.
 - feat(ui): add a library media selector defaulting to Images + videos, with Images only and Videos only filters.
 - fix(upload): fall back to copy-and-remove storage moves when temp uploads cross filesystem boundaries such as sshfs or rclone mounts.
