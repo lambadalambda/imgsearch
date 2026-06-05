@@ -1387,6 +1387,52 @@ UPDATE images SET tags_json = '["dog","outdoors"]' WHERE id = 2;
 	}
 }
 
+// TestTagSearchAcceptsTagModeAlias is a regression test for issue #058: the
+// Atelier frontend sends `tag_mode=all` to /api/search/tags, but the backend
+// previously only honored the `mode` parameter. This pins down that the
+// canonical `tag_mode` name reaches the all-mode logic while still accepting
+// the legacy `mode` alias for callers that haven't migrated.
+func TestTagSearchAcceptsTagModeAlias(t *testing.T) {
+	dbConn := setupSearchDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET tags_json = '["cat","outdoors"]' WHERE id = 1;
+UPDATE images SET tags_json = '["dog","outdoors"]' WHERE id = 2;
+`); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1, DataDir: "/tmp", Embedder: &fakeEmbedder{}, Index: &fakeIndex{}})
+
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{name: "tag_mode=all", url: "/api/search/tags?tag=dog&tag=outdoors&tag_mode=all"},
+		{name: "mode=all (legacy alias)", url: "/api/search/tags?tag=dog&tag=outdoors&mode=all"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.url, nil)
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+			}
+
+			var resp SearchResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if len(resp.Results) != 1 {
+				t.Fatalf("expected 1 tag result for all-mode, got %d: %+v", len(resp.Results), resp.Results)
+			}
+			if resp.Results[0].ImageID != 2 {
+				t.Fatalf("expected image 2 for all-mode tag search, got %+v", resp.Results)
+			}
+		})
+	}
+}
+
 func TestTagSearchSupportsOffsetPaginationAndTotal(t *testing.T) {
 	dbConn := setupSearchDB(t)
 	if _, err := dbConn.Exec(`

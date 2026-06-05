@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open.
+Resolved (2026-06-05). The /api/search/tags handler now reads `tag_mode` as the canonical parameter and falls back to the legacy `mode` alias; the Atelier frontend's `tag_mode=all` calls now reach the all-mode logic. Covered by `TestTagSearchAcceptsTagModeAlias` and the existing `TestTagSearchSupportsAllMode`.
 
 ## Summary
 
@@ -27,10 +27,10 @@ The Atelier frontend sends `tag_mode=all`, but the backend `/api/search/tags` ha
 
 ## Acceptance Criteria
 
-- [ ] Add a regression test that proves Atelier/typed API all-mode reaches backend all-mode.
-- [ ] Either make the backend accept `tag_mode` as an alias or change the frontend to send `mode`.
-- [ ] Update smoke stubs to match the real backend parameter contract.
-- [ ] Preserve existing `mode=all` backend compatibility.
+- [x] Add a regression test that proves Atelier/typed API all-mode reaches backend all-mode.
+- [x] Either make the backend accept `tag_mode` as an alias or change the frontend to send `mode`.
+- [x] Update smoke stubs to match the real backend parameter contract.
+- [x] Preserve existing `mode=all` backend compatibility.
 
 ## Related Files
 

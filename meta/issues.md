@@ -6,7 +6,6 @@
 - [ ] [Document trusted UI API cookie model](issues/054-harden-ui-api-cookie-auth.md)
 - [ ] [Reset Atelier pagination on data key changes](issues/056-reset-atelier-pagination-on-data-key-changes.md)
 - [ ] [Owner-check worker job completion and failure updates](issues/057-owner-check-worker-job-completion.md)
-- [ ] [Align Atelier tag all-mode with backend parameters](issues/058-align-atelier-tag-all-mode-with-backend.md)
 - [ ] [Batched embedding inference via multi-sequence llama.cpp](issues/014-batched-embedding-inference.md)
 - [ ] [Narrow native runtime locks around preprocessing](issues/040-narrow-native-runtime-locks.md)
 - [ ] [Harden sqlite-vector quantized search under mixed models](issues/050-sqlite-vector-quantized-mixed-models.md)

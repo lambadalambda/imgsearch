@@ -843,8 +843,7 @@ func (h *Handler) handleTagSearch(w http.ResponseWriter, r *http.Request) {
 
 	limit := httputil.ParseLimitQuery(r, 24)
 	offset := httputil.ParseOffsetQuery(r, 1000000)
-	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
-	matchAll := mode == "all"
+	matchAll := tagSearchMatchAll(r)
 	includeNSFW := httputil.ParseIncludeNSFWQuery(r)
 
 	results, total, err := h.searchByTags(r.Context(), tags, limit, offset, matchAll, includeNSFW)
@@ -1564,6 +1563,18 @@ func parseExplicitTagFilters(r *http.Request) []string {
 		parts = append(parts, strings.Split(v, ",")...)
 	}
 	return normalizeTagFilters(parts)
+}
+
+// tagSearchMatchAll reads the canonical `tag_mode` query parameter and falls
+// back to the legacy `mode` alias for callers that haven't migrated. The
+// Atelier frontend always sends `tag_mode`; the legacy `mode` name is kept so
+// existing clients (and the in-tree test suite) keep working.
+func tagSearchMatchAll(r *http.Request) bool {
+	q := r.URL.Query()
+	if raw := strings.ToLower(strings.TrimSpace(q.Get("tag_mode"))); raw != "" {
+		return raw != "any"
+	}
+	return strings.ToLower(strings.TrimSpace(q.Get("mode"))) == "all"
 }
 
 func normalizeTagFilters(raw []string) []string {
