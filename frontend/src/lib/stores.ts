@@ -1,7 +1,7 @@
 import { writable, derived, get } from "svelte/store";
 import type { Pin, StatsResponse } from "./types";
 
-export type ViewMode = "library" | "search" | "similar" | "tag";
+export type ViewMode = "library" | "search" | "similar" | "tag" | "stats";
 export type LibrarySort = "random" | "newest";
 export type LibraryMedia = "all" | "images" | "videos";
 
@@ -16,6 +16,9 @@ export interface AppMode {
 function readURL(): AppMode {
   if (typeof window === "undefined") return { mode: "library" };
   const params = new URLSearchParams(window.location.search);
+  if (params.get("view") === "stats") {
+    return { mode: "stats" };
+  }
   const q = params.get("q");
   const similar = params.get("similar");
   const tags = params.getAll("tag").filter(Boolean);
@@ -35,7 +38,9 @@ function readURL(): AppMode {
 function writeURL(state: AppMode): void {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams();
-  if (state.mode === "search" && state.query) {
+  if (state.mode === "stats") {
+    params.set("view", "stats");
+  } else if (state.mode === "search" && state.query) {
     params.set("q", state.query);
   } else if (state.mode === "similar" && state.similarTo !== undefined) {
     params.set("similar", String(state.similarTo));
@@ -88,6 +93,10 @@ export function setTagSearch(tags: string[], tagMode: "any" | "all" = "any"): vo
   mode.set({ mode: "tag", tags: cleaned, tagMode });
 }
 
+export function setStats(): void {
+  mode.set({ mode: "stats" });
+}
+
 export const includeNSFW = writable<boolean>(false);
 
 export const librarySort = writable<LibrarySort>("random");
@@ -127,6 +136,9 @@ export const headline = derived(mode, ($mode) => {
   if ($mode.mode === "tag" && $mode.tags?.length) {
     const joiner = $mode.tagMode === "all" ? " + " : " · ";
     return $mode.tags.join(joiner);
+  }
+  if ($mode.mode === "stats") {
+    return "Statistics";
   }
   return "Library";
 });

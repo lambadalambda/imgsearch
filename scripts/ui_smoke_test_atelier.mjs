@@ -186,9 +186,9 @@ const server = createServer(async (req, res) => {
         video_frame_images_total: 18,
         videos_total: 7,
         queue: {
-          total: 150,
+          total: 162,
           tracked: 147,
-          missing: 3,
+          missing: 15,
           annotations_missing: 9,
           runnable: 14,
           pending: 21,
@@ -197,6 +197,12 @@ const server = createServer(async (req, res) => {
           failed: 2,
           oldest_runnable_age_seconds: 3600,
         },
+        image_annotation_expected: sampleImages.length,
+        image_annotation_missing: sampleImages.length - 100,
+        video_annotation_expected: 7,
+        video_annotation_missing: 1,
+        video_transcription_expected: 7,
+        video_transcription_missing: 2,
         job_kinds: {
           embed_image: {
             tracked: 147,
@@ -207,8 +213,56 @@ const server = createServer(async (req, res) => {
             failed: 2,
             oldest_runnable_age_seconds: 3600,
           },
+          annotate_image: {
+            tracked: 100,
+            runnable: 8,
+            pending: 12,
+            leased: 1,
+            done: 85,
+            failed: 2,
+            oldest_runnable_age_seconds: 1200,
+          },
+          annotate_video: {
+            tracked: 6,
+            runnable: 2,
+            pending: 2,
+            leased: 0,
+            done: 4,
+            failed: 0,
+            oldest_runnable_age_seconds: 600,
+          },
+          transcribe_video: {
+            tracked: 5,
+            runnable: 1,
+            pending: 2,
+            leased: 0,
+            done: 3,
+            failed: 1,
+            oldest_runnable_age_seconds: 800,
+          },
         },
-        recent_failures: [],
+        recent_failures: [
+          {
+            job_id: 9991,
+            kind: "embed_image",
+            media_type: "image",
+            image_id: 1234,
+            original_name: "broken-decode.jpg",
+            attempts: 3,
+            last_error: "decode error: invalid JPEG",
+            updated_at: "2026-06-05T15:23:00Z",
+          },
+          {
+            job_id: 9992,
+            kind: "transcribe_video",
+            media_type: "video",
+            video_id: 42,
+            original_name: "silent-track.mp4",
+            attempts: 3,
+            last_error: "no audio track found",
+            updated_at: "2026-06-05T15:10:00Z",
+          },
+        ],
       });
       return;
     }
@@ -442,25 +496,55 @@ try {
     );
   }
 
+  // Library view no longer renders the stats pane inline — it now lives on
+  // its own page reachable from the Rail.
+  if ((await page.locator("[data-stats-pane]").count()) > 0) {
+    throw new Error("expected library view not to render the stats pane inline");
+  }
+
+  // Stats page renders all sections in the new dedicated view.
+  await page.locator('button[aria-label="Statistics"]').click();
+  await page.waitForURL(/view=stats/, { timeout: 5000 });
   const statsPane = page.locator("[data-stats-pane]");
   await statsPane.waitFor({ state: "visible", timeout: 5000 });
-  await statsPane.getByText("portrait").waitFor({ state: "visible", timeout: 5000 });
   const statsText = (await statsPane.textContent()) || "";
   for (const expected of [
     "Statistics",
     "Media ingested",
-    "144 images",
-    "7 videos",
-    "18 video frames",
-    "Image processing",
-    "72 / 150 processed",
+    "144",
+    "standalone images",
+    "7",
+    "videos",
+    "18",
+    "video frames",
+    "Image embedding",
+    "72 / 162 processed",
+    "Image annotation",
+    "85 / 144 processed",
+    "Video annotation",
+    "4 / 7 processed",
+    "Video transcription",
+    "3 / 7 processed",
+    "Recent failures",
+    "broken-decode.jpg",
+    "silent-track.mp4",
     "Most frequent tags",
     "portrait",
     "cat",
   ]) {
     if (!statsText.includes(expected)) {
-      throw new Error(`expected statistics pane to include ${JSON.stringify(expected)}, got ${JSON.stringify(statsText)}`);
+      throw new Error(`expected stats page to include ${JSON.stringify(expected)}, got ${JSON.stringify(statsText)}`);
     }
+  }
+  // Returning to library clears the stats pane and the view= URL param.
+  await page.locator('button[aria-label="Library"]').click();
+  await page.waitForFunction(
+    () => !window.location.search.includes("view=stats"),
+    {},
+    { timeout: 5000 },
+  );
+  if ((await page.locator("[data-stats-pane]").count()) > 0) {
+    throw new Error("expected library view not to render the stats pane after returning from stats");
   }
 
   const imageOnlyStart = imagesRequests.length;

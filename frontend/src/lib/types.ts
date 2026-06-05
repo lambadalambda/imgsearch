@@ -116,6 +116,12 @@ export interface StatsResponse {
   video_frame_images_total?: number;
   videos_total: number;
   queue?: QueueStats;
+  image_annotation_expected?: number;
+  image_annotation_missing?: number;
+  video_annotation_expected?: number;
+  video_annotation_missing?: number;
+  video_transcription_expected?: number;
+  video_transcription_missing?: number;
   job_kinds?: Record<string, JobKindStats>;
   recent_failures?: FailureItem[];
 }

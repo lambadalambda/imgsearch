@@ -3,6 +3,7 @@
     | "library"
     | "search"
     | "tags"
+    | "stats"
     | "feed"
     | "upload"
     | "settings"
@@ -46,6 +47,16 @@
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <path d="M20 13.41 11.41 22a2 2 0 0 1-2.83 0L2 15.41V4a2 2 0 0 1 2-2h11.41L22 8.59a2 2 0 0 1 0 2.83Z" />
       <circle cx="7" cy="7" r="1.4" />
+    </g>
+  </svg>
+{:else if name === "stats"}
+  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+    {#if title}<title>{title}</title>{/if}
+    <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="4" y1="20" x2="4" y2="14" />
+      <line x1="10" y1="20" x2="10" y2="9" />
+      <line x1="16" y1="20" x2="16" y2="4" />
+      <line x1="3" y1="20" x2="21" y2="20" />
     </g>
   </svg>
 {:else if name === "feed"}

@@ -8,12 +8,13 @@
     openFeed,
     openUpload,
     setLibrary,
+    setStats,
     uploadOpen,
   } from "../lib/stores";
   import { canPlayMime, pinFromVideo } from "../lib/utils";
 
   type RailItem = {
-    id: "library" | "search" | "tags" | "feed" | "upload";
+    id: "library" | "search" | "tags" | "stats" | "feed" | "upload";
     label: string;
     onClick?: () => void;
     disabled?: boolean;
@@ -71,6 +72,12 @@
       activeWhen: (s) => s.mode === "search",
     },
     { id: "tags", label: "Tags (soon)", disabled: true },
+    {
+      id: "stats",
+      label: "Statistics",
+      onClick: () => setStats(),
+      activeWhen: (s) => s.mode === "stats",
+    },
     {
       id: "feed",
       label: "Feed — random video",

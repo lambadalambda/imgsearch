@@ -56,8 +56,16 @@ type Response struct {
 	VideoFrameImagesTotal int64                   `json:"video_frame_images_total"`
 	VideosTotal           int64                   `json:"videos_total"`
 	Queue                 QueueStats              `json:"queue"`
-	JobKinds              map[string]JobKindStats `json:"job_kinds,omitempty"`
-	RecentFailures        []FailureItem           `json:"recent_failures"`
+	// Expected totals and missing counts per non-embed job kind. The embed
+	// kind is reported via Queue (which already exposes total/missing).
+	ImageAnnotationExpected    int64                   `json:"image_annotation_expected"`
+	ImageAnnotationMissing     int64                   `json:"image_annotation_missing"`
+	VideoAnnotationExpected    int64                   `json:"video_annotation_expected"`
+	VideoAnnotationMissing     int64                   `json:"video_annotation_missing"`
+	VideoTranscriptionExpected int64                   `json:"video_transcription_expected"`
+	VideoTranscriptionMissing  int64                   `json:"video_transcription_missing"`
+	JobKinds                   map[string]JobKindStats `json:"job_kinds,omitempty"`
+	RecentFailures             []FailureItem           `json:"recent_failures"`
 }
 
 func Collect(ctx context.Context, db *sql.DB, modelID int64) (Response, error) {
@@ -114,6 +122,14 @@ WHERE NOT EXISTS (
 	}
 	resp.Queue.Total = resp.Queue.Tracked + resp.Queue.Missing
 
+	// Expected totals and missing counts for the three non-embed kinds.
+	resp.ImageAnnotationExpected = resp.StandaloneImagesTotal
+	resp.ImageAnnotationMissing = expectedMinusTracked(resp.ImageAnnotationExpected, jobKinds[jobkind.AnnotateImage].Tracked)
+	resp.VideoAnnotationExpected = resp.VideosTotal
+	resp.VideoAnnotationMissing = expectedMinusTracked(resp.VideoAnnotationExpected, jobKinds[jobkind.AnnotateVideo].Tracked)
+	resp.VideoTranscriptionExpected = resp.VideosTotal
+	resp.VideoTranscriptionMissing = expectedMinusTracked(resp.VideoTranscriptionExpected, jobKinds[jobkind.TranscribeVideo].Tracked)
+
 	rows, err := db.QueryContext(ctx, `
 SELECT j.id,
        j.kind,
@@ -150,6 +166,17 @@ LIMIT 10
 	}
 
 	return resp, nil
+}
+
+func expectedMinusTracked(expected, tracked int64) int64 {
+	if expected <= 0 {
+		return 0
+	}
+	missing := expected - tracked
+	if missing < 0 {
+		return 0
+	}
+	return missing
 }
 
 func countDoneJobsMissingAnnotations(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {

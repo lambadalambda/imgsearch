@@ -141,6 +141,24 @@ func TestStatsHandlerReturnsQueueCountsAndFailures(t *testing.T) {
 	} else if got.Kind != "annotate_image" {
 		t.Fatalf("annotate failure job kind: got=%q want=annotate_image", got.Kind)
 	}
+	if resp.ImageAnnotationExpected != 5 {
+		t.Fatalf("image_annotation_expected: got=%d want=5", resp.ImageAnnotationExpected)
+	}
+	if resp.ImageAnnotationMissing != 3 {
+		t.Fatalf("image_annotation_missing: got=%d want=3", resp.ImageAnnotationMissing)
+	}
+	if resp.VideoAnnotationExpected != 0 {
+		t.Fatalf("video_annotation_expected: got=%d want=0", resp.VideoAnnotationExpected)
+	}
+	if resp.VideoAnnotationMissing != 0 {
+		t.Fatalf("video_annotation_missing: got=%d want=0", resp.VideoAnnotationMissing)
+	}
+	if resp.VideoTranscriptionExpected != 0 {
+		t.Fatalf("video_transcription_expected: got=%d want=0", resp.VideoTranscriptionExpected)
+	}
+	if resp.VideoTranscriptionMissing != 0 {
+		t.Fatalf("video_transcription_missing: got=%d want=0", resp.VideoTranscriptionMissing)
+	}
 }
 
 func TestCollectExcludesVideoFramesFromAnnotationGaps(t *testing.T) {
@@ -194,6 +212,18 @@ VALUES
 	}
 	if resp.VideosTotal != 2 {
 		t.Fatalf("videos_total: got=%d want=2", resp.VideosTotal)
+	}
+	if resp.VideoAnnotationExpected != 2 {
+		t.Fatalf("video_annotation_expected: got=%d want=2", resp.VideoAnnotationExpected)
+	}
+	if resp.VideoAnnotationMissing != 1 {
+		t.Fatalf("video_annotation_missing: got=%d want=1", resp.VideoAnnotationMissing)
+	}
+	if resp.VideoTranscriptionExpected != 2 {
+		t.Fatalf("video_transcription_expected: got=%d want=2", resp.VideoTranscriptionExpected)
+	}
+	if resp.VideoTranscriptionMissing != 1 {
+		t.Fatalf("video_transcription_missing: got=%d want=1", resp.VideoTranscriptionMissing)
 	}
 
 	failuresByID := map[int64]FailureItem{}

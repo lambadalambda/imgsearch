@@ -310,33 +310,33 @@
     <SearchBar />
     <QuickRow />
 
-    {#if $mode.mode === "library"}
+    {#if $mode.mode === "stats"}
       <StatisticsPane />
+    {:else}
+      <div class="px-5 sm:px-9 mt-3 mb-1 text-[12.5px] text-muted-2 flex flex-wrap gap-2 items-center">
+        {#if $resultsMeta.loading}
+          <span>Loading…</span>
+        {:else if $resultsMeta.error}
+          <span class="text-bad">{$resultsMeta.error}</span>
+        {:else}
+          <span>
+            {$resultsMeta.total.toLocaleString()} {$resultsMeta.total === 1 ? "result" : "results"}
+            {#if $resultsMeta.durationMs && $mode.mode !== "library"}
+              · in {Math.round($resultsMeta.durationMs)} ms
+            {/if}
+          </span>
+        {/if}
+      </div>
+
+      <Masonry
+        pins={$pins}
+        loading={$resultsMeta.loading}
+        {emptyMessage}
+        {canLoadMore}
+        {loadingMore}
+        onLoadMore={loadMore}
+      />
     {/if}
-
-    <div class="px-5 sm:px-9 mt-3 mb-1 text-[12.5px] text-muted-2 flex flex-wrap gap-2 items-center">
-      {#if $resultsMeta.loading}
-        <span>Loading…</span>
-      {:else if $resultsMeta.error}
-        <span class="text-bad">{$resultsMeta.error}</span>
-      {:else}
-        <span>
-          {$resultsMeta.total.toLocaleString()} {$resultsMeta.total === 1 ? "result" : "results"}
-          {#if $resultsMeta.durationMs && $mode.mode !== "library"}
-            · in {Math.round($resultsMeta.durationMs)} ms
-          {/if}
-        </span>
-      {/if}
-    </div>
-
-    <Masonry
-      pins={$pins}
-      loading={$resultsMeta.loading}
-      {emptyMessage}
-      {canLoadMore}
-      {loadingMore}
-      onLoadMore={loadMore}
-    />
   </div>
 </div>
 
