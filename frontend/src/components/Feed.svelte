@@ -56,6 +56,7 @@
   let currentIndex = $state(0);
   let muted = $state(true);
   let exhausted = $state(false);
+  let fetchError = $state<string | null>(null);
   let loading = $state(false); // initial open
   let loadingMore = $state(false);
   let progress = $state(0); // 0..1 for the active video
@@ -136,6 +137,7 @@
     feedbackRecordedIndex = -1;
     progress = 0;
     exhausted = false;
+    fetchError = null;
     loading = true;
     startItemTimers(0);
     try {
@@ -164,6 +166,7 @@
     accumulatedWatchMs = 0;
     progress = 0;
     exhausted = false;
+    fetchError = null;
     loading = false;
     loadingMore = false;
     dragOffsetPx = 0;
@@ -412,14 +415,15 @@
       includeNSFW: $includeNSFW,
     };
     const token = ++candidateRequestToken;
+    fetchError = null;
     let response;
     try {
       response = await searchSimilarVideos(opts);
     } catch (err) {
-      if (err instanceof ApiError && err.message) {
-        // Surface only as exhaustion — keep the overlay visible.
-      }
-      exhausted = true;
+      if (token !== candidateRequestToken) return;
+      fetchError = err instanceof ApiError && err.message
+        ? err.message
+        : "Could not load more videos.";
       return;
     }
     if (token !== candidateRequestToken) return;
@@ -444,6 +448,11 @@
       // next fetch with the updated `seen` list will pull fresh candidates.
       return;
     }
+  }
+
+  async function retryFetchError(): Promise<void> {
+    if (loading || loadingMore) return;
+    await ensureLookahead();
   }
 
   function collectSeenIds(): number[] {
@@ -799,6 +808,49 @@
           class="absolute inset-0 grid place-items-center bg-black/80 text-white/80 text-sm pointer-events-none"
         >
           Loading similar videos…
+        </div>
+      {/if}
+
+      {#if fetchError && currentIndex >= queue.length - 1}
+        <div
+          data-feed-error
+          class="absolute inset-0 grid place-items-center bg-black/85 px-6"
+        >
+          <div class="max-w-sm text-center flex flex-col items-center gap-3">
+            <div class="flex flex-col items-center gap-1">
+              <p class="m-0 text-white/90 text-[15px] font-semibold">
+                Couldn't load more videos.
+              </p>
+              <p class="m-0 text-white/65 text-[13px] leading-relaxed">
+                {fetchError}
+              </p>
+            </div>
+            <div class="flex items-center justify-center gap-2">
+              <button
+                type="button"
+                data-feed-error-retry
+                disabled={loadingMore}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  void retryFetchError();
+                }}
+                class="px-5 py-2 bg-[#fffdf9] text-ink rounded-full text-[13.5px] font-semibold border-0 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+              >
+                {loadingMore ? "Retrying..." : "Retry"}
+              </button>
+              <button
+                type="button"
+                data-feed-error-back
+                onclick={(e) => {
+                  e.stopPropagation();
+                  close();
+                }}
+                class="px-5 py-2 bg-white/12 text-[#fffdf9] rounded-full text-[13.5px] font-semibold border border-white/20 cursor-pointer"
+              >
+                Back
+              </button>
+            </div>
+          </div>
         </div>
       {/if}
 

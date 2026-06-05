@@ -6,8 +6,6 @@
 - [ ] [Batched embedding inference via multi-sequence llama.cpp](issues/014-batched-embedding-inference.md)
 - [ ] [Narrow native runtime locks around preprocessing](issues/040-narrow-native-runtime-locks.md)
 - [ ] [Harden sqlite-vector quantized search under mixed models](issues/050-sqlite-vector-quantized-mixed-models.md)
-- [ ] [Handle Feed fetch errors without ending the session](issues/059-handle-feed-fetch-errors-without-exhaustion.md)
-- [ ] [Abort Feed lookahead requests on close](issues/060-abort-feed-lookahead-requests-on-close.md)
 - [ ] [Surface Rail Feed empty and unplayable states](issues/062-surface-rail-feed-empty-unplayable-states.md)
 - [ ] [Optimize tag cloud handling](issues/066-optimize-tag-cloud-handling.md)
 - [ ] [Extract repeated native task commands from `mise.toml`](issues/049-extract-native-task-command-scripts.md)

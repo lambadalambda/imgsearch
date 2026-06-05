@@ -177,6 +177,8 @@ const videosRequests = [];
 const uploadRequests = [];
 const similarVideoRequests = [];
 const requestOrder = [];
+let similarVideoFailuresRemaining = 0;
+let expectedFetchFailureConsoleMessages = 0;
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
@@ -342,6 +344,11 @@ const server = createServer(async (req, res) => {
         softNegativeImageIds,
         limit,
       });
+      if (similarVideoFailuresRemaining > 0) {
+        similarVideoFailuresRemaining -= 1;
+        jsonResponse(res, 503, { error: "temporary similar-video outage" });
+        return;
+      }
       const candidates = similarVideoResults([videoId, ...seenIds]).slice(0, limit);
       jsonResponse(res, 200, {
         results: candidates,
@@ -456,6 +463,14 @@ try {
   });
   page.on("console", (msg) => {
     if (msg.type() === "error") {
+      if (
+        expectedFetchFailureConsoleMessages > 0 &&
+        msg.text().includes("Failed to load resource") &&
+        msg.text().includes("status of 503")
+      ) {
+        expectedFetchFailureConsoleMessages -= 1;
+        return;
+      }
       throw new Error(`atelier console error: ${msg.text()}`);
     }
   });
@@ -659,6 +674,45 @@ try {
   if (!railFeedRequest || railFeedRequest.videoId < 200 || railFeedRequest.videoId > 205) {
     throw new Error(
       `expected Rail Feed to seed one sample video, got ${JSON.stringify(railFeedRequest)}`,
+    );
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("[data-feed-overlay]").waitFor({ state: "hidden", timeout: 5000 });
+
+  // 1c. A transient similar-video fetch error must not present as true
+  //     exhaustion. It should keep the Feed session open and expose a retry
+  //     path that can fetch the first successful batch.
+  similarVideoFailuresRemaining = 1;
+  expectedFetchFailureConsoleMessages = 1;
+  const baselineErroredFeedRequests = similarVideoRequests.length;
+  await page.locator('button[aria-label^="Feed"]').click();
+  await page.locator("[data-feed-overlay]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-feed-error]").waitFor({ state: "visible", timeout: 5000 });
+  const erroredFeedExhausted = await page.locator("[data-feed-overlay]").getAttribute("data-feed-exhausted");
+  if (erroredFeedExhausted === "true") {
+    throw new Error("expected transient Feed fetch error not to mark the feed exhausted");
+  }
+  if ((await page.locator("[data-feed-end]").count()) > 0) {
+    throw new Error("expected transient Feed fetch error not to render the end-of-feed state");
+  }
+  if (similarVideoRequests.length !== baselineErroredFeedRequests + 1) {
+    throw new Error(
+      `expected one failing similar-videos request, got ${JSON.stringify(similarVideoRequests.slice(baselineErroredFeedRequests))}`,
+    );
+  }
+  await page.locator("[data-feed-error-retry]").click();
+  await page.waitForFunction(
+    () => {
+      const overlay = document.querySelector("[data-feed-overlay]");
+      const size = Number(overlay?.getAttribute("data-feed-queue-size") || 0);
+      return size > 1;
+    },
+    {},
+    { timeout: 5000 },
+  );
+  if (similarVideoRequests.length < baselineErroredFeedRequests + 2) {
+    throw new Error(
+      `expected retry to issue another similar-videos request, got ${JSON.stringify(similarVideoRequests.slice(baselineErroredFeedRequests))}`,
     );
   }
   await page.keyboard.press("Escape");

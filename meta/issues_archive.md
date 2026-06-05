@@ -64,5 +64,7 @@
 - [x] [Reset Atelier pagination on data key changes](issues/056-reset-atelier-pagination-on-data-key-changes.md)
 - [x] [Owner-check worker job completion and failure updates](issues/057-owner-check-worker-job-completion.md)
 - [x] [Align Atelier tag all-mode with backend parameters](issues/058-align-atelier-tag-all-mode-with-backend.md)
+- [x] [Handle Feed fetch errors without ending the session](issues/059-handle-feed-fetch-errors-without-exhaustion.md)
+- [x] [Abort Feed lookahead requests on close](issues/060-abort-feed-lookahead-requests-on-close.md)
 - [x] [Port Feed buffer reranking or document the divergence](issues/061-port-feed-buffer-reranking-or-document-divergence.md)
 - [x] [Preserve result rank across masonry rows](issues/065-preserve-result-rank-across-masonry-rows.md)

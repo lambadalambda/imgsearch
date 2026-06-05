@@ -6,7 +6,7 @@ P2
 
 ## Status
 
-Open.
+Archived (2026-06-05). Marked not likely: `/api/search/similar-videos` is currently a cheap SQL request, so abort-controller plumbing would add complexity without meaningful resource savings. Revisit if Feed ranking becomes expensive or server-side cancellation becomes valuable.
 
 ## Summary
 
