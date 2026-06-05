@@ -2,6 +2,8 @@ import { writable, derived, get } from "svelte/store";
 import type { Pin } from "./types";
 
 export type ViewMode = "library" | "search" | "similar" | "tag";
+export type LibrarySort = "random" | "newest";
+export type LibraryMedia = "all" | "images" | "videos";
 
 export interface AppMode {
   mode: ViewMode;
@@ -87,6 +89,10 @@ export function setTagSearch(tags: string[], tagMode: "any" | "all" = "any"): vo
 }
 
 export const includeNSFW = writable<boolean>(false);
+
+export const librarySort = writable<LibrarySort>("random");
+
+export const libraryMedia = writable<LibraryMedia>("all");
 
 export const lightboxPin = writable<Pin | null>(null);
 

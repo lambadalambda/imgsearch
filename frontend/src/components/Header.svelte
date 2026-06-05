@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { mode, headline, includeNSFW, openUpload, setLibrary } from "../lib/stores";
+  import {
+    mode,
+    headline,
+    includeNSFW,
+    libraryMedia,
+    librarySort,
+    openUpload,
+    setLibrary,
+  } from "../lib/stores";
 
   function goHome(event: Event) {
     event.preventDefault();
@@ -35,6 +43,37 @@
     </div>
 
     <div class="flex items-center gap-2 flex-wrap order-2">
+      {#if $mode.mode === "library"}
+        <label
+          class="inline-flex items-center gap-2 px-[13px] py-[7px] border border-line-2 rounded-full bg-surface text-ink-2 text-[13px] font-medium leading-none transition-[background-color,border-color,color] duration-150 ease-soft hover:bg-surface-2"
+        >
+          <span>Media</span>
+          <select
+            data-library-media
+            bind:value={$libraryMedia}
+            aria-label="Filter library media"
+            class="bg-transparent border-0 text-ink font-semibold text-[13px] leading-none outline-none cursor-pointer"
+          >
+            <option value="all">Images + videos</option>
+            <option value="images">Images only</option>
+            <option value="videos">Videos only</option>
+          </select>
+        </label>
+        <label
+          class="inline-flex items-center gap-2 px-[13px] py-[7px] border border-line-2 rounded-full bg-surface text-ink-2 text-[13px] font-medium leading-none transition-[background-color,border-color,color] duration-150 ease-soft hover:bg-surface-2"
+        >
+          <span>Sort</span>
+          <select
+            data-library-sort
+            bind:value={$librarySort}
+            aria-label="Sort library"
+            class="bg-transparent border-0 text-ink font-semibold text-[13px] leading-none outline-none cursor-pointer"
+          >
+            <option value="random">Random</option>
+            <option value="newest">Recently added</option>
+          </select>
+        </label>
+      {/if}
       <label
         class="inline-flex items-center gap-2 px-[13px] py-[7px] border border-line-2 rounded-full bg-surface text-ink-2 text-[13px] font-medium leading-none cursor-pointer transition-[background-color,border-color,color] duration-150 ease-soft hover:bg-surface-2"
       >

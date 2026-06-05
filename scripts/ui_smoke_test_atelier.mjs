@@ -214,7 +214,9 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/videos") {
       const limit = Number(url.searchParams.get("limit") || 24);
       const offset = Number(url.searchParams.get("offset") || 0);
-      videosRequests.push({ limit, offset });
+      const order = url.searchParams.get("order") || "";
+      const seed = url.searchParams.get("seed") || "";
+      videosRequests.push({ limit, offset, order, seed });
       jsonResponse(res, 200, {
         videos: sampleVideos.slice(offset, offset + limit),
         total: sampleVideos.length,
@@ -403,10 +405,100 @@ try {
       `expected initial library request to use seeded random order, got ${JSON.stringify(initialImagesRequest)}`,
     );
   }
+  const mediaSelect = page.locator("[data-library-media]");
+  const initialMedia = await mediaSelect.inputValue();
+  if (initialMedia !== "all") {
+    throw new Error(`expected library media filter to default to all, got ${JSON.stringify(initialMedia)}`);
+  }
+  const initialVideosRequest = videosRequests[0];
+  if (!initialVideosRequest || initialVideosRequest.order !== "random" || !initialVideosRequest.seed) {
+    throw new Error(
+      `expected initial library request to include seeded random videos, got ${JSON.stringify(initialVideosRequest)}`,
+    );
+  }
 
-  // 1b. Rail Feed launcher — starts from a random video even though the
-  //     library grid itself is image-only.
+  const imageOnlyStart = imagesRequests.length;
+  await mediaSelect.selectOption("images");
+  const imageOnlyDeadline = Date.now() + 5000;
+  while (imagesRequests.length <= imageOnlyStart && Date.now() < imageOnlyDeadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const imageOnlyTypes = await page
+    .locator("[data-pin]")
+    .evaluateAll((pins) => pins.map((pin) => pin.getAttribute("data-pin-media-type")));
+  if (imageOnlyTypes.length === 0 || imageOnlyTypes.some((type) => type !== "image")) {
+    throw new Error(`expected image-only library pins, got ${JSON.stringify(imageOnlyTypes)}`);
+  }
+
+  const videoOnlyStart = videosRequests.length;
+  await mediaSelect.selectOption("videos");
+  const videoOnlyDeadline = Date.now() + 5000;
+  while (videosRequests.length <= videoOnlyStart && Date.now() < videoOnlyDeadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const videoOnlyTypes = await page
+    .locator("[data-pin]")
+    .evaluateAll((pins) => pins.map((pin) => pin.getAttribute("data-pin-media-type")));
+  if (videoOnlyTypes.length === 0 || videoOnlyTypes.some((type) => type !== "video")) {
+    throw new Error(`expected video-only library pins, got ${JSON.stringify(videoOnlyTypes)}`);
+  }
+
+  const allMediaImageStart = imagesRequests.length;
+  const allMediaVideoStart = videosRequests.length;
+  await mediaSelect.selectOption("all");
+  const allMediaDeadline = Date.now() + 5000;
+  while (
+    (imagesRequests.length <= allMediaImageStart || videosRequests.length <= allMediaVideoStart) &&
+    Date.now() < allMediaDeadline
+  ) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  await page.waitForFunction(
+    () => {
+      const types = new Set(
+        Array.from(document.querySelectorAll("[data-pin]")).map((pin) => pin.getAttribute("data-pin-media-type")),
+      );
+      return types.has("image") && types.has("video");
+    },
+    {},
+    { timeout: 5000 },
+  );
+  const allMediaTypes = await page
+    .locator("[data-pin]")
+    .evaluateAll((pins) => Array.from(new Set(pins.map((pin) => pin.getAttribute("data-pin-media-type")))));
+  if (!allMediaTypes.includes("image") || !allMediaTypes.includes("video")) {
+    throw new Error(`expected mixed image/video library pins, got ${JSON.stringify(allMediaTypes)}`);
+  }
+
+  const sortSelect = page.locator("[data-library-sort]");
+  const initialSort = await sortSelect.inputValue();
+  if (initialSort !== "random") {
+    throw new Error(`expected library sort to default to random, got ${JSON.stringify(initialSort)}`);
+  }
+  const requestsBeforeNewestSort = imagesRequests.length;
+  await sortSelect.selectOption("newest");
+  const newestSortDeadline = Date.now() + 5000;
+  while (imagesRequests.length <= requestsBeforeNewestSort && Date.now() < newestSortDeadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const newestSortRequest = imagesRequests[imagesRequests.length - 1];
+  if (newestSortRequest.offset !== 0 || newestSortRequest.order !== "newest" || newestSortRequest.seed) {
+    throw new Error(`expected recently-added sort to request newest first page, got ${JSON.stringify(newestSortRequest)}`);
+  }
+  const requestsBeforeRandomSort = imagesRequests.length;
+  await sortSelect.selectOption("random");
+  const randomSortDeadline = Date.now() + 5000;
+  while (imagesRequests.length <= requestsBeforeRandomSort && Date.now() < randomSortDeadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const randomSortRequest = imagesRequests[imagesRequests.length - 1];
+  if (randomSortRequest.offset !== 0 || randomSortRequest.order !== "random" || !randomSortRequest.seed) {
+    throw new Error(`expected random sort to request seeded random first page, got ${JSON.stringify(randomSortRequest)}`);
+  }
+
+  // 1b. Rail Feed launcher — starts from a random video.
   const baselineRailSimilarVideos = similarVideoRequests.length;
+  const baselineRailVideos = videosRequests.length;
   await page.locator('button[aria-label^="Feed"]').click();
   await page.locator("[data-feed-overlay]").waitFor({ state: "visible", timeout: 5000 });
   await page.waitForFunction(
@@ -418,7 +510,7 @@ try {
     {},
     { timeout: 5000 },
   );
-  if (videosRequests.length === 0) {
+  if (videosRequests.length <= baselineRailVideos) {
     throw new Error("expected Rail Feed click to request /api/videos");
   }
   const railFeedRequest = similarVideoRequests[baselineRailSimilarVideos];
@@ -745,22 +837,27 @@ try {
   // 7. Load more — ensure clicking it grows the masonry.
   const beforeLoadMore = await page.locator("[data-pin]").count();
   const libraryRequestBeforeLoadMore = imagesRequests[imagesRequests.length - 1];
+  const videoRequestBeforeLoadMore = videosRequests[videosRequests.length - 1];
   await page.locator("[data-load-more]").click();
   await page.waitForFunction(
     (before) => document.querySelectorAll("[data-pin]").length > before,
     beforeLoadMore,
     { timeout: 5000 },
   );
-  if (imagesRequests.length < 2) {
-    throw new Error(`expected at least two /api/images requests after load-more, got ${imagesRequests.length}`);
+  if (imagesRequests.length < 2 || videosRequests.length < 2) {
+    throw new Error(`expected image and video requests after load-more, got images=${imagesRequests.length} videos=${videosRequests.length}`);
   }
   const lastRequest = imagesRequests[imagesRequests.length - 1];
-  if (lastRequest.offset === 0) {
-    throw new Error(`expected load-more to request a non-zero offset, got ${JSON.stringify(lastRequest)}`);
+  const lastVideoRequest = videosRequests[videosRequests.length - 1];
+  if (lastRequest.offset !== 0 || lastVideoRequest.offset !== 0) {
+    throw new Error(`expected mixed-media load-more to fetch from offset 0 for merging, got images=${JSON.stringify(lastRequest)} videos=${JSON.stringify(lastVideoRequest)}`);
   }
-  if (lastRequest.order !== "random" || lastRequest.seed !== libraryRequestBeforeLoadMore.seed) {
+  if (lastRequest.limit <= libraryRequestBeforeLoadMore.limit || lastVideoRequest.limit <= videoRequestBeforeLoadMore.limit) {
+    throw new Error(`expected mixed-media load-more to grow request limits, got images=${JSON.stringify(lastRequest)} videos=${JSON.stringify(lastVideoRequest)}`);
+  }
+  if (lastRequest.order !== "random" || lastRequest.seed !== libraryRequestBeforeLoadMore.seed || lastVideoRequest.order !== "random" || lastVideoRequest.seed !== videoRequestBeforeLoadMore.seed) {
     throw new Error(
-      `expected load-more to keep seeded random order ${JSON.stringify(libraryRequestBeforeLoadMore)}, got ${JSON.stringify(lastRequest)}`,
+      `expected load-more to keep seeded random order images=${JSON.stringify(libraryRequestBeforeLoadMore)} videos=${JSON.stringify(videoRequestBeforeLoadMore)}, got images=${JSON.stringify(lastRequest)} videos=${JSON.stringify(lastVideoRequest)}`,
     );
   }
 

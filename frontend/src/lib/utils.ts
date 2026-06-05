@@ -62,6 +62,7 @@ export function pinFromImage(record: ImageRecord): Pin {
     filename: record.original_name,
     tags,
     isNSFW: tagsIncludeNSFW(tags),
+    createdAt: record.created_at,
   };
 }
 
@@ -72,18 +73,17 @@ export function pinFromVideo(record: VideoRecord): Pin {
     imageId: record.image_id,
     videoId: record.video_id,
     mediaType: "video",
-    // Best-effort: the videos endpoint provides preview frames in `storage_path` already
-    // when used via the search results. For the gallery videos endpoint, use the hash too.
-    thumbUrl: mediaUrl(record.storage_path),
+    thumbUrl: mediaUrl(record.preview_path || record.storage_path),
     mediaUrl: mediaUrl(record.storage_path),
-    width: record.width,
-    height: record.height,
+    width: record.preview_width || record.width,
+    height: record.preview_height || record.height,
     title: deriveTitle(record),
     filename: record.original_name,
     tags,
     durationMs: record.duration_ms,
     isNSFW: tagsIncludeNSFW(tags),
     mimeType: record.mime_type,
+    createdAt: record.created_at,
   };
 }
 

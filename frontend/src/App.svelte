@@ -15,6 +15,8 @@
     pins,
     resultsMeta,
     includeNSFW,
+    libraryMedia,
+    librarySort,
     stats,
     topTags,
     pageBump,
@@ -26,11 +28,12 @@
     getStats,
     listImages,
     listTagCloud,
+    listVideos,
     searchSimilar,
     searchTags,
     searchText,
   } from "./lib/api";
-  import { pinFromImage, pinFromSearchResult } from "./lib/utils";
+  import { pinFromImage, pinFromSearchResult, pinFromVideo } from "./lib/utils";
   import type { Pin } from "./lib/types";
 
   const PAGE_SIZE = 48;
@@ -43,6 +46,36 @@
       return values[0] & 0x7fffffff;
     }
     return Math.floor(Math.random() * RANDOM_SEED_MAX);
+  }
+
+  function randomKey(key: string, seed: number): number {
+    let hash = seed >>> 0;
+    for (let i = 0; i < key.length; i += 1) {
+      hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0;
+    }
+    return hash;
+  }
+
+  function compareRecentPins(left: Pin, right: Pin): number {
+    const leftTime = Date.parse(left.createdAt ?? "") || 0;
+    const rightTime = Date.parse(right.createdAt ?? "") || 0;
+    return rightTime - leftTime || right.key.localeCompare(left.key);
+  }
+
+  function combineLibraryPins(imagePins: Pin[], videoPins: Pin[], sort: "random" | "newest", seed: number): Pin[] {
+    if (sort === "newest") {
+      return [...imagePins, ...videoPins].sort(compareRecentPins);
+    }
+
+    const first = randomKey("media:first", seed) % 2 === 0 ? videoPins : imagePins;
+    const second = first === videoPins ? imagePins : videoPins;
+    const out: Pin[] = [];
+    const max = Math.max(first.length, second.length);
+    for (let i = 0; i < max; i += 1) {
+      if (first[i]) out.push(first[i]);
+      if (second[i]) out.push(second[i]);
+    }
+    return out;
   }
 
   // Stats are cheap and useful in the search bar, so fetch them immediately.
@@ -96,6 +129,8 @@
   $effect(() => {
     const state = $mode;
     const includeNsfw = $includeNSFW;
+    const media = $libraryMedia;
+    const sort = $librarySort;
     const bump = $pageBump;
     // Subscribe to dataEpoch so successful uploads (or other refresh events)
     // can force a fresh, replacing fetch without changing mode.
@@ -106,6 +141,8 @@
       state.similarTo ?? "",
       state.tags?.join("\u0000") ?? "",
       state.tagMode ?? "",
+      state.mode === "library" ? media : "",
+      state.mode === "library" ? sort : "",
       includeNsfw ? "1" : "0",
       epoch,
     ].join("\u0001");
@@ -172,16 +209,44 @@
           nextPins = response.results.map(pinFromSearchResult);
           total = response.total ?? response.results.length;
         } else {
-          const response = await listImages({
-            limit: PAGE_SIZE,
-            offset: currentOffset,
-            order: "random",
-            seed: libraryRandomSeed,
-            includeNSFW: includeNsfw,
-            signal: ac.signal,
-          });
-          nextPins = response.images.map(pinFromImage);
-          total = response.total ?? response.images.length;
+          const seed = sort === "random" ? libraryRandomSeed : undefined;
+          if (media === "images") {
+            const response = await listImages({
+              limit: PAGE_SIZE,
+              offset: currentOffset,
+              order: sort,
+              seed,
+              includeNSFW: includeNsfw,
+              signal: ac.signal,
+            });
+            nextPins = response.images.map(pinFromImage);
+            total = response.total ?? response.images.length;
+          } else if (media === "videos") {
+            const response = await listVideos({
+              limit: PAGE_SIZE,
+              offset: currentOffset,
+              order: sort,
+              seed,
+              includeNSFW: includeNsfw,
+              signal: ac.signal,
+            });
+            nextPins = response.videos.map(pinFromVideo);
+            total = response.total ?? response.videos.length;
+          } else {
+            const limit = currentOffset + PAGE_SIZE;
+            const [imageResponse, videoResponse] = await Promise.all([
+              listImages({ limit, offset: 0, order: sort, seed, includeNSFW: includeNsfw, signal: ac.signal }),
+              listVideos({ limit, offset: 0, order: sort, seed, includeNSFW: includeNsfw, signal: ac.signal }),
+            ]);
+            const combined = combineLibraryPins(
+              imageResponse.images.map(pinFromImage),
+              videoResponse.videos.map(pinFromVideo),
+              sort,
+              libraryRandomSeed,
+            );
+            nextPins = combined.slice(currentOffset, currentOffset + PAGE_SIZE);
+            total = (imageResponse.total ?? imageResponse.images.length) + (videoResponse.total ?? videoResponse.videos.length);
+          }
         }
 
         if (token !== currentRequestToken) return;
@@ -231,6 +296,8 @@
     if ($mode.mode === "tag" && $mode.tags?.length) {
       return `No items tagged ${$mode.tags.join(", ")}.`;
     }
+    if ($libraryMedia === "images") return "No images yet. Click Upload to add some media.";
+    if ($libraryMedia === "videos") return "No videos yet. Click Upload to add some media.";
     return "Library is empty. Click Upload to add some media.";
   });
 </script>

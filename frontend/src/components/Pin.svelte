@@ -134,6 +134,7 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <article
     data-pin
+    data-pin-media-type={pin.mediaType}
     data-pin-anchor={pin.isAnchor ? "true" : undefined}
     data-pin-nsfw={nsfwFlagged ? "true" : undefined}
     class="relative bg-surface border border-line rounded-card overflow-hidden shadow-card cursor-pointer transition-[transform,box-shadow] duration-200 ease-soft hover:-translate-y-0.5 hover:shadow-elev group {pin.isAnchor

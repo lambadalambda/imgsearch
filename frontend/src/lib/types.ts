@@ -15,6 +15,9 @@ export interface ImageRecord {
 
 export interface VideoRecord extends ImageRecord {
   video_id: number;
+  preview_path?: string;
+  preview_width?: number;
+  preview_height?: number;
   duration_ms?: number;
   frame_count?: number;
 }
@@ -123,6 +126,8 @@ export interface Pin {
   matchTimestampMs?: number;
   /** Duration in ms for video pins. */
   durationMs?: number;
+  /** ISO-ish backend creation timestamp. Used for client-side mixed-media sorting. */
+  createdAt?: string;
   /** Whether this is the anchor of a similar-search. */
   isAnchor?: boolean;
   /** Whether this pin is currently flagged as NSFW (best-effort, derived from tags). */

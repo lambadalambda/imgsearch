@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(ui): add a library sort selector with Random as the default and Recently added as an alternate order.
+- feat(ui): add a library media selector defaulting to Images + videos, with Images only and Videos only filters.
 - fix(upload): fall back to copy-and-remove storage moves when temp uploads cross filesystem boundaries such as sshfs or rclone mounts.
 - fix(ui): scroll similar-search results back to the first result when Similar is triggered from lower in the gallery or lightbox.
 - fix(import): include MP4 attachments discovered from 4chan thread JSON instead of filtering them out before download.
