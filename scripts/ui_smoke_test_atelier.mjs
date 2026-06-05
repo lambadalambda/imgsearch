@@ -63,6 +63,8 @@ function jsonResponse(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+const PAGE_SIZE = 48;
+
 const sampleImages = Array.from({ length: 144 }, (_, i) => ({
   image_id: 1000 + i,
   original_name: `sample-${i}.jpg`,
@@ -362,7 +364,9 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/search/tags") {
       const tags = url.searchParams.getAll("tag");
       const mode = url.searchParams.get("tag_mode") || "any";
-      tagSearchRequests.push({ tags, mode });
+      const offset = Number(url.searchParams.get("offset") || 0);
+      const limit = Number(url.searchParams.get("limit") || 24);
+      tagSearchRequests.push({ tags, mode, offset, limit });
       jsonResponse(res, 200, {
         results: searchResults().map((r) => ({
           ...r,
@@ -997,6 +1001,68 @@ try {
     throw new Error(
       `expected load-more to keep seeded random order images=${JSON.stringify(libraryRequestBeforeLoadMore)} videos=${JSON.stringify(videoRequestBeforeLoadMore)}, got images=${JSON.stringify(lastRequest)} videos=${JSON.stringify(lastVideoRequest)}`,
     );
+  }
+
+  // 7a. Mode change after Load More must replace, not append. Regression
+  //     coverage for meta/issues/056: clicking a tag chip after the user
+  //     has already paged the library must reset the offset to 0 and
+  //     replace the rendered pins instead of appending onto a stale
+  //     library page.
+  const pinsAfterLoadMore = await page.locator("[data-pin]").count();
+  if (pinsAfterLoadMore <= PAGE_SIZE) {
+    throw new Error(`expected Load More to grow past PAGE_SIZE, got ${pinsAfterLoadMore}`);
+  }
+  const tagSearchesBefore = tagSearchRequests.length;
+  await page.getByRole("button", { name: "Tag · portrait" }).click();
+  await page.waitForFunction(
+    () => /\?tag=portrait/.test(window.location.search),
+    {},
+    { timeout: 5000 },
+  );
+  if (tagSearchRequests.length <= tagSearchesBefore) {
+    throw new Error(
+      `expected /api/search/tags after mode switch, got ${tagSearchRequests.length} (was ${tagSearchesBefore})`,
+    );
+  }
+  const tagAfterLoadMore = tagSearchRequests[tagSearchRequests.length - 1];
+  if (tagAfterLoadMore.offset !== 0) {
+    throw new Error(
+      `expected tag search after Load More to reset offset to 0, got ${JSON.stringify(tagAfterLoadMore)}`,
+    );
+  }
+  // Wait for the tag response to actually replace the rendered pins, not
+  // just be issued. If the bug regresses, the count stays at the
+  // post-Load-More number and this wait times out.
+  await page.waitForFunction(
+    (before) => document.querySelectorAll("[data-pin]").length < before,
+    pinsAfterLoadMore,
+    { timeout: 5000 },
+  );
+  const pinsAfterModeSwitch = await page.locator("[data-pin]").count();
+  if (pinsAfterModeSwitch >= pinsAfterLoadMore) {
+    throw new Error(
+      `expected mode switch to replace pins, got ${pinsAfterModeSwitch} (>= ${pinsAfterLoadMore} from Load More)`,
+    );
+  }
+  const tagHeadlineAfterSwitch = (await page.locator("h1").first().textContent() || "").trim();
+  if (tagHeadlineAfterSwitch !== "portrait") {
+    throw new Error(`expected tag headline after mode switch, got ${JSON.stringify(tagHeadlineAfterSwitch)}`);
+  }
+  // Return to library so the rest of the smoke flow (Upload, etc.) starts
+  // from a clean offset.
+  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
+  await page.waitForFunction(
+    (pageSize) => {
+      const pins = document.querySelectorAll("[data-pin]").length;
+      return pins > 0 && pins <= pageSize;
+    },
+    PAGE_SIZE,
+    { timeout: 5000 },
+  );
+  const pinsAfterReturn = await page.locator("[data-pin]").count();
+  if (pinsAfterReturn > PAGE_SIZE) {
+    throw new Error(`expected Library return to reset to a single page, got ${pinsAfterReturn} pins`);
   }
 
   // 7b. Upload flow — open modal via header trigger, attach two files, submit,

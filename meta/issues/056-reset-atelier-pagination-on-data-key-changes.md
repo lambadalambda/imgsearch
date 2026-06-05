@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open; core pagination state fix landed, but mode-change-specific coverage is still pending.
+Resolved (2026-06-05). Added Atelier smoke step 7a: after Load More pushes the pin count past `PAGE_SIZE`, clicking the "Tag · portrait" chip must (1) issue `/api/search/tags?offset=0`, (2) replace the rendered pins, and (3) clear back to a single Library page when the user returns.
 
 ## Summary
 
@@ -26,7 +26,7 @@ After `Load more` is used once, the Atelier data effect treats future fetches as
 
 ## Acceptance Criteria
 
-- [ ] Add Atelier smoke or unit coverage for changing mode after Load More.
+- [x] Add Atelier smoke or unit coverage for changing mode after Load More.
 - [x] Add coverage for an upload/data refresh after Load More replacing the collection.
 - [x] Track the last handled page bump separately from the current data key.
 - [x] Reset `currentOffset` and replace pins whenever mode/query/tags/NSFW/dataEpoch changes.

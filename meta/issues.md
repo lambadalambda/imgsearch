@@ -3,7 +3,6 @@
 
 ## Migrated from `docs/issues.md` (priority P0 to P3)
 
-- [ ] [Reset Atelier pagination on data key changes](issues/056-reset-atelier-pagination-on-data-key-changes.md)
 - [ ] [Batched embedding inference via multi-sequence llama.cpp](issues/014-batched-embedding-inference.md)
 - [ ] [Narrow native runtime locks around preprocessing](issues/040-narrow-native-runtime-locks.md)
 - [ ] [Harden sqlite-vector quantized search under mixed models](issues/050-sqlite-vector-quantized-mixed-models.md)
