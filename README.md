@@ -265,6 +265,18 @@ Both processes must point at the same `-data-dir` if you split them. On a single
 | Indexing is too slow but stable | Raise `-llama-native-gpu-layers` or `-llama-native-batch-size` one step at a time |
 | Descriptions/tags are not needed | Keep `-enable-annotations=false` permanently |
 
+## Security Model
+
+`imgsearch` keeps a single trust boundary: the network address it binds to.
+
+- The default bind is loopback (`127.0.0.1:8080`). If you can reach the address, you are trusted to use both the UI and the API.
+- Any non-API page load mints an `imgsearch_api_key` cookie that the API auth middleware then accepts as equivalent to the configured API key. This is intentional: the UI is the only way to use the app, so locking the API behind a separate token from the UI would block the UI itself. The cookie is `HttpOnly`, `SameSite=Strict`, and `Secure` when served over TLS.
+- API clients that are not a browser (importers, scripts, `curl`) authenticate with `X-Imgsearch-API-Key: <token>` or `Authorization: Bearer <token>`. Both are honored independently of cookies.
+- Binding to a non-loopback address (`-addr 0.0.0.0:8080` or a public hostname) requires an explicit strong API key via `-api-key` / `IMGSEARCH_API_KEY`; the built-in development key is rejected at startup, and a `WARNING` is logged that anyone who can reach the address can use the API.
+- If you expose the app beyond your own machine, put it behind a trusted reverse proxy that terminates TLS, enforces auth if needed, and exposes a stable hostname (the `Set-Cookie` is keyed to the configured API key, not the hostname, so a hostile same-origin page on the same hostname inherits the same trust).
+
+This is documented in `meta/issues/054-harden-ui-api-cookie-auth.md` so the trust boundary stays explicit.
+
 ## Notes
 
 - The app binds to `127.0.0.1:8080` by default.

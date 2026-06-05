@@ -332,6 +332,11 @@ func main() {
 			server.MaxHeaderBytes,
 		)
 		log.Printf("listening on http://%s", cfg.Addr)
+		if !isLoopbackListenAddress(cfg.Addr) {
+			log.Printf(
+				"WARNING: API auth cookie is minted for any visitor of the UI; anyone who can reach this address can use the /api/* routes. Place imgsearch behind a trusted reverse proxy with TLS, or use loopback-only bind (-addr 127.0.0.1:8080).",
+			)
+		}
 		if err := serveHTTPWithShutdown(rootCtx, server); err != nil {
 			stopRoot()
 			waitForWorkerShutdown(workerDone, defaultHTTPShutdownTimeout)

@@ -3,7 +3,6 @@
 
 ## Migrated from `docs/issues.md` (priority P0 to P3)
 
-- [ ] [Document trusted UI API cookie model](issues/054-harden-ui-api-cookie-auth.md)
 - [ ] [Reset Atelier pagination on data key changes](issues/056-reset-atelier-pagination-on-data-key-changes.md)
 - [ ] [Owner-check worker job completion and failure updates](issues/057-owner-check-worker-job-completion.md)
 - [ ] [Batched embedding inference via multi-sequence llama.cpp](issues/014-batched-embedding-inference.md)

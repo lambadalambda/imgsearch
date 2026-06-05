@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open.
+Resolved (2026-06-05). Pinned the intentional trust boundary with `TestAPISecurityChainMintsCookieOnWebAndAcceptsItOnAPI` and `TestAPISecurityChainAcceptsAPIHeaderAuthIndependentlyOfCookies`, added a startup `WARNING` log when binding non-loopback, and added a "Security Model" section to the README. Non-loopback startup still requires an explicit strong API key (covered by existing `TestMainHTTPListenAddrRequiresAPIKey` family).
 
 ## Summary
 
@@ -28,10 +28,10 @@ The API authentication cookie is intentionally minted for anonymous non-API page
 
 ## Acceptance Criteria
 
-- [ ] Add tests proving the intended behavior: non-API UI requests mint the cookie and subsequent same-origin API calls succeed.
-- [ ] Add docs/warnings that exposing the UI exposes API capability to anyone who can reach it.
-- [ ] Keep non-loopback startup requiring an explicit API key so accidental default-key exposure remains blocked.
-- [ ] Ensure API-header auth for scripts/imports still works independently of browser cookies.
+- [x] Add tests proving the intended behavior: non-API UI requests mint the cookie and subsequent same-origin API calls succeed.
+- [x] Add docs/warnings that exposing the UI exposes API capability to anyone who can reach it.
+- [x] Keep non-loopback startup requiring an explicit API key so accidental default-key exposure remains blocked.
+- [x] Ensure API-header auth for scripts/imports still works independently of browser cookies.
 
 ## Related Files
 
