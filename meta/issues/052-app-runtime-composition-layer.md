@@ -16,8 +16,8 @@ Move reusable DB/vector/model/worker/HTTP construction behind `internal/app` bou
 
 - `cmd/imgsearch/main.go` handles SQLite/vector setup, migrations, default model downloads, embedder/annotator/transcriber construction, queue construction, and HTTP server setup.
 - `internal/app/bootstrap.go` currently only applies DB pragmas, runs migrations, and validates the vector backend.
-- `docs/issues/048-runtime-config-extraction.md` should extract typed runtime configuration first.
-- `docs/issues/041-graceful-shutdown-and-worker-cancellation.md` should land first so lifecycle ownership is clear before moving construction.
+- `issues/048-runtime-config-extraction.md` should extract typed runtime configuration first.
+- `issues/041-graceful-shutdown-and-worker-cancellation.md` should land first so lifecycle ownership is clear before moving construction.
 
 ## Risks
 

@@ -30,7 +30,7 @@ Completed.
 - [x] Keep config validation behavior equivalent to the current CLI path.
 - [x] Add tests for runtime mode, API key exposure, and native option validation through the config layer.
 - [x] Avoid moving DB/vector/model construction in this issue.
-- [x] Leave a clear handoff for `docs/issues/052-app-runtime-composition-layer.md`.
+- [x] Leave a clear handoff for `issues/052-app-runtime-composition-layer.md`.
 
 ## Resolution
 

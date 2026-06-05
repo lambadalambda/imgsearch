@@ -25,8 +25,9 @@
    * Similar-video Feed overlay.
    *
    * Behaviour mirrors the legacy implementation in
-   * `internal/webui/static/app.js` (see docs/issues/add-mobile-adaptive-
-   * similar-video-feed-mode.md and add-dynamic-adaptive-batching-...md):
+   * `internal/webui/static/app.js` (see meta/issues/add-mobile-adaptive-
+   * similar-video-feed-mode.md and meta/issues/add-dynamic-adaptive-
+   * batching-to-similar-video-feed.md):
    *
    *   - Three persistent <video> elements; CSS slot positions (-100%, 0,
    *     +100% translateY) place them as prev / current / next. We never

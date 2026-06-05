@@ -12,7 +12,7 @@ Completed.
 
 Image and video handlers implement similar reannotation, NSFW toggling, delete cleanup, path parsing, and boolean SQL helpers. Extract shared media-level helpers once route semantics are tightened.
 
-This should follow `docs/issues/043-tighten-api-route-semantics.md` so shared path helpers encode the final route behavior instead of preserving today's ambiguous item GET semantics.
+This should follow `issues/043-tighten-api-route-semantics.md` so shared path helpers encode the final route behavior instead of preserving today's ambiguous item GET semantics.
 
 ## Context
 

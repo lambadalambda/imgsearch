@@ -17,7 +17,7 @@ The static frontend duplicates image/video collection loading, pagination, rende
 - `internal/webui/static/app.js` is a large monolithic file.
 - Image and video pagination/loading flows are similar but separately implemented.
 - Card markup mixes data formatting, permissions, action buttons, accessibility labels, and HTML construction in one template.
-- `docs/issues/046-ui-smoke-tests.md` should land first to provide a browser-level safety net.
+- `issues/046-ui-smoke-tests.md` should land first to provide a browser-level safety net.
 
 ## Risks
 

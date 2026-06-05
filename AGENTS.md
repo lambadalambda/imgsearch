@@ -14,7 +14,7 @@
 - Treat UI/runtime regressions the same way: add a failing regression test first when practical, then fix the bug and keep the test so it does not reappear.
 - Keep dependencies minimal and justify each new dependency.
 - Document architectural decisions and trade-offs in `docs/`.
-- When reviews or investigations uncover actionable follow-up work, track it in `docs/issues.md` as a checklist and keep one dedicated note per issue under `docs/issues/` with context, risks, and acceptance criteria.
+- When reviews or investigations uncover actionable follow-up work, track it in `meta/issues.md` as a checklist and keep one dedicated note per issue under `meta/issues/` with context, risks, and acceptance criteria. Move completed issues to `meta/issues_archive.md` instead of deleting them.
 - Keep `CHANGELOG.md` up to date for user-visible changes and notable internal behavior changes.
 - Use `mise` to manage developer tool versions in `mise.toml`.
 - Use `mise run <task>` as the standard task runner for common workflows.
