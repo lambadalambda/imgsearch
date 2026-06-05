@@ -33,6 +33,13 @@ type Queue struct {
 
 const reannotateImageMaxSideMultiplier = 2
 
+// ErrStaleClaim signals that a job completion, failure, or lease renewal
+// targeted a job that is no longer leased by the calling worker — either
+// because the lease expired and was reclaimed, or because the job was
+// re-queued. Callers must treat this as a non-error: the new owner (if any)
+// owns the row, and the worker's own result must not be persisted.
+var ErrStaleClaim = errors.New("worker: stale job claim")
+
 type claimedJob struct {
 	ID          int64
 	Kind        string
@@ -41,6 +48,10 @@ type claimedJob struct {
 	ModelID     int64
 	Attempts    int
 	MaxAttempts int
+	// LeaseOwner is the worker owner that originally claimed the job.
+	// Completion, failure, and lease renewal must check the row against
+	// this value to detect reclaim.
+	LeaseOwner string
 }
 
 type imageTaskData struct {
@@ -169,6 +180,7 @@ WHERE id = ?
 	}
 
 	job.Attempts++
+	job.LeaseOwner = owner
 	return job, true, nil
 }
 
@@ -308,6 +320,7 @@ ORDER BY created_at ASC
 			_ = tx.Rollback()
 			return nil, fmt.Errorf("scan claimed job: %w", err)
 		}
+		j.LeaseOwner = owner
 		jobs = append(jobs, j)
 	}
 	if err := jobRows.Err(); err != nil {
@@ -538,7 +551,9 @@ func (q *Queue) executeClaimedJob(ctx context.Context, job claimedJob) (bool, bo
 		stageStartedAt = time.Now()
 		if err := q.completeVideoAnnotationJob(ctx, job, result.videoAnnotation); err != nil {
 			completeDuration = time.Since(stageStartedAt)
-			_ = q.failOrRetry(ctx, job, err)
+			if !errors.Is(err, ErrStaleClaim) {
+				_ = q.failOrRetry(ctx, job, err)
+			}
 			return true, false, err
 		}
 		completeDuration = time.Since(stageStartedAt)
@@ -546,7 +561,9 @@ func (q *Queue) executeClaimedJob(ctx context.Context, job claimedJob) (bool, bo
 		stageStartedAt = time.Now()
 		if err := q.completeJob(ctx, job, result.annotation); err != nil {
 			completeDuration = time.Since(stageStartedAt)
-			_ = q.failOrRetry(ctx, job, err)
+			if !errors.Is(err, ErrStaleClaim) {
+				_ = q.failOrRetry(ctx, job, err)
+			}
 			return true, false, err
 		}
 		completeDuration = time.Since(stageStartedAt)
@@ -907,14 +924,29 @@ WHERE id = ?
 }
 
 // markJobDoneTx marks a leased index job as done inside the provided transaction.
+// The WHERE clause pins state + lease_owner + leased_until so a worker whose
+// lease expired and was reclaimed cannot overwrite the new owner's row; the
+// zero-rows case is reported as ErrStaleClaim so the caller can roll back any
+// metadata writes done earlier in the same transaction.
 // Callers are responsible for rolling back tx if this returns an error.
-func markJobDoneTx(ctx context.Context, tx *sql.Tx, jobID int64) error {
-	if _, err := tx.ExecContext(ctx, `
+func markJobDoneTx(ctx context.Context, tx *sql.Tx, jobID int64, owner string) error {
+	res, err := tx.ExecContext(ctx, `
 UPDATE index_jobs
 SET state = 'done', leased_until = NULL, lease_owner = NULL, last_error = NULL, updated_at = datetime('now')
 WHERE id = ?
-`, jobID); err != nil {
+  AND state = 'leased'
+  AND lease_owner = ?
+  AND leased_until > datetime('now')
+`, jobID, owner)
+	if err != nil {
 		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected mark done: %w", err)
+	}
+	if rows == 0 {
+		return ErrStaleClaim
 	}
 	return nil
 }
@@ -963,7 +995,7 @@ WHERE id = ?
 		}
 	}
 
-	if err := markJobDoneTx(ctx, tx, job.ID); err != nil {
+	if err := markJobDoneTx(ctx, tx, job.ID, job.LeaseOwner); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("mark job done: %w", err)
 	}
@@ -1009,7 +1041,7 @@ WHERE id = ?
 		}
 	}
 
-	if err := markJobDoneTx(ctx, tx, job.ID); err != nil {
+	if err := markJobDoneTx(ctx, tx, job.ID, job.LeaseOwner); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("mark video annotation job done: %w", err)
 	}
@@ -1054,7 +1086,7 @@ DO UPDATE SET dim = excluded.dim, vector_blob = excluded.vector_blob, updated_at
 		_ = tx.Rollback()
 		return fmt.Errorf("upsert video transcript embedding: %w", err)
 	}
-	if err := markJobDoneTx(ctx, tx, job.ID); err != nil {
+	if err := markJobDoneTx(ctx, tx, job.ID, job.LeaseOwner); err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("mark transcript job done: %w", err)
 	}
@@ -1098,7 +1130,7 @@ func (q *Queue) failOrRetry(ctx context.Context, job claimedJob, procErr error) 
 		runAfter = sql.NullString{String: fmt.Sprintf("+%d seconds", int(delay.Seconds())), Valid: true}
 	}
 
-	_, err := q.DB.ExecContext(ctx, `
+	res, err := q.DB.ExecContext(ctx, `
 UPDATE index_jobs
 SET state = ?,
     run_after = CASE WHEN ? <> '' THEN datetime('now', ?) ELSE NULL END,
@@ -1107,9 +1139,21 @@ SET state = ?,
     last_error = ?,
     updated_at = datetime('now')
 WHERE id = ?
-`, nextState, runAfter.String, runAfter.String, procErr.Error(), job.ID)
+  AND state = 'leased'
+  AND lease_owner = ?
+  AND leased_until > datetime('now')
+`, nextState, runAfter.String, runAfter.String, procErr.Error(), job.ID, job.LeaseOwner)
 	if err != nil {
 		return fmt.Errorf("update failed job: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected fail job: %w", err)
+	}
+	if rows == 0 {
+		// The lease was reclaimed by another owner; their retry/fail
+		// will take effect, so do not double-process here.
+		return ErrStaleClaim
 	}
 	log.Printf("worker job id=%d image_id=%d state=%s err=%v", job.ID, job.ImageID, nextState, procErr)
 	return nil
@@ -1120,6 +1164,44 @@ func isSQLiteLockError(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "database is locked") || strings.Contains(msg, "database is busy")
+}
+
+// RenewLease extends leased_until for a job that is still leased by owner.
+// Long-running annotation / transcription work that risks exceeding the
+// default lease can call this periodically (e.g. halfway through the lease)
+// to keep the row claimed; if the lease was already reclaimed the call
+// returns ErrStaleClaim so the worker can stop cleanly.
+func (q *Queue) RenewLease(ctx context.Context, jobID int64, owner string, extension time.Duration) error {
+	if extension <= 0 {
+		extension = q.LeaseDuration
+	}
+	if extension <= 0 {
+		extension = 30 * time.Second
+	}
+	seconds := int(extension.Seconds())
+	if seconds <= 0 {
+		seconds = 1
+	}
+	res, err := q.DB.ExecContext(ctx, `
+UPDATE index_jobs
+SET leased_until = datetime('now', ?),
+    updated_at = datetime('now')
+WHERE id = ?
+  AND state = 'leased'
+  AND lease_owner = ?
+  AND leased_until > datetime('now')
+`, fmt.Sprintf("+%d seconds", seconds), jobID, owner)
+	if err != nil {
+		return fmt.Errorf("renew lease: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected renew lease: %w", err)
+	}
+	if rows == 0 {
+		return ErrStaleClaim
+	}
+	return nil
 }
 
 func (q *Queue) claimableKindSQL() (string, string) {

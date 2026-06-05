@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(worker): add lease owner + state + leased_until checks to job completion, failure, and lease renewal so a worker whose lease expired and was reclaimed can no longer overwrite the new owner's result; zero-row updates return ErrStaleClaim so callers can roll back metadata writes instead of double-processing.
 - docs(readme): document the trusted-UI / API trust boundary (any visitor of the bound address can use both the UI and the /api/* routes; non-loopback binds require an explicit strong API key and now log a startup warning).
 - fix(search): make /api/search/tags accept the canonical `tag_mode` parameter from the Atelier frontend while keeping the legacy `mode` alias, so "all tags" mode actually filters for every selected tag instead of falling back to any-tag behavior.
 - feat(ui): move the Atelier statistics pane to its own page reachable from a new Rail button; show separate progress for image embedding, image annotation, video annotation, and video transcription, plus a recent-failures list.

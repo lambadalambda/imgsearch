@@ -6,7 +6,7 @@ P1
 
 ## Status
 
-Open.
+Resolved (2026-06-05). markJobDoneTx, failOrRetry, and the new Queue.RenewLease helper all check `state = 'leased' AND lease_owner = ? AND leased_until > datetime('now')` and return ErrStaleClaim on zero rows. The worker loop now treats ErrStaleClaim as a non-error so it does not double-fail a reclaimed job. Coverage in TestCompleteJobRejectsStaleClaimByOtherOwner, TestFailOrRetryRejectsStaleClaimByOtherOwner, TestCompleteVideoJobRejectsStaleClaimByOtherOwner, and TestRenewLeaseExtendsActiveOwner.
 
 ## Summary
 
@@ -27,10 +27,10 @@ Worker jobs are leased with `lease_owner`, but completion and failure updates on
 
 ## Acceptance Criteria
 
-- [ ] Add a regression test simulating lease expiry, reclaim by another owner, and stale completion/failure by the first owner.
-- [ ] Include owner/token/state checks in completion and failure `WHERE` clauses.
-- [ ] Detect zero-row completion/failure updates and handle them as stale claims rather than successful writes.
-- [ ] Consider lease renewal for long-running work, or document why owner checks are sufficient.
+- [x] Add a regression test simulating lease expiry, reclaim by another owner, and stale completion/failure by the first owner.
+- [x] Include owner/token/state checks in completion and failure `WHERE` clauses.
+- [x] Detect zero-row completion/failure updates and handle them as stale claims rather than successful writes.
+- [x] Consider lease renewal for long-running work, or document why owner checks are sufficient (added `Queue.RenewLease` so long-running kinds can extend their lease; default 30s is short enough that the embedded Qwen/Gemma paths usually don't need it, but it is available for the 26B annotator and long transcribes).
 
 ## Related Files
 

@@ -1583,3 +1583,232 @@ WHERE id = 1
 		t.Fatalf("expected run_after in the future, got run_after=%q", runAfter.String)
 	}
 }
+
+// TestCompleteJobRejectsStaleClaimByOtherOwner is the regression test for
+// issue #057: a worker whose lease expired and was reclaimed by a different
+// owner must not be able to overwrite metadata. The completion and failure
+// paths must check lease_owner + state + leased_until and return
+// ErrStaleClaim instead of a successful write.
+func TestCompleteJobRejectsStaleClaimByOtherOwner(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+
+	// Pretend worker-A finished work, then its lease expired and worker-B
+	// reclaimed the same job. The image metadata under worker-A's view
+	// must not be persisted.
+	if _, err := sqlDB.Exec(`
+UPDATE index_jobs
+SET state = 'leased',
+    lease_owner = 'worker-B',
+    leased_until = datetime('now', '+1 minute'),
+    attempts = 2,
+    last_error = NULL
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("simulate reclaim by worker-B: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+UPDATE images
+SET description = 'original-description', tags_json = '["original-tag"]'
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed original image metadata: %v", err)
+	}
+
+	job := claimedJob{
+		ID:          1,
+		Kind:        jobkind.AnnotateImage,
+		ImageID:     1,
+		ModelID:     1,
+		Attempts:    2,
+		MaxAttempts: 3,
+		LeaseOwner:  "worker-A",
+	}
+	annotation := &embedder.ImageAnnotation{
+		Description: "stale-description",
+		Tags:        []string{"stale-tag"},
+	}
+
+	err := q.completeJob(context.Background(), job, annotation)
+	if !errors.Is(err, ErrStaleClaim) {
+		t.Fatalf("expected ErrStaleClaim, got %v", err)
+	}
+
+	// The job must remain leased by worker-B, not done.
+	var state string
+	var owner string
+	if err := sqlDB.QueryRow(`SELECT state, lease_owner FROM index_jobs WHERE id = 1`).Scan(&state, &owner); err != nil {
+		t.Fatalf("select job after stale claim: %v", err)
+	}
+	if state != "leased" {
+		t.Fatalf("expected state=leased after stale claim, got %q", state)
+	}
+	if owner != "worker-B" {
+		t.Fatalf("expected lease_owner=worker-B after stale claim, got %q", owner)
+	}
+
+	// The image metadata must not have been overwritten by worker-A.
+	var desc, tagsJSON string
+	if err := sqlDB.QueryRow(`SELECT description, tags_json FROM images WHERE id = 1`).Scan(&desc, &tagsJSON); err != nil {
+		t.Fatalf("select image after stale claim: %v", err)
+	}
+	if desc != "original-description" {
+		t.Fatalf("image description was overwritten by stale claim: got %q", desc)
+	}
+	if tagsJSON != `["original-tag"]` {
+		t.Fatalf("image tags were overwritten by stale claim: got %q", tagsJSON)
+	}
+}
+
+// TestFailOrRetryRejectsStaleClaimByOtherOwner covers the failure path for
+// issue #057: a worker that fails after its lease was reclaimed must not
+// be able to mark the job pending/failed and steal attempts from the new
+// owner.
+func TestFailOrRetryRejectsStaleClaimByOtherOwner(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+
+	if _, err := sqlDB.Exec(`
+UPDATE index_jobs
+SET state = 'leased',
+    lease_owner = 'worker-B',
+    leased_until = datetime('now', '+1 minute'),
+    attempts = 2,
+    last_error = NULL
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("simulate reclaim by worker-B: %v", err)
+	}
+
+	job := claimedJob{
+		ID:          1,
+		Kind:        jobkind.EmbedImage,
+		ImageID:     1,
+		ModelID:     1,
+		Attempts:    2,
+		MaxAttempts: 3,
+		LeaseOwner:  "worker-A",
+	}
+
+	err := q.failOrRetry(context.Background(), job, errors.New("worker-A slow"))
+	if !errors.Is(err, ErrStaleClaim) {
+		t.Fatalf("expected ErrStaleClaim, got %v", err)
+	}
+
+	var state string
+	var owner string
+	var lastError string
+	if err := sqlDB.QueryRow(`SELECT state, lease_owner, COALESCE(last_error, '') FROM index_jobs WHERE id = 1`).Scan(&state, &owner, &lastError); err != nil {
+		t.Fatalf("select job after stale fail: %v", err)
+	}
+	if state != "leased" || owner != "worker-B" {
+		t.Fatalf("expected leased by worker-B after stale fail, got state=%q owner=%q", state, owner)
+	}
+	if lastError != "" {
+		t.Fatalf("expected last_error to remain empty, got %q", lastError)
+	}
+}
+
+// TestCompleteVideoJobRejectsStaleClaimByOtherOwner covers the video
+// completion path (annotate_video / transcribe_video) for issue #057.
+func TestCompleteVideoJobRejectsStaleClaimByOtherOwner(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+
+	// Add a video row and a video transcribe job leased by worker-B.
+	if _, err := sqlDB.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (3, 'v3', 'clip.mp4', 'videos/clip', 'video/mp4', 1000, 640, 360, 1)
+`); err != nil {
+		t.Fatalf("insert video: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (3, 1, 0, 0)
+`); err != nil {
+		t.Fatalf("insert video frame: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(q.DataDir, "videos"), 0o755); err != nil {
+		t.Fatalf("mkdir videos: %v", err)
+	}
+	var modelID int64
+	if err := sqlDB.QueryRow(`SELECT id FROM embedding_models LIMIT 1`).Scan(&modelID); err != nil {
+		t.Fatalf("select model id: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, video_id, model_id, state, lease_owner, leased_until, attempts, max_attempts)
+VALUES (10, 'transcribe_video', NULL, 3, ?, 'leased', 'worker-B', datetime('now', '+1 minute'), 2, 3)
+`, modelID); err != nil {
+		t.Fatalf("insert transcribe job: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+UPDATE videos SET transcript_text = 'original-transcript' WHERE id = 3
+`); err != nil {
+		t.Fatalf("seed original transcript: %v", err)
+	}
+
+	job := claimedJob{
+		ID:          10,
+		Kind:        jobkind.TranscribeVideo,
+		VideoID:     3,
+		ModelID:     modelID,
+		Attempts:    2,
+		MaxAttempts: 3,
+		LeaseOwner:  "worker-A",
+	}
+
+	err := q.completeVideoTranscriptJob(context.Background(), job, 3, transcribe.Transcript{Text: "stale-transcript"}, nil)
+	if !errors.Is(err, ErrStaleClaim) {
+		t.Fatalf("expected ErrStaleClaim, got %v", err)
+	}
+
+	var state string
+	var owner string
+	if err := sqlDB.QueryRow(`SELECT state, lease_owner FROM index_jobs WHERE id = 10`).Scan(&state, &owner); err != nil {
+		t.Fatalf("select job after stale complete: %v", err)
+	}
+	if state != "leased" || owner != "worker-B" {
+		t.Fatalf("expected leased by worker-B, got state=%q owner=%q", state, owner)
+	}
+	var transcript string
+	if err := sqlDB.QueryRow(`SELECT transcript_text FROM videos WHERE id = 3`).Scan(&transcript); err != nil {
+		t.Fatalf("select transcript: %v", err)
+	}
+	if transcript != "original-transcript" {
+		t.Fatalf("transcript was overwritten by stale claim: got %q", transcript)
+	}
+}
+
+// TestRenewLeaseExtendsActiveOwner ensures lease renewal only succeeds for
+// the current owner; once reclaimed, the original owner cannot extend the
+// lease and trip up the new owner.
+func TestRenewLeaseExtendsActiveOwner(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+
+	if _, err := sqlDB.Exec(`
+UPDATE index_jobs
+SET state = 'leased', lease_owner = 'worker-A', leased_until = datetime('now', '+5 seconds'), attempts = 1
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed leased by worker-A: %v", err)
+	}
+	if err := q.RenewLease(context.Background(), 1, "worker-A", 30*time.Second); err != nil {
+		t.Fatalf("renew lease as owner: %v", err)
+	}
+	var newUntil string
+	if err := sqlDB.QueryRow(`SELECT leased_until FROM index_jobs WHERE id = 1`).Scan(&newUntil); err != nil {
+		t.Fatalf("select renewed lease: %v", err)
+	}
+	if newUntil == "" {
+		t.Fatal("expected renewed leased_until to be set")
+	}
+
+	// Reclaim by worker-B, then worker-A's renewal must fail.
+	if _, err := sqlDB.Exec(`
+UPDATE index_jobs SET lease_owner = 'worker-B', leased_until = datetime('now', '+30 seconds')
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("reclaim by worker-B: %v", err)
+	}
+	err := q.RenewLease(context.Background(), 1, "worker-A", 30*time.Second)
+	if !errors.Is(err, ErrStaleClaim) {
+		t.Fatalf("expected ErrStaleClaim from stale renewal, got %v", err)
+	}
+}
