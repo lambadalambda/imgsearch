@@ -59,5 +59,6 @@
 - [x] [Extract shared frontend collection and card helpers](issues/051-frontend-collection-and-card-helpers.md)
 - [x] [Promote `internal/app` into the runtime composition layer](issues/052-app-runtime-composition-layer.md)
 - [x] [Make `annotate_image` jobs claimable in batch workers](issues/053-annotate-image-batch-claiming.md)
+- [x] [Avoid reusing standalone images as video frames](issues/055-avoid-standalone-image-reuse-for-video-frames.md)
 - [x] [Port Feed buffer reranking or document the divergence](issues/061-port-feed-buffer-reranking-or-document-divergence.md)
 - [x] [Preserve result rank across masonry rows](issues/065-preserve-result-rank-across-masonry-rows.md)

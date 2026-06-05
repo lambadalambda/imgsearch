@@ -6,7 +6,7 @@ P0
 
 ## Status
 
-Open.
+Archived (2026-06-05). Marked not likely: fixing the shared-image-ownership bug cleanly requires a non-trivial schema refactor (separate frame-owned rows or a `video_frame_images` table) plus migration of existing rows. Left as-is to avoid disrupting the working dedup path.
 
 ## Summary
 

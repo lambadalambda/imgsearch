@@ -3,7 +3,6 @@
 
 ## Migrated from `docs/issues.md` (priority P0 to P3)
 
-- [ ] [Avoid reusing standalone images as video frames](issues/055-avoid-standalone-image-reuse-for-video-frames.md)
 - [ ] [Document trusted UI API cookie model](issues/054-harden-ui-api-cookie-auth.md)
 - [ ] [Reset Atelier pagination on data key changes](issues/056-reset-atelier-pagination-on-data-key-changes.md)
 - [ ] [Owner-check worker job completion and failure updates](issues/057-owner-check-worker-job-completion.md)
