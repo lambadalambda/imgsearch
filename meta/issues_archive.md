@@ -69,3 +69,4 @@
 - [x] [Port Feed buffer reranking or document the divergence](issues/061-port-feed-buffer-reranking-or-document-divergence.md)
 - [x] [Preserve result rank across masonry rows](issues/065-preserve-result-rank-across-masonry-rows.md)
 - [x] [Renew worker leases during long jobs](issues/067-renew-worker-leases-during-long-jobs.md)
+- [x] [Disable CUDA graphs in the CUDA container by default](issues/068-disable-cuda-graphs-in-container.md)

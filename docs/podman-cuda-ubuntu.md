@@ -121,6 +121,22 @@ podman rm -f imgsearch
 
 ## Runtime Overrides
 
+CUDA graphs are disabled by default in the container entrypoint
+(`GGML_CUDA_DISABLE_GRAPHS=1`) to avoid observed CUDA out-of-memory
+failures during long video annotation runs with the 26B annotator on
+24 GiB cards. To explicitly re-enable CUDA graphs:
+
+```bash
+podman run -d \
+  --name imgsearch \
+  --replace \
+  --gpus=all \
+  -e IMGSEARCH_CUDA_GRAPHS=1 \
+  -v "$HOME/imgsearch-data:/data" \
+  -v "$HOME/imgsearch-models:/models" \
+  imgsearch:cuda
+```
+
 Disable annotations:
 
 ```bash

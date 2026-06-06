@@ -89,6 +89,7 @@ podman run -d --name imgsearch --replace --gpus=all -p 8080:8080 \
 
 The container defaults to loopback-only bind (`127.0.0.1:8080`) for safer startup.
 Set `IMGSEARCH_ADDR=0.0.0.0:8080` only when you intentionally want remote access, keep `IMGSEARCH_API_KEY` set, and place the service behind a trusted reverse proxy/TLS boundary.
+It also disables llama.cpp CUDA graphs by default to avoid observed 26B video-annotation OOMs on 24 GiB cards; set `IMGSEARCH_CUDA_GRAPHS=1` to opt back in.
 
 Full instructions are in `docs/podman-cuda-ubuntu.md`.
 

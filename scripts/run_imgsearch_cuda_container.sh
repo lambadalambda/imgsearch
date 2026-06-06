@@ -8,6 +8,16 @@ addr="${IMGSEARCH_ADDR:-127.0.0.1:8080}"
 
 mkdir -p "${data_dir}" "${models_dir}"
 
+# llama.cpp treats the presence of this env var as "graphs disabled".
+case "${IMGSEARCH_CUDA_GRAPHS:-0}" in
+  1|true|TRUE|yes|YES|on|ON)
+    unset GGML_CUDA_DISABLE_GRAPHS
+    ;;
+  *)
+    export GGML_CUDA_DISABLE_GRAPHS="${GGML_CUDA_DISABLE_GRAPHS:-1}"
+    ;;
+esac
+
 exec "${imgsearch_bin}" \
   -data-dir "${data_dir}" \
   -addr "${addr}" \

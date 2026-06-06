@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(container): default the CUDA container runner to `GGML_CUDA_DISABLE_GRAPHS=1` to mitigate CUDA out-of-memory crashes during long 26B video annotation runs, with `IMGSEARCH_CUDA_GRAPHS=1` as an explicit opt-out.
 - fix(worker): renew claimed job leases while long-running annotation/transcription jobs execute so CPU-only workers do not discard completed work as stale after the default lease expires.
 - fix(feed): show a retryable Feed error state for transient `/api/search/similar-videos` failures instead of presenting them as end-of-feed exhaustion, with smoke coverage for retrying the failed batch.
 - test(ui): cover Atelier mode-change-after-Load-More in the browser smoke so a future regression in the pagination reset is caught at the seam between Load More and a tag chip click.
