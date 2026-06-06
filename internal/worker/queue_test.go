@@ -86,6 +86,7 @@ type fakeIndex struct {
 type fakeAnnotator struct {
 	annotation      embedder.ImageAnnotation
 	err             error
+	delay           time.Duration
 	lastOpts        embedder.ImageAnnotationOptions
 	optsCalls       int
 	videoAnnotation embedder.VideoAnnotation
@@ -107,6 +108,9 @@ func (f *fakeVideoTranscriber) TranscribeVideo(context.Context, string) (transcr
 }
 
 func (f *fakeAnnotator) AnnotateImage(context.Context, string) (embedder.ImageAnnotation, error) {
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	if f.err != nil {
 		return embedder.ImageAnnotation{}, f.err
 	}
@@ -116,6 +120,9 @@ func (f *fakeAnnotator) AnnotateImage(context.Context, string) (embedder.ImageAn
 func (f *fakeAnnotator) AnnotateImageWithOptions(_ context.Context, _ string, opts embedder.ImageAnnotationOptions) (embedder.ImageAnnotation, error) {
 	f.optsCalls++
 	f.lastOpts = opts
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	if f.err != nil {
 		return embedder.ImageAnnotation{}, f.err
 	}
@@ -125,6 +132,9 @@ func (f *fakeAnnotator) AnnotateImageWithOptions(_ context.Context, _ string, op
 func (f *fakeAnnotator) AnnotateVideo(_ context.Context, input embedder.VideoAnnotationInput) (embedder.VideoAnnotation, error) {
 	f.videoCalls++
 	f.lastVideoInput = input
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	if f.videoErr != nil {
 		return embedder.VideoAnnotation{}, f.videoErr
 	}
@@ -1810,5 +1820,49 @@ WHERE id = 1
 	err := q.RenewLease(context.Background(), 1, "worker-A", 30*time.Second)
 	if !errors.Is(err, ErrStaleClaim) {
 		t.Fatalf("expected ErrStaleClaim from stale renewal, got %v", err)
+	}
+}
+
+func TestProcessOneRenewsLeaseForSlowAnnotateImageJob(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	q.LeaseDuration = 2 * time.Second
+	q.Annotator = &fakeAnnotator{
+		delay:      3200 * time.Millisecond,
+		annotation: embedder.ImageAnnotation{Description: "slow but valid", Tags: []string{"slow"}},
+	}
+
+	if _, err := sqlDB.Exec(`
+UPDATE index_jobs
+SET kind = 'annotate_image', state = 'pending', attempts = 0, max_attempts = 3,
+    leased_until = NULL, lease_owner = NULL, last_error = NULL
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed annotate job: %v", err)
+	}
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process slow annotation: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected slow annotation job to process")
+	}
+
+	var state string
+	var desc string
+	var tagsJSON string
+	if err := sqlDB.QueryRow(`
+SELECT j.state, COALESCE(i.description, ''), COALESCE(i.tags_json, '')
+FROM index_jobs j
+JOIN images i ON i.id = j.image_id
+WHERE j.id = 1
+`).Scan(&state, &desc, &tagsJSON); err != nil {
+		t.Fatalf("select completed slow annotation: %v", err)
+	}
+	if state != "done" {
+		t.Fatalf("expected slow annotation job done, got %q", state)
+	}
+	if desc != "slow but valid" || tagsJSON != `["slow"]` {
+		t.Fatalf("expected annotation persisted, got desc=%q tags=%q", desc, tagsJSON)
 	}
 }

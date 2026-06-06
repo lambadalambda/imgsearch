@@ -502,6 +502,8 @@ func (q *Queue) processJob(ctx context.Context, job claimedJob) bool {
 
 func (q *Queue) executeClaimedJob(ctx context.Context, job claimedJob) (bool, bool, error) {
 	log.Printf("worker claimed job id=%d kind=%s image_id=%d attempt=%d/%d", job.ID, job.Kind, job.ImageID, job.Attempts, job.MaxAttempts)
+	ctx, stopRenewingLease := q.startLeaseRenewer(ctx, job)
+	defer stopRenewingLease()
 	jobStartedAt := time.Now()
 	var completeDuration time.Duration
 	var stageStartedAt time.Time
@@ -1202,6 +1204,51 @@ WHERE id = ?
 		return ErrStaleClaim
 	}
 	return nil
+}
+
+func (q *Queue) startLeaseRenewer(ctx context.Context, job claimedJob) (context.Context, func()) {
+	if job.ID <= 0 || job.LeaseOwner == "" {
+		return ctx, func() {}
+	}
+	extension := q.LeaseDuration
+	if extension <= 0 {
+		extension = 30 * time.Second
+	}
+	interval := extension / 3
+	if interval <= 0 {
+		interval = time.Second
+	}
+	if interval > 10*time.Second {
+		interval = 10 * time.Second
+	}
+
+	jobCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-jobCtx.Done():
+				return
+			case <-ticker.C:
+				if err := q.RenewLease(jobCtx, job.ID, job.LeaseOwner, extension); err != nil {
+					if jobCtx.Err() != nil {
+						return
+					}
+					log.Printf("worker lease renewal failed job id=%d kind=%s owner=%s err=%v", job.ID, job.Kind, job.LeaseOwner, err)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return jobCtx, func() {
+		close(done)
+		cancel()
+	}
 }
 
 func (q *Queue) claimableKindSQL() (string, string) {

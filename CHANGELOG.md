@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(worker): renew claimed job leases while long-running annotation/transcription jobs execute so CPU-only workers do not discard completed work as stale after the default lease expires.
 - fix(feed): show a retryable Feed error state for transient `/api/search/similar-videos` failures instead of presenting them as end-of-feed exhaustion, with smoke coverage for retrying the failed batch.
 - test(ui): cover Atelier mode-change-after-Load-More in the browser smoke so a future regression in the pagination reset is caught at the seam between Load More and a tag chip click.
 - fix(worker): add lease owner + state + leased_until checks to job completion, failure, and lease renewal so a worker whose lease expired and was reclaimed can no longer overwrite the new owner's result; zero-row updates return ErrStaleClaim so callers can roll back metadata writes instead of double-processing.

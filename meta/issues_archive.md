@@ -68,3 +68,4 @@
 - [x] [Abort Feed lookahead requests on close](issues/060-abort-feed-lookahead-requests-on-close.md)
 - [x] [Port Feed buffer reranking or document the divergence](issues/061-port-feed-buffer-reranking-or-document-divergence.md)
 - [x] [Preserve result rank across masonry rows](issues/065-preserve-result-rank-across-masonry-rows.md)
+- [x] [Renew worker leases during long jobs](issues/067-renew-worker-leases-during-long-jobs.md)
