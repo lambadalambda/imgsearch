@@ -71,6 +71,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           IMGSEARCH_LLAMA_CMAKE_ARGS: -DGGML_NATIVE=OFF
+          IMGSEARCH_LLAMA_BUILD_JOBS: 2
         run: |
           scripts/ensure_llama_cpp_native_build.sh
 

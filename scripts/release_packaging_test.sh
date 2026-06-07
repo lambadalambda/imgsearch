@@ -35,13 +35,16 @@ assert_contains "${package_script}" 'SQLITE_VECTOR_PATH="$script_dir/tools/sqlit
 assert_contains "${package_script}" 'exec "$script_dir/imgsearch" -vector-backend sqlite-vector "$@"'
 assert_not_contains "${package_script}" 'The default 8B Qwen GGUF files'
 assert_contains "${build_script}" 'IMGSEARCH_LLAMA_CMAKE_ARGS'
+assert_contains "${build_script}" 'IMGSEARCH_LLAMA_BUILD_JOBS'
 assert_contains "${ci_workflow}" 'ffmpeg'
 assert_contains "${ci_workflow}" 'vips-8.18.0.tar.xz'
 assert_not_contains "${ci_workflow}" 'libvips-dev'
+assert_contains "${ci_workflow}" 'IMGSEARCH_LLAMA_BUILD_JOBS'
 assert_contains "${release_workflow}" 'actions/setup-node@v4'
 assert_contains "${release_workflow}" "Build Linux llama.cpp runtime libraries"
 assert_contains "${release_workflow}" "if: runner.os == 'Linux'"
 assert_contains "${release_workflow}" 'IMGSEARCH_LLAMA_CMAKE_ARGS: -DGGML_NATIVE=OFF'
+assert_contains "${release_workflow}" 'IMGSEARCH_LLAMA_BUILD_JOBS: 2'
 assert_contains "${release_workflow}" "Build macOS llama.cpp runtime libraries"
 assert_contains "${release_workflow}" "if: runner.os == 'macOS'"
 assert_contains "${release_workflow}" 'scripts/package_release.sh'

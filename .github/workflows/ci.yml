@@ -63,6 +63,8 @@ jobs:
           brew install ffmpeg vips
 
       - name: Build llama.cpp runtime libraries
+        env:
+          IMGSEARCH_LLAMA_BUILD_JOBS: ${{ runner.os == 'Linux' && '2' || '' }}
         run: |
           scripts/ensure_llama_cpp_native_build.sh
 

@@ -47,11 +47,13 @@ EOF
 chmod +x "$fake_bin/cmake"
 
 run_build_helper() {
-  IMGSEARCH_TEST_CMAKE_LOG="$cmake_log" \
+  env \
+    IMGSEARCH_TEST_CMAKE_LOG="$cmake_log" \
     IMGSEARCH_TEST_BUILD_DIR="$fixture_repo/deps/llama.cpp/build" \
     IMGSEARCH_TEST_LLAMA_LIB="$llama_lib" \
     IMGSEARCH_TEST_COMMON_LIB="$common_lib" \
     PATH="$fake_bin:$PATH" \
+    "$@" \
     "$fixture_repo/scripts/ensure_llama_cpp_native_build.sh" >/dev/null
 }
 
@@ -61,7 +63,7 @@ touch "$build_dir/bin/$llama_lib"
 touch "$build_dir/common/libcommon.a"
 touch "$build_dir/stale-marker"
 
-run_build_helper
+run_build_helper IMGSEARCH_LLAMA_BUILD_JOBS=2
 
 if [[ -e "$build_dir/stale-marker" ]]; then
   echo "expected stale build dir to be removed when libllama-common is missing" >&2
@@ -73,6 +75,19 @@ if [[ ! -f "$build_dir/bin/$common_lib" ]]; then
 fi
 if [[ ! -s "$cmake_log" ]]; then
   echo "expected cmake to run after stale build cleanup" >&2
+  exit 1
+fi
+cmake_log_contents="$(<"$cmake_log")"
+if [[ "$cmake_log_contents" != *"--target llama mtmd llama-common"* ]]; then
+  echo "expected build helper to build only required native library targets" >&2
+  exit 1
+fi
+if [[ "$cmake_log_contents" == *"llama-server"* ]]; then
+  echo "expected build helper not to build the llama.cpp server target" >&2
+  exit 1
+fi
+if [[ "$cmake_log_contents" != *"-j 2"* ]]; then
+  echo "expected build helper to honor IMGSEARCH_LLAMA_BUILD_JOBS" >&2
   exit 1
 fi
 

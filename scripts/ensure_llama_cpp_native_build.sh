@@ -15,6 +15,11 @@ if [[ -n "${IMGSEARCH_LLAMA_CMAKE_ARGS:-}" ]]; then
   cmake_args+=("${extra_cmake_args[@]}")
 fi
 cmake_args_key="$(printf '%q ' "${cmake_args[@]}")"
+build_targets=(llama mtmd llama-common)
+build_parallel_args=(-j)
+if [[ -n "${IMGSEARCH_LLAMA_BUILD_JOBS:-}" ]]; then
+  build_parallel_args=(-j "${IMGSEARCH_LLAMA_BUILD_JOBS}")
+fi
 
 case "$(uname -s)" in
   Darwin)
@@ -76,5 +81,5 @@ if [[ -f "${expected_lib}" && -f "${expected_common_lib}" ]]; then
 fi
 
 cmake -S "${repo_root}/deps/llama.cpp" -B "${build_dir}" "${cmake_args[@]}"
-cmake --build "${build_dir}" --target llama-server -j
+cmake --build "${build_dir}" --target "${build_targets[@]}" "${build_parallel_args[@]}"
 printf '%s\n' "${cmake_args_key}" > "${cmake_args_file}"
