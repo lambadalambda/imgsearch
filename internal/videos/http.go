@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"imgsearch/internal/annotationtext"
 	"imgsearch/internal/httputil"
 	"imgsearch/internal/jobkind"
 	"imgsearch/internal/mediaops"
@@ -21,24 +22,27 @@ type Handler struct {
 }
 
 type VideoItem struct {
-	VideoID        int64    `json:"video_id"`
-	ImageID        int64    `json:"image_id,omitempty"`
-	MediaType      string   `json:"media_type"`
-	OriginalName   string   `json:"original_name"`
-	StoragePath    string   `json:"storage_path"`
-	PreviewPath    string   `json:"preview_path,omitempty"`
-	PreviewWidth   int      `json:"preview_width,omitempty"`
-	PreviewHeight  int      `json:"preview_height,omitempty"`
-	TranscriptText string   `json:"transcript_text,omitempty"`
-	Description    string   `json:"description,omitempty"`
-	Tags           []string `json:"tags,omitempty"`
-	MimeType       string   `json:"mime_type"`
-	DurationMS     int64    `json:"duration_ms"`
-	Width          int      `json:"width"`
-	Height         int      `json:"height"`
-	FrameCount     int      `json:"frame_count"`
-	IndexState     string   `json:"index_state"`
-	CreatedAt      string   `json:"created_at"`
+	VideoID         int64    `json:"video_id"`
+	ImageID         int64    `json:"image_id,omitempty"`
+	MediaType       string   `json:"media_type"`
+	OriginalName    string   `json:"original_name"`
+	StoragePath     string   `json:"storage_path"`
+	PreviewPath     string   `json:"preview_path,omitempty"`
+	PreviewWidth    int      `json:"preview_width,omitempty"`
+	PreviewHeight   int      `json:"preview_height,omitempty"`
+	TranscriptText  string   `json:"transcript_text,omitempty"`
+	Title           string   `json:"title,omitempty"`
+	Summary         string   `json:"summary,omitempty"`
+	Description     string   `json:"description,omitempty"`
+	FullDescription string   `json:"full_description,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	MimeType        string   `json:"mime_type"`
+	DurationMS      int64    `json:"duration_ms"`
+	Width           int      `json:"width"`
+	Height          int      `json:"height"`
+	FrameCount      int      `json:"frame_count"`
+	IndexState      string   `json:"index_state"`
+	CreatedAt       string   `json:"created_at"`
 }
 
 type ListResponse struct {
@@ -135,10 +139,12 @@ WITH frame_jobs AS (
 SELECT v.id,
        v.original_name,
        v.storage_path,
-       v.mime_type,
-       COALESCE(v.transcript_text, ''),
-       COALESCE(v.description, ''),
-       COALESCE(v.tags_json, '[]'),
+	       v.mime_type,
+	       COALESCE(v.transcript_text, ''),
+	       COALESCE(v.title, ''),
+	       COALESCE(v.summary, ''),
+	       COALESCE(v.description, ''),
+	       COALESCE(v.tags_json, '[]'),
        v.duration_ms,
        v.width,
        v.height,
@@ -174,13 +180,18 @@ LIMIT ? OFFSET ?
 	for rows.Next() {
 		var item VideoItem
 		var tagsJSON string
+		var title string
+		var summary string
+		var fullDescription string
 		if err := rows.Scan(
 			&item.VideoID,
 			&item.OriginalName,
 			&item.StoragePath,
 			&item.MimeType,
 			&item.TranscriptText,
-			&item.Description,
+			&title,
+			&summary,
+			&fullDescription,
 			&tagsJSON,
 			&item.DurationMS,
 			&item.Width,
@@ -200,6 +211,11 @@ LIMIT ? OFFSET ?
 			return ListResponse{}, fmt.Errorf("decode video %d tags: %w", item.VideoID, err)
 		}
 		item.Tags = tags
+		text := annotationtext.Build(title, summary, fullDescription)
+		item.Title = text.Title
+		item.Summary = text.Summary
+		item.Description = text.Description
+		item.FullDescription = text.FullDescription
 		item.MediaType = "video"
 		items = append(items, item)
 	}
@@ -346,7 +362,7 @@ func Reannotate(ctx context.Context, db *sql.DB, modelID int64, videoID int64) e
 	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE videos
-SET description = '', tags_json = '[]', annotation_updated_at = NULL, reannotate_requested = 1
+SET title = '', summary = '', description = '', tags_json = '[]', annotation_updated_at = NULL, reannotate_requested = 1
 WHERE id = ?
 `, videoID); err != nil {
 		_ = tx.Rollback()

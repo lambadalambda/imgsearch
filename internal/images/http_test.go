@@ -97,8 +97,85 @@ WHERE id = 3
 	if resp.Images[0].Description != "A stored gallery description." {
 		t.Fatalf("unexpected description: %q", resp.Images[0].Description)
 	}
+	if resp.Images[0].Title != "A stored gallery description." {
+		t.Fatalf("unexpected fallback title: %q", resp.Images[0].Title)
+	}
+	if resp.Images[0].Summary != "A stored gallery description." {
+		t.Fatalf("unexpected fallback summary: %q", resp.Images[0].Summary)
+	}
+	if resp.Images[0].FullDescription != "A stored gallery description." {
+		t.Fatalf("unexpected full description: %q", resp.Images[0].FullDescription)
+	}
 	if len(resp.Images[0].Tags) != 2 || resp.Images[0].Tags[0] != "gallery" {
 		t.Fatalf("unexpected tags: %v", resp.Images[0].Tags)
+	}
+}
+
+func TestListImagesReturnsAnnotationTextLevels(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images
+SET title = 'Stored card title',
+    summary = 'Stored overview summary',
+    description = 'Stored full generated description with details.',
+    tags_json = '["explicit","sample"]'
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed explicit annotation text: %v", err)
+	}
+	if _, err := dbConn.Exec(`
+UPDATE images
+SET description = 'A screenshot says hello. It includes a visible post with extra context.',
+    tags_json = '["legacy","sample"]'
+WHERE id = 2
+`); err != nil {
+		t.Fatalf("seed legacy annotation text: %v", err)
+	}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/images?limit=3&offset=0", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp ListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	byID := make(map[int64]ImageItem, len(resp.Images))
+	for _, image := range resp.Images {
+		byID[image.ImageID] = image
+	}
+
+	explicit := byID[1]
+	if explicit.Title != "Stored card title" {
+		t.Fatalf("explicit title: got=%q", explicit.Title)
+	}
+	if explicit.Summary != "Stored overview summary" {
+		t.Fatalf("explicit summary: got=%q", explicit.Summary)
+	}
+	if explicit.Description != "Stored overview summary" {
+		t.Fatalf("description should expose overview summary: got=%q", explicit.Description)
+	}
+	if explicit.FullDescription != "Stored full generated description with details." {
+		t.Fatalf("full description: got=%q", explicit.FullDescription)
+	}
+
+	legacy := byID[2]
+	if legacy.Title != "A screenshot says hello." {
+		t.Fatalf("legacy title should use first sentence: got=%q", legacy.Title)
+	}
+	if legacy.Summary != "A screenshot says hello. It includes a visible post with extra context." {
+		t.Fatalf("legacy summary should fall back to full description: got=%q", legacy.Summary)
+	}
+	if legacy.Description != legacy.Summary {
+		t.Fatalf("legacy description should match fallback summary: description=%q summary=%q", legacy.Description, legacy.Summary)
+	}
+	if legacy.FullDescription != legacy.Summary {
+		t.Fatalf("legacy full description should preserve stored description: full=%q summary=%q", legacy.FullDescription, legacy.Summary)
 	}
 }
 

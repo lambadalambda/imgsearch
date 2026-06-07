@@ -1,10 +1,15 @@
 <script lang="ts">
-  import { lightboxPin, setSimilar } from "../lib/stores";
+  import { lightboxPin, setSimilar, setTagSearch } from "../lib/stores";
   import { formatDuration, formatPercent } from "../lib/utils";
   import Icon from "./Icon.svelte";
 
   function close() {
     lightboxPin.set(null);
+  }
+
+  function searchTag(tag: string) {
+    setTagSearch([tag]);
+    close();
   }
 
   function handleBackdropClick(event: MouseEvent) {
@@ -87,6 +92,23 @@
         </h2>
         <p class="text-sm text-muted mt-1 break-all m-0">{pin.filename}</p>
 
+        {#if pin.summary && pin.summary !== pin.title && pin.summary !== pin.fullDescription}
+          <p class="mt-4 mb-0 text-[14px] leading-relaxed text-ink-2">
+            {pin.summary}
+          </p>
+        {/if}
+
+        {#if pin.fullDescription}
+          <section class="mt-4">
+            <h3 class="m-0 text-[12px] uppercase tracking-[0.08em] text-muted-2 font-semibold">
+              Description
+            </h3>
+            <p data-lightbox-description class="mt-1.5 mb-0 text-[13.5px] leading-relaxed text-ink-2 whitespace-pre-wrap">
+              {pin.fullDescription}
+            </p>
+          </section>
+        {/if}
+
         <div class="flex flex-wrap items-center gap-2 mt-[14px]">
           {#if pin.matchScore !== undefined}
             <span
@@ -107,11 +129,15 @@
           {#if pin.tags?.length}
             <div class="flex flex-wrap gap-[5px]">
               {#each pin.tags as tag (tag)}
-                <span
-                  class="text-[12px] font-medium leading-none bg-surface-2 text-ink-2 px-[9px] py-1 rounded-full"
+                <button
+                  type="button"
+                  data-lightbox-tag
+                  class="text-[12px] font-medium leading-none bg-surface-2 text-ink-2 border border-transparent px-[9px] py-1 rounded-full cursor-pointer transition-colors duration-100 ease-soft hover:bg-accent-soft hover:text-accent"
+                  onclick={() => searchTag(tag)}
+                  title={`Search "${tag}"`}
                 >
                   {tag}
-                </span>
+                </button>
               {/each}
             </div>
           {/if}

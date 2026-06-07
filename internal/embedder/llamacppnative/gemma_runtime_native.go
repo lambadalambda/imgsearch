@@ -21,13 +21,15 @@ import (
 	"time"
 	"unsafe"
 
+	"imgsearch/internal/annotationtext"
 	coreembedder "imgsearch/internal/embedder"
 )
 
 const gemmaDescriptionJSONSchema = `{"type":"object","properties":{"short_description":{"type":"string"},"labels":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":8,"uniqueItems":true}},"required":["short_description","labels"],"additionalProperties":false}`
 const gemmaTagsJSONSchema = `{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true}},"required":["tags"],"additionalProperties":false}`
 const gemmaDescriptionAndTagsJSONSchema = `{"type":"object","properties":{"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true}},"required":["description","tags"],"additionalProperties":false}`
-const gemmaAppAnnotationJSONSchema = `{"type":"object","properties":{"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true},"is_nsfw":{"type":"boolean"}},"required":["description","tags","is_nsfw"],"additionalProperties":false}`
+const gemmaAppAnnotationJSONSchema = `{"type":"object","properties":{"title":{"type":"string"},"summary":{"type":"string"},"full_description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":12,"uniqueItems":true},"is_nsfw":{"type":"boolean"}},"required":["title","summary","full_description","tags","is_nsfw"],"additionalProperties":false}`
+const gemmaCompactAnnotationJSONSchema = `{"type":"object","properties":{"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true},"is_nsfw":{"type":"boolean"}},"required":["description","tags","is_nsfw"],"additionalProperties":false}`
 
 const gemmaAppAnnotationSystemPrompt = "You are annotating a private image collection for high-recall search. Return exactly one valid JSON object and nothing else. Do not use markdown code fences. Be explicit and concrete when describing visible content. Do not sanitize clearly visible NSFW material. Only describe what is visually present or clearly legible in the image."
 const gemmaAppAnnotationRetrySystemPrompt = "Return exactly one valid JSON object and nothing else. Do not use markdown code fences, prose, or comments."
@@ -38,9 +40,9 @@ const gemmaVideoFrameAnnotationRetrySystemPrompt = "Return exactly one compact v
 const gemmaVideoAnnotationSystemPrompt = "You are annotating a private video collection for high-recall search. You are given summaries from multiple sampled frames of one video and optionally transcript context. Return exactly one valid JSON object and nothing else. Do not use markdown code fences. Be explicit and concrete, and stay grounded in provided frame evidence."
 const gemmaVideoAnnotationRetrySystemPrompt = "Return exactly one valid JSON object and nothing else. Do not use markdown code fences, prose, or comments."
 
-const gemmaAppAnnotationRetryUserPrompt = "Retry with compact output. Keep details that matter for retrieval, but stay concise unless the scene is complex. Description may be up to 220 words. If there is text in the image, describe it and translate non-English text. Return 3 to 10 unique lowercase tags, set is_nsfw accurately, and return JSON only."
+const gemmaAppAnnotationRetryUserPrompt = "Retry with compact output. Return JSON with title, summary, full_description, tags, and is_nsfw. Keep details that matter for retrieval, but stay concise unless the scene is complex. full_description may be up to 220 words. If there is text in the image, describe it and translate non-English text. Return 3 to 10 unique lowercase tags, set is_nsfw accurately, and return JSON only."
 const gemmaVideoFrameAnnotationRetryUserPrompt = "Retry with compact output. Describe only durable frame evidence needed for video summarization in 1 to 2 sentences. Return 3 to 8 lowercase tags, set is_nsfw accurately, and return JSON only."
-const gemmaVideoAnnotationRetryUserPrompt = "Retry with compact output. Keep details that matter for retrieval, but stay concise unless the video evidence is complex. Description may be up to 260 words. If there is text, describe it and translate non-English text. If a meaningful filename is provided, you may infer likely media context (meme, music video, show clip) when it does not conflict with frame evidence. Return 5 to 12 unique lowercase tags, set is_nsfw accurately, and return JSON only."
+const gemmaVideoAnnotationRetryUserPrompt = "Retry with compact output. Return JSON with title, summary, full_description, tags, and is_nsfw. Keep details that matter for retrieval, but stay concise unless the video evidence is complex. full_description may be up to 260 words. If there is text, describe it and translate non-English text. If a meaningful filename is provided, you may infer likely media context (meme, music video, show clip) when it does not conflict with frame evidence. Return 5 to 12 unique lowercase tags, set is_nsfw accurately, and return JSON only."
 
 const gemmaAppAnnotationMaxTokens = 1024
 const gemmaVideoFrameAnnotationMaxTokens = 320
@@ -75,9 +77,12 @@ type gemmaImageDescriptionAndTags struct {
 }
 
 type gemmaAppAnnotation struct {
-	Description string   `json:"description"`
-	Tags        []string `json:"tags"`
-	IsNSFW      bool     `json:"is_nsfw"`
+	Title           string   `json:"title"`
+	Summary         string   `json:"summary"`
+	FullDescription string   `json:"full_description"`
+	Description     string   `json:"description"`
+	Tags            []string `json:"tags"`
+	IsNSFW          bool     `json:"is_nsfw"`
 }
 
 type videoFramePromptEntry struct {
@@ -90,8 +95,8 @@ type videoFramePromptEntry struct {
 func buildImageAnnotationUserPrompt(originalName string) string {
 	var b strings.Builder
 	b.Grow(2400)
-	b.WriteString("You are given an image. Return JSON with exactly this shape: {\"description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
-	b.WriteString("Write one paragraph that is as detailed as needed for high-recall search, up to about 500 words, and keep it shorter when the image is simple. ")
+	b.WriteString("You are given an image. Return JSON with exactly this shape: {\"title\": string, \"summary\": string, \"full_description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
+	b.WriteString("Write title as a short concrete card title, summary as a 1 to 2 sentence overview, and full_description as one paragraph that is as detailed as needed for high-recall search, up to about 500 words. Keep all fields shorter when the image is simple. ")
 	b.WriteString("Focus on the main subject, visible attributes, composition, setting, and clearly visible actions. ")
 	b.WriteString("If people are the focus, include concrete visible details such as perceived age range, perceived ethnicity, body shape/build, facial features, hairstyle, clothing, accessories, posture, and activity. ")
 	b.WriteString("If there is text in the image, please describe it. If it is not in English, also translate it. ")
@@ -156,8 +161,8 @@ func buildVideoAnnotationUserPrompt(input coreembedder.VideoAnnotationInput) (st
 	}
 
 	var b bytes.Buffer
-	b.WriteString("You are given sampled frame annotations from one video. Return JSON with exactly this shape: {\"description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
-	b.WriteString("Write one paragraph that is as detailed as needed for search, up to about 500 words, and keep it shorter when the evidence is simple. ")
+	b.WriteString("You are given sampled frame annotations from one video. Return JSON with exactly this shape: {\"title\": string, \"summary\": string, \"full_description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
+	b.WriteString("Write title as a short concrete card title, summary as a 1 to 2 sentence overview, and full_description as one paragraph that is as detailed as needed for search, up to about 500 words. Keep all fields shorter when the evidence is simple. ")
 	b.WriteString("Synthesize recurring content across frames into a single video-level description. Mention progression only when supported by frame evidence. ")
 	b.WriteString("If people are the focus, include concrete visible details such as perceived age range, perceived ethnicity, body shape/build, facial features, hairstyle, clothing, accessories, posture, and activity. ")
 	b.WriteString("If there is text in frames, describe it, and if non-English also translate it. ")
@@ -317,7 +322,7 @@ func (e *Embedder) AnnotateImageWithOptions(ctx context.Context, imagePath strin
 		return coreembedder.ImageAnnotation{}, err
 	}
 
-	return coreembedder.ImageAnnotation{Description: annotation.Description, Tags: annotation.Tags}, nil
+	return coreImageAnnotation(annotation), nil
 }
 
 func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAnnotationInput) (coreembedder.VideoAnnotation, error) {
@@ -362,7 +367,7 @@ func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAn
 		return coreembedder.VideoAnnotation{}, err
 	}
 
-	return coreembedder.VideoAnnotation{Description: annotation.Description, Tags: annotation.Tags, IsNSFW: annotation.IsNSFW}, nil
+	return coreVideoAnnotation(annotation), nil
 }
 
 func (e *Embedder) AnnotateVideoFrame(ctx context.Context, imagePath string, opts coreembedder.ImageAnnotationOptions) (coreembedder.ImageAnnotation, error) {
@@ -387,7 +392,7 @@ func (e *Embedder) AnnotateVideoFrame(ctx context.Context, imagePath string, opt
 		imagePath,
 		gemmaVideoFrameAnnotationSystemPrompt,
 		buildVideoFrameAnnotationUserPrompt(opts.OriginalName),
-		gemmaAppAnnotationJSONSchema,
+		gemmaCompactAnnotationJSONSchema,
 		gemmaVideoFrameAnnotationMaxTokens,
 		gemmaVideoFrameAnnotationRetrySystemPrompt,
 		gemmaVideoFrameAnnotationRetryUserPrompt,
@@ -397,7 +402,7 @@ func (e *Embedder) AnnotateVideoFrame(ctx context.Context, imagePath string, opt
 		return coreembedder.ImageAnnotation{}, err
 	}
 
-	return coreembedder.ImageAnnotation{Description: annotation.Description, Tags: annotation.Tags}, nil
+	return coreImageAnnotation(annotation), nil
 }
 
 func NewAnnotator(cfg AnnotatorConfig) (*Annotator, error) {
@@ -530,7 +535,7 @@ func (r *nativeGemmaRuntime) AnnotateImageWithOptions(ctx context.Context, image
 		return coreembedder.ImageAnnotation{}, err
 	}
 
-	return coreembedder.ImageAnnotation{Description: annotation.Description, Tags: annotation.Tags}, nil
+	return coreImageAnnotation(annotation), nil
 }
 
 func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedder.VideoAnnotationInput) (coreembedder.VideoAnnotation, error) {
@@ -579,7 +584,7 @@ func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedd
 		return coreembedder.VideoAnnotation{}, err
 	}
 
-	return coreembedder.VideoAnnotation{Description: annotation.Description, Tags: annotation.Tags, IsNSFW: annotation.IsNSFW}, nil
+	return coreVideoAnnotation(annotation), nil
 }
 
 func (r *nativeGemmaRuntime) AnnotateVideoFrame(ctx context.Context, imagePath string, opts coreembedder.ImageAnnotationOptions) (coreembedder.ImageAnnotation, error) {
@@ -607,7 +612,7 @@ func (r *nativeGemmaRuntime) AnnotateVideoFrame(ctx context.Context, imagePath s
 		imagePath,
 		gemmaVideoFrameAnnotationSystemPrompt,
 		buildVideoFrameAnnotationUserPrompt(opts.OriginalName),
-		gemmaAppAnnotationJSONSchema,
+		gemmaCompactAnnotationJSONSchema,
 		gemmaVideoFrameAnnotationMaxTokens,
 		gemmaVideoFrameAnnotationRetrySystemPrompt,
 		gemmaVideoFrameAnnotationRetryUserPrompt,
@@ -617,7 +622,7 @@ func (r *nativeGemmaRuntime) AnnotateVideoFrame(ctx context.Context, imagePath s
 		return coreembedder.ImageAnnotation{}, err
 	}
 
-	return coreembedder.ImageAnnotation{Description: annotation.Description, Tags: annotation.Tags}, nil
+	return coreImageAnnotation(annotation), nil
 }
 
 func (r *nativeGemmaRuntime) DescribeImage(ctx context.Context, imagePath string) (gemmaImageDescription, string, error) {
@@ -738,11 +743,46 @@ func describeAndTagImageWithHandle(
 		raw = retryRaw
 	}
 
-	result.Description = strings.TrimSpace(result.Description)
-	result.Tags = normalizeUniqueTags(result.Tags)
-	result.Tags = applyNSFWTag(result.Tags, result.IsNSFW)
+	result = normalizeGemmaAppAnnotation(result)
 
 	return result, raw, nil
+}
+
+func normalizeGemmaAppAnnotation(annotation gemmaAppAnnotation) gemmaAppAnnotation {
+	annotation.Title = strings.TrimSpace(annotation.Title)
+	annotation.Summary = strings.TrimSpace(annotation.Summary)
+	annotation.Description = strings.TrimSpace(annotation.Description)
+	annotation.FullDescription = strings.TrimSpace(annotation.FullDescription)
+	if annotation.FullDescription == "" {
+		annotation.FullDescription = annotation.Description
+	}
+	text := annotationtext.Build(annotation.Title, annotation.Summary, annotation.FullDescription)
+	annotation.Title = text.Title
+	annotation.Summary = text.Summary
+	annotation.FullDescription = text.FullDescription
+	annotation.Description = text.FullDescription
+	annotation.Tags = normalizeUniqueTags(annotation.Tags)
+	annotation.Tags = applyNSFWTag(annotation.Tags, annotation.IsNSFW)
+	return annotation
+}
+
+func coreImageAnnotation(annotation gemmaAppAnnotation) coreembedder.ImageAnnotation {
+	return coreembedder.ImageAnnotation{
+		Title:       annotation.Title,
+		Summary:     annotation.Summary,
+		Description: annotation.Description,
+		Tags:        annotation.Tags,
+	}
+}
+
+func coreVideoAnnotation(annotation gemmaAppAnnotation) coreembedder.VideoAnnotation {
+	return coreembedder.VideoAnnotation{
+		Title:       annotation.Title,
+		Summary:     annotation.Summary,
+		Description: annotation.Description,
+		Tags:        annotation.Tags,
+		IsNSFW:      annotation.IsNSFW,
+	}
 }
 
 func (r *nativeGemmaRuntime) generateImageJSON(ctx context.Context, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (string, error) {

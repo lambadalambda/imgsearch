@@ -15,6 +15,8 @@ type BatchImageEmbedder interface {
 }
 
 type ImageAnnotation struct {
+	Title       string
+	Summary     string
 	Description string
 	Tags        []string
 }
@@ -54,6 +56,8 @@ type VideoAnnotationInput struct {
 }
 
 type VideoAnnotation struct {
+	Title       string
+	Summary     string
 	Description string
 	Tags        []string
 	IsNSFW      bool

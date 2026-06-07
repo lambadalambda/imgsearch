@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"imgsearch/internal/annotationtext"
 	"imgsearch/internal/httputil"
 	"imgsearch/internal/jobkind"
 	"imgsearch/internal/mediaops"
@@ -21,17 +22,20 @@ type Handler struct {
 }
 
 type ImageItem struct {
-	ImageID       int64    `json:"image_id"`
-	OriginalName  string   `json:"original_name"`
-	StoragePath   string   `json:"storage_path"`
-	MimeType      string   `json:"mime_type"`
-	Width         int      `json:"width"`
-	Height        int      `json:"height"`
-	IndexState    string   `json:"index_state"`
-	CreatedAt     string   `json:"created_at"`
-	Description   string   `json:"description,omitempty"`
-	Tags          []string `json:"tags,omitempty"`
-	ThumbnailPath string   `json:"thumbnail_path,omitempty"`
+	ImageID         int64    `json:"image_id"`
+	OriginalName    string   `json:"original_name"`
+	StoragePath     string   `json:"storage_path"`
+	MimeType        string   `json:"mime_type"`
+	Width           int      `json:"width"`
+	Height          int      `json:"height"`
+	IndexState      string   `json:"index_state"`
+	CreatedAt       string   `json:"created_at"`
+	Title           string   `json:"title,omitempty"`
+	Summary         string   `json:"summary,omitempty"`
+	Description     string   `json:"description,omitempty"`
+	FullDescription string   `json:"full_description,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	ThumbnailPath   string   `json:"thumbnail_path,omitempty"`
 }
 
 type ListResponse struct {
@@ -86,7 +90,7 @@ WHERE NOT EXISTS (
 
 	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 SELECT i.id, i.original_name, i.storage_path, i.thumbnail_path, i.mime_type, i.width, i.height,
-	COALESCE(i.description, ''), COALESCE(i.tags_json, '[]'),
+	COALESCE(i.title, ''), COALESCE(i.summary, ''), COALESCE(i.description, ''), COALESCE(i.tags_json, '[]'),
 	COALESCE(j.state, 'pending') AS state,
 	i.created_at
 FROM images i
@@ -113,6 +117,9 @@ LIMIT ? OFFSET ?
 		var item ImageItem
 		var thumb sql.NullString
 		var tagsJSON string
+		var title string
+		var summary string
+		var fullDescription string
 		if err := rows.Scan(
 			&item.ImageID,
 			&item.OriginalName,
@@ -121,7 +128,9 @@ LIMIT ? OFFSET ?
 			&item.MimeType,
 			&item.Width,
 			&item.Height,
-			&item.Description,
+			&title,
+			&summary,
+			&fullDescription,
 			&tagsJSON,
 			&item.IndexState,
 			&item.CreatedAt,
@@ -133,6 +142,11 @@ LIMIT ? OFFSET ?
 		} else {
 			item.Tags = tags
 		}
+		text := annotationtext.Build(title, summary, fullDescription)
+		item.Title = text.Title
+		item.Summary = text.Summary
+		item.Description = text.Description
+		item.FullDescription = text.FullDescription
 		if thumb.Valid {
 			item.ThumbnailPath = thumb.String
 		}
@@ -284,7 +298,7 @@ func Reannotate(ctx context.Context, db *sql.DB, modelID int64, imageID int64) e
 	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE images
-SET description = '', tags_json = '[]', reannotate_requested = 1
+SET title = '', summary = '', description = '', tags_json = '[]', reannotate_requested = 1
 WHERE id = ?
 `, imageID); err != nil {
 		_ = tx.Rollback()

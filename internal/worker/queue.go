@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"imgsearch/internal/annotationtext"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/jobkind"
 	"imgsearch/internal/tagutil"
@@ -937,11 +938,12 @@ func (q *Queue) storeImageAnnotation(ctx context.Context, imageID int64, annotat
 	if err != nil {
 		return fmt.Errorf("marshal image tags: %w", err)
 	}
+	text := annotationtext.Build(annotation.Title, annotation.Summary, annotation.Description)
 	if _, err := q.DB.ExecContext(ctx, `
 UPDATE images
-SET description = ?, tags_json = ?
+SET title = ?, summary = ?, description = ?, tags_json = ?
 WHERE id = ?
-`, annotation.Description, string(tagsJSON), imageID); err != nil {
+`, text.Title, text.Summary, text.FullDescription, string(tagsJSON), imageID); err != nil {
 		return fmt.Errorf("update image annotations: %w", err)
 	}
 	return nil
@@ -987,21 +989,22 @@ func (q *Queue) completeJob(ctx context.Context, job claimedJob, annotation *emb
 			_ = tx.Rollback()
 			return fmt.Errorf("marshal image tags: %w", err)
 		}
+		text := annotationtext.Build(annotation.Title, annotation.Summary, annotation.Description)
 		if job.Kind == jobkind.AnnotateImage {
 			if _, err := tx.ExecContext(ctx, `
 UPDATE images
-SET description = ?, tags_json = ?, reannotate_requested = 0
+SET title = ?, summary = ?, description = ?, tags_json = ?, reannotate_requested = 0
 WHERE id = ?
-`, annotation.Description, string(tagsJSON), job.ImageID); err != nil {
+`, text.Title, text.Summary, text.FullDescription, string(tagsJSON), job.ImageID); err != nil {
 				_ = tx.Rollback()
 				return fmt.Errorf("update image annotations: %w", err)
 			}
 		} else {
 			if _, err := tx.ExecContext(ctx, `
 UPDATE images
-SET description = ?, tags_json = ?
+SET title = ?, summary = ?, description = ?, tags_json = ?
 WHERE id = ?
-`, annotation.Description, string(tagsJSON), job.ImageID); err != nil {
+`, text.Title, text.Summary, text.FullDescription, string(tagsJSON), job.ImageID); err != nil {
 				_ = tx.Rollback()
 				return fmt.Errorf("update image annotations: %w", err)
 			}
@@ -1043,14 +1046,17 @@ func (q *Queue) completeVideoAnnotationJob(ctx context.Context, job claimedJob, 
 			_ = tx.Rollback()
 			return fmt.Errorf("marshal video tags: %w", err)
 		}
+		text := annotationtext.Build(annotation.Title, annotation.Summary, annotation.Description)
 		if _, err := tx.ExecContext(ctx, `
 UPDATE videos
-SET description = ?,
+SET title = ?,
+    summary = ?,
+    description = ?,
     tags_json = ?,
     annotation_updated_at = datetime('now'),
     reannotate_requested = 0
 WHERE id = ?
-`, annotation.Description, string(tagsJSON), job.VideoID); err != nil {
+`, text.Title, text.Summary, text.FullDescription, string(tagsJSON), job.VideoID); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("update video annotations: %w", err)
 		}

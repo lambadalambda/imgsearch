@@ -303,6 +303,14 @@
       >
         {pin.title}
       </h3>
+      {#if pin.summary && pin.summary !== pin.title}
+        <p
+          data-pin-summary
+          class="m-0 text-[12.5px] leading-snug text-muted line-clamp-3 [-webkit-box-orient:vertical] overflow-hidden"
+        >
+          {pin.summary}
+        </p>
+      {/if}
       {#if tagsToShow.length}
         <div class="flex gap-[5px] flex-wrap">
           {#each tagsToShow as tag (tag)}

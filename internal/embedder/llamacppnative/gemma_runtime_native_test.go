@@ -29,6 +29,55 @@ func TestDecodeGemmaJSONObjectStripsMarkdownCodeFences(t *testing.T) {
 	}
 }
 
+func TestGemmaAppAnnotationNormalizesMultiLevelText(t *testing.T) {
+	raw := `{
+  "title": "  Screenshot post  ",
+  "summary": " A post about orbital simulation. ",
+  "full_description": " A screenshot shows a social post discussing drawing circles and making a full n-body simulation. ",
+  "tags": ["Screenshot", "post", "nsfw", "post"],
+  "is_nsfw": false
+}`
+
+	var got gemmaAppAnnotation
+	if err := decodeGemmaJSONObject(raw, &got, "app annotation"); err != nil {
+		t.Fatalf("decode multi-level JSON: %v", err)
+	}
+	got = normalizeGemmaAppAnnotation(got)
+
+	if got.Title != "Screenshot post" {
+		t.Fatalf("title: got=%q", got.Title)
+	}
+	if got.Summary != "A post about orbital simulation." {
+		t.Fatalf("summary: got=%q", got.Summary)
+	}
+	if got.Description != "A screenshot shows a social post discussing drawing circles and making a full n-body simulation." {
+		t.Fatalf("description should mirror full_description: got=%q", got.Description)
+	}
+	if got.FullDescription != got.Description {
+		t.Fatalf("full_description=%q description=%q", got.FullDescription, got.Description)
+	}
+	if len(got.Tags) != 2 || got.Tags[0] != "screenshot" || got.Tags[1] != "post" {
+		t.Fatalf("expected normalized non-nsfw tags, got %v", got.Tags)
+	}
+}
+
+func TestGemmaAppAnnotationFallsBackFromLegacyDescription(t *testing.T) {
+	got := normalizeGemmaAppAnnotation(gemmaAppAnnotation{
+		Description: "A legacy detailed description. More details follow.",
+		Tags:        []string{"legacy"},
+	})
+
+	if got.Title != "A legacy detailed description." {
+		t.Fatalf("fallback title: got=%q", got.Title)
+	}
+	if got.Summary != "A legacy detailed description. More details follow." {
+		t.Fatalf("fallback summary: got=%q", got.Summary)
+	}
+	if got.FullDescription != "A legacy detailed description. More details follow." {
+		t.Fatalf("fallback full description: got=%q", got.FullDescription)
+	}
+}
+
 func TestStripMarkdownCodeFencesLeavesPlainJSONUntouched(t *testing.T) {
 	raw := "{\"description\":\"plain\"}"
 	if got := stripMarkdownCodeFences(raw); got != raw {

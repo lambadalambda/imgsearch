@@ -192,6 +192,15 @@ ALTER TABLE images ADD COLUMN reannotate_requested INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE videos ADD COLUMN reannotate_requested INTEGER NOT NULL DEFAULT 0;
 `,
 	},
+	{
+		version: 8,
+		sql: `
+ALTER TABLE images ADD COLUMN title TEXT NOT NULL DEFAULT '';
+ALTER TABLE images ADD COLUMN summary TEXT NOT NULL DEFAULT '';
+ALTER TABLE videos ADD COLUMN title TEXT NOT NULL DEFAULT '';
+ALTER TABLE videos ADD COLUMN summary TEXT NOT NULL DEFAULT '';
+`,
+	},
 }
 
 func LatestVersion() int {

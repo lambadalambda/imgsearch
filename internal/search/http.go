@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"imgsearch/internal/annotationtext"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/httputil"
 	"imgsearch/internal/nsfwsql"
@@ -44,7 +45,10 @@ type SearchResult struct {
 	Distance         float64  `json:"distance"`
 	OriginalName     string   `json:"original_name"`
 	StoragePath      string   `json:"storage_path"`
+	Title            string   `json:"title,omitempty"`
+	Summary          string   `json:"summary,omitempty"`
 	Description      string   `json:"description,omitempty"`
+	FullDescription  string   `json:"full_description,omitempty"`
 	Tags             []string `json:"tags,omitempty"`
 	IsAnchor         bool     `json:"is_anchor,omitempty"`
 }
@@ -914,12 +918,16 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 	       i.mime_type,
 	       i.width,
 	       i.height,
+	       COALESCE(i.title, ''),
+	       COALESCE(i.summary, ''),
 	       COALESCE(i.description, ''),
 	       COALESCE(i.tags_json, '[]'),
 	       vf.video_id,
 	       v.original_name,
 	       v.storage_path,
 	       v.mime_type,
+	       COALESCE(v.title, ''),
+	       COALESCE(v.summary, ''),
 	       COALESCE(v.description, ''),
 		       COALESCE(v.tags_json, '[]'),
 		       COALESCE(v.transcript_text, ''),
@@ -958,12 +966,16 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 		mimeType            string
 		width               int
 		height              int
+		title               string
+		summary             string
 		description         string
 		tags                []string
 		videoID             sql.NullInt64
 		videoOriginalName   sql.NullString
 		videoStoragePath    sql.NullString
 		videoMimeType       sql.NullString
+		videoTitle          sql.NullString
+		videoSummary        sql.NullString
 		videoDescription    sql.NullString
 		videoTags           []string
 		videoTranscriptText sql.NullString
@@ -985,12 +997,16 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 			&row.mimeType,
 			&row.width,
 			&row.height,
+			&row.title,
+			&row.summary,
 			&row.description,
 			&tagsJSON,
 			&row.videoID,
 			&row.videoOriginalName,
 			&row.videoStoragePath,
 			&row.videoMimeType,
+			&row.videoTitle,
+			&row.videoSummary,
 			&row.videoDescription,
 			&videoTagsJSON,
 			&row.videoTranscriptText,
@@ -1034,17 +1050,21 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 				}
 				seenVideos[row.videoID.Int64] = struct{}{}
 			}
+			text := annotationtext.Build(row.title, row.summary, row.description)
 			result := SearchResult{
-				ImageID:      hit.ImageID,
-				MediaType:    "image",
-				MimeType:     row.mimeType,
-				Distance:     hit.Distance,
-				OriginalName: row.originalName,
-				StoragePath:  filepath.ToSlash(row.storagePath),
-				Width:        row.width,
-				Height:       row.height,
-				Description:  row.description,
-				Tags:         row.tags,
+				ImageID:         hit.ImageID,
+				MediaType:       "image",
+				MimeType:        row.mimeType,
+				Distance:        hit.Distance,
+				OriginalName:    row.originalName,
+				StoragePath:     filepath.ToSlash(row.storagePath),
+				Width:           row.width,
+				Height:          row.height,
+				Title:           text.Title,
+				Summary:         text.Summary,
+				Description:     text.Description,
+				FullDescription: text.FullDescription,
+				Tags:            row.tags,
 			}
 			if row.videoID.Valid {
 				result.MediaType = "video"
@@ -1052,8 +1072,12 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 				result.OriginalName = row.videoOriginalName.String
 				result.StoragePath = filepath.ToSlash(row.videoStoragePath.String)
 				result.MimeType = row.videoMimeType.String
-				if desc := strings.TrimSpace(row.videoDescription.String); desc != "" {
-					result.Description = desc
+				videoText := annotationtext.Build(row.videoTitle.String, row.videoSummary.String, row.videoDescription.String)
+				if videoText.FullDescription != "" || videoText.Summary != "" || videoText.Title != "" {
+					result.Title = videoText.Title
+					result.Summary = videoText.Summary
+					result.Description = videoText.Description
+					result.FullDescription = videoText.FullDescription
 				}
 				if len(row.videoTags) > 0 {
 					result.Tags = row.videoTags
@@ -1170,6 +1194,8 @@ WITH requested_tags(tag) AS (
     i.mime_type AS image_mime_type,
     i.width AS image_width,
     i.height AS image_height,
+    COALESCE(i.title, '') AS image_title,
+    COALESCE(i.summary, '') AS image_summary,
     COALESCE(i.description, '') AS image_description,
     COALESCE(i.tags_json, '[]') AS image_tags_json,
     vf.video_id AS video_id,
@@ -1180,6 +1206,8 @@ WITH requested_tags(tag) AS (
 	    COALESCE(v.width, 0) AS video_width,
 	    COALESCE(v.height, 0) AS video_height,
 	    COALESCE(v.frame_count, 0) AS video_frame_count,
+	    COALESCE(v.title, '') AS video_title,
+	    COALESCE(v.summary, '') AS video_summary,
 	    COALESCE(v.description, '') AS video_description,
 	    COALESCE(v.tags_json, '[]') AS video_tags_json,
 	    COALESCE(v.transcript_text, '') AS video_transcript_text,
@@ -1208,6 +1236,8 @@ SELECT media_type,
        image_mime_type,
        image_width,
        image_height,
+       image_title,
+       image_summary,
        image_description,
        image_tags_json,
        video_id,
@@ -1218,6 +1248,8 @@ SELECT media_type,
        video_width,
        video_height,
        video_frame_count,
+       video_title,
+       video_summary,
        video_description,
        video_tags_json,
        video_transcript_text,
@@ -1241,6 +1273,9 @@ OFFSET ?
 		var mediaType string
 		var unitID int64
 		var imageStoragePath string
+		var imageTitle string
+		var imageSummary string
+		var imageDescription string
 		var imageTagsJSON string
 		var videoID sql.NullInt64
 		var videoOriginalName sql.NullString
@@ -1250,6 +1285,8 @@ OFFSET ?
 		var videoWidth int
 		var videoHeight int
 		var videoFrameCount int
+		var videoTitle sql.NullString
+		var videoSummary sql.NullString
 		var videoDescription sql.NullString
 		var videoTagsJSON sql.NullString
 		var videoTranscriptText sql.NullString
@@ -1264,7 +1301,9 @@ OFFSET ?
 			&result.MimeType,
 			&result.Width,
 			&result.Height,
-			&result.Description,
+			&imageTitle,
+			&imageSummary,
+			&imageDescription,
 			&imageTagsJSON,
 			&videoID,
 			&videoOriginalName,
@@ -1274,6 +1313,8 @@ OFFSET ?
 			&videoWidth,
 			&videoHeight,
 			&videoFrameCount,
+			&videoTitle,
+			&videoSummary,
 			&videoDescription,
 			&videoTagsJSON,
 			&videoTranscriptText,
@@ -1290,6 +1331,11 @@ OFFSET ?
 		result.SearchSource = "tag"
 		result.MediaType = mediaType
 		result.StoragePath = filepath.ToSlash(imageStoragePath)
+		text := annotationtext.Build(imageTitle, imageSummary, imageDescription)
+		result.Title = text.Title
+		result.Summary = text.Summary
+		result.Description = text.Description
+		result.FullDescription = text.FullDescription
 		if mediaType == "video" && videoID.Valid {
 			videoTags, err := tagutil.DecodeJSON(videoTagsJSON.String)
 			if err != nil {
@@ -1307,8 +1353,12 @@ OFFSET ?
 				result.Height = videoHeight
 			}
 			result.FrameCount = videoFrameCount
-			if desc := strings.TrimSpace(videoDescription.String); desc != "" {
-				result.Description = desc
+			videoText := annotationtext.Build(videoTitle.String, videoSummary.String, videoDescription.String)
+			if videoText.FullDescription != "" || videoText.Summary != "" || videoText.Title != "" {
+				result.Title = videoText.Title
+				result.Summary = videoText.Summary
+				result.Description = videoText.Description
+				result.FullDescription = videoText.FullDescription
 			}
 			if len(videoTags) > 0 {
 				result.Tags = videoTags
@@ -1401,6 +1451,8 @@ SELECT v.id,
        COALESCE(v.width, 0),
        COALESCE(v.height, 0),
        COALESCE(v.frame_count, 0),
+       COALESCE(v.title, ''),
+       COALESCE(v.summary, ''),
        COALESCE(v.description, ''),
        COALESCE(v.tags_json, '[]'),
 	       COALESCE(v.transcript_text, ''),
@@ -1425,6 +1477,9 @@ WHERE vte.model_id = ?
 		var blob []byte
 		var dim int
 		var tagsJSON string
+		var title string
+		var summary string
+		var fullDescription string
 		if err := rows.Scan(
 			&result.VideoID,
 			&result.OriginalName,
@@ -1434,7 +1489,9 @@ WHERE vte.model_id = ?
 			&result.Width,
 			&result.Height,
 			&result.FrameCount,
-			&result.Description,
+			&title,
+			&summary,
+			&fullDescription,
 			&tagsJSON,
 			&result.TranscriptText,
 			&result.ImageID,
@@ -1444,6 +1501,11 @@ WHERE vte.model_id = ?
 		); err != nil {
 			return nil, fmt.Errorf("scan transcript embedding row: %w", err)
 		}
+		text := annotationtext.Build(title, summary, fullDescription)
+		result.Title = text.Title
+		result.Summary = text.Summary
+		result.Description = text.Description
+		result.FullDescription = text.FullDescription
 		tags, err := tagutil.DecodeJSON(tagsJSON)
 		if err != nil {
 			return nil, fmt.Errorf("decode transcript video %d tags: %w", result.VideoID, err)

@@ -9,7 +9,10 @@ export interface ImageRecord {
   height: number;
   index_state: string;
   created_at?: string;
+  title?: string;
+  summary?: string;
   description?: string;
+  full_description?: string;
   tags?: string[];
 }
 
@@ -36,7 +39,10 @@ export interface SearchResult {
   distance: number;
   original_name: string;
   storage_path: string;
+  title?: string;
+  summary?: string;
   description?: string;
+  full_description?: string;
   tags?: string[];
   is_anchor?: boolean;
   /** Tag-based searches set this to "tag" so the UI can suppress similarity badges. */
@@ -158,6 +164,8 @@ export interface Pin {
   width: number;
   height: number;
   title: string;
+  summary?: string;
+  fullDescription?: string;
   filename: string;
   tags: string[];
   /** 0-1 similarity (1 - distance) when this pin came from a search result. */

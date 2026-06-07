@@ -33,14 +33,24 @@ export function trimTitle(text: string | undefined, max = 140): string {
   return cleaned.slice(0, max - 1).trimEnd() + "…";
 }
 
-/** Pick a best title for a pin: first sentence of description, else filename. */
-export function deriveTitle(record: { description?: string; original_name?: string }): string {
-  const desc = record.description?.trim();
+/** Pick a best title for a pin: explicit title, first sentence of full text, else filename. */
+export function deriveTitle(record: { title?: string; description?: string; full_description?: string; original_name?: string }): string {
+  const explicitTitle = record.title?.trim();
+  if (explicitTitle) return trimTitle(explicitTitle, 160);
+  const desc = (record.full_description ?? record.description)?.trim();
   if (desc) {
     const firstSentence = desc.split(/(?<=[.!?])\s+/)[0] ?? desc;
     return trimTitle(firstSentence, 160);
   }
   return record.original_name ?? "Untitled";
+}
+
+export function deriveSummary(record: { summary?: string; description?: string; full_description?: string }): string | undefined {
+  return (record.summary ?? record.description ?? record.full_description)?.trim() || undefined;
+}
+
+export function deriveFullDescription(record: { full_description?: string; description?: string; summary?: string }): string | undefined {
+  return (record.full_description ?? record.description ?? record.summary)?.trim() || undefined;
 }
 
 function tagsIncludeNSFW(tags: string[] | undefined): boolean {
@@ -59,6 +69,8 @@ export function pinFromImage(record: ImageRecord): Pin {
     width: record.width,
     height: record.height,
     title: deriveTitle(record),
+    summary: deriveSummary(record),
+    fullDescription: deriveFullDescription(record),
     filename: record.original_name,
     tags,
     isNSFW: tagsIncludeNSFW(tags),
@@ -78,6 +90,8 @@ export function pinFromVideo(record: VideoRecord): Pin {
     width: record.preview_width || record.width,
     height: record.preview_height || record.height,
     title: deriveTitle(record),
+    summary: deriveSummary(record),
+    fullDescription: deriveFullDescription(record),
     filename: record.original_name,
     tags,
     durationMs: record.duration_ms,
@@ -104,6 +118,8 @@ export function pinFromSearchResult(record: SearchResult): Pin {
     width: record.width,
     height: record.height,
     title: deriveTitle(record),
+    summary: deriveSummary(record),
+    fullDescription: deriveFullDescription(record),
     filename: record.original_name,
     tags,
     matchScore: score,

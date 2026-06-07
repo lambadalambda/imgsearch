@@ -72,11 +72,14 @@ const sampleImages = Array.from({ length: 144 }, (_, i) => ({
   mime_type: "image/jpeg",
   width: 800 + (i % 4) * 80,
   height: 600 + (i % 5) * 60,
+  title: `Image card title ${i}`,
+  summary: `Image overview summary ${i} for the card preview.`,
   index_state: "done",
-  description:
+  description: `Image overview summary ${i} for the card preview.`,
+  full_description:
     i % 2 === 0
-      ? "A close-up of a tabby cat looking at the camera."
-      : "Studio portrait against a warm beige backdrop.",
+      ? `Full generated annotation ${i}: a close-up of a tabby cat looking at the camera with detailed visible context.`
+      : `Full generated annotation ${i}: a studio portrait against a warm beige backdrop with detailed visible context.`,
   tags: ["portrait", "cat", "indoor", "warm-tone", "test"],
 }));
 
@@ -93,7 +96,10 @@ const sampleVideos = Array.from({ length: 6 }, (_, i) => ({
   width: 720,
   height: 1280,
   duration_ms: 8500,
-  description: `Short cinematic clip ${i} of cats playing in warm light.`,
+  title: `Video card title ${i}`,
+  summary: `Video overview summary ${i} for the card preview.`,
+  description: `Video overview summary ${i} for the card preview.`,
+  full_description: `Full generated annotation video ${i}: a short cinematic clip of cats playing in warm light with detailed visible context.`,
   tags: i === 0 ? ["seed-only"] : i === 1 || i === 4 ? ["cat", "warm-tone", "rerank-target"] : ["video", `clip-${i}`],
 }));
 
@@ -108,7 +114,10 @@ function searchResults(seedOffset = 0) {
     height: image.height,
     distance: 0.1 + (i + seedOffset) * 0.04,
     original_name: image.original_name,
+    title: image.title,
+    summary: image.summary,
     description: image.description,
+    full_description: image.full_description,
     tags: image.tags,
   }));
   const videoHits = sampleVideos.slice(0, 2).map((video, i) => ({
@@ -123,7 +132,10 @@ function searchResults(seedOffset = 0) {
     duration_ms: video.duration_ms,
     distance: 0.05 + (i + seedOffset) * 0.04,
     original_name: video.original_name,
+    title: video.title,
+    summary: video.summary,
     description: video.description,
+    full_description: video.full_description,
     tags: video.tags,
   }));
   return [...videoHits, ...imageHits];
@@ -145,7 +157,10 @@ function similarVideoResults(excludeIds) {
       duration_ms: video.duration_ms,
       distance: video.video_id === 204 ? 0.13 : 0.1 + i * 0.04,
       original_name: video.original_name,
+      title: video.title,
+      summary: video.summary,
       description: video.description,
+      full_description: video.full_description,
       tags: video.tags,
     }));
 }
@@ -482,6 +497,14 @@ try {
   const pinCount = await page.locator("[data-pin]").count();
   if (pinCount < 12) {
     throw new Error(`expected initial 48-page library to render at least 12 pins, got ${pinCount}`);
+  }
+  const firstPinText = (await page.locator("[data-pin]").first().textContent() || "").trim();
+  if (!firstPinText.includes("card title")) {
+    throw new Error(`expected explicit annotation title on first pin, got ${JSON.stringify(firstPinText)}`);
+  }
+  const firstPinSummary = (await page.locator("[data-pin-summary]").first().textContent() || "").trim();
+  if (!firstPinSummary.includes("overview summary")) {
+    throw new Error(`expected annotation summary on a card, got ${JSON.stringify(firstPinSummary)}`);
   }
   const headline = (await page.locator("h1").first().textContent() || "").trim();
   if (headline !== "Library") {
@@ -988,7 +1011,33 @@ try {
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
   await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
 
-  // 5. Lightbox open + Escape close.
+  // 5. Lightbox exposes full descriptions and clickable tags.
+  await page.locator('[data-pin-media]').first().click();
+  await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  const lightboxDescription = (await page.locator("[data-lightbox-description]").textContent() || "").trim();
+  if (!lightboxDescription.includes("Full generated annotation")) {
+    throw new Error(`expected full generated annotation in lightbox, got ${JSON.stringify(lightboxDescription)}`);
+  }
+  const lightboxTag = (await page.locator("[data-lightbox-tag]").first().textContent() || "").trim();
+  if (!lightboxTag) {
+    throw new Error("expected at least one clickable lightbox tag");
+  }
+  await page.locator("[data-lightbox-tag]").first().click();
+  await page.waitForFunction(
+    (tag) => new URLSearchParams(window.location.search).getAll("tag").includes(tag),
+    lightboxTag,
+    { timeout: 5000 },
+  );
+  await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+  const lightboxTagHeadline = (await page.locator("h1").first().textContent() || "").trim();
+  if (lightboxTagHeadline !== lightboxTag) {
+    throw new Error(`expected lightbox tag headline ${JSON.stringify(lightboxTag)}, got ${JSON.stringify(lightboxTagHeadline)}`);
+  }
+
+  // Back to library and keep the Escape-close path covered.
+  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
+  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
   await page.locator('[data-pin-media]').first().click();
   await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
   await page.keyboard.press("Escape");

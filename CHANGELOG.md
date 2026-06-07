@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(annotations): store and expose multi-level annotation text with explicit card titles, overview summaries, and full descriptions in API responses and the Atelier lightbox, while deriving fallback titles/summaries from existing descriptions.
 - add(bench): add a Podman ingestion benchmark harness for realistic image/video indexing runs, with CPU/CUDA modes, explicit benchmark API key wiring, container-exit fail-fast health checks, and annotator-resolution experiment support.
 - fix(bench): make the ingestion benchmark fail when any indexing job reaches `failed`, and ignore local `bench-results/` artifacts in git/container build contexts.
 - feat(runtime): default video ingestion to 5 sampled frames per uploaded video while keeping `-video-frame-count` configurable, with benchmark harness support through `IMGSEARCH_BENCH_VIDEO_FRAME_COUNT`.
