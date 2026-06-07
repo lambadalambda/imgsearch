@@ -57,6 +57,9 @@ func TestNativeGemmaRuntimeMethodsRespectCanceledContextBeforeNativeWork(t *test
 	if _, err := runtime.AnnotateVideo(ctx, coreembedder.VideoAnnotationInput{RepresentativeFramePath: "ignored.jpg"}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("AnnotateVideo error: got=%v want=%v", err, context.Canceled)
 	}
+	if _, err := runtime.AnnotateVideoFrame(ctx, "ignored.jpg", coreembedder.ImageAnnotationOptions{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("AnnotateVideoFrame error: got=%v want=%v", err, context.Canceled)
+	}
 }
 
 func TestNativeGemmaRuntimeMethodsReturnClosedErrorWithActiveContext(t *testing.T) {
@@ -76,6 +79,9 @@ func TestNativeGemmaRuntimeMethodsReturnClosedErrorWithActiveContext(t *testing.
 	}
 	if _, err := runtime.AnnotateVideo(context.Background(), coreembedder.VideoAnnotationInput{RepresentativeFramePath: "ignored.jpg"}); err == nil || !strings.Contains(err.Error(), "closed") {
 		t.Fatalf("AnnotateVideo error: got=%v want closed error", err)
+	}
+	if _, err := runtime.AnnotateVideoFrame(context.Background(), "ignored.jpg", coreembedder.ImageAnnotationOptions{}); err == nil || !strings.Contains(err.Error(), "closed") {
+		t.Fatalf("AnnotateVideoFrame error: got=%v want closed error", err)
 	}
 }
 
@@ -99,6 +105,19 @@ func TestBuildImageAnnotationUserPromptSkipsNoisyFilename(t *testing.T) {
 	prompt := buildImageAnnotationUserPrompt("34254745943.jpg")
 	if strings.Contains(prompt, "Original filename") {
 		t.Fatalf("expected noisy numeric filename to be omitted from prompt")
+	}
+}
+
+func TestBuildVideoFrameAnnotationUserPromptIsCompact(t *testing.T) {
+	prompt := buildVideoFrameAnnotationUserPrompt("concert stage clip.mp4")
+	if !strings.Contains(prompt, "80 words") {
+		t.Fatalf("expected compact frame prompt word budget")
+	}
+	if strings.Contains(prompt, "500 words") {
+		t.Fatalf("video frame prompt should not use full rich image budget")
+	}
+	if !strings.Contains(prompt, "Original filename") {
+		t.Fatalf("expected meaningful filename context")
 	}
 }
 
@@ -127,5 +146,38 @@ func TestBuildVideoAnnotationUserPromptIncludesFrameEvidence(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(prompt), "500 words") {
 		t.Fatalf("expected video prompt to allow up to 500 words")
+	}
+}
+
+func TestFormatGenerationTimingLogIncludesNativeBreakdown(t *testing.T) {
+	line := formatGenerationTimingLog("annotate_image", "primary", "photo.jpg", generationTiming{
+		ImagePreprocessMS:         12,
+		NativeDecodeMS:            34,
+		TokenizeMS:                5,
+		PrefillMS:                 67,
+		GenerateMS:                890,
+		GeneratedTokens:           321,
+		PromptTokens:              654,
+		SpeculativeDraftedTokens:  17,
+		SpeculativeAcceptedTokens: 9,
+	})
+
+	for _, want := range []string{
+		"native annotation timing kind=annotate_image",
+		"attempt=primary",
+		"file=\"photo.jpg\"",
+		"preprocess=12ms",
+		"native_decode=34ms",
+		"tokenize=5ms",
+		"prefill=67ms",
+		"generate=890ms",
+		"generated_tokens=321",
+		"prompt_tokens=654",
+		"speculative_drafted_tokens=17",
+		"speculative_accepted_tokens=9",
+	} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("expected %q in %q", want, line)
+		}
 	}
 }

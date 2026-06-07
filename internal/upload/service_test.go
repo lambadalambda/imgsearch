@@ -91,16 +91,18 @@ func mp4Bytes() []byte {
 }
 
 type fakeVideoSampler struct {
-	durationMS int64
-	width      int
-	height     int
-	frames     int
-	err        error
+	durationMS          int64
+	width               int
+	height              int
+	frames              int
+	requestedFrameCount int
+	err                 error
 }
 
 func (f *fakeVideoSampler) Sample(ctx context.Context, videoPath string, frameCount int, tmpDir string) (VideoSample, error) {
 	_ = ctx
 	_ = videoPath
+	f.requestedFrameCount = frameCount
 	if f.err != nil {
 		return VideoSample{}, f.err
 	}
@@ -412,5 +414,27 @@ ORDER BY vf.frame_index ASC
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate frame paths: %v", err)
+	}
+}
+
+func TestStoreDefaultsVideoFrameCountToFive(t *testing.T) {
+	svc, sqlDB := setupService(t)
+	sampler := &fakeVideoSampler{durationMS: 12_000, width: 1920, height: 1080, frames: 10}
+	svc.VideoSampler = sampler
+
+	out, err := svc.Store(context.Background(), "clip.mp4", bytes.NewReader(mp4Bytes()))
+	if err != nil {
+		t.Fatalf("store video: %v", err)
+	}
+	if sampler.requestedFrameCount != 5 {
+		t.Fatalf("sampler frame count: got=%d want=5", sampler.requestedFrameCount)
+	}
+
+	var frameCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM video_frames WHERE video_id = ?`, out.VideoID).Scan(&frameCount); err != nil {
+		t.Fatalf("count video frames: %v", err)
+	}
+	if frameCount != 5 {
+		t.Fatalf("stored video frames: got=%d want=5", frameCount)
 	}
 }

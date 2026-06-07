@@ -331,3 +331,38 @@ func (a *switchingVideoAnnotator) AnnotateVideo(ctx context.Context, input embed
 	}
 	return annotation, nil
 }
+
+func (a *switchingVideoAnnotator) AnnotateVideoFrame(ctx context.Context, path string, opts embedder.ImageAnnotationOptions) (embedder.ImageAnnotation, error) {
+	if a == nil || a.switchingAnnotator == nil || a.switchboard == nil {
+		return embedder.ImageAnnotation{}, fmt.Errorf("llama model switchboard annotator is unavailable")
+	}
+	var annotation embedder.ImageAnnotation
+	err := a.switchboard.withAnnotator(ctx, func(active embedder.ImageAnnotator) error {
+		if frameAnnotator, ok := active.(embedder.VideoFrameAnnotator); ok {
+			out, err := frameAnnotator.AnnotateVideoFrame(ctx, path, opts)
+			if err != nil {
+				return err
+			}
+			annotation = out
+			return nil
+		}
+		if withOptions, ok := active.(embedder.ImageAnnotatorWithOptions); ok {
+			out, err := withOptions.AnnotateImageWithOptions(ctx, path, opts)
+			if err != nil {
+				return err
+			}
+			annotation = out
+			return nil
+		}
+		out, err := active.AnnotateImage(ctx, path)
+		if err != nil {
+			return err
+		}
+		annotation = out
+		return nil
+	})
+	if err != nil {
+		return embedder.ImageAnnotation{}, err
+	}
+	return annotation, nil
+}

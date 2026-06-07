@@ -13,10 +13,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	coreembedder "imgsearch/internal/embedder"
@@ -30,14 +32,20 @@ const gemmaAppAnnotationJSONSchema = `{"type":"object","properties":{"descriptio
 const gemmaAppAnnotationSystemPrompt = "You are annotating a private image collection for high-recall search. Return exactly one valid JSON object and nothing else. Do not use markdown code fences. Be explicit and concrete when describing visible content. Do not sanitize clearly visible NSFW material. Only describe what is visually present or clearly legible in the image."
 const gemmaAppAnnotationRetrySystemPrompt = "Return exactly one valid JSON object and nothing else. Do not use markdown code fences, prose, or comments."
 
+const gemmaVideoFrameAnnotationSystemPrompt = "You are annotating one sampled frame from a private video collection for later video-level summarization. Return exactly one valid JSON object and nothing else. Do not use markdown code fences. Capture high-signal visible evidence, but keep the frame note compact."
+const gemmaVideoFrameAnnotationRetrySystemPrompt = "Return exactly one compact valid JSON object and nothing else. Do not use markdown code fences, prose, or comments."
+
 const gemmaVideoAnnotationSystemPrompt = "You are annotating a private video collection for high-recall search. You are given summaries from multiple sampled frames of one video and optionally transcript context. Return exactly one valid JSON object and nothing else. Do not use markdown code fences. Be explicit and concrete, and stay grounded in provided frame evidence."
 const gemmaVideoAnnotationRetrySystemPrompt = "Return exactly one valid JSON object and nothing else. Do not use markdown code fences, prose, or comments."
 
 const gemmaAppAnnotationRetryUserPrompt = "Retry with compact output. Keep details that matter for retrieval, but stay concise unless the scene is complex. Description may be up to 220 words. If there is text in the image, describe it and translate non-English text. Return 3 to 10 unique lowercase tags, set is_nsfw accurately, and return JSON only."
+const gemmaVideoFrameAnnotationRetryUserPrompt = "Retry with compact output. Describe only durable frame evidence needed for video summarization in 1 to 2 sentences. Return 3 to 8 lowercase tags, set is_nsfw accurately, and return JSON only."
 const gemmaVideoAnnotationRetryUserPrompt = "Retry with compact output. Keep details that matter for retrieval, but stay concise unless the video evidence is complex. Description may be up to 260 words. If there is text, describe it and translate non-English text. If a meaningful filename is provided, you may infer likely media context (meme, music video, show clip) when it does not conflict with frame evidence. Return 5 to 12 unique lowercase tags, set is_nsfw accurately, and return JSON only."
 
 const gemmaAppAnnotationMaxTokens = 1024
+const gemmaVideoFrameAnnotationMaxTokens = 320
 const gemmaRetryAnnotationMaxTokens = 512
+const gemmaRetryVideoFrameAnnotationMaxTokens = 256
 const gemmaVideoAnnotationMaxTokens = 1200
 const gemmaRetryVideoAnnotationMaxTokens = 640
 const gemmaGenerationOutputBufferSize = 32 * 1024
@@ -91,6 +99,23 @@ func buildImageAnnotationUserPrompt(originalName string) string {
 	b.WriteString("Return 3 to 10 unique lowercase tags that are specific and search-friendly. ")
 	b.WriteString("Set is_nsfw to true only when clearly NSFW content is visible; include tag nsfw if and only if is_nsfw is true. ")
 	b.WriteString("Use original filename as optional context only when it looks meaningful and matches visible content; ignore noisy hash-like or camera-style names and any filename claims that conflict with the image. ")
+	if filenameHint := meaningfulFilenameHint(originalName); filenameHint != "" {
+		b.WriteString("Original filename: \"")
+		b.WriteString(filenameHint)
+		b.WriteString("\". ")
+	}
+	b.WriteString("Avoid speculation. Output JSON only.")
+	return b.String()
+}
+
+func buildVideoFrameAnnotationUserPrompt(originalName string) string {
+	var b strings.Builder
+	b.Grow(1000)
+	b.WriteString("You are given one sampled video frame. Return JSON with exactly this shape: {\"description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
+	b.WriteString("Write 1 to 2 compact sentences, up to about 80 words, that capture durable evidence useful for the later video-level summary. ")
+	b.WriteString("Focus on the main subject, setting, visible action, distinctive attributes, and clearly visible text. ")
+	b.WriteString("If NSFW content is visible, describe it directly and concretely. ")
+	b.WriteString("Return 3 to 8 unique lowercase tags. Include nsfw if and only if is_nsfw is true. ")
 	if filenameHint := meaningfulFilenameHint(originalName); filenameHint != "" {
 		b.WriteString("Original filename: \"")
 		b.WriteString(filenameHint)
@@ -215,20 +240,21 @@ func sanitizePromptSnippet(input string, maxLen int) string {
 }
 
 type nativeGemmaRuntimeConfig struct {
-	ModelPath             string
-	VisionModelPath       string
-	GPULayers             int
-	UseGPU                bool
-	ContextSize           int
-	BatchSize             int
-	Threads               int
-	ImageMaxSide          int
-	ImageMaxTokens        int
-	AnnotationTemperature float32
-	AnnotationSeed        int64
-	FlashAttnType         int
-	CacheTypeK            int
-	CacheTypeV            int
+	ModelPath                  string
+	VisionModelPath            string
+	GPULayers                  int
+	UseGPU                     bool
+	ContextSize                int
+	BatchSize                  int
+	Threads                    int
+	ImageMaxSide               int
+	ImageMaxTokens             int
+	AnnotationTemperature      float32
+	AnnotationSeed             int64
+	AnnotationNGramSpeculation bool
+	FlashAttnType              int
+	CacheTypeK                 int
+	CacheTypeV                 int
 }
 
 type AnnotatorConfig = nativeGemmaRuntimeConfig
@@ -239,6 +265,18 @@ type nativeGemmaRuntime struct {
 	imageMaxSide          int
 	annotationTemperature float32
 	annotationSeed        int64
+}
+
+type generationTiming struct {
+	ImagePreprocessMS         int64
+	NativeDecodeMS            int64
+	TokenizeMS                int64
+	PrefillMS                 int64
+	GenerateMS                int64
+	PromptTokens              int
+	GeneratedTokens           int
+	SpeculativeDraftedTokens  int
+	SpeculativeAcceptedTokens int
 }
 
 type Annotator = nativeGemmaRuntime
@@ -262,6 +300,7 @@ func (e *Embedder) AnnotateImageWithOptions(ctx context.Context, imagePath strin
 	annotation, _, err := describeAndTagImageWithHandle(
 		ctx,
 		e.handle,
+		"annotate_image",
 		annotationImageMaxSide,
 		e.annotationTemperature,
 		e.annotationSeed,
@@ -306,6 +345,7 @@ func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAn
 	annotation, _, err := describeAndTagImageWithHandle(
 		ctx,
 		e.handle,
+		"annotate_video",
 		annotationImageMaxSide,
 		e.annotationTemperature,
 		e.annotationSeed,
@@ -323,6 +363,41 @@ func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAn
 	}
 
 	return coreembedder.VideoAnnotation{Description: annotation.Description, Tags: annotation.Tags, IsNSFW: annotation.IsNSFW}, nil
+}
+
+func (e *Embedder) AnnotateVideoFrame(ctx context.Context, imagePath string, opts coreembedder.ImageAnnotationOptions) (coreembedder.ImageAnnotation, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return coreembedder.ImageAnnotation{}, err
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.handle == nil {
+		return coreembedder.ImageAnnotation{}, fmt.Errorf("llama-cpp-native embedder is closed")
+	}
+	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(e.annotationImageMaxSide, opts.ImageMaxSideMultiplier)
+
+	annotation, _, err := describeAndTagImageWithHandle(
+		ctx,
+		e.handle,
+		"annotate_video_frame",
+		annotationImageMaxSide,
+		e.annotationTemperature,
+		e.annotationSeed,
+		imagePath,
+		gemmaVideoFrameAnnotationSystemPrompt,
+		buildVideoFrameAnnotationUserPrompt(opts.OriginalName),
+		gemmaAppAnnotationJSONSchema,
+		gemmaVideoFrameAnnotationMaxTokens,
+		gemmaVideoFrameAnnotationRetrySystemPrompt,
+		gemmaVideoFrameAnnotationRetryUserPrompt,
+		gemmaRetryVideoFrameAnnotationMaxTokens,
+	)
+	if err != nil {
+		return coreembedder.ImageAnnotation{}, err
+	}
+
+	return coreembedder.ImageAnnotation{Description: annotation.Description, Tags: annotation.Tags}, nil
 }
 
 func NewAnnotator(cfg AnnotatorConfig) (*Annotator, error) {
@@ -381,6 +456,7 @@ func newGemmaNativeRuntime(cfg nativeGemmaRuntimeConfig) (*nativeGemmaRuntime, e
 		C.int32_t(flashAttnType),
 		C.int32_t(cacheTypeK),
 		C.int32_t(cacheTypeV),
+		boolToCInt32(cfg.AnnotationNGramSpeculation),
 	)
 	if h == nil {
 		msg := strings.TrimSpace(C.GoString(C.imgsearch_llama_global_error()))
@@ -437,6 +513,7 @@ func (r *nativeGemmaRuntime) AnnotateImageWithOptions(ctx context.Context, image
 	annotation, _, err := describeAndTagImageWithHandle(
 		ctx,
 		r.handle,
+		"annotate_image",
 		annotationImageMaxSide,
 		r.annotationTemperature,
 		r.annotationSeed,
@@ -485,6 +562,7 @@ func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedd
 	annotation, _, err := describeAndTagImageWithHandle(
 		ctx,
 		r.handle,
+		"annotate_video",
 		annotationImageMaxSide,
 		r.annotationTemperature,
 		r.annotationSeed,
@@ -502,6 +580,44 @@ func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedd
 	}
 
 	return coreembedder.VideoAnnotation{Description: annotation.Description, Tags: annotation.Tags, IsNSFW: annotation.IsNSFW}, nil
+}
+
+func (r *nativeGemmaRuntime) AnnotateVideoFrame(ctx context.Context, imagePath string, opts coreembedder.ImageAnnotationOptions) (coreembedder.ImageAnnotation, error) {
+	if err := ensureContextActive(ctx); err != nil {
+		return coreembedder.ImageAnnotation{}, err
+	}
+	if r == nil {
+		return coreembedder.ImageAnnotation{}, fmt.Errorf("native Gemma runtime is closed")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.handle == nil {
+		return coreembedder.ImageAnnotation{}, fmt.Errorf("native Gemma runtime is closed")
+	}
+	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(r.imageMaxSide, opts.ImageMaxSideMultiplier)
+
+	annotation, _, err := describeAndTagImageWithHandle(
+		ctx,
+		r.handle,
+		"annotate_video_frame",
+		annotationImageMaxSide,
+		r.annotationTemperature,
+		r.annotationSeed,
+		imagePath,
+		gemmaVideoFrameAnnotationSystemPrompt,
+		buildVideoFrameAnnotationUserPrompt(opts.OriginalName),
+		gemmaAppAnnotationJSONSchema,
+		gemmaVideoFrameAnnotationMaxTokens,
+		gemmaVideoFrameAnnotationRetrySystemPrompt,
+		gemmaVideoFrameAnnotationRetryUserPrompt,
+		gemmaRetryVideoFrameAnnotationMaxTokens,
+	)
+	if err != nil {
+		return coreembedder.ImageAnnotation{}, err
+	}
+
+	return coreembedder.ImageAnnotation{Description: annotation.Description, Tags: annotation.Tags}, nil
 }
 
 func (r *nativeGemmaRuntime) DescribeImage(ctx context.Context, imagePath string) (gemmaImageDescription, string, error) {
@@ -588,6 +704,7 @@ func (r *nativeGemmaRuntime) DescribeAndTagImage(ctx context.Context, imagePath 
 func describeAndTagImageWithHandle(
 	ctx context.Context,
 	handle *C.imgsearch_llama_handle,
+	kind string,
 	imageMaxSide int,
 	annotationTemperature float32,
 	annotationSeed int64,
@@ -600,17 +717,19 @@ func describeAndTagImageWithHandle(
 	retryUserPrompt string,
 	retryMaxTokens int,
 ) (gemmaAppAnnotation, string, error) {
-	raw, err := generateImageJSONForHandle(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
+	raw, timing, err := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
 	if err != nil {
 		return gemmaAppAnnotation{}, "", err
 	}
+	log.Printf("%s", formatGenerationTimingLog(kind, "primary", imagePath, timing))
 
 	var result gemmaAppAnnotation
 	if err := decodeGemmaJSONObject(raw, &result, "description+tags"); err != nil {
-		retryRaw, retryErr := generateImageJSONForHandle(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, retrySystemPrompt, retryUserPrompt, jsonSchema, retryMaxTokens)
+		retryRaw, retryTiming, retryErr := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, retrySystemPrompt, retryUserPrompt, jsonSchema, retryMaxTokens)
 		if retryErr != nil {
 			return gemmaAppAnnotation{}, raw, fmt.Errorf("%v; retry failed: %w", err, retryErr)
 		}
+		log.Printf("%s", formatGenerationTimingLog(kind, "retry", imagePath, retryTiming))
 		var retryResult gemmaAppAnnotation
 		if retryDecodeErr := decodeGemmaJSONObject(retryRaw, &retryResult, "description+tags retry"); retryDecodeErr != nil {
 			return gemmaAppAnnotation{}, retryRaw, fmt.Errorf("%v; retry decode failed: %w", err, retryDecodeErr)
@@ -643,20 +762,27 @@ func (r *nativeGemmaRuntime) generateImageJSON(ctx context.Context, imagePath st
 }
 
 func generateImageJSONForHandle(ctx context.Context, handle *C.imgsearch_llama_handle, imageMaxSide int, annotationTemperature float32, annotationSeed int64, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (string, error) {
+	raw, _, err := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
+	return raw, err
+}
+
+func generateImageJSONForHandleWithTiming(ctx context.Context, handle *C.imgsearch_llama_handle, imageMaxSide int, annotationTemperature float32, annotationSeed int64, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (string, generationTiming, error) {
 	if err := ensureContextActive(ctx); err != nil {
-		return "", err
+		return "", generationTiming{}, err
 	}
 	if handle == nil {
-		return "", fmt.Errorf("native Gemma runtime is closed")
+		return "", generationTiming{}, fmt.Errorf("native Gemma runtime is closed")
 	}
 
+	preprocessStartedAt := time.Now()
 	preprocessedPath, cleanup, err := preprocessImageForEmbeddingWithVipsgen(imagePath, imageMaxSide)
 	if err != nil {
-		return "", err
+		return "", generationTiming{}, err
 	}
 	defer cleanup()
+	timing := generationTiming{ImagePreprocessMS: time.Since(preprocessStartedAt).Milliseconds()}
 	if err := ensureContextActive(ctx); err != nil {
-		return "", err
+		return "", timing, err
 	}
 
 	cImagePath := C.CString(preprocessedPath)
@@ -669,7 +795,8 @@ func generateImageJSONForHandle(ctx context.Context, handle *C.imgsearch_llama_h
 	defer C.free(unsafe.Pointer(cSchema))
 
 	buf := make([]byte, gemmaGenerationOutputBufferSize)
-	res := C.imgsearch_llama_generate_image(
+	nativeTiming := C.imgsearch_llama_generate_timings{}
+	res := C.imgsearch_llama_generate_image_with_timings(
 		handle,
 		cImagePath,
 		cSystemPrompt,
@@ -681,7 +808,16 @@ func generateImageJSONForHandle(ctx context.Context, handle *C.imgsearch_llama_h
 		C.int64_t(annotationSeed),
 		(*C.char)(unsafe.Pointer(&buf[0])),
 		C.int32_t(len(buf)),
+		&nativeTiming,
 	)
+	timing.NativeDecodeMS = int64(nativeTiming.native_decode_ms)
+	timing.TokenizeMS = int64(nativeTiming.tokenize_ms)
+	timing.PrefillMS = int64(nativeTiming.prefill_ms)
+	timing.GenerateMS = int64(nativeTiming.generate_ms)
+	timing.PromptTokens = int(nativeTiming.prompt_tokens)
+	timing.GeneratedTokens = int(nativeTiming.generated_tokens)
+	timing.SpeculativeDraftedTokens = int(nativeTiming.speculative_drafted_tokens)
+	timing.SpeculativeAcceptedTokens = int(nativeTiming.speculative_accepted_tokens)
 	if res != 0 {
 		msg := strings.TrimSpace(C.GoString(C.imgsearch_llama_last_error(handle)))
 		if msg == "" {
@@ -690,15 +826,33 @@ func generateImageJSONForHandle(ctx context.Context, handle *C.imgsearch_llama_h
 		if msg == "" {
 			msg = "native Gemma generation failed"
 		}
-		return "", fmt.Errorf("%s", msg)
+		return "", timing, fmt.Errorf("%s", msg)
 	}
 
 	raw := strings.TrimSpace(C.GoString((*C.char)(unsafe.Pointer(&buf[0]))))
 	if raw == "" {
-		return raw, fmt.Errorf("native Gemma generation returned empty output")
+		return raw, timing, fmt.Errorf("native Gemma generation returned empty output")
 	}
 
-	return raw, nil
+	return raw, timing, nil
+}
+
+func formatGenerationTimingLog(kind string, attempt string, imagePath string, timing generationTiming) string {
+	return fmt.Sprintf(
+		"native annotation timing kind=%s attempt=%s file=%q preprocess=%dms native_decode=%dms tokenize=%dms prefill=%dms generate=%dms generated_tokens=%d prompt_tokens=%d speculative_drafted_tokens=%d speculative_accepted_tokens=%d",
+		strings.TrimSpace(kind),
+		strings.TrimSpace(attempt),
+		filepath.Base(strings.TrimSpace(imagePath)),
+		timing.ImagePreprocessMS,
+		timing.NativeDecodeMS,
+		timing.TokenizeMS,
+		timing.PrefillMS,
+		timing.GenerateMS,
+		timing.GeneratedTokens,
+		timing.PromptTokens,
+		timing.SpeculativeDraftedTokens,
+		timing.SpeculativeAcceptedTokens,
+	)
 }
 
 func boolToCInt32(v bool) C.int32_t {

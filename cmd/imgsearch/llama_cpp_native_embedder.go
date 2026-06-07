@@ -10,25 +10,26 @@ import (
 )
 
 type llamaCPPNativeEmbedderOptions struct {
-	ModelPath              string
-	VisionModelPath        string
-	Dimensions             int
-	GPULayers              int
-	UseGPU                 bool
-	ContextSize            int
-	BatchSize              int
-	MaxSequences           int
-	Threads                int
-	ImageMaxSide           int
-	AnnotationImageMaxSide int
-	ImageMaxTokens         int
-	AnnotationTemperature  float64
-	AnnotationSeed         int64
-	QueryInstruction       string
-	PassageInstruction     string
-	FlashAttnType          int
-	CacheTypeK             int
-	CacheTypeV             int
+	ModelPath                  string
+	VisionModelPath            string
+	Dimensions                 int
+	GPULayers                  int
+	UseGPU                     bool
+	ContextSize                int
+	BatchSize                  int
+	MaxSequences               int
+	Threads                    int
+	ImageMaxSide               int
+	AnnotationImageMaxSide     int
+	ImageMaxTokens             int
+	AnnotationTemperature      float64
+	AnnotationSeed             int64
+	AnnotationNGramSpeculation bool
+	QueryInstruction           string
+	PassageInstruction         string
+	FlashAttnType              int
+	CacheTypeK                 int
+	CacheTypeV                 int
 }
 
 const defaultLlamaNativeImageMaxSide = 384
@@ -97,25 +98,26 @@ func newLlamaCPPNativeEmbedder(opts llamaCPPNativeEmbedderOptions) (embedder.Emb
 	}
 
 	return llamacppnative.New(llamacppnative.Config{
-		ModelPath:              modelPath,
-		VisionModelPath:        visionPath,
-		Dimensions:             opts.Dimensions,
-		GPULayers:              opts.GPULayers,
-		UseGPU:                 opts.UseGPU,
-		ContextSize:            opts.ContextSize,
-		BatchSize:              opts.BatchSize,
-		MaxSequences:           opts.MaxSequences,
-		Threads:                opts.Threads,
-		ImageMaxSide:           imageMaxSide,
-		AnnotationImageMaxSide: annotationImageMaxSide,
-		ImageMaxTokens:         imageMaxTokens,
-		AnnotationTemperature:  annotationTemperature,
-		AnnotationSeed:         annotationSeed,
-		QueryInstruction:       strings.TrimSpace(opts.QueryInstruction),
-		PassageInstruction:     strings.TrimSpace(opts.PassageInstruction),
-		FlashAttnType:          opts.FlashAttnType,
-		CacheTypeK:             opts.CacheTypeK,
-		CacheTypeV:             opts.CacheTypeV,
+		ModelPath:                  modelPath,
+		VisionModelPath:            visionPath,
+		Dimensions:                 opts.Dimensions,
+		GPULayers:                  opts.GPULayers,
+		UseGPU:                     opts.UseGPU,
+		ContextSize:                opts.ContextSize,
+		BatchSize:                  opts.BatchSize,
+		MaxSequences:               opts.MaxSequences,
+		Threads:                    opts.Threads,
+		ImageMaxSide:               imageMaxSide,
+		AnnotationImageMaxSide:     annotationImageMaxSide,
+		ImageMaxTokens:             imageMaxTokens,
+		AnnotationTemperature:      annotationTemperature,
+		AnnotationSeed:             annotationSeed,
+		AnnotationNGramSpeculation: opts.AnnotationNGramSpeculation,
+		QueryInstruction:           strings.TrimSpace(opts.QueryInstruction),
+		PassageInstruction:         strings.TrimSpace(opts.PassageInstruction),
+		FlashAttnType:              opts.FlashAttnType,
+		CacheTypeK:                 opts.CacheTypeK,
+		CacheTypeV:                 opts.CacheTypeV,
 	})
 }
 

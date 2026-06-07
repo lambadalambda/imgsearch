@@ -29,6 +29,8 @@ type VideoSampler interface {
 	Sample(ctx context.Context, videoPath string, frameCount int, tmpDir string) (VideoSample, error)
 }
 
+const defaultVideoFrameCount = 5
+
 type execVideoSampler struct{}
 
 type ffprobeOutput struct {
@@ -43,7 +45,7 @@ type ffprobeOutput struct {
 
 func (execVideoSampler) Sample(ctx context.Context, videoPath string, frameCount int, tmpDir string) (VideoSample, error) {
 	if frameCount <= 0 {
-		frameCount = 10
+		frameCount = defaultVideoFrameCount
 	}
 	probe, err := probeVideo(ctx, videoPath)
 	if err != nil {

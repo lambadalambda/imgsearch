@@ -25,6 +25,17 @@ typedef struct imgsearch_llama_embed_inspect {
     int32_t n_batch;
 } imgsearch_llama_embed_inspect;
 
+typedef struct imgsearch_llama_generate_timings {
+    int64_t native_decode_ms;
+    int64_t tokenize_ms;
+    int64_t prefill_ms;
+    int64_t generate_ms;
+    int32_t prompt_tokens;
+    int32_t generated_tokens;
+    int32_t speculative_drafted_tokens;
+    int32_t speculative_accepted_tokens;
+} imgsearch_llama_generate_timings;
+
 imgsearch_llama_handle * imgsearch_llama_new(
     const char * model_path,
     const char * mmproj_path,
@@ -38,7 +49,8 @@ imgsearch_llama_handle * imgsearch_llama_new(
     int32_t image_max_tokens,
     int32_t flash_attn_type,
     int32_t cache_type_k,
-    int32_t cache_type_v);
+    int32_t cache_type_v,
+    int32_t annotation_ngram_speculation);
 
 void imgsearch_llama_free(imgsearch_llama_handle * handle);
 
@@ -76,6 +88,20 @@ int32_t imgsearch_llama_generate_image(
     int64_t seed,
     char * out,
     int32_t out_len);
+
+int32_t imgsearch_llama_generate_image_with_timings(
+    imgsearch_llama_handle * handle,
+    const char * image_path,
+    const char * system_prompt,
+    const char * user_prompt,
+    const char * json_schema,
+    int32_t max_tokens,
+    float temperature,
+    float top_p,
+    int64_t seed,
+    char * out,
+    int32_t out_len,
+    imgsearch_llama_generate_timings * timings);
 
 const char * imgsearch_llama_last_error(const imgsearch_llama_handle * handle);
 const char * imgsearch_llama_global_error(void);

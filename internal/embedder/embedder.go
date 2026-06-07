@@ -33,6 +33,10 @@ type ImageAnnotatorWithOptions interface {
 	AnnotateImageWithOptions(ctx context.Context, path string, opts ImageAnnotationOptions) (ImageAnnotation, error)
 }
 
+type VideoFrameAnnotator interface {
+	AnnotateVideoFrame(ctx context.Context, path string, opts ImageAnnotationOptions) (ImageAnnotation, error)
+}
+
 type VideoFrameAnnotation struct {
 	FrameIndex  int
 	TimestampMS int64

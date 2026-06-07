@@ -9,8 +9,7 @@ package llamacppnative
 #cgo CPPFLAGS: -I${SRCDIR}/../../../deps/llama.cpp/include
 #cgo CPPFLAGS: -I${SRCDIR}/../../../deps/llama.cpp/ggml/include
 #cgo CPPFLAGS: -I${SRCDIR}/../../../deps/llama.cpp/tools/mtmd
-#cgo LDFLAGS: -L${SRCDIR}/../../../deps/llama.cpp/build/bin -lllama -lmtmd -lggml -lggml-base
-#cgo LDFLAGS: ${SRCDIR}/../../../deps/llama.cpp/build/common/libcommon.a
+#cgo LDFLAGS: -L${SRCDIR}/../../../deps/llama.cpp/build/bin -lllama -lmtmd -lggml -lggml-base -lllama-common
 #cgo LDFLAGS: -Wl,-rpath,${SRCDIR}/../../../deps/llama.cpp/build/bin
 #include <stdlib.h>
 #include "bridge.h"
@@ -36,25 +35,26 @@ const (
 )
 
 type Config struct {
-	ModelPath              string
-	VisionModelPath        string
-	Dimensions             int
-	GPULayers              int
-	UseGPU                 bool
-	ContextSize            int
-	BatchSize              int
-	MaxSequences           int
-	Threads                int
-	ImageMaxSide           int
-	AnnotationImageMaxSide int
-	ImageMaxTokens         int
-	AnnotationTemperature  float32
-	AnnotationSeed         int64
-	QueryInstruction       string
-	PassageInstruction     string
-	FlashAttnType          int
-	CacheTypeK             int
-	CacheTypeV             int
+	ModelPath                  string
+	VisionModelPath            string
+	Dimensions                 int
+	GPULayers                  int
+	UseGPU                     bool
+	ContextSize                int
+	BatchSize                  int
+	MaxSequences               int
+	Threads                    int
+	ImageMaxSide               int
+	AnnotationImageMaxSide     int
+	ImageMaxTokens             int
+	AnnotationTemperature      float32
+	AnnotationSeed             int64
+	AnnotationNGramSpeculation bool
+	QueryInstruction           string
+	PassageInstruction         string
+	FlashAttnType              int
+	CacheTypeK                 int
+	CacheTypeV                 int
 }
 
 type Embedder struct {
@@ -194,6 +194,7 @@ func New(cfg Config) (*Embedder, error) {
 		C.int32_t(flashAttnType),
 		C.int32_t(cacheTypeK),
 		C.int32_t(cacheTypeV),
+		boolToCInt32(cfg.AnnotationNGramSpeculation),
 	)
 	if h == nil {
 		msg := strings.TrimSpace(C.GoString(C.imgsearch_llama_global_error()))

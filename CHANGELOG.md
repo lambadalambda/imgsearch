@@ -3,6 +3,15 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- add(bench): add a Podman ingestion benchmark harness for realistic image/video indexing runs, with CPU/CUDA modes, explicit benchmark API key wiring, container-exit fail-fast health checks, and annotator-resolution experiment support.
+- fix(bench): make the ingestion benchmark fail when any indexing job reaches `failed`, and ignore local `bench-results/` artifacts in git/container build contexts.
+- feat(runtime): default video ingestion to 5 sampled frames per uploaded video while keeping `-video-frame-count` configurable, with benchmark harness support through `IMGSEARCH_BENCH_VIDEO_FRAME_COUNT`.
+- perf(annotations): use compact sampled video-frame annotations as evidence for video summaries when the annotator supports them, preserving rich standalone image annotations while reducing the full `50 images + 5 videos` CUDA benchmark from `215s` to `165s`.
+- perf(worker): reuse compact video-frame evidence for repeated sampled frame `image_id`s within a video annotation job so static or looping videos do not regenerate the same frame annotation.
+- feat(native): log native annotation timing breakdowns for preprocessing, image decode, tokenization, prefill, generation, and token counts to guide annotation throughput work.
+- perf(native): add an experimental `-llama-native-annotation-ngram-speculation` flag that wires llama.cpp n-gram speculative decoding into native annotation generation and logs drafted/accepted speculative token counts for benchmarks.
+- chore(deps): update the embedded llama.cpp native runtime to upstream `5343f4502`.
+- fix(native): link against llama.cpp's updated `libllama-common` artifact so clean native builds work after the runtime update.
 - fix(container): default the CUDA container runner to `GGML_CUDA_DISABLE_GRAPHS=1` to mitigate CUDA out-of-memory crashes during long 26B video annotation runs, with `IMGSEARCH_CUDA_GRAPHS=1` as an explicit opt-out.
 - fix(worker): renew claimed job leases while long-running annotation/transcription jobs execute so CPU-only workers do not discard completed work as stale after the default lease expires.
 - fix(feed): show a retryable Feed error state for transient `/api/search/similar-videos` failures instead of presenting them as end-of-feed exhaustion, with smoke coverage for retrying the failed batch.

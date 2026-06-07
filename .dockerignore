@@ -3,13 +3,14 @@
 .idea/
 .vscode/
 
-data/
-models/
-dist/
-dist-test/
-build-artifacts/
+/data/
+/models/
+/dist/
+/dist-test/
+/build-artifacts/
+/bench-results/
 
-deps/llama.cpp/build/
+/deps/llama.cpp/build/
 
 *.sqlite
 *.sqlite-shm

@@ -89,6 +89,8 @@ type fakeAnnotator struct {
 	delay           time.Duration
 	lastOpts        embedder.ImageAnnotationOptions
 	optsCalls       int
+	videoFrameCalls int
+	lastFrameOpts   embedder.ImageAnnotationOptions
 	videoAnnotation embedder.VideoAnnotation
 	videoErr        error
 	lastVideoInput  embedder.VideoAnnotationInput
@@ -120,6 +122,18 @@ func (f *fakeAnnotator) AnnotateImage(context.Context, string) (embedder.ImageAn
 func (f *fakeAnnotator) AnnotateImageWithOptions(_ context.Context, _ string, opts embedder.ImageAnnotationOptions) (embedder.ImageAnnotation, error) {
 	f.optsCalls++
 	f.lastOpts = opts
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
+	if f.err != nil {
+		return embedder.ImageAnnotation{}, f.err
+	}
+	return f.annotation, nil
+}
+
+func (f *fakeAnnotator) AnnotateVideoFrame(_ context.Context, _ string, opts embedder.ImageAnnotationOptions) (embedder.ImageAnnotation, error) {
+	f.videoFrameCalls++
+	f.lastFrameOpts = opts
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}
@@ -866,8 +880,11 @@ VALUES (31, 'annotate_video', NULL, 10, 1, 'pending')
 	if !processed {
 		t.Fatal("expected processed=true")
 	}
-	if annotator.optsCalls != 1 {
-		t.Fatalf("expected one frame annotate_image call, got %d", annotator.optsCalls)
+	if annotator.videoFrameCalls != 1 {
+		t.Fatalf("expected one compact video-frame annotation call, got %d", annotator.videoFrameCalls)
+	}
+	if annotator.optsCalls != 0 {
+		t.Fatalf("expected no standalone annotate_image calls for video frame evidence, got %d", annotator.optsCalls)
 	}
 	if annotator.videoCalls != 1 {
 		t.Fatalf("expected one video annotation call, got %d", annotator.videoCalls)
@@ -888,6 +905,65 @@ VALUES (31, 'annotate_video', NULL, 10, 1, 'pending')
 	}
 	if jobState != "done" {
 		t.Fatalf("expected annotate_video job done, got %s", jobState)
+	}
+}
+
+func TestProcessOneAnnotateVideoReusesDuplicateFrameAnnotation(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`DELETE FROM index_jobs WHERE id = 1`); err != nil {
+		t.Fatalf("delete default embed job: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (12, 'vid12', 'loop.mp4', 'videos/vid12', 'video/mp4', 2000, 640, 360, 2)
+`); err != nil {
+		t.Fatalf("insert video: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (12, 1, 0, 0), (12, 1, 1, 1000)
+`); err != nil {
+		t.Fatalf("insert duplicate video frames: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, video_id, model_id, state)
+VALUES (33, 'annotate_video', NULL, 12, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate_video job: %v", err)
+	}
+
+	annotator := &fakeAnnotator{
+		annotation: embedder.ImageAnnotation{
+			Description: "A duplicated sampled frame showing a looping scene.",
+			Tags:        []string{"loop", "duplicate"},
+		},
+		videoAnnotation: embedder.VideoAnnotation{
+			Description: "A short looping clip.",
+			Tags:        []string{"loop"},
+		},
+	}
+	q.Annotator = annotator
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+	if annotator.videoFrameCalls != 1 {
+		t.Fatalf("expected duplicate image_id to be annotated once, got %d calls", annotator.videoFrameCalls)
+	}
+	if annotator.videoCalls != 1 {
+		t.Fatalf("expected one video annotation call, got %d", annotator.videoCalls)
+	}
+	if len(annotator.lastVideoInput.Frames) != 2 {
+		t.Fatalf("expected both duplicate frame entries in video input, got %d", len(annotator.lastVideoInput.Frames))
+	}
+	for _, frame := range annotator.lastVideoInput.Frames {
+		if frame.Description != "A duplicated sampled frame showing a looping scene." || len(frame.Tags) != 2 {
+			t.Fatalf("expected duplicate frame input to reuse generated annotation, got %+v", frame)
+		}
 	}
 }
 

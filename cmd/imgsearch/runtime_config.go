@@ -20,27 +20,29 @@ type runtimeConfig struct {
 	LoadAnnotator         bool
 
 	WorkerBatchSize int
+	VideoFrameCount int
 
-	LlamaNativeModelPath              string
-	LlamaNativeMMProjPath             string
-	LlamaNativeDimensions             int
-	LlamaNativeGPULayers              int
-	LlamaNativeUseGPU                 bool
-	LlamaNativeContextSize            int
-	LlamaNativeBatchSize              int
-	LlamaNativeMaxSequences           int
-	LlamaNativeThreads                int
-	LlamaNativeFlashAttnType          int
-	LlamaNativeCacheTypeK             int
-	LlamaNativeCacheTypeV             int
-	LlamaNativeImageMaxSide           int
-	LlamaNativeImageMaxTokens         int
-	ResolvedLlamaNativeImageMaxSide   int
-	ResolvedLlamaNativeImageMaxTokens int
-	LlamaNativeAnnotationTemperature  float64
-	LlamaNativeAnnotationSeed         int64
-	LlamaNativeQueryInstruction       string
-	LlamaNativePassageInstruction     string
+	LlamaNativeModelPath                  string
+	LlamaNativeMMProjPath                 string
+	LlamaNativeDimensions                 int
+	LlamaNativeGPULayers                  int
+	LlamaNativeUseGPU                     bool
+	LlamaNativeContextSize                int
+	LlamaNativeBatchSize                  int
+	LlamaNativeMaxSequences               int
+	LlamaNativeThreads                    int
+	LlamaNativeFlashAttnType              int
+	LlamaNativeCacheTypeK                 int
+	LlamaNativeCacheTypeV                 int
+	LlamaNativeImageMaxSide               int
+	LlamaNativeImageMaxTokens             int
+	ResolvedLlamaNativeImageMaxSide       int
+	ResolvedLlamaNativeImageMaxTokens     int
+	LlamaNativeAnnotationTemperature      float64
+	LlamaNativeAnnotationSeed             int64
+	LlamaNativeAnnotationNGramSpeculation bool
+	LlamaNativeQueryInstruction           string
+	LlamaNativePassageInstruction         string
 
 	ParakeetONNXBundleDir   string
 	ParakeetONNXRuntimeLib  string
@@ -64,6 +66,8 @@ type runtimeConfig struct {
 	SQLiteVectorPath string
 }
 
+const defaultVideoFrameCount = 5
+
 func defaultRuntimeConfig(getenv func(string) string) runtimeConfig {
 	parakeetBundleDefault := strings.TrimSpace(getenv("PARAKEET_ONNX_BUNDLE_DIR"))
 	if parakeetBundleDefault == "" {
@@ -77,6 +81,7 @@ func defaultRuntimeConfig(getenv func(string) string) runtimeConfig {
 
 		ModeFlag:        string(runtimeModeAll),
 		WorkerBatchSize: 1,
+		VideoFrameCount: defaultVideoFrameCount,
 
 		LlamaNativeModelPath:             defaultLlamaNativeModelPath,
 		LlamaNativeMMProjPath:            defaultLlamaNativeMMProjPath,
@@ -123,6 +128,7 @@ func registerRuntimeFlags(fs *flag.FlagSet, cfg *runtimeConfig) {
 	fs.StringVar(&cfg.APIKey, "api-key", cfg.APIKey, "API key required for /api/* requests (falls back to built-in development default when unset)")
 	fs.StringVar(&cfg.ModeFlag, "mode", cfg.ModeFlag, "process mode: all, api, or worker")
 	fs.IntVar(&cfg.WorkerBatchSize, "worker-batch-size", cfg.WorkerBatchSize, "number of jobs to claim per batch (1 disables batching)")
+	fs.IntVar(&cfg.VideoFrameCount, "video-frame-count", cfg.VideoFrameCount, "number of uniformly sampled frames to extract per uploaded video")
 	fs.StringVar(&cfg.LlamaNativeModelPath, "llama-native-model-path", cfg.LlamaNativeModelPath, "path to the llama.cpp GGUF embedding model")
 	fs.StringVar(&cfg.LlamaNativeMMProjPath, "llama-native-mmproj-path", cfg.LlamaNativeMMProjPath, "path to the llama.cpp GGUF mmproj model")
 	fs.IntVar(&cfg.LlamaNativeDimensions, "llama-native-dimensions", cfg.LlamaNativeDimensions, "embedding dimensions for llama-cpp-native model metadata")
@@ -139,6 +145,7 @@ func registerRuntimeFlags(fs *flag.FlagSet, cfg *runtimeConfig) {
 	fs.IntVar(&cfg.LlamaNativeImageMaxTokens, "llama-native-image-max-tokens", cfg.LlamaNativeImageMaxTokens, "optional maximum image tokens override for llama-cpp-native mtmd preprocessing (0 uses model default)")
 	fs.Float64Var(&cfg.LlamaNativeAnnotationTemperature, "llama-native-annotation-temperature", cfg.LlamaNativeAnnotationTemperature, "sampling temperature for llama-cpp-native image/video annotation generation (0 for deterministic greedy decode)")
 	fs.Int64Var(&cfg.LlamaNativeAnnotationSeed, "llama-native-annotation-seed", cfg.LlamaNativeAnnotationSeed, "RNG seed for llama-cpp-native image/video annotation generation (-1 uses random seed per request)")
+	fs.BoolVar(&cfg.LlamaNativeAnnotationNGramSpeculation, "llama-native-annotation-ngram-speculation", cfg.LlamaNativeAnnotationNGramSpeculation, "experimental: enable llama.cpp n-gram speculative decoding for annotation generation")
 	fs.StringVar(&cfg.LlamaNativeQueryInstruction, "llama-native-query-instruction", cfg.LlamaNativeQueryInstruction, "instruction used for llama-cpp-native text query embeddings")
 	fs.StringVar(&cfg.LlamaNativePassageInstruction, "llama-native-passage-instruction", cfg.LlamaNativePassageInstruction, "instruction used for llama-cpp-native image/document embeddings")
 	fs.StringVar(&cfg.ParakeetONNXBundleDir, "parakeet-onnx-bundle-dir", cfg.ParakeetONNXBundleDir, "directory containing the Parakeet ONNX bundle for video transcription")
@@ -176,6 +183,9 @@ func (cfg *runtimeConfig) Resolve() error {
 	}
 	if cfg.LlamaNativeDimensions <= 0 {
 		return fmt.Errorf("configure embedder dimensions: llama-cpp-native dimensions must be positive")
+	}
+	if cfg.VideoFrameCount <= 0 {
+		return fmt.Errorf("configure video sampling: video frame count must be positive")
 	}
 	cfg.ResolvedLlamaNativeImageMaxSide, cfg.ResolvedLlamaNativeImageMaxTokens, err = resolveLlamaCPPNativeImageLimits(cfg.LlamaNativeImageMaxSide, cfg.LlamaNativeImageMaxTokens)
 	if err != nil {

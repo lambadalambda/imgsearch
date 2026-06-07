@@ -8,11 +8,13 @@
 #include "mtmd.h"
 #include "mtmd-helper.h"
 #include "sampling.h"
+#include "speculative.h"
 
 #include "../../../deps/llama.cpp/common/json-schema-to-grammar.h"
 #include "../../../deps/llama.cpp/ggml/include/ggml-backend.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -41,15 +43,67 @@ struct imgsearch_llama_handle {
     int32_t dims = 0;
     int32_t n_batch = 512;
     int32_t image_max_side = 512;
+    int32_t annotation_spec_n_max = 0;
+    bool annotation_spec_enabled = false;
     std::string last_error;
     common_chat_templates_ptr tmpls;
+    common_speculative_ptr annotation_spec;
 };
 
 namespace {
 
 namespace fs = std::filesystem;
+using steady_clock = std::chrono::steady_clock;
 
 constexpr int32_t kDefaultImageMaxSide = 512;
+constexpr int32_t kAnnotationNGramSpecMatch = 8;
+constexpr int32_t kAnnotationNGramSpecMin = 2;
+constexpr int32_t kAnnotationNGramSpecMax = 8;
+
+int64_t elapsed_ms(steady_clock::time_point start, steady_clock::time_point end) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+}
+
+void reset_timings(imgsearch_llama_generate_timings * timings) {
+    if (timings != nullptr) {
+        std::memset(timings, 0, sizeof(*timings));
+    }
+}
+
+std::vector<llama_token> text_tokens_from_chunks(const mtmd_input_chunks * chunks) {
+    std::vector<llama_token> out;
+    if (chunks == nullptr) {
+        return out;
+    }
+
+    const size_t n_chunks = mtmd_input_chunks_size(chunks);
+    for (size_t i = 0; i < n_chunks; i++) {
+        const mtmd_input_chunk * chunk = mtmd_input_chunks_get(chunks, i);
+        if (chunk == nullptr || mtmd_input_chunk_get_type(chunk) != MTMD_INPUT_CHUNK_TYPE_TEXT) {
+            continue;
+        }
+
+        size_t n_tokens = 0;
+        const llama_token * tokens = mtmd_input_chunk_get_tokens_text(chunk, &n_tokens);
+        if (tokens == nullptr || n_tokens == 0) {
+            continue;
+        }
+        out.insert(out.end(), tokens, tokens + n_tokens);
+    }
+    return out;
+}
+
+std::vector<llama_token> speculative_prompt_tokens(
+    const std::vector<llama_token> & prompt_tokens,
+    const std::vector<llama_token> & generated_tokens) {
+    std::vector<llama_token> out;
+    out.reserve(prompt_tokens.size() + generated_tokens.size());
+    out.insert(out.end(), prompt_tokens.begin(), prompt_tokens.end());
+    if (generated_tokens.size() > 1) {
+        out.insert(out.end(), generated_tokens.begin(), generated_tokens.end() - 1);
+    }
+    return out;
+}
 
 std::once_flag g_backend_once;
 std::mutex g_error_mu;
@@ -489,7 +543,9 @@ int32_t generate_image(
     float top_p,
     int64_t seed,
     char * out,
-    int32_t out_len) {
+    int32_t out_len,
+    imgsearch_llama_generate_timings * timings) {
+    reset_timings(timings);
     if (handle == nullptr || handle->mctx == nullptr || handle->lctx == nullptr) {
         return set_error(handle, "llama.cpp handle is not initialized");
     }
@@ -509,6 +565,7 @@ int32_t generate_image(
         return -1;
     }
 
+    const auto native_decode_start = steady_clock::now();
     mtmd_bitmap * bitmap = mtmd_helper_bitmap_init_from_file(handle->mctx, image.c_str());
     if (bitmap == nullptr) {
         return set_error(handle, "failed to decode image for mtmd input");
@@ -517,6 +574,9 @@ int32_t generate_image(
     bitmap = maybe_resize_bitmap(handle, bitmap);
     if (bitmap == nullptr) {
         return -1;
+    }
+    if (timings != nullptr) {
+        timings->native_decode_ms = elapsed_ms(native_decode_start, steady_clock::now());
     }
 
     common_chat_msg user_msg;
@@ -561,20 +621,30 @@ int32_t generate_image(
     }
 
     const mtmd_bitmap * bitmaps[] = {bitmap};
+    const auto tokenize_start = steady_clock::now();
     if (mtmd_tokenize(handle->mctx, chunks, &text, bitmaps, 1) != 0) {
         mtmd_input_chunks_free(chunks);
         mtmd_bitmap_free(bitmap);
         return set_error(handle, "mtmd tokenization failed");
     }
+    if (timings != nullptr) {
+        timings->tokenize_ms = elapsed_ms(tokenize_start, steady_clock::now());
+        timings->prompt_tokens = static_cast<int32_t>(mtmd_helper_get_n_tokens(chunks));
+    }
+    const std::vector<llama_token> prompt_text_tokens = text_tokens_from_chunks(chunks);
 
     llama_set_embeddings(handle->lctx, false);
     llama_memory_clear(llama_get_memory(handle->lctx), true);
 
     llama_pos n_past = 0;
+    const auto prefill_start = steady_clock::now();
     if (mtmd_helper_eval_chunks(handle->mctx, handle->lctx, chunks, 0, 0, handle->n_batch, true, &n_past) != 0) {
         mtmd_input_chunks_free(chunks);
         mtmd_bitmap_free(bitmap);
         return set_error(handle, "mtmd evaluation failed");
+    }
+    if (timings != nullptr) {
+        timings->prefill_ms = elapsed_ms(prefill_start, steady_clock::now());
     }
 
     mtmd_input_chunks_free(chunks);
@@ -614,25 +684,196 @@ int32_t generate_image(
         return set_error(handle, std::string("failed to initialize sampler: ") + e.what());
     }
 
-    llama_batch batch = llama_batch_init(1, 0, 1);
+    common_speculative * spec = handle->annotation_spec_enabled ? handle->annotation_spec.get() : nullptr;
+    if (spec != nullptr) {
+        common_speculative_begin(spec, 0, prompt_text_tokens);
+    }
+
+    const int32_t batch_capacity = std::max<int32_t>(1, handle->annotation_spec_n_max);
+    llama_batch batch = llama_batch_init(batch_capacity, 0, 1);
     std::vector<llama_token> generated_tokens;
     generated_tokens.reserve(static_cast<size_t>(max_tokens));
+    int32_t speculative_drafted_tokens = 0;
+    int32_t speculative_accepted_tokens = 0;
 
-    for (int32_t i = 0; i < max_tokens; i++) {
-        const llama_token token_id = common_sampler_sample(sampler.get(), handle->lctx, -1);
-        generated_tokens.push_back(token_id);
-        common_sampler_accept(sampler.get(), token_id, true);
+    auto decode_one = [&](llama_token token_id) -> bool {
+        common_batch_clear(batch);
+        common_batch_add(batch, token_id, n_past++, {0}, true);
+        return llama_decode(handle->lctx, batch) == 0;
+    };
 
-        if (llama_vocab_is_eog(llama_model_get_vocab(handle->model), token_id)) {
+    auto decode_many = [&](const std::vector<llama_token> & tokens) -> bool {
+        common_batch_clear(batch);
+        for (size_t i = 0; i < tokens.size(); i++) {
+            common_batch_add(batch, tokens[i], n_past + static_cast<llama_pos>(i), {0}, true);
+        }
+        n_past += static_cast<llama_pos>(tokens.size());
+        return llama_decode(handle->lctx, batch) == 0;
+    };
+
+    const auto generate_start = steady_clock::now();
+    llama_token id_last = LLAMA_TOKEN_NULL;
+    bool has_decoded_last = false;
+    while (static_cast<int32_t>(generated_tokens.size()) < max_tokens) {
+        if (spec == nullptr || !has_decoded_last) {
+            const llama_token token_id = common_sampler_sample(sampler.get(), handle->lctx, -1);
+            generated_tokens.push_back(token_id);
+            common_sampler_accept(sampler.get(), token_id, true);
+
+            if (llama_vocab_is_eog(llama_model_get_vocab(handle->model), token_id)) {
+                break;
+            }
+
+            if (!decode_one(token_id)) {
+                llama_batch_free(batch);
+                return set_error(handle, "failed to decode generated token");
+            }
+            id_last = token_id;
+            has_decoded_last = true;
+            continue;
+        }
+
+        const int32_t remaining_tokens = max_tokens - static_cast<int32_t>(generated_tokens.size());
+        if (remaining_tokens <= 0) {
             break;
         }
 
-        common_batch_clear(batch);
-        common_batch_add(batch, token_id, n_past++, {0}, true);
-        if (llama_decode(handle->lctx, batch) != 0) {
-            llama_batch_free(batch);
-            return set_error(handle, "failed to decode generated token");
+        std::vector<llama_token> spec_prompt = speculative_prompt_tokens(prompt_text_tokens, generated_tokens);
+        std::vector<llama_token> draft;
+        draft.reserve(static_cast<size_t>(handle->annotation_spec_n_max));
+        common_speculative_get_draft_params(spec, 0) = {
+            /* .drafting   = */ true,
+            /* .n_max      = */ std::min(handle->annotation_spec_n_max, remaining_tokens),
+            /* .n_past     = */ n_past,
+            /* .id_last    = */ id_last,
+            /* .prompt     = */ &spec_prompt,
+            /* .result     = */ &draft,
+        };
+        common_speculative_draft(spec);
+
+        if (draft.empty()) {
+            const llama_token token_id = common_sampler_sample(sampler.get(), handle->lctx, -1);
+            generated_tokens.push_back(token_id);
+            common_sampler_accept(sampler.get(), token_id, true);
+
+            if (llama_vocab_is_eog(llama_model_get_vocab(handle->model), token_id)) {
+                break;
+            }
+
+            if (!decode_one(token_id)) {
+                llama_batch_free(batch);
+                return set_error(handle, "failed to decode generated token");
+            }
+            id_last = token_id;
+            continue;
         }
+
+        if (static_cast<int32_t>(draft.size()) > remaining_tokens) {
+            draft.resize(static_cast<size_t>(remaining_tokens));
+        }
+        speculative_drafted_tokens += static_cast<int32_t>(draft.size());
+
+        const llama_token first_id = common_sampler_sample(sampler.get(), handle->lctx, -1);
+        generated_tokens.push_back(first_id);
+        common_sampler_accept(sampler.get(), first_id, true);
+
+        if (draft.empty() || first_id != draft[0]) {
+            common_speculative_accept(spec, 0, 0);
+            if (llama_vocab_is_eog(llama_model_get_vocab(handle->model), first_id)) {
+                break;
+            }
+            if (!decode_one(first_id)) {
+                llama_batch_free(batch);
+                return set_error(handle, "failed to decode generated token");
+            }
+            id_last = first_id;
+            continue;
+        }
+
+        uint16_t accepted_draft_tokens = 1;
+        const llama_pos draft_start = n_past;
+        if (!decode_many(draft)) {
+            llama_batch_free(batch);
+            return set_error(handle, "failed to decode speculative draft tokens");
+        }
+
+        bool stopped = false;
+        bool eog_reached = false;
+        bool mismatch_handled = false;
+        if (llama_vocab_is_eog(llama_model_get_vocab(handle->model), first_id)) {
+            stopped = true;
+            eog_reached = true;
+        }
+
+        for (size_t i = 1; !stopped && i < draft.size(); i++) {
+            const llama_token token_id = common_sampler_sample(sampler.get(), handle->lctx, static_cast<int32_t>(i - 1));
+            generated_tokens.push_back(token_id);
+            common_sampler_accept(sampler.get(), token_id, true);
+
+            if (token_id == draft[i]) {
+                accepted_draft_tokens++;
+                if (llama_vocab_is_eog(llama_model_get_vocab(handle->model), token_id)) {
+                    stopped = true;
+                    eog_reached = true;
+                }
+                continue;
+            }
+
+            if (!llama_memory_seq_rm(llama_get_memory(handle->lctx), 0, draft_start + accepted_draft_tokens, -1)) {
+                llama_batch_free(batch);
+                return set_error(handle, "failed to remove rejected speculative draft tokens");
+            }
+            n_past = draft_start + accepted_draft_tokens;
+            common_speculative_accept(spec, 0, accepted_draft_tokens);
+            speculative_accepted_tokens += accepted_draft_tokens;
+
+            if (llama_vocab_is_eog(llama_model_get_vocab(handle->model), token_id)) {
+                stopped = true;
+                eog_reached = true;
+                mismatch_handled = true;
+                break;
+            }
+
+            if (!decode_one(token_id)) {
+                llama_batch_free(batch);
+                return set_error(handle, "failed to decode generated token after speculative mismatch");
+            }
+            id_last = token_id;
+            stopped = true;
+            mismatch_handled = true;
+        }
+
+        if (stopped) {
+            if (!mismatch_handled && accepted_draft_tokens > 0 && accepted_draft_tokens < draft.size()) {
+                if (!llama_memory_seq_rm(llama_get_memory(handle->lctx), 0, draft_start + accepted_draft_tokens, -1)) {
+                    llama_batch_free(batch);
+                    return set_error(handle, "failed to remove unused speculative draft tokens");
+                }
+                n_past = draft_start + accepted_draft_tokens;
+            }
+            if (!mismatch_handled) {
+                common_speculative_accept(spec, 0, accepted_draft_tokens);
+                speculative_accepted_tokens += accepted_draft_tokens;
+            }
+            if (eog_reached) {
+                break;
+            }
+            continue;
+        }
+
+        common_speculative_accept(spec, 0, accepted_draft_tokens);
+        speculative_accepted_tokens += accepted_draft_tokens;
+        id_last = draft[accepted_draft_tokens - 1];
+
+        if (static_cast<int32_t>(generated_tokens.size()) >= max_tokens) {
+            break;
+        }
+    }
+    if (timings != nullptr) {
+        timings->generate_ms = elapsed_ms(generate_start, steady_clock::now());
+        timings->generated_tokens = static_cast<int32_t>(generated_tokens.size());
+        timings->speculative_drafted_tokens = speculative_drafted_tokens;
+        timings->speculative_accepted_tokens = speculative_accepted_tokens;
     }
 
     llama_batch_free(batch);
@@ -670,7 +911,8 @@ imgsearch_llama_handle * imgsearch_llama_new(
     int32_t image_max_tokens,
     int32_t flash_attn_type,
     int32_t cache_type_k,
-    int32_t cache_type_v) {
+    int32_t cache_type_v,
+    int32_t annotation_ngram_speculation) {
     const std::string model = trim(model_path);
     const std::string mmproj = trim(mmproj_path);
     if (model.empty()) {
@@ -768,6 +1010,26 @@ imgsearch_llama_handle * imgsearch_llama_new(
 
     handle->n_batch = n_batch > 0 ? n_batch : 512;
     handle->image_max_side = image_max_side > 0 ? image_max_side : kDefaultImageMaxSide;
+    if (annotation_ngram_speculation != 0) {
+        const common_context_seq_rm_type seq_rm_type = common_context_can_seq_rm(handle->lctx);
+        int32_t spec_n_max = kAnnotationNGramSpecMax;
+        if (seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS) {
+            spec_n_max = std::min<int32_t>(spec_n_max, llama_n_rs_seq(handle->lctx));
+        }
+        if (seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_PART || (seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS && spec_n_max > 0)) {
+            const int32_t spec_n_min = std::min<int32_t>(kAnnotationNGramSpecMin, spec_n_max);
+            common_params_speculative spec_params;
+            spec_params.types = {COMMON_SPECULATIVE_TYPE_NGRAM_MOD};
+            spec_params.ngram_mod.n_match = kAnnotationNGramSpecMatch;
+            spec_params.ngram_mod.n_min = spec_n_min;
+            spec_params.ngram_mod.n_max = spec_n_max;
+            handle->annotation_spec.reset(common_speculative_init(spec_params, 1));
+            if (handle->annotation_spec != nullptr) {
+                handle->annotation_spec_enabled = true;
+                handle->annotation_spec_n_max = spec_n_max;
+            }
+        }
+    }
     handle->last_error.clear();
     return handle.release();
 }
@@ -776,6 +1038,8 @@ void imgsearch_llama_free(imgsearch_llama_handle * handle) {
     if (handle == nullptr) {
         return;
     }
+    handle->annotation_spec.reset();
+    handle->annotation_spec_enabled = false;
     if (handle->mctx != nullptr) {
         mtmd_free(handle->mctx);
         handle->mctx = nullptr;
@@ -895,7 +1159,36 @@ int32_t imgsearch_llama_generate_image(
         top_p,
         seed,
         out,
-        out_len);
+        out_len,
+        nullptr);
+}
+
+int32_t imgsearch_llama_generate_image_with_timings(
+    imgsearch_llama_handle * handle,
+    const char * image_path,
+    const char * system_prompt,
+    const char * user_prompt,
+    const char * json_schema,
+    int32_t max_tokens,
+    float temperature,
+    float top_p,
+    int64_t seed,
+    char * out,
+    int32_t out_len,
+    imgsearch_llama_generate_timings * timings) {
+    return generate_image(
+        handle,
+        trim(image_path),
+        trim(system_prompt),
+        trim(user_prompt),
+        trim(json_schema),
+        max_tokens,
+        temperature,
+        top_p,
+        seed,
+        out,
+        out_len,
+        timings);
 }
 
 const char * imgsearch_llama_last_error(const imgsearch_llama_handle * handle) {
@@ -921,6 +1214,7 @@ std::string g_last_error = "llama-cpp-native requires build tag 'llamacpp_native
 imgsearch_llama_handle * imgsearch_llama_new(
     const char *,
     const char *,
+    int32_t,
     int32_t,
     int32_t,
     int32_t,
@@ -979,6 +1273,22 @@ int32_t imgsearch_llama_generate_image(
     int64_t,
     char *,
     int32_t) {
+    return -1;
+}
+
+int32_t imgsearch_llama_generate_image_with_timings(
+    imgsearch_llama_handle *,
+    const char *,
+    const char *,
+    const char *,
+    const char *,
+    int32_t,
+    float,
+    float,
+    int64_t,
+    char *,
+    int32_t,
+    imgsearch_llama_generate_timings *) {
     return -1;
 }
 

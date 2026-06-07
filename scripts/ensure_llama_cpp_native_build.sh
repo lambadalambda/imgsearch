@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build_dir="${repo_root}/deps/llama.cpp/build"
 bin_dir="${build_dir}/bin"
-common_lib="${build_dir}/common/libcommon.a"
+common_lib="${bin_dir}/libllama-common"
 cmake_args_file="${build_dir}/.imgsearch-cmake-args"
 
 cmake_args=(-DCMAKE_BUILD_TYPE=Release)
@@ -19,9 +19,11 @@ cmake_args_key="$(printf '%q ' "${cmake_args[@]}")"
 case "$(uname -s)" in
   Darwin)
     expected_lib="${bin_dir}/libllama.dylib"
+    expected_common_lib="${common_lib}.dylib"
     ;;
   Linux)
     expected_lib="${bin_dir}/libllama.so"
+    expected_common_lib="${common_lib}.so"
     ;;
   *)
     echo "unsupported host platform: $(uname -s)" >&2
@@ -56,7 +58,11 @@ remove_foreign_build_if_present() {
 
 remove_foreign_build_if_present
 
-if [[ -f "${expected_lib}" && -f "${common_lib}" ]]; then
+if [[ -d "${build_dir}" && -f "${expected_lib}" && ! -f "${expected_common_lib}" ]]; then
+  rm -rf "${build_dir}"
+fi
+
+if [[ -f "${expected_lib}" && -f "${expected_common_lib}" ]]; then
   if [[ -f "${cmake_args_file}" ]]; then
     if [[ "$(<"${cmake_args_file}")" == "${cmake_args_key}" ]]; then
       exit 0

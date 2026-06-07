@@ -10,38 +10,46 @@ import (
 )
 
 type Config struct {
-	ModelPath              string
-	VisionModelPath        string
-	Dimensions             int
-	GPULayers              int
-	UseGPU                 bool
-	ContextSize            int
-	BatchSize              int
-	MaxSequences           int
-	Threads                int
-	ImageMaxSide           int
-	AnnotationImageMaxSide int
-	ImageMaxTokens         int
-	AnnotationTemperature  float32
-	AnnotationSeed         int64
-	QueryInstruction       string
-	PassageInstruction     string
+	ModelPath                  string
+	VisionModelPath            string
+	Dimensions                 int
+	GPULayers                  int
+	UseGPU                     bool
+	ContextSize                int
+	BatchSize                  int
+	MaxSequences               int
+	Threads                    int
+	ImageMaxSide               int
+	AnnotationImageMaxSide     int
+	ImageMaxTokens             int
+	AnnotationTemperature      float32
+	AnnotationSeed             int64
+	AnnotationNGramSpeculation bool
+	QueryInstruction           string
+	PassageInstruction         string
+	FlashAttnType              int
+	CacheTypeK                 int
+	CacheTypeV                 int
 }
 
 type Embedder struct{}
 
 type AnnotatorConfig struct {
-	ModelPath             string
-	VisionModelPath       string
-	GPULayers             int
-	UseGPU                bool
-	ContextSize           int
-	BatchSize             int
-	Threads               int
-	ImageMaxSide          int
-	ImageMaxTokens        int
-	AnnotationTemperature float32
-	AnnotationSeed        int64
+	ModelPath                  string
+	VisionModelPath            string
+	GPULayers                  int
+	UseGPU                     bool
+	ContextSize                int
+	BatchSize                  int
+	Threads                    int
+	ImageMaxSide               int
+	ImageMaxTokens             int
+	AnnotationTemperature      float32
+	AnnotationSeed             int64
+	AnnotationNGramSpeculation bool
+	FlashAttnType              int
+	CacheTypeK                 int
+	CacheTypeV                 int
 }
 
 type Annotator struct{}
@@ -100,4 +108,8 @@ func (a *Annotator) AnnotateImageWithOptions(context.Context, string, coreembedd
 
 func (a *Annotator) AnnotateVideo(context.Context, coreembedder.VideoAnnotationInput) (coreembedder.VideoAnnotation, error) {
 	return coreembedder.VideoAnnotation{}, fmt.Errorf("llama-cpp-native annotator is unavailable in this build")
+}
+
+func (a *Annotator) AnnotateVideoFrame(context.Context, string, coreembedder.ImageAnnotationOptions) (coreembedder.ImageAnnotation, error) {
+	return coreembedder.ImageAnnotation{}, fmt.Errorf("llama-cpp-native annotator is unavailable in this build")
 }

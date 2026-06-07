@@ -9,6 +9,7 @@ dist-test/
 dist-docker/
 dist-local-*/
 build-artifacts/
+bench-results/
 tools/sqlite-vector/
 __pycache__/
 models/**

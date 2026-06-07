@@ -1,5 +1,10 @@
 - [ ] [Add mobile adaptive similar-video feed mode](issues/add-mobile-adaptive-similar-video-feed-mode.md)
 - [ ] [Add session-local vector feedback to Feed recommendations](issues/add-session-local-vector-feedback-to-feed-recommendations.md)
+- [ ] [Add real ingestion benchmark harness](issues/069-add-real-ingestion-benchmark-harness.md)
+- [ ] [Benchmark and tune annotator image resolution](issues/070-benchmark-annotator-resolution.md)
+- [ ] [Benchmark projector quantization for ingestion](issues/071-benchmark-projector-quantization.md)
+- [ ] [Accelerate rich annotation decode without shrinking output](issues/072-accelerate-rich-annotation-decode.md)
+- [ ] [Reduce video annotation work without losing useful summaries](issues/073-reduce-video-annotation-work.md)
 
 ## Migrated from `docs/issues.md` (priority P0 to P3)
 

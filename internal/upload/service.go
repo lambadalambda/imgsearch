@@ -305,7 +305,7 @@ func (s *Service) storeVideo(ctx context.Context, originalName string, tmpDir st
 
 	frameCount := s.VideoFrameCount
 	if frameCount <= 0 {
-		frameCount = 10
+		frameCount = defaultVideoFrameCount
 	}
 
 	frameTmpDir, err := os.MkdirTemp(tmpDir, "video-frames-*")

@@ -42,6 +42,33 @@ func TestParseRuntimeConfigRejectsInvalidNativeImageLimits(t *testing.T) {
 	}
 }
 
+func TestParseRuntimeConfigAcceptsVideoFrameCount(t *testing.T) {
+	cfg, err := parseRuntimeConfig([]string{"-video-frame-count", "7"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if cfg.VideoFrameCount != 7 {
+		t.Fatalf("video frame count: got=%d want=7", cfg.VideoFrameCount)
+	}
+}
+
+func TestParseRuntimeConfigAcceptsExperimentalNGramSpeculation(t *testing.T) {
+	cfg, err := parseRuntimeConfig([]string{"-llama-native-annotation-ngram-speculation"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if !cfg.LlamaNativeAnnotationNGramSpeculation {
+		t.Fatalf("expected experimental n-gram speculation to be enabled")
+	}
+}
+
+func TestParseRuntimeConfigRejectsInvalidVideoFrameCount(t *testing.T) {
+	_, err := parseRuntimeConfig([]string{"-video-frame-count", "0"}, func(string) string { return "" })
+	if err == nil || !strings.Contains(err.Error(), "configure video sampling") {
+		t.Fatalf("expected video sampling error, got %v", err)
+	}
+}
+
 func TestDefaultRuntimeConfigUsesEnvironment(t *testing.T) {
 	cfg := defaultRuntimeConfig(func(key string) string {
 		switch key {
@@ -81,5 +108,11 @@ func TestParseRuntimeConfigKeepsFlagDefaults(t *testing.T) {
 	}
 	if cfg.VectorBackend != vectorBackendAuto || !cfg.EnableAnnotations {
 		t.Fatalf("unexpected backend/annotation defaults: %+v", cfg)
+	}
+	if cfg.VideoFrameCount != 5 {
+		t.Fatalf("unexpected video frame count default: %+v", cfg)
+	}
+	if cfg.LlamaNativeAnnotationNGramSpeculation {
+		t.Fatalf("experimental n-gram speculation should default off: %+v", cfg)
 	}
 }

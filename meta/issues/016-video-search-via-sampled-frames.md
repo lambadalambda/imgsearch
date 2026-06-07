@@ -28,7 +28,7 @@ Add MVP video search by sampling a fixed number of representative frames from ea
 
 The MVP uses a fixed frame count per video rather than time-based sampling.
 
-- Default: `10` sampled frames per video
+- Original MVP default: `10` sampled frames per video; current runtime default is `5` after the issue 073 benchmark sweep, and remains configurable with `-video-frame-count`.
 - Sampling strategy: uniform segment-center timestamps across the full duration
 
 This keeps indexing cost bounded for long videos and avoids the storage explosion that would come from sampling at a fixed rate like 1 fps.

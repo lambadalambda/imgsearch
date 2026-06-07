@@ -572,6 +572,14 @@ try {
   while (imagesRequests.length <= imageOnlyStart && Date.now() < imageOnlyDeadline) {
     await new Promise((r) => setTimeout(r, 50));
   }
+  await page.waitForFunction(
+    () => {
+      const pins = Array.from(document.querySelectorAll("[data-pin]"));
+      return pins.length > 0 && pins.every((pin) => pin.getAttribute("data-pin-media-type") === "image");
+    },
+    {},
+    { timeout: 5000 },
+  );
   const imageOnlyTypes = await page
     .locator("[data-pin]")
     .evaluateAll((pins) => pins.map((pin) => pin.getAttribute("data-pin-media-type")));

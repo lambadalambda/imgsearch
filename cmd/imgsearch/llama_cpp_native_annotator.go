@@ -9,20 +9,21 @@ import (
 )
 
 type llamaCPPNativeAnnotatorOptions struct {
-	ModelPath             string
-	VisionModelPath       string
-	GPULayers             int
-	UseGPU                bool
-	ContextSize           int
-	BatchSize             int
-	Threads               int
-	ImageMaxSide          int
-	ImageMaxTokens        int
-	AnnotationTemperature float64
-	AnnotationSeed        int64
-	FlashAttnType         int
-	CacheTypeK            int
-	CacheTypeV            int
+	ModelPath                  string
+	VisionModelPath            string
+	GPULayers                  int
+	UseGPU                     bool
+	ContextSize                int
+	BatchSize                  int
+	Threads                    int
+	ImageMaxSide               int
+	ImageMaxTokens             int
+	AnnotationTemperature      float64
+	AnnotationSeed             int64
+	AnnotationNGramSpeculation bool
+	FlashAttnType              int
+	CacheTypeK                 int
+	CacheTypeV                 int
 }
 
 func newLlamaCPPNativeAnnotator(opts llamaCPPNativeAnnotatorOptions) (embedder.ImageAnnotator, error) {
@@ -59,19 +60,20 @@ func newLlamaCPPNativeAnnotator(opts llamaCPPNativeAnnotatorOptions) (embedder.I
 	}
 
 	return llamacppnative.NewAnnotator(llamacppnative.AnnotatorConfig{
-		ModelPath:             modelPath,
-		VisionModelPath:       visionPath,
-		GPULayers:             opts.GPULayers,
-		UseGPU:                opts.UseGPU,
-		ContextSize:           opts.ContextSize,
-		BatchSize:             opts.BatchSize,
-		Threads:               opts.Threads,
-		ImageMaxSide:          imageMaxSide,
-		ImageMaxTokens:        imageMaxTokens,
-		AnnotationTemperature: annotationTemperature,
-		AnnotationSeed:        annotationSeed,
-		FlashAttnType:         opts.FlashAttnType,
-		CacheTypeK:            opts.CacheTypeK,
-		CacheTypeV:            opts.CacheTypeV,
+		ModelPath:                  modelPath,
+		VisionModelPath:            visionPath,
+		GPULayers:                  opts.GPULayers,
+		UseGPU:                     opts.UseGPU,
+		ContextSize:                opts.ContextSize,
+		BatchSize:                  opts.BatchSize,
+		Threads:                    opts.Threads,
+		ImageMaxSide:               imageMaxSide,
+		ImageMaxTokens:             imageMaxTokens,
+		AnnotationTemperature:      annotationTemperature,
+		AnnotationSeed:             annotationSeed,
+		AnnotationNGramSpeculation: opts.AnnotationNGramSpeculation,
+		FlashAttnType:              opts.FlashAttnType,
+		CacheTypeK:                 opts.CacheTypeK,
+		CacheTypeV:                 opts.CacheTypeV,
 	})
 }
