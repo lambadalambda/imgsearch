@@ -11,7 +11,7 @@
     setStats,
     uploadOpen,
   } from "../lib/stores";
-  import { canPlayMime, pinFromVideo } from "../lib/utils";
+  import { pinFromVideo } from "../lib/utils";
 
   type RailItem = {
     id: "library" | "search" | "tags" | "stats" | "feed" | "upload";
@@ -47,7 +47,6 @@
         if (!record) continue;
 
         const seed = pinFromVideo(record);
-        if (!canPlayMime(seed.mimeType)) continue;
         openFeed(seed);
         return;
       }

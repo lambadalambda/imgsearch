@@ -132,17 +132,6 @@ export function pinFromSearchResult(record: SearchResult): Pin {
   };
 }
 
-/** Best-effort canPlayType gate so Feed entry points only render on pins
- *  the current browser believes it can play. Falls back to true if the pin
- *  has no mime type so we don't disable Feed unnecessarily. */
-export function canPlayMime(mimeType: string | undefined): boolean {
-  if (!mimeType) return true;
-  if (typeof document === "undefined") return true;
-  const probe = document.createElement("video");
-  const support = probe.canPlayType(mimeType);
-  return support === "probably" || support === "maybe";
-}
-
 const TAG_TONES = ["plum", "moss", "gold"] as const;
 export type TagTone = (typeof TAG_TONES)[number];
 

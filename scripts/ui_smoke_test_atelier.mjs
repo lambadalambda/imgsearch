@@ -85,14 +85,16 @@ const sampleImages = Array.from({ length: 144 }, (_, i) => ({
 
 // Synthetic videos that the Feed flow can use as seeds. We expose them via
 // /api/videos for the Rail launcher and as search/similar-videos results for
-// the per-pin Feed flow.
+// the per-pin Feed flow. One record intentionally carries a WebM MIME type;
+// the test stubs canPlayType() to return a mobile-style false negative for
+// WebM, but a Feed seed only needs a video_id and should not disappear.
 const sampleVideos = Array.from({ length: 6 }, (_, i) => ({
   image_id: 5000 + i,
   video_id: 200 + i,
-  original_name: `clip-${i}.mp4`,
+  original_name: i === 2 ? `clip-${i}.webm` : `clip-${i}.mp4`,
   storage_path: `videos/clip-${i}`,
   preview_path: `images/clip-${i}-frame`,
-  mime_type: "video/mp4",
+  mime_type: i === 2 ? "video/webm" : "video/mp4",
   width: 720,
   height: 1280,
   duration_ms: 8500,
@@ -473,6 +475,13 @@ let browser;
 try {
   browser = await chromium.launch();
   const page = await browser.newPage();
+  await page.addInitScript(() => {
+    const originalCanPlayType = HTMLMediaElement.prototype.canPlayType;
+    HTMLMediaElement.prototype.canPlayType = function canPlayType(type) {
+      if (String(type).toLowerCase().startsWith("video/webm")) return "";
+      return originalCanPlayType.call(this, type);
+    };
+  });
   page.on("pageerror", (err) => {
     throw new Error(`atelier pageerror: ${err.message}`);
   });
@@ -629,6 +638,13 @@ try {
     .evaluateAll((pins) => pins.map((pin) => pin.getAttribute("data-pin-media-type")));
   if (videoOnlyTypes.length === 0 || videoOnlyTypes.some((type) => type !== "video")) {
     throw new Error(`expected video-only library pins, got ${JSON.stringify(videoOnlyTypes)}`);
+  }
+  const videoFeedActions = await page.locator('[data-pin-media-type="video"] [data-pin-action="feed"]').count();
+  const videoPlayFallbacks = await page.locator('[data-pin-media-type="video"] [aria-label="Play video"]').count();
+  if (videoFeedActions !== videoOnlyTypes.length || videoPlayFallbacks !== 0) {
+    throw new Error(
+      `expected every video pin to expose Feed, got feed=${videoFeedActions} play=${videoPlayFallbacks} videos=${videoOnlyTypes.length}`,
+    );
   }
 
   const allMediaImageStart = imagesRequests.length;

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Pin } from "../lib/types";
-  import { canPlayMime, formatDuration, formatPercent, tagTone } from "../lib/utils";
+  import { formatDuration, formatPercent, tagTone } from "../lib/utils";
   import {
     setSimilar,
     setTagSearch,
@@ -109,10 +109,9 @@
   const tagsToShow = $derived(pin.tags.slice(0, 5));
   const hiddenTagCount = $derived(Math.max(0, pin.tags.length - tagsToShow.length));
   const nsfwFlagged = $derived(nsfwLocal ?? pin.isNSFW ?? false);
-  // Feed launcher only renders on video pins the browser can play.
-  const canFeed = $derived(
-    pin.mediaType === "video" && pin.videoId !== undefined && canPlayMime(pin.mimeType),
-  );
+  // Feed only needs a video seed id. Do not gate it on canPlayType(): mobile
+  // browsers can return false negatives for playable WebM/extensionless media.
+  const canFeed = $derived(pin.mediaType === "video" && pin.videoId !== undefined);
 
   // Tailwind class fragments to keep template tidy.
   //
