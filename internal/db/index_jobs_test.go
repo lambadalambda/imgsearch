@@ -107,6 +107,93 @@ WHERE id = 1
 	}
 }
 
+func TestEnsureCompletedAnnotationJobsForModelBackfillsAnnotatedStandaloneRows(t *testing.T) {
+	dbConn := openIndexJobsDB(t)
+
+	if _, err := dbConn.Exec(`
+UPDATE images
+SET description = 'already annotated', tags_json = '["done"]'
+WHERE id IN (1, 3);
+
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
+VALUES (5, 'vid', 'clip.mp4', 'videos/vid', 'video/mp4', 12000, 1920, 1080, 1);
+
+INSERT INTO video_frames(video_id, image_id, frame_index, timestamp_ms)
+VALUES (5, 3, 0, 500);
+`); err != nil {
+		t.Fatalf("seed annotated images: %v", err)
+	}
+
+	inserted, err := EnsureCompletedAnnotationJobsForModel(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("ensure completed annotation jobs: %v", err)
+	}
+	if inserted != 1 {
+		t.Fatalf("inserted: got=%d want=1", inserted)
+	}
+
+	var count int
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_image' AND image_id = 1 AND model_id = 1 AND state = 'done'`).Scan(&count); err != nil {
+		t.Fatalf("count completed annotation job: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected completed annotation job for image 1, got %d", count)
+	}
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_image' AND image_id IN (2, 3) AND model_id = 1`).Scan(&count); err != nil {
+		t.Fatalf("count skipped annotation jobs: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected blank images and video frames to be skipped, got %d", count)
+	}
+
+	insertedAgain, err := EnsureCompletedAnnotationJobsForModel(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("ensure completed annotation jobs second run: %v", err)
+	}
+	if insertedAgain != 0 {
+		t.Fatalf("inserted second run: got=%d want=0", insertedAgain)
+	}
+}
+
+func TestEnsureCompletedVideoAnnotationJobsForModelBackfillsAnnotatedRows(t *testing.T) {
+	dbConn := openIndexJobsDB(t)
+
+	if _, err := dbConn.Exec(`
+INSERT INTO videos(id, sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count, description, tags_json)
+VALUES
+	(5, 'v1', 'one.mp4', 'videos/one', 'video/mp4', 1000, 640, 360, 1, 'already annotated', '["done"]'),
+	(6, 'v2', 'two.mp4', 'videos/two', 'video/mp4', 2000, 640, 360, 1, '', '[]'),
+	(7, 'v3', 'three.mp4', 'videos/three', 'video/mp4', 3000, 640, 360, 1, 'already annotated', '["done"]');
+
+INSERT INTO index_jobs(kind, video_id, model_id, state)
+VALUES ('annotate_video', 7, 1, 'done');
+`); err != nil {
+		t.Fatalf("seed videos: %v", err)
+	}
+
+	inserted, err := EnsureCompletedVideoAnnotationJobsForModel(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("ensure completed video annotation jobs: %v", err)
+	}
+	if inserted != 1 {
+		t.Fatalf("inserted: got=%d want=1", inserted)
+	}
+
+	var count int
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_video' AND video_id IN (5, 7) AND model_id = 1 AND state = 'done'`).Scan(&count); err != nil {
+		t.Fatalf("count completed video annotation jobs: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected completed video annotation jobs for videos 5 and 7, got %d", count)
+	}
+	if err := dbConn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'annotate_video' AND video_id = 6 AND model_id = 1`).Scan(&count); err != nil {
+		t.Fatalf("count blank video annotation jobs: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected blank video to be skipped, got %d", count)
+	}
+}
+
 func TestRequeueDoneJobsMissingAnnotations(t *testing.T) {
 	dbConn := openIndexJobsDB(t)
 

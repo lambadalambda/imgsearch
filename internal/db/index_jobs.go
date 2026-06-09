@@ -66,6 +66,38 @@ WHERE NOT EXISTS (
 	return rows, nil
 }
 
+func EnsureCompletedAnnotationJobsForModel(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
+	if db == nil {
+		return 0, fmt.Errorf("db is nil")
+	}
+	if modelID <= 0 {
+		return 0, fmt.Errorf("invalid model id")
+	}
+
+	res, err := db.ExecContext(ctx, `
+INSERT OR IGNORE INTO index_jobs(kind, image_id, model_id, state)
+SELECT ?, i.id, ?, 'done'
+FROM images i
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM video_frames vf
+    WHERE vf.image_id = i.id
+  )
+  AND trim(COALESCE(i.description, '')) <> ''
+  AND COALESCE(i.tags_json, '') <> ''
+  AND COALESCE(i.tags_json, '[]') <> '[]'
+`, jobkind.AnnotateImage, modelID)
+	if err != nil {
+		return 0, fmt.Errorf("ensure completed annotation jobs for model %d: %w", modelID, err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected for completed annotation jobs model %d: %w", modelID, err)
+	}
+	return rows, nil
+}
+
 func EnsureVideoTranscriptJobsForModel(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
 	if db == nil {
 		return 0, fmt.Errorf("db is nil")
@@ -118,6 +150,33 @@ WHERE trim(COALESCE(v.description, '')) = ''
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return 0, fmt.Errorf("rows affected for video annotation jobs model %d: %w", modelID, err)
+	}
+	return rows, nil
+}
+
+func EnsureCompletedVideoAnnotationJobsForModel(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
+	if db == nil {
+		return 0, fmt.Errorf("db is nil")
+	}
+	if modelID <= 0 {
+		return 0, fmt.Errorf("invalid model id")
+	}
+
+	res, err := db.ExecContext(ctx, `
+INSERT OR IGNORE INTO index_jobs(kind, image_id, video_id, model_id, state)
+SELECT ?, NULL, v.id, ?, 'done'
+FROM videos v
+WHERE trim(COALESCE(v.description, '')) <> ''
+  AND COALESCE(v.tags_json, '') <> ''
+  AND COALESCE(v.tags_json, '[]') <> '[]'
+`, jobkind.AnnotateVideo, modelID)
+	if err != nil {
+		return 0, fmt.Errorf("ensure completed video annotation jobs for model %d: %w", modelID, err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected for completed video annotation jobs model %d: %w", modelID, err)
 	}
 	return rows, nil
 }

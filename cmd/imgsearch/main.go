@@ -163,12 +163,26 @@ func main() {
 	if enqueuedAnnotationJobs > 0 {
 		log.Printf("enqueued %d annotation jobs for model_id=%d", enqueuedAnnotationJobs, modelID)
 	}
+	recordedCompletedAnnotationJobs, err := db.EnsureCompletedAnnotationJobsForModel(rootCtx, sqlDB, modelID)
+	if err != nil {
+		log.Fatalf("ensure completed annotation jobs: %v", err)
+	}
+	if recordedCompletedAnnotationJobs > 0 {
+		log.Printf("recorded %d completed annotation jobs for model_id=%d", recordedCompletedAnnotationJobs, modelID)
+	}
 	enqueuedVideoAnnotationJobs, err := db.EnsureVideoAnnotationJobsForModel(rootCtx, sqlDB, modelID)
 	if err != nil {
 		log.Fatalf("ensure video annotation jobs: %v", err)
 	}
 	if enqueuedVideoAnnotationJobs > 0 {
 		log.Printf("enqueued %d video annotation jobs for model_id=%d", enqueuedVideoAnnotationJobs, modelID)
+	}
+	recordedCompletedVideoAnnotationJobs, err := db.EnsureCompletedVideoAnnotationJobsForModel(rootCtx, sqlDB, modelID)
+	if err != nil {
+		log.Fatalf("ensure completed video annotation jobs: %v", err)
+	}
+	if recordedCompletedVideoAnnotationJobs > 0 {
+		log.Printf("recorded %d completed video annotation jobs for model_id=%d", recordedCompletedVideoAnnotationJobs, modelID)
 	}
 
 	embedderOpts := llamaCPPNativeEmbedderOptions{
