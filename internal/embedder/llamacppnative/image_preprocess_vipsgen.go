@@ -6,9 +6,53 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	vips "github.com/cshum/vipsgen/vips"
+	"sync"
+	"unsafe"
 )
+
+// #cgo pkg-config: vips
+// #include <stdlib.h>
+// #include <vips/vips.h>
+//
+// static int imgsearch_vips_thumbnail(const char* filename, VipsImage** out, int max_side) {
+// 	return vips_thumbnail(filename, out, max_side, "size", VIPS_SIZE_DOWN, NULL);
+// }
+//
+// static int imgsearch_vips_jpegsave(VipsImage* image, const char* filename, int quality) {
+// 	return vips_jpegsave(image, filename, "Q", quality, NULL);
+// }
+//
+// static void imgsearch_vips_unref(VipsImage* image) {
+// 	if (image != NULL) {
+// 		g_object_unref(image);
+// 	}
+// }
+import "C"
+
+var (
+	vipsInitOnce sync.Once
+	vipsInitErr  error
+)
+
+func ensureVipsInitialized() error {
+	vipsInitOnce.Do(func() {
+		name := C.CString("imgsearch")
+		defer C.free(unsafe.Pointer(name))
+		if C.vips_init(name) != 0 {
+			vipsInitErr = fmt.Errorf("vips init failed: %s", currentVipsError())
+			C.vips_error_clear()
+		}
+	})
+	return vipsInitErr
+}
+
+func currentVipsError() string {
+	errText := strings.TrimSpace(C.GoString(C.vips_error_buffer()))
+	if errText == "" {
+		return "unknown error"
+	}
+	return errText
+}
 
 func preprocessImageForEmbeddingWithVipsgen(sourcePath string, maxSide int) (string, func(), error) {
 	sourcePath = strings.TrimSpace(sourcePath)
@@ -18,12 +62,19 @@ func preprocessImageForEmbeddingWithVipsgen(sourcePath string, maxSide int) (str
 	if maxSide <= 0 {
 		return "", nil, fmt.Errorf("llama-cpp-native image max side must be positive")
 	}
-
-	image, err := vips.NewThumbnail(sourcePath, maxSide, &vips.ThumbnailOptions{Size: vips.SizeDown})
-	if err != nil {
-		return "", nil, fmt.Errorf("vips thumbnail failed: %w", err)
+	if err := ensureVipsInitialized(); err != nil {
+		return "", nil, err
 	}
-	defer image.Close()
+
+	cSourcePath := C.CString(sourcePath)
+	defer C.free(unsafe.Pointer(cSourcePath))
+	var image *C.VipsImage
+	if C.imgsearch_vips_thumbnail(cSourcePath, &image, C.int(maxSide)) != 0 {
+		errText := currentVipsError()
+		C.vips_error_clear()
+		return "", nil, fmt.Errorf("vips thumbnail failed: %s", errText)
+	}
+	defer C.imgsearch_vips_unref(image)
 
 	tmp, err := os.CreateTemp("", "imgsearch-llama-native-*.jpg")
 	if err != nil {
@@ -39,11 +90,13 @@ func preprocessImageForEmbeddingWithVipsgen(sourcePath string, maxSide int) (str
 		_ = os.Remove(tmpPath)
 	}
 
-	jpegOptions := vips.DefaultJpegsaveOptions()
-	jpegOptions.Q = 90
-	if err := image.Jpegsave(tmpPath, jpegOptions); err != nil {
+	cTmpPath := C.CString(tmpPath)
+	defer C.free(unsafe.Pointer(cTmpPath))
+	if C.imgsearch_vips_jpegsave(image, cTmpPath, 90) != 0 {
+		errText := currentVipsError()
+		C.vips_error_clear()
 		cleanup()
-		return "", nil, fmt.Errorf("vips jpeg save failed: %w", err)
+		return "", nil, fmt.Errorf("vips jpeg save failed: %s", errText)
 	}
 
 	return tmpPath, cleanup, nil
