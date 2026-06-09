@@ -87,7 +87,7 @@
       </div>
 
       <div class="p-[18px_22px_22px] overflow-auto overscroll-contain">
-        <h2 class="font-display text-[24px] font-semibold text-ink leading-tight m-0">
+        <h2 class="pr-12 font-display text-[24px] font-semibold text-ink leading-tight m-0">
           {pin.title}
         </h2>
         <p class="text-sm text-muted mt-1 break-all m-0">{pin.filename}</p>

@@ -72,7 +72,13 @@ const sampleImages = Array.from({ length: 144 }, (_, i) => ({
   mime_type: "image/jpeg",
   width: 800 + (i % 4) * 80,
   height: 600 + (i % 5) * 60,
-  title: `Image card title ${i}`,
+  // The first pin carries a deliberately long title that wraps to multiple
+  // lines in the lightbox's narrow description column, so the desktop test
+  // can prove the close button never overlaps the wrapped title.
+  title:
+    i === 0
+      ? "Image card title that intentionally wraps across two lines in the lightbox side panel"
+      : `Image card title ${i}`,
   summary: `Image overview summary ${i} for the card preview.`,
   index_state: "done",
   description: `Image overview summary ${i} for the card preview.`,
@@ -1111,6 +1117,56 @@ try {
   // Reset the viewport for the remaining desktop checks.
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
+
+  // 5c. Desktop lightbox close button must not overlap the title even when
+  //     the title wraps to multiple lines in the narrow description column.
+  await page.locator('[data-pin-media]').first().click();
+  await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  const desktopOverlap = await page.evaluate(() => {
+    const lightbox = document.querySelector("[data-lightbox]");
+    const card = lightbox?.querySelector(":scope > div");
+    const closeBtn = lightbox?.querySelector('button[aria-label="Close"]');
+    const heading = card?.querySelector("h2");
+    if (!lightbox || !card || !closeBtn || !heading) {
+      throw new Error("desktop lightbox: missing required nodes");
+    }
+    const closeRect = closeBtn.getBoundingClientRect();
+    // Use Range.getClientRects() so we measure the actual rendered text glyphs
+    // across every wrapped line, not the heading's full padded box.
+    const range = document.createRange();
+    range.selectNodeContents(heading);
+    const lineRects = Array.from(range.getClientRects());
+    if (lineRects.length === 0) {
+      throw new Error("desktop lightbox: heading produced no client rects");
+    }
+    const textLeft = Math.min(...lineRects.map((r) => r.left));
+    const textRight = Math.max(...lineRects.map((r) => r.right));
+    const textTop = Math.min(...lineRects.map((r) => r.top));
+    const textBottom = Math.max(...lineRects.map((r) => r.bottom));
+    // The close button is positioned in the modal's top-right corner and the
+    // title text must never run underneath it.
+    const horizontallyOverlapping = closeRect.left < textRight && closeRect.right > textLeft;
+    const verticallyOverlapping = closeRect.top < textBottom && closeRect.bottom > textTop;
+    return {
+      close: { left: closeRect.left, right: closeRect.right, top: closeRect.top, bottom: closeRect.bottom },
+      text: { left: textLeft, right: textRight, top: textTop, bottom: textBottom },
+      horizontallyOverlapping,
+      verticallyOverlapping,
+      lineCount: lineRects.length,
+    };
+  });
+  if (desktopOverlap.horizontallyOverlapping && desktopOverlap.verticallyOverlapping) {
+    throw new Error(
+      `desktop lightbox: close button overlaps wrapped title (close ${JSON.stringify(desktopOverlap.close)}, text ${JSON.stringify(desktopOverlap.text)}, lines ${desktopOverlap.lineCount})`,
+    );
+  }
+  if (desktopOverlap.overlapsHorizontally) {
+    throw new Error(
+      `desktop lightbox: close button overlaps wrapped title (close ${JSON.stringify(desktopOverlap.close)}, heading ${JSON.stringify(desktopOverlap.heading)})`,
+    );
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
 
   // 6. Pin overflow menu — Re-annotate hits the API; Delete drops the pin.
   const targetPin = page.locator("[data-pin]").first();

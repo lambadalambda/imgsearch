@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(ui): stop the Atelier lightbox close button from overlapping a long, wrapped title on desktop by reserving right padding on the heading, so two-line pin titles like "Rider Before the Great Sphinx" no longer run underneath the X.
 - fix(ui): keep the Atelier lightbox media and description inside the modal card on phone-sized viewports by pinning the media cell to a bounded row and making the description column scroll, so long annotations no longer collapse the image/video to zero height and bleed text outside the rounded card.
 - fix(runtime): backfill completed active-model annotation job rows for already-annotated media after model switches so the statistics pane does not report phantom missing annotation jobs.
 - fix(native): replace the generated `vipsgen` binding with direct libvips thumbnail/JPEG calls so native builds work against Ubuntu 24.04's packaged libvips on CT107.
