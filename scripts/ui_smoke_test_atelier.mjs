@@ -1059,6 +1059,59 @@ try {
   await page.keyboard.press("Escape");
   await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
 
+  // 5b. Mobile lightbox layout — on a phone-sized viewport the description
+  //     must stay inside the modal card and must not render on top of the
+  //     media. The image must also be visually contained within the dark
+  //     media cell, not overflowing into the description area.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
+  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
+  await page.locator('[data-pin-media]').first().click();
+  await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  const lightboxMetrics = await page.evaluate(() => {
+    const lightbox = document.querySelector("[data-lightbox]");
+    const card = lightbox?.querySelector(":scope > div");
+    const description = document.querySelector("[data-lightbox-description]");
+    const media = lightbox?.querySelector("img, video");
+    if (!lightbox || !card || !description || !media) {
+      throw new Error("lightbox structure missing required nodes");
+    }
+    const cardRect = card.getBoundingClientRect();
+    const descRect = description.getBoundingClientRect();
+    const mediaRect = media.getBoundingClientRect();
+    return {
+      card: { top: cardRect.top, bottom: cardRect.bottom, left: cardRect.left, right: cardRect.right },
+      desc: { top: descRect.top, bottom: descRect.bottom, left: descRect.left, right: descRect.right },
+      media: { top: mediaRect.top, bottom: mediaRect.bottom, left: mediaRect.left, right: mediaRect.right },
+    };
+  });
+  if (lightboxMetrics.desc.top < lightboxMetrics.card.top - 1) {
+    throw new Error(
+      `mobile lightbox: description extends above modal card (desc top ${lightboxMetrics.desc.top}, card top ${lightboxMetrics.card.top})`,
+    );
+  }
+  if (lightboxMetrics.desc.bottom > lightboxMetrics.card.bottom + 1) {
+    throw new Error(
+      `mobile lightbox: description extends below modal card (desc bottom ${lightboxMetrics.desc.bottom}, card bottom ${lightboxMetrics.card.bottom})`,
+    );
+  }
+  if (lightboxMetrics.desc.left < lightboxMetrics.card.left - 1 || lightboxMetrics.desc.right > lightboxMetrics.card.right + 1) {
+    throw new Error(
+      `mobile lightbox: description extends outside modal card horizontally (desc ${JSON.stringify(lightboxMetrics.desc)}, card ${JSON.stringify(lightboxMetrics.card)})`,
+    );
+  }
+  if (lightboxMetrics.media.bottom > lightboxMetrics.desc.top + 1) {
+    throw new Error(
+      `mobile lightbox: media overlaps description (media bottom ${lightboxMetrics.media.bottom}, desc top ${lightboxMetrics.desc.top})`,
+    );
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+  // Reset the viewport for the remaining desktop checks.
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
+
   // 6. Pin overflow menu — Re-annotate hits the API; Delete drops the pin.
   const targetPin = page.locator("[data-pin]").first();
   const beforeFirst = await targetPin.evaluate((el) => el.getAttribute("data-pin-anchor"));

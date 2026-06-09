@@ -53,7 +53,7 @@
     onclick={handleBackdropClick}
   >
     <div
-      class="relative bg-surface rounded-[20px] shadow-[0_30px_80px_rgba(0,0,0,0.45)] w-[min(1100px,calc(100vw-32px))] max-h-[calc(100vh-32px)] grid grid-rows-[minmax(0,1fr)_auto] overflow-hidden md:grid-rows-1 md:grid-cols-[minmax(0,1fr)_320px]"
+      class="relative bg-surface rounded-[20px] shadow-[0_30px_80px_rgba(0,0,0,0.45)] w-[min(1100px,calc(100vw-32px))] max-h-[calc(100vh-32px)] grid grid-rows-[minmax(180px,55vh)_minmax(0,1fr)] overflow-hidden md:grid-rows-1 md:grid-cols-[minmax(0,1fr)_320px]"
     >
       <button
         type="button"
@@ -64,7 +64,7 @@
         <Icon name="close" class="w-4 h-4" />
       </button>
 
-      <div class="bg-[#181613] grid place-items-center min-h-0">
+      <div class="bg-[#181613] grid place-items-center min-h-0 overflow-hidden">
         {#if pin.mediaType === "video"}
           <!-- User-uploaded media has no captions track; suppress the a11y nag -->
           <!-- svelte-ignore a11y_media_has_caption -->
@@ -75,18 +75,18 @@
             playsinline
             preload="auto"
             poster={pin.thumbUrl}
-            class="block max-w-full w-auto h-auto max-h-[calc(100vh-200px)] md:max-h-[calc(100vh-64px)] object-contain"
+            class="block max-w-full max-h-full w-auto h-auto object-contain"
           ></video>
         {:else}
           <img
             src={pin.mediaUrl}
             alt={pin.title}
-            class="block max-w-full w-auto h-auto max-h-[calc(100vh-200px)] md:max-h-[calc(100vh-64px)] object-contain"
+            class="block max-w-full max-h-full w-auto h-auto object-contain"
           />
         {/if}
       </div>
 
-      <div class="p-[18px_22px_22px] overflow-auto">
+      <div class="p-[18px_22px_22px] overflow-auto overscroll-contain">
         <h2 class="font-display text-[24px] font-semibold text-ink leading-tight m-0">
           {pin.title}
         </h2>
