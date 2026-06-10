@@ -13,7 +13,9 @@
   --color-ink: #1f1c17;
   --color-ink-2: #2d2924;
   --color-muted: #6c645a;
-  --color-muted-2: #948b7e;
+  /* Keep muted-2 at >=4.5:1 contrast on bg and surface (WCAG AA for the
+   * small text it is used on) while staying lighter than muted. */
+  --color-muted-2: #7a7164;
   --color-accent: #c2492a;
   --color-accent-strong: #8a2e15;
   --color-accent-soft: #ffe8de;
