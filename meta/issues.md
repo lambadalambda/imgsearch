@@ -8,24 +8,16 @@
 
 ## UI/UX review 2026-06-10
 
-- [ ] [Push browser history entries for in-app navigation](issues/074-push-history-entries-for-in-app-navigation.md)
-- [ ] [Fix Statistics breadcrumb showing "Similar"](issues/075-fix-stats-breadcrumb-label.md)
-- [ ] [Fix Feed transport control icons](issues/076-fix-feed-transport-icons.md)
 - [ ] [Compact mobile header and quick-row chrome](issues/077-compact-mobile-header-chrome.md)
 - [ ] [Add prev/next navigation to the lightbox](issues/078-add-lightbox-prev-next-navigation.md)
 - [ ] [Serve thumbnail derivatives for grid images](issues/079-serve-image-thumbnails-for-grid.md)
 - [ ] [Surface indexing progress in the search empty state](issues/080-surface-indexing-progress-in-search-empty-state.md)
 - [ ] [Auto-refresh the Statistics pane](issues/081-auto-refresh-statistics-pane.md)
 - [ ] [Give the quick-row a visible overflow affordance on desktop](issues/082-quick-row-overflow-affordance.md)
-- [ ] [Close the pin overflow menu on outside click](issues/083-close-pin-menu-on-outside-click.md)
 - [ ] [Expose media actions in the lightbox](issues/084-add-media-actions-to-lightbox.md)
-- [ ] [Persist view preferences across reloads](issues/085-persist-view-preferences.md)
 - [ ] [Add focus management to modal overlays](issues/086-add-modal-focus-management.md)
-- [ ] [Raise muted text contrast to WCAG AA](issues/087-raise-muted-text-contrast.md)
-- [ ] [Announce result updates to assistive technology](issues/088-announce-result-updates-aria-live.md)
 - [ ] [Add seeking and time display to the Feed player](issues/089-add-feed-seek-and-time.md)
 - [ ] [Replace window.confirm delete confirmation with a styled dialog](issues/090-replace-native-delete-confirm.md)
-- [ ] [Tame sentence-length derived titles in the lightbox](issues/091-clamp-lightbox-title-length.md)
 - [ ] [Normalize near-duplicate annotation tags](issues/092-normalize-near-duplicate-tags.md)
 
 ## Migrated from `docs/issues.md` (priority P0 to P3)

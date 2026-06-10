@@ -3,6 +3,13 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(ui): push browser history entries for in-app navigation (search, tag, similar, stats) so the Back button returns to the previous view instead of leaving the site.
+- fix(ui): name the Statistics view in the header breadcrumb instead of falling through to "Similar".
+- fix(ui): give the Feed transport controls directional chevrons and a stateful play/pause glyph instead of rotated play triangles.
+- fix(ui): close the pin overflow menu when clicking anywhere outside it.
+- fix(ui): clamp sentence-length lightbox titles to three lines and step the size down on phones so derived titles no longer render as screen-high headlines.
+- feat(ui): persist the NSFW visibility, library sort, and media filter preferences in localStorage across reloads.
+- fix(a11y): announce result count/loading/error updates via a polite live region and raise muted text contrast to WCAG AA.
 - fix(ui): stop the Atelier lightbox close button from overlapping a long, wrapped title on desktop by reserving right padding on the heading, so two-line pin titles like "Rider Before the Great Sphinx" no longer run underneath the X.
 - fix(ui): keep the Atelier lightbox media and description inside the modal card on phone-sized viewports by pinning the media cell to a bounded row and making the description column scroll, so long annotations no longer collapse the image/video to zero height and bleed text outside the rounded card.
 - fix(runtime): backfill completed active-model annotation job rows for already-annotated media after model switches so the statistics pane does not report phantom missing annotation jobs.
