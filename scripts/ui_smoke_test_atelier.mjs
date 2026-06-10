@@ -1000,6 +1000,7 @@ try {
   // 3. Tag chip flow — clicks the "Tag · portrait" quick-row chip and
   //    expects to land on ?tag=portrait with no similarity badges (tag
   //    search results have search_source="tag" / distance=0).
+  const searchBeforeTag = await page.evaluate(() => window.location.search);
   await page.getByRole("button", { name: "Tag · portrait" }).click();
   await page.waitForFunction(
     () => /\?tag=portrait/.test(window.location.search),
@@ -1017,6 +1018,26 @@ try {
   }
   if (tagSearchRequests.length === 0 || tagSearchRequests[0].tags[0] !== "portrait") {
     throw new Error(`expected /api/search/tags request for "portrait", got ${JSON.stringify(tagSearchRequests)}`);
+  }
+
+  // 3a. In-app navigation creates history entries: Back returns to the view
+  //     before the tag click instead of leaving the site, Forward restores
+  //     the tag view (meta/issues/074).
+  await page.goBack();
+  await page.waitForFunction(
+    (prev) => window.location.search === prev && window.location.port !== "",
+    searchBeforeTag,
+    { timeout: 5000 },
+  );
+  await page.goForward();
+  await page.waitForFunction(
+    () => /\?tag=portrait/.test(window.location.search),
+    {},
+    { timeout: 5000 },
+  );
+  const tagHeadlineAfterForward = (await page.locator("h1").first().textContent() || "").trim();
+  if (tagHeadlineAfterForward !== "portrait") {
+    throw new Error(`expected tag headline after history forward, got ${JSON.stringify(tagHeadlineAfterForward)}`);
   }
 
   // Reset to library before similar/lightbox/menu checks.

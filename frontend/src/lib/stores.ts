@@ -35,7 +35,7 @@ function readURL(): AppMode {
   return { mode: "library" };
 }
 
-function writeURL(state: AppMode): void {
+function writeURL(state: AppMode, replace: boolean): void {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams();
   if (state.mode === "stats") {
@@ -53,17 +53,41 @@ function writeURL(state: AppMode): void {
     }
   }
   const newSearch = params.toString();
-  const url = newSearch ? `?${newSearch}` : window.location.pathname;
-  window.history.replaceState(null, "", url);
+  const targetSearch = newSearch ? `?${newSearch}` : "";
+  // Re-asserting the current view (e.g. re-submitting the same search) must
+  // not pile up duplicate history entries.
+  if (window.location.search === targetSearch) return;
+  const url = targetSearch || window.location.pathname;
+  if (replace) {
+    window.history.replaceState(null, "", url);
+  } else {
+    window.history.pushState(null, "", url);
+  }
 }
 
 export const mode = writable<AppMode>(readURL());
 
-mode.subscribe((value) => writeURL(value));
+// In-app navigation pushes history entries so the browser Back button walks
+// previous views instead of leaving the site. The initial subscription run
+// only normalizes the URL in place, and popstate-driven updates must not
+// write again (the browser already moved the history pointer).
+let restoringFromHistory = false;
+let urlInitialized = false;
+
+mode.subscribe((value) => {
+  if (restoringFromHistory) return;
+  writeURL(value, !urlInitialized);
+  urlInitialized = true;
+});
 
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
-    mode.set(readURL());
+    restoringFromHistory = true;
+    try {
+      mode.set(readURL());
+    } finally {
+      restoringFromHistory = false;
+    }
   });
 }
 
