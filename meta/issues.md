@@ -9,13 +9,9 @@
 ## UI/UX review 2026-06-10
 
 - [ ] [Compact mobile header and quick-row chrome](issues/077-compact-mobile-header-chrome.md)
-- [ ] [Add prev/next navigation to the lightbox](issues/078-add-lightbox-prev-next-navigation.md)
 - [ ] [Serve thumbnail derivatives for grid images](issues/079-serve-image-thumbnails-for-grid.md)
-- [ ] [Surface indexing progress in the search empty state](issues/080-surface-indexing-progress-in-search-empty-state.md)
-- [ ] [Auto-refresh the Statistics pane](issues/081-auto-refresh-statistics-pane.md)
 - [ ] [Give the quick-row a visible overflow affordance on desktop](issues/082-quick-row-overflow-affordance.md)
 - [ ] [Expose media actions in the lightbox](issues/084-add-media-actions-to-lightbox.md)
-- [ ] [Add focus management to modal overlays](issues/086-add-modal-focus-management.md)
 - [ ] [Add seeking and time display to the Feed player](issues/089-add-feed-seek-and-time.md)
 - [ ] [Replace window.confirm delete confirmation with a styled dialog](issues/090-replace-native-delete-confirm.md)
 - [ ] [Normalize near-duplicate annotation tags](issues/092-normalize-near-duplicate-tags.md)

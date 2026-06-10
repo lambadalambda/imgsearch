@@ -3,6 +3,10 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(ui): add prev/next navigation to the Atelier lightbox via arrow keys and on-screen chevrons, with controls disabled at the ends of the result list.
+- feat(a11y): move focus into Atelier modal overlays (lightbox, upload, feed) on open, trap Tab inside, and restore focus to the opener on close.
+- feat(ui): explain indexing progress in empty search/similar results when the library is not fully embedded yet, instead of a bare "No matches".
+- feat(ui): auto-refresh the statistics pane every few seconds while it is open and the tab is visible.
 - fix(ui): push browser history entries for in-app navigation (search, tag, similar, stats) so the Back button returns to the previous view instead of leaving the site.
 - fix(ui): name the Statistics view in the header breadcrumb instead of falling through to "Similar".
 - fix(ui): give the Feed transport controls directional chevrons and a stateful play/pause glyph instead of rotated play triangles.

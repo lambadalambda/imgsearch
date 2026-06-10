@@ -78,3 +78,7 @@
 - [x] [Raise muted text contrast to WCAG AA](issues/087-raise-muted-text-contrast.md)
 - [x] [Announce result updates to assistive technology](issues/088-announce-result-updates-aria-live.md)
 - [x] [Tame sentence-length derived titles in the lightbox](issues/091-clamp-lightbox-title-length.md)
+- [x] [Add prev/next navigation to the lightbox](issues/078-add-lightbox-prev-next-navigation.md)
+- [x] [Surface indexing progress in the search empty state](issues/080-surface-indexing-progress-in-search-empty-state.md)
+- [x] [Auto-refresh the Statistics pane](issues/081-auto-refresh-statistics-pane.md)
+- [x] [Add focus management to modal overlays](issues/086-add-modal-focus-management.md)
