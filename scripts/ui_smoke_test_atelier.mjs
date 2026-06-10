@@ -571,6 +571,12 @@ try {
   await page.waitForURL(/view=stats/, { timeout: 5000 });
   const statsPane = page.locator("[data-stats-pane]");
   await statsPane.waitFor({ state: "visible", timeout: 5000 });
+  // Breadcrumb must name the stats view, not fall through to "Similar"
+  // (meta/issues/075).
+  const statsCrumb = (await page.locator("header p").first().textContent() || "").trim();
+  if (!statsCrumb.includes("Statistics") || statsCrumb.includes("Similar")) {
+    throw new Error(`expected stats breadcrumb to name Statistics, got ${JSON.stringify(statsCrumb)}`);
+  }
   const statsText = (await statsPane.textContent()) || "";
   for (const expected of [
     "Statistics",
