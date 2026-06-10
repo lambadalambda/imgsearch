@@ -87,7 +87,13 @@
       </div>
 
       <div class="p-[18px_22px_22px] overflow-auto overscroll-contain">
-        <h2 class="pr-12 font-display text-[24px] font-semibold text-ink leading-tight m-0">
+        <!-- Derived titles can be a full sentence; clamp so a long one cannot
+             balloon into a screen-high headline (full text repeats in the
+             description below). -->
+        <h2
+          class="pr-12 font-display text-[18px] md:text-[24px] font-semibold text-ink leading-tight m-0 line-clamp-3 [-webkit-box-orient:vertical] overflow-hidden"
+          title={pin.title}
+        >
           {pin.title}
         </h2>
         <p class="text-sm text-muted mt-1 break-all m-0">{pin.filename}</p>

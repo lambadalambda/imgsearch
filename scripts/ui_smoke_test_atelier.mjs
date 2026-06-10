@@ -1164,6 +1164,17 @@ try {
       `mobile lightbox: media overlaps description (media bottom ${lightboxMetrics.media.bottom}, desc top ${lightboxMetrics.desc.top})`,
     );
   }
+  // 5b'. Sentence-length derived titles must not balloon into a huge
+  //      multi-line headline on phones (meta/issues/091).
+  const titleMetrics = await page.locator("[data-lightbox] h2").evaluate((el) => {
+    const styles = getComputedStyle(el);
+    return { height: el.clientHeight, lineHeight: parseFloat(styles.lineHeight) };
+  });
+  if (titleMetrics.height > titleMetrics.lineHeight * 3.5) {
+    throw new Error(
+      `mobile lightbox: title taller than 3 lines (${JSON.stringify(titleMetrics)})`,
+    );
+  }
   await page.keyboard.press("Escape");
   await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
   // Reset the viewport for the remaining desktop checks.
