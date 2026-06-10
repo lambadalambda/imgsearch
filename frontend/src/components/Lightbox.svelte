@@ -1,10 +1,27 @@
 <script lang="ts">
-  import { lightboxPin, setSimilar, setTagSearch } from "../lib/stores";
+  import { lightboxPin, pins, setSimilar, setTagSearch } from "../lib/stores";
   import { formatDuration, formatPercent } from "../lib/utils";
+  import { focusTrap } from "../lib/focus";
   import Icon from "./Icon.svelte";
 
   function close() {
     lightboxPin.set(null);
+  }
+
+  // Position of the open pin within the current results, for prev/next
+  // navigation. -1 when the pin is no longer in the list (e.g. deleted).
+  const pinIndex = $derived(
+    $lightboxPin ? $pins.findIndex((p) => p.key === $lightboxPin.key) : -1,
+  );
+  const canPrev = $derived(pinIndex > 0);
+  const canNext = $derived(pinIndex >= 0 && pinIndex < $pins.length - 1);
+
+  function showPrev() {
+    if (canPrev) lightboxPin.set($pins[pinIndex - 1]);
+  }
+
+  function showNext() {
+    if (canNext) lightboxPin.set($pins[pinIndex + 1]);
   }
 
   function searchTag(tag: string) {
@@ -30,8 +47,15 @@
   });
 
   function onKey(event: KeyboardEvent) {
-    if (event.key === "Escape" && $lightboxPin) {
+    if (!$lightboxPin) return;
+    if (event.key === "Escape") {
       close();
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      showPrev();
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      showNext();
     }
   }
 </script>
@@ -45,6 +69,8 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     data-lightbox
+    data-lightbox-key={pin.key}
+    data-lightbox-index={pinIndex}
     class="fixed inset-0 z-[1200] grid place-items-center bg-black/[0.78] p-6 backdrop-blur-md"
     role="dialog"
     aria-modal="true"
@@ -53,6 +79,7 @@
     onclick={handleBackdropClick}
   >
     <div
+      use:focusTrap
       class="relative bg-surface rounded-[20px] shadow-[0_30px_80px_rgba(0,0,0,0.45)] w-[min(1100px,calc(100vw-32px))] max-h-[calc(100vh-32px)] grid grid-rows-[minmax(180px,55vh)_minmax(0,1fr)] overflow-hidden md:grid-rows-1 md:grid-cols-[minmax(0,1fr)_320px]"
     >
       <button
@@ -64,7 +91,29 @@
         <Icon name="close" class="w-4 h-4" />
       </button>
 
-      <div class="bg-[#181613] grid place-items-center min-h-0 overflow-hidden">
+      <div class="relative bg-[#181613] grid place-items-center min-h-0 overflow-hidden">
+        {#if canPrev || canNext}
+          <button
+            type="button"
+            data-lightbox-prev
+            disabled={!canPrev}
+            aria-label="Previous result"
+            onclick={showPrev}
+            class="absolute left-3 top-1/2 -translate-y-1/2 z-[4] grid place-items-center w-9 h-9 bg-black/[0.55] text-[#fffdf8] border-0 rounded-full cursor-pointer transition-colors duration-100 ease-soft hover:bg-black/[0.8] disabled:opacity-35 disabled:cursor-default"
+          >
+            <Icon name="chevron-left" class="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            data-lightbox-next
+            disabled={!canNext}
+            aria-label="Next result"
+            onclick={showNext}
+            class="absolute right-3 top-1/2 -translate-y-1/2 z-[4] grid place-items-center w-9 h-9 bg-black/[0.55] text-[#fffdf8] border-0 rounded-full cursor-pointer transition-colors duration-100 ease-soft hover:bg-black/[0.8] disabled:opacity-35 disabled:cursor-default"
+          >
+            <Icon name="chevron-right" class="w-4 h-4" />
+          </button>
+        {/if}
         {#if pin.mediaType === "video"}
           <!-- User-uploaded media has no captions track; suppress the a11y nag -->
           <!-- svelte-ignore a11y_media_has_caption -->

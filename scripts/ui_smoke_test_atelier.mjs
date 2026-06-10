@@ -1020,7 +1020,47 @@ try {
     throw new Error(`expected /api/search/tags request for "portrait", got ${JSON.stringify(tagSearchRequests)}`);
   }
 
-  // 3a. In-app navigation creates history entries: Back returns to the view
+  // 3a. Arrow keys and on-screen chevrons flip through the surrounding
+  //     results without closing the lightbox (meta/issues/078). Tag results
+  //     are deterministic and settled here, so navigate by index.
+  await page.waitForFunction(
+    () => document.querySelectorAll("[data-pin]").length >= 12,
+    {},
+    { timeout: 5000 },
+  );
+  await page.locator('[data-pin][data-pin-key="image:1000"] [data-pin-media]').click();
+  await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  const lightboxStartIndex = Number(
+    await page.locator("[data-lightbox]").getAttribute("data-lightbox-index"),
+  );
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(
+    (start) =>
+      Number(document.querySelector("[data-lightbox]")?.getAttribute("data-lightbox-index")) ===
+      start + 1,
+    lightboxStartIndex,
+    { timeout: 5000 },
+  );
+  await page.locator("[data-lightbox-prev]").click();
+  await page.waitForFunction(
+    (start) =>
+      Number(document.querySelector("[data-lightbox]")?.getAttribute("data-lightbox-index")) ===
+      start,
+    lightboxStartIndex,
+    { timeout: 5000 },
+  );
+  if (lightboxStartIndex === 0) {
+    if (!(await page.locator("[data-lightbox-prev]").isDisabled())) {
+      throw new Error("expected prev control to be disabled on the first result");
+    }
+  }
+  if (await page.locator("[data-lightbox-next]").isDisabled()) {
+    throw new Error("expected next control to be enabled mid-list");
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+
+  // 3b. In-app navigation creates history entries: Back returns to the view
   //     before the tag click instead of leaving the site, Forward restores
   //     the tag view (meta/issues/074).
   await page.goBack();
@@ -1096,6 +1136,7 @@ try {
   if (!lightboxTag) {
     throw new Error("expected at least one clickable lightbox tag");
   }
+
   await page.locator("[data-lightbox-tag]").first().click();
   await page.waitForFunction(
     (tag) => new URLSearchParams(window.location.search).getAll("tag").includes(tag),
@@ -1154,8 +1195,10 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('a[aria-label="imgsearch home"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
-  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
-  await page.locator('[data-pin-media]').first().click();
+  // image:1000 carries the deliberately long title, which the layout and
+  // title-clamp checks below depend on.
+  await page.locator('[data-pin][data-pin-key="image:1000"]').waitFor({ state: "attached", timeout: 5000 });
+  await page.locator('[data-pin][data-pin-key="image:1000"] [data-pin-media]').click();
   await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
   const lightboxMetrics = await page.evaluate(() => {
     const lightbox = document.querySelector("[data-lightbox]");

@@ -16,7 +16,9 @@
     | "play"
     | "pause"
     | "chevron-up"
-    | "chevron-down";
+    | "chevron-down"
+    | "chevron-left"
+    | "chevron-right";
 
   interface Props {
     name: IconName;
@@ -151,5 +153,15 @@
   <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <polyline points="5 9 12 16 19 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+{:else if name === "chevron-left"}
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+    {#if title}<title>{title}</title>{/if}
+    <polyline points="15 5 8 12 15 19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+{:else if name === "chevron-right"}
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+    {#if title}<title>{title}</title>{/if}
+    <polyline points="9 5 16 12 9 19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
   </svg>
 {/if}

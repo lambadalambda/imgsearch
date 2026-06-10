@@ -147,6 +147,7 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <article
     data-pin
+    data-pin-key={pin.key}
     data-pin-media-type={pin.mediaType}
     data-pin-anchor={pin.isAnchor ? "true" : undefined}
     data-pin-nsfw={nsfwFlagged ? "true" : undefined}
