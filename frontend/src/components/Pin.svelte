@@ -19,6 +19,7 @@
   // Local state for the overflow menu + per-action feedback. We keep this
   // per-pin so multiple cards can show their state independently.
   let menuOpen = $state(false);
+  let menuEl: HTMLDetailsElement | undefined = $state();
   let actionPending = $state(false);
   let actionError = $state<string | null>(null);
   let isHidden = $state(false);
@@ -35,6 +36,19 @@
   function closeMenu() {
     menuOpen = false;
   }
+
+  // Close the overflow menu when the user clicks anywhere outside it. The
+  // capture-phase listener also covers another pin's menu opening, since that
+  // pointerdown lands outside this menu.
+  $effect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && menuEl?.contains(event.target)) return;
+      closeMenu();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  });
 
   async function runAction(label: string, fn: () => Promise<unknown>): Promise<boolean> {
     if (actionPending) return false;
@@ -230,6 +244,7 @@
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <details
         class="relative"
+        bind:this={menuEl}
         bind:open={menuOpen}
         onclick={(event) => event.stopPropagation()}
       >

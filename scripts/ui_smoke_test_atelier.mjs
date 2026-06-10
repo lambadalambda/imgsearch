@@ -1239,6 +1239,17 @@ try {
   }
   const initialCount = await page.locator("[data-pin]").count();
 
+  // 6a. Clicking outside an open overflow menu closes it (meta/issues/083).
+  await targetPin.hover();
+  await targetPin.locator('[data-pin-action="more"]').click();
+  await targetPin.locator('[data-pin-menu="reannotate"]').waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("h1").first().click({ position: { x: 4, y: 4 } });
+  await page.waitForFunction(
+    () => !document.querySelector("[data-pin] details[open]"),
+    {},
+    { timeout: 5000 },
+  );
+
   await targetPin.hover();
   await targetPin.locator('[data-pin-action="more"]').click();
   await targetPin.locator('[data-pin-menu="reannotate"]').click();
