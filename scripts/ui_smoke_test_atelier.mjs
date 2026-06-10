@@ -300,10 +300,18 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/search/tag-cloud") {
       requestOrder.push("tag-cloud");
       jsonResponse(res, 200, {
+        // Enough tags to fill the quick-row past its container width so the
+        // overflow affordance (meta/issues/082) and the mobile single-line
+        // layout (meta/issues/077) are exercised.
         tags: [
           { tag: "portrait", count: 24 },
           { tag: "cat", count: 22 },
           { tag: "warm-tone", count: 18 },
+          { tag: "indoor", count: 16 },
+          { tag: "studio-light", count: 14 },
+          { tag: "close-up", count: 12 },
+          { tag: "illustration", count: 11 },
+          { tag: "landscape", count: 9 },
         ],
       });
       return;
@@ -535,6 +543,28 @@ try {
   if (headline !== "Library") {
     throw new Error(`expected library headline, got ${JSON.stringify(headline)}`);
   }
+
+  // 1a*. The quick-row signals horizontal overflow and supports wheel
+  //      scrolling, instead of clipping chips with a hidden scrollbar
+  //      (meta/issues/082).
+  const quickRow = page.locator('nav[aria-label="Quick collections"]');
+  await page.waitForFunction(
+    () => document.querySelectorAll('nav[aria-label="Quick collections"] button').length >= 9,
+    {},
+    { timeout: 5000 },
+  );
+  const quickOverflows = await quickRow.evaluate((el) => el.scrollWidth > el.clientWidth);
+  if (!quickOverflows) {
+    throw new Error("expected the stub's nine quick-row chips to overflow the container");
+  }
+  await page.locator("[data-quick-overflow]").waitFor({ state: "visible", timeout: 5000 });
+  await quickRow.hover();
+  await page.mouse.wheel(0, 240);
+  await page.waitForFunction(
+    () => (document.querySelector('nav[aria-label="Quick collections"]')?.scrollLeft ?? 0) > 0,
+    {},
+    { timeout: 5000 },
+  );
 
   // 1a. Results meta is a live region so assistive tech hears search/filter
   //     updates (meta/issues/088).
