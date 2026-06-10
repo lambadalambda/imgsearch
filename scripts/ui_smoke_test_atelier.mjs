@@ -914,6 +914,18 @@ try {
     );
   }
 
+  // Transport controls use directional glyphs and a stateful play/pause icon
+  // (meta/issues/076).
+  const prevIconName = await page.locator("[data-feed-prev] svg").getAttribute("data-icon");
+  const nextIconName = await page.locator("[data-feed-next] svg").getAttribute("data-icon");
+  if (prevIconName !== "chevron-up" || nextIconName !== "chevron-down") {
+    throw new Error(`expected directional feed nav icons, got prev=${prevIconName} next=${nextIconName}`);
+  }
+  const pausedIconName = await page.locator("[data-feed-playpause] svg").getAttribute("data-icon");
+  if (pausedIconName !== "play") {
+    throw new Error(`expected play glyph while feed video is not playing, got ${pausedIconName}`);
+  }
+
   // ArrowDown advances. Read the data-feed-current-index attr before/after.
   const overlayHandle = await page.locator("[data-feed-overlay]").elementHandle();
   if (!overlayHandle) throw new Error("feed overlay handle missing");
@@ -945,6 +957,12 @@ try {
     video.currentTime = 0.9;
     video.dispatchEvent(new Event("play"));
   });
+  // The play/pause glyph reflects playback state (meta/issues/076).
+  await page.waitForFunction(
+    () => document.querySelector("[data-feed-playpause] svg")?.getAttribute("data-icon") === "pause",
+    {},
+    { timeout: 5000 },
+  );
   await page.keyboard.press("ArrowDown");
   await page.waitForFunction(
     () => Number(document.querySelector("[data-feed-overlay]")?.getAttribute("data-feed-current-index") || 0) === 2,

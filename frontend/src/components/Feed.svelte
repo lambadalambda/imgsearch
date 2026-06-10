@@ -60,6 +60,7 @@
   let loading = $state(false); // initial open
   let loadingMore = $state(false);
   let progress = $state(0); // 0..1 for the active video
+  let playing = $state(false); // whether the active video is playing
   let dragOffsetPx = $state(0); // mid-drag visual offset on track
 
   // The three persistent video element refs.
@@ -170,6 +171,7 @@
     loading = false;
     loadingMore = false;
     dragOffsetPx = 0;
+    playing = false;
     pauseAll();
   }
 
@@ -299,6 +301,7 @@
     watchStartedAt = 0;
     accumulatedWatchMs = 0;
     playbackStarted = false;
+    playing = false;
     if (idx > feedbackRecordedIndex) feedbackRecordedIndex = idx - 1;
   }
 
@@ -480,11 +483,13 @@
   function onPlay(slotIdx: 0 | 1 | 2): void {
     if (slotKindOf(slotIdx) !== "current") return;
     playbackStarted = true;
+    playing = true;
     if (watchStartedAt === 0) watchStartedAt = performance.now();
   }
 
   function onPause(slotIdx: 0 | 1 | 2): void {
     if (slotKindOf(slotIdx) !== "current") return;
+    playing = false;
     if (watchStartedAt > 0) {
       accumulatedWatchMs += performance.now() - watchStartedAt;
       watchStartedAt = 0;
@@ -756,9 +761,7 @@
             aria-label="Previous video"
             class="grid place-items-center w-11 h-11 rounded-full bg-black/55 hover:bg-black/75 disabled:opacity-40 disabled:cursor-not-allowed border-0 cursor-pointer text-[#fffdf9]"
           >
-            <span aria-hidden="true" class="rotate-90 inline-block">
-              <Icon name="feed" class="w-4 h-4 -rotate-180" />
-            </span>
+            <Icon name="chevron-up" class="w-4 h-4" />
           </button>
           <button
             type="button"
@@ -767,10 +770,10 @@
               e.stopPropagation();
               togglePlay();
             }}
-            aria-label="Play / pause"
+            aria-label={playing ? "Pause" : "Play"}
             class="grid place-items-center w-11 h-11 rounded-full bg-black/55 hover:bg-black/75 border-0 cursor-pointer text-[#fffdf9]"
           >
-            <Icon name="feed" class="w-4 h-4" />
+            <Icon name={playing ? "pause" : "play"} class="w-4 h-4" />
           </button>
           <button
             type="button"
@@ -798,7 +801,7 @@
             aria-label="Next video"
             class="grid place-items-center w-11 h-11 rounded-full bg-black/55 hover:bg-black/75 disabled:opacity-40 disabled:cursor-not-allowed border-0 cursor-pointer text-[#fffdf9]"
           >
-            <Icon name="feed" class="w-4 h-4" />
+            <Icon name="chevron-down" class="w-4 h-4" />
           </button>
         </div>
       </div>

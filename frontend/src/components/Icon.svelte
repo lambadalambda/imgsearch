@@ -12,7 +12,11 @@
     | "spark"
     | "image"
     | "video"
-    | "check";
+    | "check"
+    | "play"
+    | "pause"
+    | "chevron-up"
+    | "chevron-down";
 
   interface Props {
     name: IconName;
@@ -24,7 +28,7 @@
 </script>
 
 {#if name === "library"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3" y="3" width="7" height="7" rx="1.4" />
@@ -34,7 +38,7 @@
     </g>
   </svg>
 {:else if name === "search"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="11" cy="11" r="7" />
@@ -42,7 +46,7 @@
     </g>
   </svg>
 {:else if name === "tags"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <path d="M20 13.41 11.41 22a2 2 0 0 1-2.83 0L2 15.41V4a2 2 0 0 1 2-2h11.41L22 8.59a2 2 0 0 1 0 2.83Z" />
@@ -50,7 +54,7 @@
     </g>
   </svg>
 {:else if name === "stats"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <line x1="4" y1="20" x2="4" y2="14" />
@@ -60,12 +64,12 @@
     </g>
   </svg>
 {:else if name === "feed"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <polygon points="5 3 19 12 5 21 5 3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
   </svg>
 {:else if name === "upload"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -74,7 +78,7 @@
     </g>
   </svg>
 {:else if name === "settings"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="3" />
@@ -82,7 +86,7 @@
     </g>
   </svg>
 {:else if name === "close"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
       <path d="M18 6 6 18" />
@@ -90,7 +94,7 @@
     </g>
   </svg>
 {:else if name === "external"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
@@ -99,12 +103,12 @@
     </g>
   </svg>
 {:else if name === "spark"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <path d="M12 2 14.5 9.5 22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5Z" fill="currentColor" />
   </svg>
 {:else if name === "image"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -113,7 +117,7 @@
     </g>
   </svg>
 {:else if name === "video"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
       <polygon points="23 7 16 12 23 17 23 7" />
@@ -121,8 +125,31 @@
     </g>
   </svg>
 {:else if name === "check"}
-  <svg viewBox="0 0 24 24" class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <polyline points="20 6 9 17 4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+{:else if name === "play"}
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+    {#if title}<title>{title}</title>{/if}
+    <polygon points="6 4 20 12 6 20 6 4" fill="currentColor" />
+  </svg>
+{:else if name === "pause"}
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+    {#if title}<title>{title}</title>{/if}
+    <g fill="currentColor">
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </g>
+  </svg>
+{:else if name === "chevron-up"}
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+    {#if title}<title>{title}</title>{/if}
+    <polyline points="5 15 12 8 19 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+{:else if name === "chevron-down"}
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+    {#if title}<title>{title}</title>{/if}
+    <polyline points="5 9 12 16 19 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
   </svg>
 {/if}
