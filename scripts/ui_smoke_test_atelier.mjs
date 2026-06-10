@@ -994,6 +994,32 @@ try {
     throw new Error(`expected play glyph while feed video is not playing, got ${pausedIconName}`);
   }
 
+  // The progress bar is a scrubber with a time display: clicking the middle
+  // seeks the active video to ~50% (meta/issues/089).
+  await page.evaluate(() => {
+    const video = document.querySelector('video[data-feed-current="true"]');
+    if (!video) throw new Error("current Feed video missing");
+    Object.defineProperty(video, "duration", { value: 10, configurable: true });
+  });
+  const feedTimeText = (await page.locator("[data-feed-time]").textContent() || "").trim();
+  if (!/\d+:\d{2}\s*\/\s*\d+:\d{2}/.test(feedTimeText)) {
+    throw new Error(`expected an elapsed/total time display in the feed, got ${JSON.stringify(feedTimeText)}`);
+  }
+  const scrubberBox = await page.locator("[data-feed-scrubber]").boundingBox();
+  if (!scrubberBox) throw new Error("feed scrubber missing");
+  await page.mouse.click(scrubberBox.x + scrubberBox.width * 0.5, scrubberBox.y + scrubberBox.height / 2);
+  const seekedTime = await page.evaluate(
+    () => document.querySelector('video[data-feed-current="true"]')?.currentTime ?? -1,
+  );
+  if (seekedTime < 3.5 || seekedTime > 6.5) {
+    throw new Error(`expected scrubber click at 50% to seek to ~5s of 10s, got ${seekedTime}`);
+  }
+  // Reset so the seed's later metrics stay neutral for the feedback checks.
+  await page.evaluate(() => {
+    const video = document.querySelector('video[data-feed-current="true"]');
+    if (video) video.currentTime = 0;
+  });
+
   // ArrowDown advances. Read the data-feed-current-index attr before/after.
   const overlayHandle = await page.locator("[data-feed-overlay]").elementHandle();
   if (!overlayHandle) throw new Error("feed overlay handle missing");

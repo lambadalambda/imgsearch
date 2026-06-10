@@ -62,6 +62,8 @@
   let loadingMore = $state(false);
   let progress = $state(0); // 0..1 for the active video
   let playing = $state(false); // whether the active video is playing
+  let currentTimeS = $state(0); // elapsed seconds of the active video
+  let durationS = $state(0); // duration seconds of the active video (0 = unknown)
   let dragOffsetPx = $state(0); // mid-drag visual offset on track
 
   // The three persistent video element refs.
@@ -303,6 +305,8 @@
     accumulatedWatchMs = 0;
     playbackStarted = false;
     playing = false;
+    currentTimeS = 0;
+    durationS = 0;
     if (idx > feedbackRecordedIndex) feedbackRecordedIndex = idx - 1;
   }
 
@@ -479,6 +483,8 @@
     const el = videoEls[slotIdx];
     if (!el || !el.duration) return;
     progress = Math.min(1, Math.max(0, el.currentTime / el.duration));
+    currentTimeS = el.currentTime;
+    durationS = Number.isFinite(el.duration) ? el.duration : 0;
   }
 
   function onPlay(slotIdx: 0 | 1 | 2): void {
@@ -531,6 +537,11 @@
       retreat();
       return;
     }
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      seekBySeconds(event.key === "ArrowLeft" ? -5 : 5);
+      return;
+    }
     if (event.key === " " || event.key === "k") {
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "BUTTON" || target.tagName === "INPUT")) return;
@@ -544,6 +555,63 @@
     if (!el) return;
     if (el.paused) void el.play();
     else el.pause();
+  }
+
+  // ------------------------------------------------------------------------
+  // Seeking.
+  // ------------------------------------------------------------------------
+
+  let scrubberEl: HTMLDivElement | undefined = $state();
+  let scrubbing = false;
+
+  function fmtTime(seconds: number): string {
+    const t = Math.max(0, Math.floor(seconds));
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+  }
+
+  function seekToRatio(ratio: number): void {
+    const el = activeVideo();
+    if (!el) return;
+    const duration = el.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const clamped = Math.min(1, Math.max(0, ratio));
+    el.currentTime = clamped * duration;
+    progress = clamped;
+    currentTimeS = el.currentTime;
+    durationS = duration;
+  }
+
+  function seekToClientX(clientX: number): void {
+    if (!scrubberEl) return;
+    const rect = scrubberEl.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    seekToRatio((clientX - rect.left) / rect.width);
+  }
+
+  function seekBySeconds(delta: number): void {
+    const el = activeVideo();
+    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return;
+    seekToRatio((el.currentTime + delta) / el.duration);
+  }
+
+  function onScrubPointerDown(event: PointerEvent): void {
+    event.stopPropagation();
+    scrubbing = true;
+    scrubberEl?.setPointerCapture(event.pointerId);
+    seekToClientX(event.clientX);
+  }
+
+  function onScrubPointerMove(event: PointerEvent): void {
+    if (!scrubbing) return;
+    event.stopPropagation();
+    seekToClientX(event.clientX);
+  }
+
+  function onScrubPointerUp(event: PointerEvent): void {
+    if (!scrubbing) return;
+    event.stopPropagation();
+    scrubbing = false;
+    scrubberEl?.releasePointerCapture(event.pointerId);
   }
 
   function toggleMute(): void {
@@ -741,15 +809,38 @@
         data-feed-chrome
         class="absolute bottom-0 inset-x-0 px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))] flex flex-col gap-3 bg-gradient-to-t from-black/70 to-transparent pointer-events-none"
       >
-        <div
-          class="w-full h-[3px] rounded-full overflow-hidden bg-white/25 pointer-events-auto"
-          aria-hidden="true"
-        >
-          <span
-            data-feed-progress
-            class="block h-full bg-white/95 transition-[width] duration-100 ease-linear"
-            style:width={`${Math.round(progress * 100)}%`}
-          ></span>
+        <div class="flex items-center gap-3 pointer-events-auto">
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            bind:this={scrubberEl}
+            data-feed-scrubber
+            role="slider"
+            aria-label="Seek"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={Math.round(progress * 100)}
+            tabindex="-1"
+            class="relative flex-1 h-[18px] flex items-center cursor-pointer touch-none"
+            onpointerdown={onScrubPointerDown}
+            onpointermove={onScrubPointerMove}
+            onpointerup={onScrubPointerUp}
+            onpointercancel={onScrubPointerUp}
+            ontouchstart={(e) => e.stopPropagation()}
+            ontouchmove={(e) => e.stopPropagation()}
+            ontouchend={(e) => e.stopPropagation()}
+            onclick={(e) => e.stopPropagation()}
+          >
+            <div class="w-full h-[3px] rounded-full overflow-hidden bg-white/25">
+              <span
+                data-feed-progress
+                class="block h-full bg-white/95 transition-[width] duration-100 ease-linear"
+                style:width={`${Math.round(progress * 100)}%`}
+              ></span>
+            </div>
+          </div>
+          <span data-feed-time class="text-[11.5px] text-white/70 tabular-nums whitespace-nowrap">
+            {fmtTime(currentTimeS)} / {fmtTime(durationS)}
+          </span>
         </div>
         <div class="flex items-center gap-2 pointer-events-auto">
           <button
