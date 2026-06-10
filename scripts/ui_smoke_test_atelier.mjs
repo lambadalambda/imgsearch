@@ -192,6 +192,7 @@ async function serveDist(res, pathname) {
 }
 
 let nsfwToggleCount = 0;
+let statsServed = 0;
 let reannotateCount = 0;
 let deleteCount = 0;
 const tagSearchRequests = [];
@@ -207,6 +208,7 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   try {
     if (url.pathname === "/api/stats") {
+      statsServed += 1;
       jsonResponse(res, 200, {
         images_total: sampleImages.length + 18,
         standalone_images_total: sampleImages.length,
@@ -234,7 +236,9 @@ const server = createServer(async (req, res) => {
           embed_image: {
             tracked: 147,
             runnable: 14,
-            pending: 21,
+            // Changes on every fetch so the smoke test can prove the stats
+            // pane refreshes itself while open (meta/issues/081).
+            pending: 21 + statsServed,
             leased: 3,
             done: 72,
             failed: 2,
@@ -612,6 +616,26 @@ try {
       throw new Error(`expected stats page to include ${JSON.stringify(expected)}, got ${JSON.stringify(statsText)}`);
     }
   }
+  // The pane refreshes itself while open: the stub bumps the embed queue's
+  // pending count on every /api/stats fetch, so the rendered number must
+  // change without a reload (meta/issues/081).
+  const queuedBefore = await statsPane.evaluate((el) => {
+    const match = (el.textContent || "").match(/(\d+) queued/);
+    return match ? Number(match[1]) : -1;
+  });
+  if (queuedBefore < 0) {
+    throw new Error("expected an embed queued count on the stats pane");
+  }
+  await page.waitForFunction(
+    (before) => {
+      const pane = document.querySelector("[data-stats-pane]");
+      const match = (pane?.textContent || "").match(/(\d+) queued/);
+      return match ? Number(match[1]) > before : false;
+    },
+    queuedBefore,
+    { timeout: 10000 },
+  );
+
   // Returning to library clears the stats pane and the view= URL param.
   await page.locator('button[aria-label="Library"]').click();
   await page.waitForFunction(
@@ -621,6 +645,14 @@ try {
   );
   if ((await page.locator("[data-stats-pane]").count()) > 0) {
     throw new Error("expected library view not to render the stats pane after returning from stats");
+  }
+  // Polling must stop once the stats view is left (meta/issues/081).
+  const statsServedAfterLeave = statsServed;
+  await new Promise((resolve) => setTimeout(resolve, 3500));
+  if (statsServed > statsServedAfterLeave) {
+    throw new Error(
+      `expected stats polling to stop after leaving the view, served ${statsServed - statsServedAfterLeave} more`,
+    );
   }
 
   const imageOnlyStart = imagesRequests.length;

@@ -1,7 +1,28 @@
 <script lang="ts">
   import { stats, topTags } from "../lib/stores";
+  import { refreshStats } from "../lib/stats";
   import { formatCount } from "../lib/utils";
   import type { JobKindStats, StatsResponse } from "../lib/types";
+
+  const REFRESH_INTERVAL_MS = 3000;
+
+  // The pane is a progress dashboard, so it keeps itself current while open.
+  // Polling pauses while the tab is hidden and stops when the pane unmounts.
+  $effect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshStats().catch(() => {
+        /* keep showing the last snapshot */
+      });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  });
 
   function safeCount(value: number | undefined | null): number {
     return Number.isFinite(value) ? Number(value) : 0;
@@ -171,7 +192,9 @@
     <article class="rounded-card border border-line bg-surface shadow-card p-4 sm:p-5">
       <div class="flex items-baseline justify-between gap-2 flex-wrap">
         <p class="m-0 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted-2">Recent failures</p>
-        <p class="m-0 text-[12px] text-muted-2">Last {Math.min(recentFailures.length, 10)} jobs that exhausted retries</p>
+        {#if recentFailures.length > 0}
+          <p class="m-0 text-[12px] text-muted-2">Last {Math.min(recentFailures.length, 10)} jobs that exhausted retries</p>
+        {/if}
       </div>
       {#if recentFailures.length === 0}
         <p class="m-0 mt-3 text-[12.5px] text-muted-2">No recent failures.</p>
