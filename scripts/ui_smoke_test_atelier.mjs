@@ -1263,6 +1263,25 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('a[aria-label="imgsearch home"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
+  // 5b*. Mobile chrome stays compact: the quick-row keeps to a single
+  //      scrollable line and the first pin starts within the upper 60% of
+  //      the viewport (meta/issues/077).
+  const mobileQuickRowHeight = await page
+    .locator('nav[aria-label="Quick collections"]')
+    .evaluate((el) => el.getBoundingClientRect().height);
+  if (mobileQuickRowHeight > 60) {
+    throw new Error(`expected a single-line mobile quick-row, got height ${mobileQuickRowHeight}px`);
+  }
+  // Measure the chrome via the static results-section offset; pin positions
+  // churn while the masonry re-measures and would make this flaky.
+  const resultsTop = await page.evaluate(() => {
+    const el = document.querySelector("[data-results]");
+    return el ? el.getBoundingClientRect().top + window.scrollY : Infinity;
+  });
+  if (resultsTop > 844 * 0.6) {
+    throw new Error(`expected results to start within the upper 60% of a phone viewport, got top ${resultsTop}px`);
+  }
+
   // image:1000 carries the deliberately long title, which the layout and
   // title-clamp checks below depend on.
   await page.locator('[data-pin][data-pin-key="image:1000"]').waitFor({ state: "attached", timeout: 5000 });

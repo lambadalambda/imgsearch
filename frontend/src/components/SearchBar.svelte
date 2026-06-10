@@ -47,7 +47,7 @@
 </script>
 
 <div
-  class="px-5 sm:px-9 pt-5 sm:pt-6 pb-1 sticky top-0 z-20 bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/75"
+  class="px-5 sm:px-9 pt-3 sm:pt-6 pb-1 sticky top-0 z-20 bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/75"
 >
   <form
     class="relative mx-auto max-w-[920px] flex items-center gap-2.5 pl-[50px] pr-4 py-2.5 bg-surface border border-line-2 rounded-full shadow-card transition-[border-color,box-shadow] duration-150 ease-soft focus-within:border-accent/40 focus-within:[box-shadow:0_1px_2px_rgba(40,30,18,0.05),0_0_0_3px_color-mix(in_oklab,var(--color-accent)_16%,transparent_84%)]"

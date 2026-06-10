@@ -15,7 +15,7 @@
   }
 </script>
 
-<header class="px-5 sm:px-9 pt-5 sm:pt-7 pb-3 sm:pb-4 border-b border-line">
+<header class="px-5 sm:px-9 pt-3 sm:pt-7 pb-2.5 sm:pb-4 border-b border-line">
   <div class="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
     <div class="flex-1 min-w-0 order-1">
       <p class="m-0 text-[13px] text-muted">
@@ -49,7 +49,7 @@
         <label
           class="inline-flex items-center gap-2 px-[13px] py-[7px] border border-line-2 rounded-full bg-surface text-ink-2 text-[13px] font-medium leading-none transition-[background-color,border-color,color] duration-150 ease-soft hover:bg-surface-2"
         >
-          <span>Media</span>
+          <span class="hidden sm:inline">Media</span>
           <select
             data-library-media
             bind:value={$libraryMedia}
@@ -64,7 +64,7 @@
         <label
           class="inline-flex items-center gap-2 px-[13px] py-[7px] border border-line-2 rounded-full bg-surface text-ink-2 text-[13px] font-medium leading-none transition-[background-color,border-color,color] duration-150 ease-soft hover:bg-surface-2"
         >
-          <span>Sort</span>
+          <span class="hidden sm:inline">Sort</span>
           <select
             data-library-sort
             bind:value={$librarySort}
