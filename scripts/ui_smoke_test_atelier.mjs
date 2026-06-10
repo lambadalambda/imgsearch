@@ -1487,6 +1487,54 @@ try {
     throw new Error(`expected one DELETE, got ${deleteCount}`);
   }
 
+  // 6b. The lightbox exposes the same media actions as the card menu
+  //     (meta/issues/084): NSFW toggle reflects on the card, re-annotate
+  //     posts, delete confirms and removes the pin.
+  await page.locator('[data-pin][data-pin-key="image:1002"]').waitFor({ state: "attached", timeout: 5000 });
+  await page.locator('[data-pin][data-pin-key="image:1002"] [data-pin-media]').click();
+  await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  const nsfwBefore = nsfwToggleCount;
+  await page.locator('[data-lightbox-action="nsfw"]').click();
+  const nsfwDeadline = Date.now() + 5000;
+  while (nsfwToggleCount !== nsfwBefore + 1 && Date.now() < nsfwDeadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  if (nsfwToggleCount !== nsfwBefore + 1) {
+    throw new Error(`expected lightbox NSFW toggle to POST, got ${nsfwToggleCount - nsfwBefore}`);
+  }
+  const reannotateBefore = reannotateCount;
+  await page.locator('[data-lightbox-action="reannotate"]').click();
+  const reannotateDeadline2 = Date.now() + 5000;
+  while (reannotateCount !== reannotateBefore + 1 && Date.now() < reannotateDeadline2) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  if (reannotateCount !== reannotateBefore + 1) {
+    throw new Error(`expected lightbox re-annotate to POST, got ${reannotateCount - reannotateBefore}`);
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+  const cardNSFW = await page
+    .locator('[data-pin][data-pin-key="image:1002"]')
+    .getAttribute("data-pin-nsfw");
+  if (cardNSFW !== "true") {
+    throw new Error("expected the lightbox NSFW flag to reflect on the underlying card");
+  }
+  const countBeforeLightboxDelete = await page.locator("[data-pin]").count();
+  await page.locator('[data-pin][data-pin-key="image:1003"] [data-pin-media]').click();
+  await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator('[data-lightbox-action="delete"]').click();
+  await page.locator("[data-confirm-dialog]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-confirm-accept]").click();
+  await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+  await page.waitForFunction(
+    (before) => document.querySelectorAll("[data-pin]").length === before - 1,
+    countBeforeLightboxDelete,
+    { timeout: 5000 },
+  );
+  if (deleteCount !== 2) {
+    throw new Error(`expected a second DELETE from the lightbox, got ${deleteCount}`);
+  }
+
   // 7. Load more — ensure clicking it grows the masonry.
   const beforeLoadMore = await page.locator("[data-pin]").count();
   const libraryRequestBeforeLoadMore = imagesRequests[imagesRequests.length - 1];
