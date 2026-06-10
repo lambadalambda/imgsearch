@@ -330,6 +330,12 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/api/search/text") {
+      // A query with no matches, for the indexing-progress empty state
+      // (meta/issues/080). The stub stats report incomplete embedding.
+      if (url.searchParams.get("q") === "tofu") {
+        jsonResponse(res, 200, { results: [], total: 0, debug: { duration_ms: 4 } });
+        return;
+      }
       jsonResponse(res, 200, {
         results: searchResults(),
         total: 12,
@@ -1541,6 +1547,26 @@ try {
   if (libraryHeadline !== "Library") {
     throw new Error(`expected return to library mode, got ${JSON.stringify(libraryHeadline)}`);
   }
+
+  // 8a. An empty search against an incompletely-embedded library explains
+  //     that indexing is still running instead of a bare "No matches"
+  //     (meta/issues/080). The stub stats report 72/162 embedded.
+  await page.locator("#atelier-search").fill("tofu");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(
+    () => /tofu/.test(window.location.search),
+    {},
+    { timeout: 5000 },
+  );
+  await page.locator("[data-results-empty]").waitFor({ state: "visible", timeout: 5000 });
+  const emptyStateText = await page.locator("[data-results-empty]").textContent();
+  if (!/still indexing/i.test(emptyStateText || "") || !/162/.test(emptyStateText || "")) {
+    throw new Error(
+      `expected empty search on a half-indexed library to mention indexing progress, got ${JSON.stringify(emptyStateText)}`,
+    );
+  }
+  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
 
   // 9. View preferences persist across reloads via localStorage
   //    (meta/issues/085).

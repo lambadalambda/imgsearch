@@ -26,7 +26,6 @@
   } from "./lib/stores";
   import {
     ApiError,
-    getStats,
     listImages,
     listTagCloud,
     listVideos,
@@ -34,6 +33,7 @@
     searchTags,
     searchText,
   } from "./lib/api";
+  import { refreshStats } from "./lib/stats";
   import { pinFromImage, pinFromSearchResult, pinFromVideo } from "./lib/utils";
   import type { Pin } from "./lib/types";
 
@@ -82,14 +82,9 @@
   // Stats are cheap and useful in the search bar, so fetch them immediately.
   // Tag cloud is deferred until after the first page load because its JSON tag
   // scan can otherwise monopolize the single SQLite connection before images.
-  void (async () => {
-    try {
-      const s = await getStats();
-      stats.set({ ...s, images: s.standalone_images_total ?? s.images_total, videos: s.videos_total });
-    } catch (err) {
-      console.warn("stats bootstrap failed", err);
-    }
-  })();
+  void refreshStats().catch((err) => {
+    console.warn("stats bootstrap failed", err);
+  });
 
   let currentRequestToken = 0;
   let currentOffset = 0;
@@ -264,6 +259,11 @@
         }
         canLoadMore = nextPins.length === PAGE_SIZE && currentOffset < total;
         resultsMeta.set({ total, durationMs: performance.now() - start, loading: false });
+        // An empty search may just mean indexing hasn't caught up; refresh
+        // stats so the empty state can report current progress.
+        if (nextPins.length === 0 && !appending && (state.mode === "search" || state.mode === "similar")) {
+          void refreshStats().catch(() => {});
+        }
         if (!firstPageLoaded && !appending) {
           firstPageLoaded = true;
         }
@@ -290,10 +290,24 @@
     bumpPage();
   }
 
+  // Incomplete embedding progress, if the stats snapshot reports any. An
+  // empty search on a half-indexed library is indistinguishable from a true
+  // miss, so the empty state explains what is actually happening.
+  const embeddingBacklog = $derived.by(() => {
+    const s = $stats;
+    if (!s) return null;
+    const done = s.job_kinds?.["embed_image"]?.done ?? 0;
+    const expected = s.queue?.total ?? s.images_total ?? 0;
+    return expected > 0 && done < expected ? { done, expected } : null;
+  });
+
   const emptyMessage = $derived.by(() => {
     if ($resultsMeta.error) return `Couldn't load: ${$resultsMeta.error}`;
-    if ($mode.mode === "search") return `No matches for "${$mode.query ?? ""}".`;
-    if ($mode.mode === "similar") return "No similar items found in your library.";
+    const indexingSuffix = embeddingBacklog
+      ? ` The library is still indexing (${embeddingBacklog.done.toLocaleString()} of ${embeddingBacklog.expected.toLocaleString()} images embedded), so results will improve as it completes.`
+      : "";
+    if ($mode.mode === "search") return `No matches for "${$mode.query ?? ""}".${indexingSuffix}`;
+    if ($mode.mode === "similar") return `No similar items found in your library.${indexingSuffix}`;
     if ($mode.mode === "tag" && $mode.tags?.length) {
       return `No items tagged ${$mode.tags.join(", ")}.`;
     }

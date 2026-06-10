@@ -112,7 +112,7 @@
       {/each}
     </div>
   {:else if pins.length === 0}
-    <p class="my-6 text-muted text-[14.5px]">{emptyMessage}</p>
+    <p data-results-empty class="my-6 text-muted text-[14.5px]">{emptyMessage}</p>
   {:else}
     <div data-results-grid class={`${masonryClass} scroll-mt-24`}>
       {#each pins as pin (pin.key)}
