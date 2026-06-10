@@ -1469,6 +1469,21 @@ try {
     throw new Error(`expected return to library mode, got ${JSON.stringify(libraryHeadline)}`);
   }
 
+  // 9. View preferences persist across reloads via localStorage
+  //    (meta/issues/085).
+  await page.locator("[data-library-sort]").selectOption("newest");
+  await page.locator("[data-library-media]").selectOption("videos");
+  await page.locator("[data-nsfw-toggle]").check();
+  await page.reload({ waitUntil: "networkidle" });
+  const persistedSort = await page.locator("[data-library-sort]").inputValue();
+  const persistedMedia = await page.locator("[data-library-media]").inputValue();
+  const persistedNSFW = await page.locator("[data-nsfw-toggle]").isChecked();
+  if (persistedSort !== "newest" || persistedMedia !== "videos" || !persistedNSFW) {
+    throw new Error(
+      `expected view preferences to survive a reload, got sort=${persistedSort} media=${persistedMedia} nsfw=${persistedNSFW}`,
+    );
+  }
+
   console.log("atelier smoke checks passed");
 } finally {
   if (browser) {

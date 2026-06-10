@@ -121,11 +121,46 @@ export function setStats(): void {
   mode.set({ mode: "stats" });
 }
 
-export const includeNSFW = writable<boolean>(false);
+/** Device-local view preference persisted in localStorage. Invalid or
+ *  unreadable stored values (private mode, manual edits) fall back to the
+ *  default. */
+function persistedStore<T>(key: string, fallback: T, parse: (raw: string) => T | undefined) {
+  const storageKey = `imgsearch.${key}`;
+  let initial = fallback;
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (raw !== null) {
+        const parsed = parse(raw);
+        if (parsed !== undefined) initial = parsed;
+      }
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  const store = writable<T>(initial);
+  store.subscribe((value) => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(storageKey, String(value));
+    } catch {
+      /* storage unavailable */
+    }
+  });
+  return store;
+}
 
-export const librarySort = writable<LibrarySort>("random");
+export const includeNSFW = persistedStore<boolean>("includeNSFW", false, (raw) =>
+  raw === "true" ? true : raw === "false" ? false : undefined,
+);
 
-export const libraryMedia = writable<LibraryMedia>("all");
+export const librarySort = persistedStore<LibrarySort>("librarySort", "random", (raw) =>
+  raw === "random" || raw === "newest" ? raw : undefined,
+);
+
+export const libraryMedia = persistedStore<LibraryMedia>("libraryMedia", "all", (raw) =>
+  raw === "all" || raw === "images" || raw === "videos" ? raw : undefined,
+);
 
 export const lightboxPin = writable<Pin | null>(null);
 

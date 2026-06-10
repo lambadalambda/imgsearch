@@ -81,6 +81,7 @@
       >
         <input
           type="checkbox"
+          data-nsfw-toggle
           bind:checked={$includeNSFW}
           class="m-0 w-[14px] h-[14px] accent-accent"
         />
