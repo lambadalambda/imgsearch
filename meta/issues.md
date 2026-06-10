@@ -8,12 +8,7 @@
 
 ## UI/UX review 2026-06-10
 
-- [ ] [Compact mobile header and quick-row chrome](issues/077-compact-mobile-header-chrome.md)
 - [ ] [Serve thumbnail derivatives for grid images](issues/079-serve-image-thumbnails-for-grid.md)
-- [ ] [Give the quick-row a visible overflow affordance on desktop](issues/082-quick-row-overflow-affordance.md)
-- [ ] [Expose media actions in the lightbox](issues/084-add-media-actions-to-lightbox.md)
-- [ ] [Add seeking and time display to the Feed player](issues/089-add-feed-seek-and-time.md)
-- [ ] [Replace window.confirm delete confirmation with a styled dialog](issues/090-replace-native-delete-confirm.md)
 - [ ] [Normalize near-duplicate annotation tags](issues/092-normalize-near-duplicate-tags.md)
 
 ## Migrated from `docs/issues.md` (priority P0 to P3)

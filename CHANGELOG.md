@@ -3,6 +3,11 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(ui): expose Flag NSFW, Re-annotate, and Delete in the Atelier lightbox, synced with the card badges.
+- feat(ui): make the Feed progress bar an interactive scrubber with an elapsed/total time display and ArrowLeft/Right 5s seeking.
+- feat(ui): replace the native delete confirmation with a styled in-app dialog showing the filename, used by both the card menu and the lightbox.
+- fix(ui): compact the mobile header chrome and keep the quick-row to a single scrollable line so library content starts higher on phones.
+- fix(ui): show an edge fade and support wheel scrolling when the quick-row overflows, instead of clipping chips behind a hidden scrollbar.
 - feat(ui): add prev/next navigation to the Atelier lightbox via arrow keys and on-screen chevrons, with controls disabled at the ends of the result list.
 - feat(a11y): move focus into Atelier modal overlays (lightbox, upload, feed) on open, trap Tab inside, and restore focus to the opener on close.
 - feat(ui): explain indexing progress in empty search/similar results when the library is not fully embedded yet, instead of a bare "No matches".

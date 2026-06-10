@@ -82,3 +82,8 @@
 - [x] [Surface indexing progress in the search empty state](issues/080-surface-indexing-progress-in-search-empty-state.md)
 - [x] [Auto-refresh the Statistics pane](issues/081-auto-refresh-statistics-pane.md)
 - [x] [Add focus management to modal overlays](issues/086-add-modal-focus-management.md)
+- [x] [Compact mobile header and quick-row chrome](issues/077-compact-mobile-header-chrome.md)
+- [x] [Give the quick-row a visible overflow affordance on desktop](issues/082-quick-row-overflow-affordance.md)
+- [x] [Expose media actions in the lightbox](issues/084-add-media-actions-to-lightbox.md)
+- [x] [Add seeking and time display to the Feed player](issues/089-add-feed-seek-and-time.md)
+- [x] [Replace window.confirm delete confirmation with a styled dialog](issues/090-replace-native-delete-confirm.md)
