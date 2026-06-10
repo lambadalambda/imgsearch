@@ -525,6 +525,13 @@ try {
   if (headline !== "Library") {
     throw new Error(`expected library headline, got ${JSON.stringify(headline)}`);
   }
+
+  // 1a. Results meta is a live region so assistive tech hears search/filter
+  //     updates (meta/issues/088).
+  const resultsMetaRole = await page.locator("[data-results-meta]").getAttribute("role");
+  if (resultsMetaRole !== "status") {
+    throw new Error(`expected results meta to be a role=status live region, got ${JSON.stringify(resultsMetaRole)}`);
+  }
   const firstImagesRequest = requestOrder.indexOf("images");
   const firstTagCloudRequest = requestOrder.indexOf("tag-cloud");
   if (firstImagesRequest < 0) {

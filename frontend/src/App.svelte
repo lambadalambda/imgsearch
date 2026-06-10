@@ -313,7 +313,12 @@
     {#if $mode.mode === "stats"}
       <StatisticsPane />
     {:else}
-      <div class="px-5 sm:px-9 mt-3 mb-1 text-[12.5px] text-muted-2 flex flex-wrap gap-2 items-center">
+      <div
+        data-results-meta
+        role="status"
+        aria-live="polite"
+        class="px-5 sm:px-9 mt-3 mb-1 text-[12.5px] text-muted-2 flex flex-wrap gap-2 items-center"
+      >
         {#if $resultsMeta.loading}
           <span>Loading…</span>
         {:else if $resultsMeta.error}
