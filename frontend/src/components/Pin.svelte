@@ -9,6 +9,7 @@
     openFeed,
   } from "../lib/stores";
   import { deleteMedia, reannotate, toggleNSFW, ApiError } from "../lib/api";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
 
   interface Props {
     pin: Pin;
@@ -20,6 +21,7 @@
   // per-pin so multiple cards can show their state independently.
   let menuOpen = $state(false);
   let menuEl: HTMLDetailsElement | undefined = $state();
+  let confirmingDelete = $state(false);
   let actionPending = $state(false);
   let actionError = $state<string | null>(null);
   let isHidden = $state(false);
@@ -90,13 +92,13 @@
     await runAction("re-annotate", () => reannotate(kind, id));
   }
 
-  async function deleteAction() {
+  function deleteAction() {
     closeMenu();
-    const label = pin.mediaType === "video" ? "video" : "image";
-    const confirmed = window.confirm(
-      `Delete this ${label}? This cannot be undone.\n\n${pin.filename}`,
-    );
-    if (!confirmed) return;
+    confirmingDelete = true;
+  }
+
+  async function confirmDelete() {
+    confirmingDelete = false;
     const kind = pin.mediaType;
     const id = kind === "video" && pin.videoId !== undefined ? pin.videoId : pin.imageId;
     const ok = await runAction("delete", () => deleteMedia(kind, id));
@@ -358,4 +360,15 @@
       {/if}
     </div>
   </article>
+
+  <!-- Outside the article: its hover transform would otherwise become the
+       containing block for the dialog's fixed positioning. -->
+  {#if confirmingDelete}
+    <ConfirmDialog
+      title={`Delete this ${pin.mediaType === "video" ? "video" : "image"}?`}
+      detail={pin.filename}
+      onconfirm={confirmDelete}
+      oncancel={() => (confirmingDelete = false)}
+    />
+  {/if}
 {/if}

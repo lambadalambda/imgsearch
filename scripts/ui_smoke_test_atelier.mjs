@@ -1431,12 +1431,27 @@ try {
     { timeout: 5000 },
   );
 
-  // Confirm dialog must auto-accept for the delete branch.
-  page.once("dialog", (dialog) => dialog.accept());
+  // Delete asks via the in-app confirmation dialog, not window.confirm
+  // (meta/issues/090). Cancel leaves the pin untouched...
   const targetPin2 = page.locator("[data-pin]").first();
   await targetPin2.hover();
   await targetPin2.locator('[data-pin-action="more"]').click();
   await targetPin2.locator('[data-pin-menu="delete"]').click();
+  await page.locator("[data-confirm-dialog]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-confirm-cancel]").click();
+  await page.locator("[data-confirm-dialog]").waitFor({ state: "hidden", timeout: 5000 });
+  if ((await page.locator("[data-pin]").count()) !== initialCount) {
+    throw new Error("expected cancelling the delete dialog to keep the pin");
+  }
+  if (deleteCount !== 0) {
+    throw new Error(`expected no DELETE after cancel, got ${deleteCount}`);
+  }
+  // ...and confirming removes it.
+  await targetPin2.hover();
+  await targetPin2.locator('[data-pin-action="more"]').click();
+  await targetPin2.locator('[data-pin-menu="delete"]').click();
+  await page.locator("[data-confirm-dialog]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-confirm-accept]").click();
   await page.waitForFunction(
     (initial) => document.querySelectorAll("[data-pin]").length === initial - 1,
     initialCount,
