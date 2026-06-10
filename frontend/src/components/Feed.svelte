@@ -19,6 +19,7 @@
     type FeedClass,
     type FeedMetrics,
   } from "../lib/feed";
+  import { focusTrap } from "../lib/focus";
   import Icon from "./Icon.svelte";
 
   /**
@@ -663,6 +664,7 @@
     data-feed-current-index={currentIndex}
     data-feed-queue-size={queue.length}
     data-feed-exhausted={exhausted ? "true" : undefined}
+    use:focusTrap
     class="fixed inset-0 z-[1400] bg-black text-[#fffdf9] [touch-action:none] [overscroll-behavior:contain] flex flex-col"
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}

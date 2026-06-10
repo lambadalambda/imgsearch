@@ -1108,14 +1108,44 @@ try {
     throw new Error(`expected lightbox tag headline ${JSON.stringify(lightboxTag)}, got ${JSON.stringify(lightboxTagHeadline)}`);
   }
 
-  // Back to library and keep the Escape-close path covered.
+  // Back to library and keep the Escape-close path covered. Along the way,
+  // dialogs must take focus, trap Tab, and restore focus to their opener on
+  // close (meta/issues/086).
   await page.locator('a[aria-label="imgsearch home"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
-  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
-  await page.locator('[data-pin-media]').first().click();
+  // Wait for the full library page so the opener pin is not replaced by an
+  // in-flight refetch while the dialog is open (focus must return to it).
+  await page.waitForFunction(
+    () => document.querySelectorAll("[data-pin]").length >= 40,
+    {},
+    { timeout: 5000 },
+  );
+  await page.locator('[data-pin][data-pin-key="image:1000"] [data-pin-media]').click();
   await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  const focusInsideOnOpen = await page.evaluate(
+    () => Boolean(document.querySelector("[data-lightbox]")?.contains(document.activeElement)),
+  );
+  if (!focusInsideOnOpen) {
+    throw new Error("expected focus to move into the lightbox dialog on open");
+  }
+  for (let i = 0; i < 10; i += 1) {
+    await page.keyboard.press("Tab");
+    const stillInside = await page.evaluate(
+      () => Boolean(document.querySelector("[data-lightbox]")?.contains(document.activeElement)),
+    );
+    if (!stillInside) {
+      throw new Error(`expected Tab to stay trapped inside the lightbox (escaped on press ${i + 1})`);
+    }
+  }
   await page.keyboard.press("Escape");
   await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+  const focusRestored = await page.evaluate(() => {
+    const active = document.activeElement;
+    return Boolean(active && active.closest("[data-pin]"));
+  });
+  if (!focusRestored) {
+    throw new Error("expected focus to return to the opening pin after the lightbox closes");
+  }
 
   // 5b. Mobile lightbox layout — on a phone-sized viewport the description
   //     must stay inside the modal card and must not render on top of the

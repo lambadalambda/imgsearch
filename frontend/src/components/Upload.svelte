@@ -14,6 +14,7 @@
     uploadFiles,
   } from "../lib/api";
   import type { UploadEntry } from "../lib/types";
+  import { focusTrap } from "../lib/focus";
   import Icon from "./Icon.svelte";
 
   type RowState = "pending" | "uploading" | "created" | "duplicate" | "failed";
@@ -219,6 +220,7 @@
     }}
   >
     <div
+      use:focusTrap
       class="bg-surface rounded-[20px] shadow-[0_30px_80px_rgba(0,0,0,0.45)] w-[min(640px,calc(100vw-32px))] max-h-[calc(100vh-32px)] flex flex-col overflow-hidden"
     >
       <div class="flex items-start justify-between gap-4 px-6 pt-6 pb-3">
