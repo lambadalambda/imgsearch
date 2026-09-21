@@ -24,6 +24,5 @@
 
 ## Review 2026-09-21
 
-- [ ] [Add manual tag and title editing](issues/110-add-manual-tag-and-title-editing.md)
 - [ ] [Add a near-duplicate finder](issues/111-add-near-duplicate-finder.md)
 - [ ] [Search by an uploaded or pasted image](issues/112-search-by-uploaded-image.md)

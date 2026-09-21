@@ -1,16 +1,4 @@
-import type {
-  ImagesPage,
-  ModelListResult,
-  ProbeResult,
-  ReannotateAllResponse,
-  SearchResponse,
-  SettingsResponse,
-  SettingsUpdateRequest,
-  StatsResponse,
-  TagCloudResponse,
-  UploadBatchResponse,
-  VideosPage,
-} from "./types";
+import type { ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord } from "./types";
 
 class ApiError extends Error {
   constructor(
@@ -243,6 +231,30 @@ export async function toggleNSFW(kind: MediaKind, id: number): Promise<void> {
 export async function reannotate(kind: MediaKind, id: number): Promise<void> {
   const path = kind === "video" ? "videos" : "images";
   await postJSON(`/api/${path}/${id}/reannotate`);
+}
+
+export interface MediaMetadataPatch {
+  title?: string;
+  tags?: string[];
+}
+
+/** PATCH manual metadata (title, full tag list); returns the updated record. */
+export async function updateMedia(kind: MediaKind, id: number, patch: MediaMetadataPatch): Promise<ImageRecord | VideoRecord> {
+  const path = kind === "video" ? "videos" : "images";
+  const response = await fetch(`/api/${path}/${id}`, { ...jsonInit("PATCH", patch), credentials: "same-origin" });
+  if (!response.ok) {
+    let message = response.statusText || "update failed";
+    try {
+      const payload = await response.json();
+      if (payload && typeof payload === "object" && "error" in payload) {
+        message = String((payload as { error: unknown }).error);
+      }
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(response.status, message);
+  }
+  return (await response.json()) as ImageRecord | VideoRecord;
 }
 
 export async function deleteMedia(kind: MediaKind, id: number): Promise<void> {

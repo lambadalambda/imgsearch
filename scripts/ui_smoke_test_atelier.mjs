@@ -213,6 +213,7 @@ async function serveDist(res, pathname) {
 }
 
 let nsfwToggleCount = 0;
+const metadataPatches = [];
 let statsServed = 0;
 let reannotateCount = 0;
 let deleteCount = 0;
@@ -506,6 +507,22 @@ const server = createServer(async (req, res) => {
         })),
         total: 12,
       });
+      return;
+    }
+    if (/^\/api\/images\/\d+$/.test(url.pathname) && req.method === "PATCH") {
+      const imageId = Number(url.pathname.split("/").pop());
+      const image = sampleImages.find((entry) => entry.image_id === imageId);
+      if (!image) {
+        jsonResponse(res, 404, { error: "image not found" });
+        return;
+      }
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      const patch = JSON.parse(raw);
+      metadataPatches.push({ imageId, patch });
+      if (typeof patch.title === "string") image.title = patch.title;
+      if (Array.isArray(patch.tags)) image.tags = patch.tags;
+      jsonResponse(res, 200, { ...image, index_state: "done" });
       return;
     }
     if (/^\/api\/(images|videos)\/\d+\/toggle-nsfw$/.test(url.pathname) && req.method === "POST") {
@@ -1751,6 +1768,43 @@ try {
   }
   await page.keyboard.press("Escape");
   await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+
+  // 6d. Manual title and tag editing in the lightbox (meta/issues/110):
+  //     the PATCH carries the full tag list, the chips update, and the edit
+  //     survives a reload because the stub keeps the record.
+  await page.locator('[data-pin][data-pin-key="image:1006"] [data-pin-media]').click();
+  await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator('[data-lightbox-action="edit"]').click();
+  await page.locator("[data-lightbox-title-input]").fill("Handpicked title");
+  await page.locator('[data-lightbox-tag-remove="cat"]').click();
+  await page.locator("[data-lightbox-tag-input]").fill("handpicked");
+  await page.keyboard.press("Enter");
+  await page.locator('[data-lightbox-draft-tag="handpicked"]').waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-lightbox-edit-save]").click();
+  await page.locator("[data-lightbox-edit-save]").waitFor({ state: "hidden", timeout: 5000 });
+  const editPatch = metadataPatches.find((entry) => entry.imageId === 1006);
+  if (!editPatch || editPatch.patch.title !== "Handpicked title" || !Array.isArray(editPatch.patch.tags)) {
+    throw new Error(`expected a PATCH with title and tags for image 1006, got ${JSON.stringify(metadataPatches)}`);
+  }
+  if (editPatch.patch.tags.includes("cat") || !editPatch.patch.tags.includes("handpicked")) {
+    throw new Error(`expected the PATCH tag list to drop "cat" and add "handpicked", got ${JSON.stringify(editPatch.patch.tags)}`);
+  }
+  const savedTags = await page.locator("[data-lightbox-tag]").evaluateAll((nodes) => nodes.map((n) => (n.textContent || "").trim()));
+  if (!savedTags.includes("handpicked") || savedTags.includes("cat")) {
+    throw new Error(`expected saved chips to reflect the edit, got ${JSON.stringify(savedTags)}`);
+  }
+  const savedTitle = (await page.locator("[data-lightbox] h2").first().textContent() || "").trim();
+  if (savedTitle !== "Handpicked title") {
+    throw new Error(`expected the saved title in the lightbox, got ${JSON.stringify(savedTitle)}`);
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator('[data-pin][data-pin-key="image:1006"]').waitFor({ state: "attached", timeout: 5000 });
+  const reloadedTitle = (await page.locator('[data-pin][data-pin-key="image:1006"] h3').textContent() || "").trim();
+  if (reloadedTitle !== "Handpicked title") {
+    throw new Error(`expected the edited title after reload, got ${JSON.stringify(reloadedTitle)}`);
+  }
 
   // 7. Load more — ensure clicking it grows the masonry.
   const beforeLoadMore = await page.locator("[data-pin]").count();

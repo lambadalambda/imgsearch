@@ -29,6 +29,60 @@
     if ($lightboxPin) await actions.remove($lightboxPin);
   }
 
+  // Manual title and tag editing (meta/issues/110).
+  let editing = $state(false);
+  let draftTitle = $state("");
+  let draftTags = $state<string[]>([]);
+  let newTag = $state("");
+  let tagInputEl: HTMLInputElement | undefined = $state();
+
+  function startEdit() {
+    const pin = $lightboxPin;
+    if (!pin) return;
+    draftTitle = pin.title;
+    draftTags = [...pin.tags];
+    newTag = "";
+    editing = true;
+  }
+
+  function cancelEdit() {
+    editing = false;
+  }
+
+  function addDraftTag() {
+    const value = newTag.trim();
+    newTag = "";
+    if (!value) return;
+    if (draftTags.some((t) => t.toLowerCase() === value.toLowerCase())) return;
+    draftTags = [...draftTags, value];
+    tagInputEl?.focus();
+  }
+
+  function removeDraftTag(tag: string) {
+    draftTags = draftTags.filter((t) => t !== tag);
+  }
+
+  function onTagInputKey(event: KeyboardEvent) {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      addDraftTag();
+    }
+  }
+
+  async function saveEdit() {
+    const pin = $lightboxPin;
+    if (!pin) return;
+    addDraftTag();
+    const ok = await actions.edit(pin, { title: draftTitle.trim(), tags: draftTags });
+    if (ok) editing = false;
+  }
+
+  // Leaving the pin (prev/next/close) drops an unsaved draft.
+  $effect(() => {
+    void $lightboxPin?.key;
+    editing = false;
+  });
+
   // Position of the open pin within the current results, for prev/next
   // navigation. -1 when the pin is no longer in the list (e.g. deleted).
   const pinIndex = $derived(
@@ -70,10 +124,16 @@
   function onKey(event: KeyboardEvent) {
     if (!$lightboxPin) return;
     // A focused <video controls> owns the arrow keys for seeking.
-    const onVideo = event.target instanceof HTMLElement && event.target.tagName === "VIDEO";
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const onVideo = target?.tagName === "VIDEO";
+    const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
     if (event.key === "Escape") {
+      if (editing) {
+        cancelEdit();
+        return;
+      }
       close();
-    } else if (onVideo) {
+    } else if (onVideo || typing) {
       return;
     } else if (event.key === "ArrowLeft") {
       event.preventDefault();
@@ -164,12 +224,26 @@
         <!-- Derived titles can be a full sentence; clamp so a long one cannot
              balloon into a screen-high headline (full text repeats in the
              description below). -->
-        <h2
-          class="pr-12 font-display text-[18px] md:text-[24px] font-semibold text-ink leading-tight m-0 line-clamp-3 [-webkit-box-orient:vertical] overflow-hidden"
-          title={pin.title}
-        >
-          {pin.title}
-        </h2>
+        {#if editing}
+          <label class="block pr-12">
+            <span class="sr-only">Title</span>
+            <input
+              data-lightbox-title-input
+              type="text"
+              bind:value={draftTitle}
+              maxlength="300"
+              placeholder="Title"
+              class="w-full box-border font-display text-[18px] md:text-[22px] font-semibold text-ink leading-tight bg-surface border border-line-2 rounded-[10px] px-3 py-2 outline-none focus:border-accent/60"
+            />
+          </label>
+        {:else}
+          <h2
+            class="pr-12 font-display text-[18px] md:text-[24px] font-semibold text-ink leading-tight m-0 line-clamp-3 [-webkit-box-orient:vertical] overflow-hidden"
+            title={pin.title}
+          >
+            {pin.title}
+          </h2>
+        {/if}
         <p class="text-sm text-muted mt-1 break-all m-0">{pin.filename}</p>
 
         {#if pin.summary && pin.summary !== pin.title && pin.summary !== pin.fullDescription}
@@ -206,7 +280,39 @@
               ▶ {formatDuration(pin.durationMs)}
             </span>
           {/if}
-          {#if pin.tags?.length}
+          {#if editing}
+            <div data-lightbox-tag-editor class="flex flex-wrap items-center gap-[5px]">
+              {#each draftTags as tag (tag)}
+                <span
+                  data-lightbox-draft-tag={tag}
+                  class="inline-flex items-center gap-1 text-[12px] font-medium leading-none bg-surface-2 text-ink-2 border border-transparent pl-[9px] pr-1 py-[3px] rounded-full"
+                >
+                  {tag}
+                  <button
+                    type="button"
+                    data-lightbox-tag-remove={tag}
+                    aria-label={`Remove tag ${tag}`}
+                    onclick={() => removeDraftTag(tag)}
+                    class="grid place-items-center w-4 h-4 rounded-full border-0 bg-transparent text-muted-2 cursor-pointer hover:bg-bad/15 hover:text-bad"
+                  >
+                    ×
+                  </button>
+                </span>
+              {/each}
+              <input
+                data-lightbox-tag-input
+                bind:this={tagInputEl}
+                bind:value={newTag}
+                type="text"
+                maxlength="64"
+                placeholder="Add tag"
+                aria-label="Add tag"
+                onkeydown={onTagInputKey}
+                onblur={addDraftTag}
+                class="text-[12px] leading-none bg-surface border border-line-2 rounded-full px-[9px] py-[5px] outline-none min-w-[96px] focus:border-accent/60"
+              />
+            </div>
+          {:else if pin.tags?.length}
             <div class="flex flex-wrap gap-[5px]">
               {#each pin.tags as tag (tag)}
                 <button
@@ -224,6 +330,34 @@
         </div>
 
         <div class="mt-[18px] flex flex-wrap gap-2">
+          {#if editing}
+            <button
+              type="button"
+              data-lightbox-edit-save
+              disabled={$actionPending}
+              onclick={saveEdit}
+              class="px-[14px] py-[9px] bg-ink text-[#fffdf8] border border-ink rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-[#2d2924] disabled:opacity-50 disabled:cursor-default"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              data-lightbox-edit-cancel
+              onclick={cancelEdit}
+              class="px-[14px] py-[9px] bg-surface text-ink-2 border border-line-2 rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-surface-2"
+            >
+              Cancel
+            </button>
+          {:else}
+            <button
+              type="button"
+              data-lightbox-action="edit"
+              onclick={startEdit}
+              class="px-[14px] py-[9px] bg-surface text-ink-2 border border-line-2 rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-surface-2"
+            >
+              Edit
+            </button>
+          {/if}
           <button
             type="button"
             class="px-[14px] py-[9px] bg-ink text-[#fffdf8] border border-ink rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-[#2d2924]"

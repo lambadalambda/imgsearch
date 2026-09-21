@@ -20,3 +20,4 @@ The only per-item mutations are delete, re-annotate, and toggle-NSFW (`internal/
 ## Notes
 
 - Found during the 2026-09-21 review.
+- Outcome (2026-09-21): `tags_json` stays the served list so search, tag cloud, and NSFW SQL are unchanged; `annotator_tags_json`, `user_tags_json`, `removed_tags_json`, and `user_title` (migration 13) let `internal/mediaops` re-merge on re-annotation. The Rail "Tags (soon)" explorer button is a separate feature and stays disabled.

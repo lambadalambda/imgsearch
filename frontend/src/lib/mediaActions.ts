@@ -1,7 +1,8 @@
 import { writable, type Readable } from "svelte/store";
-import { ApiError, deleteMedia, reannotate as reannotateApi, toggleNSFW } from "./api";
+import { ApiError, deleteMedia, reannotate as reannotateApi, toggleNSFW, updateMedia, type MediaMetadataPatch } from "./api";
 import { lightboxPin, pins } from "./stores";
 import type { Pin } from "./types";
+import { deriveTitle } from "./utils";
 
 /** The API target for a pin: videos act on their video id, images on the image id. */
 export function actionTarget(pin: Pick<Pin, "mediaType" | "imageId" | "videoId">): {
@@ -19,6 +20,13 @@ export function setPinNSFW(key: string, value: boolean): void {
   lightboxPin.update((p) => (p && p.key === key ? { ...p, isNSFW: value } : p));
 }
 
+/** Apply an edited title and tag list everywhere the pin is rendered from. */
+export function setPinMetadata(key: string, title: string, tags: string[]): void {
+  const apply = (p: Pin): Pin => ({ ...p, title, tags, isNSFW: tags.some((t) => t.toLowerCase() === "nsfw") });
+  pins.update((list) => list.map((p) => (p.key === key ? apply(p) : p)));
+  lightboxPin.update((p) => (p && p.key === key ? apply(p) : p));
+}
+
 /** Drop a pin from the results and close the lightbox if it shows that pin. */
 export function removePin(key: string): void {
   pins.update((list) => list.filter((p) => p.key !== key));
@@ -33,6 +41,8 @@ export interface MediaActions {
   flagNSFW(pin: Pin): Promise<boolean>;
   reannotate(pin: Pin): Promise<boolean>;
   remove(pin: Pin): Promise<boolean>;
+  /** Save a manual title and/or full tag list; the stores update from the server's response. */
+  edit(pin: Pin, patch: MediaMetadataPatch): Promise<boolean>;
 }
 
 /**
@@ -83,6 +93,13 @@ export function createMediaActions(): MediaActions {
       const ok = await run("delete", () => deleteMedia(kind, id));
       if (ok) removePin(pin.key);
       return ok;
+    },
+    async edit(pin, patch) {
+      const { kind, id } = actionTarget(pin);
+      return run("save", async () => {
+        const record = await updateMedia(kind, id, patch);
+        setPinMetadata(pin.key, deriveTitle(record), record.tags ?? []);
+      });
     },
   };
 }
