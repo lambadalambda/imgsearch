@@ -114,3 +114,4 @@
 - [x] [Ship or clearly disable video transcription in releases](issues/105-ship-onnxruntime-for-transcription-in-releases.md)
 - [x] [Apply EXIF orientation and extract capture date](issues/109-apply-exif-orientation-and-capture-date.md)
 - [x] [Add manual tag and title editing](issues/110-add-manual-tag-and-title-editing.md)
+- [x] [Add a near-duplicate finder](issues/111-add-near-duplicate-finder.md)

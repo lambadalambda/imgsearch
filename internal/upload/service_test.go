@@ -16,6 +16,7 @@ import (
 
 	"imgsearch/internal/db"
 	"imgsearch/internal/exif"
+	"imgsearch/internal/phash"
 )
 
 func setupService(t *testing.T) (*Service, *sql.DB) {
@@ -522,5 +523,39 @@ func TestStoreDefaultsVideoFrameCountToFive(t *testing.T) {
 	}
 	if frameCount != 5 {
 		t.Fatalf("stored video frames: got=%d want=5", frameCount)
+	}
+}
+
+// A JPEG and its WEBP copy get hashes within the duplicate distance
+// (meta/issues/111); an AVIF is stored as unhashable.
+func TestStoreComputesPerceptualHash(t *testing.T) {
+	svc, sqlDB := setupService(t)
+	jpeg, err := svc.Store(context.Background(), "cat.jpg", bytes.NewReader(fixtureImageBytes(t, "cat_2.jpg")))
+	if err != nil {
+		t.Fatalf("store jpeg: %v", err)
+	}
+	webp, err := svc.Store(context.Background(), "cat.webp", bytes.NewReader(fixtureImageBytes(t, "cat_2.webp")))
+	if err != nil {
+		t.Fatalf("store webp: %v", err)
+	}
+	avif, err := svc.Store(context.Background(), "dog.avif", bytes.NewReader(fixtureImageBytes(t, "dog_2.avif")))
+	if err != nil {
+		t.Fatalf("store avif: %v", err)
+	}
+	var jpegHash, webpHash, avifHash int64
+	if err := sqlDB.QueryRow(`SELECT phash FROM images WHERE id = ?`, jpeg.ImageID).Scan(&jpegHash); err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.QueryRow(`SELECT phash FROM images WHERE id = ?`, webp.ImageID).Scan(&webpHash); err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.QueryRow(`SELECT phash FROM images WHERE id = ?`, avif.ImageID).Scan(&avifHash); err != nil {
+		t.Fatal(err)
+	}
+	if jpegHash == phash.Unhashable || webpHash == phash.Unhashable || avifHash != phash.Unhashable {
+		t.Fatalf("hashes: jpeg=%d webp=%d avif=%d", jpegHash, webpHash, avifHash)
+	}
+	if d := phash.Distance(phash.FromInt64(jpegHash), phash.FromInt64(webpHash)); d > 6 {
+		t.Fatalf("jpeg/webp distance %d, want <= 6", d)
 	}
 }

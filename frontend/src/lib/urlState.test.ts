@@ -6,6 +6,7 @@ describe("parseSearch", () => {
     expect(parseSearch("")).toEqual({ mode: "library" });
     expect(parseSearch("?view=stats")).toEqual({ mode: "stats" });
     expect(parseSearch("?view=settings")).toEqual({ mode: "settings" });
+    expect(parseSearch("?view=duplicates")).toEqual({ mode: "duplicates" });
     expect(parseSearch("?q=warm+portrait")).toEqual({ mode: "search", query: "warm portrait" });
     expect(parseSearch("?similar=42")).toEqual({ mode: "similar", similarTo: 42 });
     expect(parseSearch("?tag=cat&tag=indoor&tag_mode=all")).toEqual({ mode: "tag", tags: ["cat", "indoor"], tagMode: "all" });
@@ -25,6 +26,7 @@ describe("searchFor", () => {
       { mode: "library" },
       { mode: "stats" },
       { mode: "settings" },
+      { mode: "duplicates" },
       { mode: "search", query: "a b & c" },
       { mode: "similar", similarTo: 9 },
       { mode: "tag", tags: ["cat", "sun set"], tagMode: "any" },

@@ -135,6 +135,7 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 	mux.Handle("/api/videos", videoHandler)
 	mux.Handle("/api/videos/", videoHandler)
 	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: opts.Data.DB, ModelID: opts.ModelID}))
+	mux.Handle("/api/duplicates", images.NewDuplicatesHandler(&images.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, DataDir: opts.DataDir}))
 	mux.Handle("/api/live", live.NewHandler(&live.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, Interval: opts.LiveInterval, ImagesLimit: opts.LiveImagesLimit, ImagesOffset: opts.LiveImagesOffset}))
 	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: opts.Data.DB, ModelID: opts.ModelID}))
 	mux.Handle("/api/jobs/reannotate-all", jobs.NewReannotateAllHandler(&jobs.ReannotateAllHandler{DB: opts.Data.DB, ModelID: opts.ModelID}))

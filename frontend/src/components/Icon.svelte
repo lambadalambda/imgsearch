@@ -4,6 +4,7 @@
     | "search"
     | "tags"
     | "stats"
+    | "duplicates"
     | "feed"
     | "upload"
     | "settings"
@@ -63,6 +64,14 @@
       <line x1="10" y1="20" x2="10" y2="9" />
       <line x1="16" y1="20" x2="16" y2="4" />
       <line x1="3" y1="20" x2="21" y2="20" />
+    </g>
+  </svg>
+{:else if name === "duplicates"}
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+    {#if title}<title>{title}</title>{/if}
+    <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="13" height="13" rx="2" />
+      <path d="M8 21h11a2 2 0 0 0 2-2V8" />
     </g>
   </svg>
 {:else if name === "feed"}

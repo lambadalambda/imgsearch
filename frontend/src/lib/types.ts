@@ -266,3 +266,14 @@ export interface ModelListResult {
   models: string[];
   error?: string;
 }
+
+export interface DuplicateGroup {
+  items: ImageRecord[];
+}
+
+export interface DuplicatesResponse {
+  groups: DuplicateGroup[];
+  max_distance: number;
+  scanned: number;
+  unhashed: number;
+}

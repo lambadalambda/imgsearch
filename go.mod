@@ -8,3 +8,5 @@ require (
 	github.com/yalue/onnxruntime_go v1.27.1-0.20260306153917-1d7bacb9a7ee
 	gonum.org/v1/gonum v0.17.0
 )
+
+require golang.org/x/image v0.25.0

@@ -288,6 +288,14 @@ UPDATE images SET annotator_tags_json = COALESCE(tags_json, '[]'), annotator_tit
 UPDATE videos SET annotator_tags_json = COALESCE(tags_json, '[]'), annotator_title = COALESCE(title, '');
 `,
 	},
+	{
+		// Perceptual hash for near-duplicate detection. NULL means not
+		// computed yet (backfilled at startup); -1 means undecodable.
+		version: 14,
+		sql: `
+ALTER TABLE images ADD COLUMN phash INTEGER;
+`,
+	},
 }
 
 func LatestVersion() int {

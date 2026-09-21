@@ -20,6 +20,7 @@ import (
 
 	"imgsearch/internal/exif"
 	"imgsearch/internal/jobkind"
+	"imgsearch/internal/phash"
 )
 
 var (
@@ -104,6 +105,19 @@ func looksLikeMP4(header []byte) bool {
 	}
 	brand := string(header[8:12])
 	return strings.HasPrefix(brand, "mp4") || strings.HasPrefix(brand, "iso") || brand == "isom" || brand == "qt  "
+}
+
+// hashUpload computes the perceptual hash of the spooled upload, or marks
+// it unhashable when no decoder handles the format.
+func hashUpload(tmpFile *os.File) int64 {
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return phash.Unhashable
+	}
+	h, err := phash.Compute(tmpFile)
+	if err != nil {
+		return phash.Unhashable
+	}
+	return phash.ToInt64(h)
 }
 
 // exifInfoFromFile reads orientation and capture time for JPEG uploads;
@@ -289,6 +303,7 @@ func (s *Service) Store(ctx context.Context, originalName string, src io.Reader)
 	if !exifInfo.CapturedAt.IsZero() {
 		capturedAt = exif.SQLiteTime(exifInfo.CapturedAt)
 	}
+	perceptualHash := hashUpload(tmpFile)
 
 	storageRel := filepath.ToSlash(filepath.Join("images", digest))
 	storageAbs := filepath.Join(s.DataDir, storageRel)
@@ -299,10 +314,10 @@ func (s *Service) Store(ctx context.Context, originalName string, src io.Reader)
 	}
 
 	res, err := tx.ExecContext(ctx, `
-INSERT INTO images(sha256, original_name, storage_path, mime_type, width, height, captured_at)
-VALUES(?, ?, ?, ?, ?, ?, ?)
+INSERT INTO images(sha256, original_name, storage_path, mime_type, width, height, captured_at, phash)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(sha256) DO NOTHING
-`, digest, originalName, storageRel, mime, width, height, capturedAt)
+`, digest, originalName, storageRel, mime, width, height, capturedAt, perceptualHash)
 	if err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert image: %w", err)
@@ -512,12 +527,13 @@ func (s *Service) storeVideoFrameTx(ctx context.Context, tx *sql.Tx, videoID int
 	storageRel := filepath.ToSlash(filepath.Join("images", digest))
 	storageAbs := filepath.Join(s.DataDir, storageRel)
 
-	// Sampled frames come from ffmpeg and carry no EXIF: mark them scanned.
+	// Sampled frames come from ffmpeg and carry no EXIF: mark them scanned,
+	// and keep them out of duplicate detection.
 	res, err := tx.ExecContext(ctx, `
-INSERT INTO images(sha256, original_name, storage_path, mime_type, width, height, captured_at)
-VALUES(?, ?, ?, ?, ?, ?, '')
+INSERT INTO images(sha256, original_name, storage_path, mime_type, width, height, captured_at, phash)
+VALUES(?, ?, ?, ?, ?, ?, '', ?)
 ON CONFLICT(sha256) DO NOTHING
-`, digest, filepath.Base(frame.Path), storageRel, mime, width, height)
+`, digest, filepath.Base(frame.Path), storageRel, mime, width, height, phash.Unhashable)
 	if err != nil {
 		return 0, "", fmt.Errorf("insert sampled frame image: %w", err)
 	}

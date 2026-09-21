@@ -81,6 +81,10 @@ export function setStats(): void {
   mode.set({ mode: "stats" });
 }
 
+export function setDuplicates(): void {
+  mode.set({ mode: "duplicates" });
+}
+
 export function setSettings(): void {
   mode.set({ mode: "settings" });
 }
@@ -165,6 +169,9 @@ export const headline = derived(mode, ($mode) => {
   }
   if ($mode.mode === "settings") {
     return "Settings";
+  }
+  if ($mode.mode === "duplicates") {
+    return "Duplicates";
   }
   return "Library";
 });

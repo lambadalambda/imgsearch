@@ -1,4 +1,4 @@
-export type ViewMode = "library" | "search" | "similar" | "tag" | "stats" | "settings";
+export type ViewMode = "library" | "search" | "similar" | "tag" | "stats" | "settings" | "duplicates";
 
 export interface AppMode {
   mode: ViewMode;
@@ -16,6 +16,9 @@ export function parseSearch(search: string): AppMode {
   }
   if (params.get("view") === "settings") {
     return { mode: "settings" };
+  }
+  if (params.get("view") === "duplicates") {
+    return { mode: "duplicates" };
   }
   const q = params.get("q");
   const similar = params.get("similar");
@@ -40,6 +43,8 @@ export function searchFor(state: AppMode): string {
     params.set("view", "stats");
   } else if (state.mode === "settings") {
     params.set("view", "settings");
+  } else if (state.mode === "duplicates") {
+    params.set("view", "duplicates");
   } else if (state.mode === "search" && state.query) {
     params.set("q", state.query);
   } else if (state.mode === "similar" && state.similarTo !== undefined) {

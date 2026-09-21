@@ -214,6 +214,8 @@ async function serveDist(res, pathname) {
 
 let nsfwToggleCount = 0;
 const metadataPatches = [];
+const duplicateRequests = [];
+const deletedImageIds = new Set();
 let statsServed = 0;
 let reannotateCount = 0;
 let deleteCount = 0;
@@ -509,6 +511,16 @@ const server = createServer(async (req, res) => {
       });
       return;
     }
+    if (url.pathname === "/api/duplicates") {
+      duplicateRequests.push({ distance: url.searchParams.get("distance") });
+      const record = (i, width, height) => ({ ...sampleImages[i], width, height, index_state: "done" });
+      const groups = [
+        { items: [record(12, 1200, 900), record(13, 300, 200), record(14, 300, 200)] },
+        { items: [record(10, 1000, 800), record(11, 500, 400)] },
+      ].map((group) => ({ items: group.items.filter((item) => !deletedImageIds.has(item.image_id)) })).filter((group) => group.items.length > 1);
+      jsonResponse(res, 200, { groups, max_distance: 4, scanned: 144, unhashed: 0 });
+      return;
+    }
     if (/^\/api\/images\/\d+$/.test(url.pathname) && req.method === "PATCH") {
       const imageId = Number(url.pathname.split("/").pop());
       const image = sampleImages.find((entry) => entry.image_id === imageId);
@@ -537,6 +549,7 @@ const server = createServer(async (req, res) => {
     }
     if (/^\/api\/(images|videos)\/\d+$/.test(url.pathname) && req.method === "DELETE") {
       deleteCount += 1;
+      if (url.pathname.startsWith("/api/images/")) deletedImageIds.add(Number(url.pathname.split("/").pop()));
       res.writeHead(204);
       res.end();
       return;
@@ -1805,6 +1818,38 @@ try {
   if (reloadedTitle !== "Handpicked title") {
     throw new Error(`expected the edited title after reload, got ${JSON.stringify(reloadedTitle)}`);
   }
+
+  // 6e. Near-duplicate finder (meta/issues/111): groups render side by
+  //     side, per-item delete removes the copy, and "Keep largest" deletes
+  //     every smaller copy of a group.
+  const deletesBeforeDuplicates = deleteCount;
+  await page.locator('button[aria-label="Duplicates"]').click();
+  await page.waitForURL(/view=duplicates/, { timeout: 5000 });
+  await page.locator("[data-duplicates-pane]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator('[data-duplicate-group="1"]').waitFor({ state: "visible", timeout: 5000 });
+  if ((await page.locator('[data-duplicate-group="0"] [data-duplicate-item]').count()) !== 3) {
+    throw new Error("expected the first duplicate group to list three copies");
+  }
+  await page.locator('[data-duplicate-delete="1011"]').click();
+  await page.locator("[data-confirm-dialog]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-confirm-accept]").click();
+  await page.waitForFunction(() => document.querySelectorAll("[data-duplicate-group]").length === 1, {}, { timeout: 5000 });
+  if (deleteCount !== deletesBeforeDuplicates + 1) {
+    throw new Error(`expected one DELETE from the duplicates view, got ${deleteCount - deletesBeforeDuplicates}`);
+  }
+  await page.locator('[data-duplicate-group="0"] [data-duplicate-keep-largest]').click();
+  await page.locator("[data-confirm-dialog]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-confirm-accept]").click();
+  await page.locator("[data-duplicates-empty]").waitFor({ state: "visible", timeout: 5000 });
+  if (deleteCount !== deletesBeforeDuplicates + 3) {
+    throw new Error(`expected keep-largest to delete the two smaller copies, got ${deleteCount - deletesBeforeDuplicates - 1}`);
+  }
+  if (duplicateRequests.length === 0 || duplicateRequests[0].distance !== "4") {
+    throw new Error(`expected the duplicates request to carry the default distance, got ${JSON.stringify(duplicateRequests)}`);
+  }
+  await page.locator('button[aria-label="Library"]').click();
+  await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
+  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
 
   // 7. Load more — ensure clicking it grows the masonry.
   const beforeLoadMore = await page.locator("[data-pin]").count();

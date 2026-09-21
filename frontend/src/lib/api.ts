@@ -1,4 +1,4 @@
-import type { ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord } from "./types";
+import type { ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse } from "./types";
 
 class ApiError extends Error {
   constructor(
@@ -386,4 +386,12 @@ export type ReannotateMedia = "all" | "images" | "videos";
 
 export async function reannotateAll(media: ReannotateMedia = "all"): Promise<ReannotateAllResponse> {
   return (await postJSON(`/api/jobs/reannotate-all?media=${media}`)) as ReannotateAllResponse;
+}
+
+export async function listDuplicates(opts: { distance?: number; includeNSFW?: boolean } = {}): Promise<DuplicatesResponse> {
+  const params = new URLSearchParams();
+  if (opts.distance !== undefined) params.set("distance", String(opts.distance));
+  if (opts.includeNSFW) params.set("include_nsfw", "1");
+  const query = params.toString();
+  return getJSON<DuplicatesResponse>(`/api/duplicates${query ? `?${query}` : ""}`);
 }

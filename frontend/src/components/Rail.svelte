@@ -10,12 +10,13 @@
     setLibrary,
     setSettings,
     setStats,
+    setDuplicates,
     uploadOpen,
   } from "../lib/stores";
   import { pinFromVideo } from "../lib/utils";
 
   type RailItem = {
-    id: "library" | "search" | "tags" | "stats" | "feed" | "upload";
+    id: "library" | "search" | "tags" | "stats" | "duplicates" | "feed" | "upload";
     label: string;
     onClick?: () => void;
     disabled?: boolean;
@@ -77,6 +78,12 @@
       label: "Statistics",
       onClick: () => setStats(),
       activeWhen: (s) => s.mode === "stats",
+    },
+    {
+      id: "duplicates",
+      label: "Duplicates",
+      onClick: () => setDuplicates(),
+      activeWhen: (s) => s.mode === "duplicates",
     },
     {
       id: "feed",

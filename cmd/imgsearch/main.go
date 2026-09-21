@@ -205,6 +205,12 @@ func main() {
 			} else if filled > 0 {
 				log.Printf("backfilled captured_at for %d images", filled)
 			}
+			hashed, err := db.BackfillPhash(rootCtx, sqlDB, cfg.DataDir)
+			if err != nil && rootCtx.Err() == nil {
+				log.Printf("phash backfill failed: %v", err)
+			} else if hashed > 0 {
+				log.Printf("backfilled perceptual hashes for %d images", hashed)
+			}
 		}()
 	}
 	enqueuedVideoAnnotationJobs, err := db.EnsureVideoAnnotationJobsForModel(rootCtx, sqlDB, modelID)

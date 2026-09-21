@@ -18,3 +18,4 @@ Deduplication is exact sha256 only (`internal/upload/service.go:198`). Resized, 
 ## Notes
 
 - Found during the 2026-09-21 review.
+- Outcome (2026-09-21): 64-bit dHash (`internal/phash`, pure Go via image/jpeg, image/png, image/gif, and golang.org/x/image/webp) stored in `images.phash` (migration 14, backfilled at startup; AVIF and sampled video frames are marked unhashable). `GET /api/duplicates?distance=N` groups by an 8-band index that is exact up to distance 7. The optional embedding-cosine confirmation was not built; the Atelier Duplicates view offers per-item delete and "Keep largest".

@@ -5,6 +5,7 @@
   import QuickRow from "./components/QuickRow.svelte";
   import StatisticsPane from "./components/StatisticsPane.svelte";
   import SettingsPane from "./components/SettingsPane.svelte";
+  import DuplicatesPane from "./components/DuplicatesPane.svelte";
   import Masonry from "./components/Masonry.svelte";
   import Lightbox from "./components/Lightbox.svelte";
   import Upload from "./components/Upload.svelte";
@@ -291,6 +292,8 @@
       <StatisticsPane />
     {:else if $mode.mode === "settings"}
       <SettingsPane />
+    {:else if $mode.mode === "duplicates"}
+      <DuplicatesPane />
     {:else}
       <div
         data-results-meta
