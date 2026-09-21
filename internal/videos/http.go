@@ -43,6 +43,8 @@ type VideoItem struct {
 	FrameCount      int      `json:"frame_count"`
 	IndexState      string   `json:"index_state"`
 	CreatedAt       string   `json:"created_at"`
+	// CapturedAt mirrors CreatedAt: videos carry no capture metadata yet.
+	CapturedAt string `json:"captured_at"`
 }
 
 type ListResponse struct {
@@ -51,9 +53,10 @@ type ListResponse struct {
 }
 
 const (
-	listOrderNewest = "newest"
-	listOrderRandom = "random"
-	randomOrderMask = int64(2147483647)
+	listOrderNewest   = "newest"
+	listOrderRandom   = "random"
+	listOrderCaptured = "captured" // no capture metadata for videos: same as newest
+	randomOrderMask   = int64(2147483647)
 )
 
 func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool) (ListResponse, error) {
@@ -206,6 +209,7 @@ LIMIT ? OFFSET ?
 		); err != nil {
 			return ListResponse{}, fmt.Errorf("decode video row: %w", err)
 		}
+		item.CapturedAt = item.CreatedAt
 		tags, err := tagutil.DecodeJSON(tagsJSON)
 		if err != nil {
 			return ListResponse{}, fmt.Errorf("decode video %d tags: %w", item.VideoID, err)
@@ -241,7 +245,7 @@ func NewHandler(h *Handler) http.Handler {
 			limit := httputil.ParseLimitQuery(r, 50)
 			offset := httputil.ParseOffsetQuery(r, 0)
 			includeNSFW := httputil.ParseIncludeNSFWQuery(r)
-			order := httputil.ParseOrderQuery(r, listOrderNewest, listOrderNewest, listOrderRandom)
+			order := httputil.ParseOrderQuery(r, listOrderNewest, listOrderNewest, listOrderRandom, listOrderCaptured)
 			seed := httputil.ParseInt64Query(r, "seed", 0)
 
 			resp, err := listWithOrder(r.Context(), h.DB, h.ModelID, limit, offset, includeNSFW, order, seed)

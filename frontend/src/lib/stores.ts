@@ -3,7 +3,7 @@ import type { Pin, StatsResponse } from "./types";
 import { parseSearch, searchFor, type AppMode } from "./urlState";
 
 export type { AppMode, ViewMode } from "./urlState";
-export type LibrarySort = "random" | "newest";
+export type LibrarySort = "random" | "newest" | "captured";
 export type LibraryMedia = "all" | "images" | "videos";
 
 function readURL(): AppMode {
@@ -119,7 +119,7 @@ export const includeNSFW = persistedStore<boolean>("includeNSFW", false, (raw) =
 );
 
 export const librarySort = persistedStore<LibrarySort>("librarySort", "random", (raw) =>
-  raw === "random" || raw === "newest" ? raw : undefined,
+  raw === "random" || raw === "newest" || raw === "captured" ? raw : undefined,
 );
 
 export const libraryMedia = persistedStore<LibraryMedia>("libraryMedia", "all", (raw) =>

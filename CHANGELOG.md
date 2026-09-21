@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(images): read JPEG EXIF at upload with a dependency-free parser: orientation 5..8 stores the displayed (swapped) width/height so rotated phone photos get the right aspect in the grid, and `DateTimeOriginal` lands in a new `images.captured_at` column (backfilled at startup for existing files). The list APIs accept `order=captured` and return `captured_at` (upload time when no EXIF date), and the Atelier header gains a "Date taken" sort (issue 109).
 - feat(transcription): ship video transcription in releases and the CUDA container by bundling the pinned ONNX Runtime 1.24.1 under `lib/` and passing it from the `run.sh` wrappers; `scripts/resolve_onnxruntime_lib.sh` now downloads that official build into `tools/onnxruntime/` for Linux x86_64/aarch64 and macOS arm64 (`IMGSEARCH_ONNXRUNTIME_LIB` overrides it), and startup logs one clear line when transcription is disabled (issue 105).
 - test(frontend): add a vitest unit test runner (`cd frontend && npm test`, also run by `mise run test` and CI) and move the library ordering and URL state logic out of `App.svelte` and `stores.ts` into `lib/library.ts` and `lib/urlState.ts`, with tests for those, the feed feedback model, and the pin helpers (issue 108).
 - ci: fail on unformatted Go files and vet warnings, run the Go suite under the race detector on Linux, type-check and build the Atelier frontend, run the shell script tests, and run the Playwright smoke suites against the built dist (issue 104).

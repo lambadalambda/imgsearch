@@ -893,6 +893,17 @@ try {
   if (newestSortRequest.offset !== 0 || newestSortRequest.order !== "newest" || newestSortRequest.seed) {
     throw new Error(`expected recently-added sort to request newest first page, got ${JSON.stringify(newestSortRequest)}`);
   }
+  // "Date taken" asks the API for the captured order (meta/issues/109).
+  const requestsBeforeCapturedSort = imagesRequests.length;
+  await sortSelect.selectOption("captured");
+  const capturedSortDeadline = Date.now() + 5000;
+  while (imagesRequests.length <= requestsBeforeCapturedSort && Date.now() < capturedSortDeadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const capturedSortRequest = imagesRequests[imagesRequests.length - 1];
+  if (capturedSortRequest.offset !== 0 || capturedSortRequest.order !== "captured" || capturedSortRequest.seed) {
+    throw new Error(`expected date-taken sort to request the captured order, got ${JSON.stringify(capturedSortRequest)}`);
+  }
   const requestsBeforeRandomSort = imagesRequests.length;
   await sortSelect.selectOption("random");
   const randomSortDeadline = Date.now() + 5000;

@@ -195,6 +195,18 @@ func main() {
 	if recordedCompletedAnnotationJobs > 0 {
 		log.Printf("recorded %d completed annotation jobs for model_id=%d", recordedCompletedAnnotationJobs, modelID)
 	}
+	if mode.startsWorker() {
+		// One-off scan of pre-existing rows for the EXIF capture time; runs
+		// in the background so startup is not delayed by large libraries.
+		go func() {
+			filled, err := db.BackfillCapturedAt(rootCtx, sqlDB, cfg.DataDir)
+			if err != nil && rootCtx.Err() == nil {
+				log.Printf("captured_at backfill failed: %v", err)
+			} else if filled > 0 {
+				log.Printf("backfilled captured_at for %d images", filled)
+			}
+		}()
+	}
 	enqueuedVideoAnnotationJobs, err := db.EnsureVideoAnnotationJobsForModel(rootCtx, sqlDB, modelID)
 	if err != nil {
 		log.Fatalf("ensure video annotation jobs: %v", err)

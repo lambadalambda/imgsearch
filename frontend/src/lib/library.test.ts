@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { combineLibraryPins, newLibrarySeed, randomKey } from "./library";
 import type { Pin } from "./types";
 
-function pin(key: string, createdAt?: string): Pin {
-  return { key, imageId: 1, mediaType: key.startsWith("video") ? "video" : "image", thumbUrl: "", mediaUrl: "", title: key, tags: [], createdAt } as unknown as Pin;
+function pin(key: string, createdAt?: string, capturedAt?: string): Pin {
+  return { key, imageId: 1, mediaType: key.startsWith("video") ? "video" : "image", thumbUrl: "", mediaUrl: "", title: key, tags: [], createdAt, capturedAt } as unknown as Pin;
 }
 
 describe("newLibrarySeed / randomKey", () => {
@@ -28,6 +28,15 @@ describe("combineLibraryPins", () => {
       0,
     );
     expect(out.map((p) => p.key)).toEqual(["video:2", "image:2", "video:1", "image:1"]);
+  });
+  it("sorts by capture time with upload time as the fallback, accepting SQLite timestamps", () => {
+    const out = combineLibraryPins(
+      [pin("image:1", "2026-01-01 00:00:00", "2019-06-01 12:00:00"), pin("image:2", "2026-03-01 00:00:00", "")],
+      [pin("video:1", "2026-02-01 00:00:00")],
+      "captured",
+      0,
+    );
+    expect(out.map((p) => p.key)).toEqual(["image:2", "video:1", "image:1"]);
   });
   it("interleaves images and videos deterministically for a seed and keeps every pin", () => {
     const images = [pin("image:1"), pin("image:2"), pin("image:3")];

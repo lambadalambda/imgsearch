@@ -22,14 +22,16 @@ type Handler struct {
 }
 
 type ImageItem struct {
-	ImageID         int64    `json:"image_id"`
-	OriginalName    string   `json:"original_name"`
-	StoragePath     string   `json:"storage_path"`
-	MimeType        string   `json:"mime_type"`
-	Width           int      `json:"width"`
-	Height          int      `json:"height"`
-	IndexState      string   `json:"index_state"`
-	CreatedAt       string   `json:"created_at"`
+	ImageID      int64  `json:"image_id"`
+	OriginalName string `json:"original_name"`
+	StoragePath  string `json:"storage_path"`
+	MimeType     string `json:"mime_type"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	IndexState   string `json:"index_state"`
+	CreatedAt    string `json:"created_at"`
+	// CapturedAt is the EXIF capture time when known, else the upload time.
+	CapturedAt      string   `json:"captured_at"`
 	Title           string   `json:"title,omitempty"`
 	Summary         string   `json:"summary,omitempty"`
 	Description     string   `json:"description,omitempty"`
@@ -44,9 +46,11 @@ type ListResponse struct {
 }
 
 const (
-	listOrderNewest = "newest"
-	listOrderRandom = "random"
-	randomOrderMask = int64(2147483647)
+	listOrderNewest   = "newest"
+	listOrderRandom   = "random"
+	listOrderCaptured = "captured"
+	capturedAtExpr    = "COALESCE(NULLIF(i.captured_at, ''), i.created_at)"
+	randomOrderMask   = int64(2147483647)
 )
 
 func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool) (ListResponse, error) {
@@ -67,6 +71,9 @@ func listWithOrder(ctx context.Context, db *sql.DB, modelID int64, limit int, of
 	imageHasNSFWExpr := nsfwsql.TagsJSONHasNSFW("i.tags_json", "tag")
 	orderClause := "i.id DESC"
 	args := []any{modelID, jobkind.EmbedImage, includeNSFWInt}
+	if order == listOrderCaptured {
+		orderClause = capturedAtExpr + " DESC, i.id DESC"
+	}
 	if order == listOrderRandom {
 		seed = seed & randomOrderMask
 		orderClause = "((((i.id * 1103515245 + ?) & 2147483647) | (((i.id * 1103515245 + ?) & 2147483647) >> 16)) * 1103515245 + 12345) & 2147483647 ASC, i.id ASC"
@@ -92,7 +99,8 @@ WHERE NOT EXISTS (
 SELECT i.id, i.original_name, i.storage_path, i.thumbnail_path, i.mime_type, i.width, i.height,
 	COALESCE(i.title, ''), COALESCE(i.summary, ''), COALESCE(i.description, ''), COALESCE(i.tags_json, '[]'),
 	COALESCE(j.state, 'pending') AS state,
-	i.created_at
+	i.created_at,
+	COALESCE(NULLIF(i.captured_at, ''), i.created_at) AS captured_at
 FROM images i
 LEFT JOIN index_jobs j
 	ON j.image_id = i.id
@@ -134,6 +142,7 @@ LIMIT ? OFFSET ?
 			&tagsJSON,
 			&item.IndexState,
 			&item.CreatedAt,
+			&item.CapturedAt,
 		); err != nil {
 			return ListResponse{}, fmt.Errorf("decode image row: %w", err)
 		}
@@ -174,7 +183,7 @@ func NewHandler(h *Handler) http.Handler {
 			limit := httputil.ParseLimitQuery(r, 50)
 			offset := httputil.ParseOffsetQuery(r, 0)
 			includeNSFW := httputil.ParseIncludeNSFWQuery(r)
-			order := httputil.ParseOrderQuery(r, listOrderNewest, listOrderNewest, listOrderRandom)
+			order := httputil.ParseOrderQuery(r, listOrderNewest, listOrderNewest, listOrderRandom, listOrderCaptured)
 			seed := httputil.ParseInt64Query(r, "seed", 0)
 
 			resp, err := listWithOrder(r.Context(), h.DB, h.ModelID, limit, offset, includeNSFW, order, seed)

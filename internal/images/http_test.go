@@ -800,3 +800,38 @@ func hasTag(tags []string, target string) bool {
 	}
 	return false
 }
+
+func TestListImagesCapturedOrderUsesExifTimeThenUploadTime(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET captured_at = CASE id WHEN 1 THEN '2030-01-01 00:00:00' WHEN 2 THEN '' ELSE NULL END,
+                  created_at = CASE id WHEN 1 THEN '2020-01-01 00:00:00' WHEN 2 THEN '2021-01-01 00:00:00' ELSE '2022-01-01 00:00:00' END
+`); err != nil {
+		t.Fatalf("seed captured_at: %v", err)
+	}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/images?order=captured&limit=10", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp ListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var ids []int64
+	var captured []string
+	for _, item := range resp.Images {
+		ids = append(ids, item.ImageID)
+		captured = append(captured, item.CapturedAt)
+	}
+	// 1 has a real capture time in 2030, 3 and 2 fall back to their upload times.
+	if !reflect.DeepEqual(ids, []int64{1, 3, 2}) {
+		t.Fatalf("captured order: got=%v want=[1 3 2]", ids)
+	}
+	if !reflect.DeepEqual(captured, []string{"2030-01-01 00:00:00", "2022-01-01 00:00:00", "2021-01-01 00:00:00"}) {
+		t.Fatalf("captured_at values: %v", captured)
+	}
+}

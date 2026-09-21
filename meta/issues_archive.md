@@ -112,3 +112,4 @@
 - [x] [Extend CI beyond `go test`](issues/104-extend-ci-checks.md)
 - [x] [Add a frontend unit test runner for pure logic](issues/108-add-frontend-unit-tests.md)
 - [x] [Ship or clearly disable video transcription in releases](issues/105-ship-onnxruntime-for-transcription-in-releases.md)
+- [x] [Apply EXIF orientation and extract capture date](issues/109-apply-exif-orientation-and-capture-date.md)

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"imgsearch/internal/exif"
 	"imgsearch/internal/jobkind"
 )
 
@@ -103,6 +104,22 @@ func looksLikeMP4(header []byte) bool {
 	}
 	brand := string(header[8:12])
 	return strings.HasPrefix(brand, "mp4") || strings.HasPrefix(brand, "iso") || brand == "isom" || brand == "qt  "
+}
+
+// exifInfoFromFile reads orientation and capture time for JPEG uploads;
+// other formats report an empty Info.
+func exifInfoFromFile(tmpFile *os.File, mime string) (exif.Info, error) {
+	if mime != "image/jpeg" {
+		return exif.Info{}, nil
+	}
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return exif.Info{}, fmt.Errorf("seek for exif: %w", err)
+	}
+	info, err := exif.Parse(tmpFile)
+	if err != nil {
+		return exif.Info{}, fmt.Errorf("read exif: %w", err)
+	}
+	return info, nil
 }
 
 func decodeDimensions(tmpFile *os.File, mime string) (int, int, error) {
@@ -257,6 +274,21 @@ func (s *Service) Store(ctx context.Context, originalName string, src io.Reader)
 		}
 		return StoreResult{}, err
 	}
+	// EXIF orientation 5..8 rotates the picture by 90°: store the displayed
+	// dimensions so the grid reserves the right aspect ratio. The bytes on
+	// disk stay untouched; libvips auto-rotates for embedding and browsers
+	// honour the tag when rendering.
+	exifInfo, err := exifInfoFromFile(tmpFile, mime)
+	if err != nil {
+		return StoreResult{}, err
+	}
+	if exifInfo.SwapsDimensions() {
+		width, height = height, width
+	}
+	capturedAt := ""
+	if !exifInfo.CapturedAt.IsZero() {
+		capturedAt = exif.SQLiteTime(exifInfo.CapturedAt)
+	}
 
 	storageRel := filepath.ToSlash(filepath.Join("images", digest))
 	storageAbs := filepath.Join(s.DataDir, storageRel)
@@ -267,10 +299,10 @@ func (s *Service) Store(ctx context.Context, originalName string, src io.Reader)
 	}
 
 	res, err := tx.ExecContext(ctx, `
-INSERT INTO images(sha256, original_name, storage_path, mime_type, width, height)
-VALUES(?, ?, ?, ?, ?, ?)
+INSERT INTO images(sha256, original_name, storage_path, mime_type, width, height, captured_at)
+VALUES(?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(sha256) DO NOTHING
-`, digest, originalName, storageRel, mime, width, height)
+`, digest, originalName, storageRel, mime, width, height, capturedAt)
 	if err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert image: %w", err)
@@ -480,9 +512,10 @@ func (s *Service) storeVideoFrameTx(ctx context.Context, tx *sql.Tx, videoID int
 	storageRel := filepath.ToSlash(filepath.Join("images", digest))
 	storageAbs := filepath.Join(s.DataDir, storageRel)
 
+	// Sampled frames come from ffmpeg and carry no EXIF: mark them scanned.
 	res, err := tx.ExecContext(ctx, `
-INSERT INTO images(sha256, original_name, storage_path, mime_type, width, height)
-VALUES(?, ?, ?, ?, ?, ?)
+INSERT INTO images(sha256, original_name, storage_path, mime_type, width, height, captured_at)
+VALUES(?, ?, ?, ?, ?, ?, '')
 ON CONFLICT(sha256) DO NOTHING
 `, digest, filepath.Base(frame.Path), storageRel, mime, width, height)
 	if err != nil {

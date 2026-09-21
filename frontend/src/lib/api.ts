@@ -50,7 +50,7 @@ export interface ListImagesOptions {
   limit?: number;
   offset?: number;
   includeNSFW?: boolean;
-  order?: "newest" | "random";
+  order?: "newest" | "random" | "captured";
   seed?: number;
   signal?: AbortSignal;
 }

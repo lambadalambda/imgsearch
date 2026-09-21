@@ -260,6 +260,14 @@ BEGIN
 END;
 `,
 	},
+	{
+		// EXIF capture time. NULL means "not scanned yet" (backfilled at
+		// startup), "" means scanned with no EXIF date.
+		version: 12,
+		sql: `
+ALTER TABLE images ADD COLUMN captured_at TEXT;
+`,
+	},
 }
 
 func LatestVersion() int {

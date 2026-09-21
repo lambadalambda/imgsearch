@@ -20,3 +20,4 @@ No EXIF handling exists anywhere in `internal/`. Rotated phone photos are embedd
 
 - Interacts with issue 079 (thumbnail derivatives): apply orientation there too.
 - Found during the 2026-09-21 review; first feature to build.
+- Outcome (2026-09-21): libvips `vips_thumbnail` already auto-rotates the preprocessing input, so embeddings and annotations were upright, and browsers apply EXIF orientation when rendering the served originals. The real defects were the stored width/height for orientation 5..8 (wrong masonry aspect) and the missing capture date. Fixed via a dependency-free JPEG EXIF reader (`internal/exif`), dimension swap at upload, `images.captured_at` (migration 12, `""` = scanned without EXIF, startup backfill), `order=captured` on the list APIs, and a "Date taken" sort in the header. WEBP/AVIF/PNG EXIF is not read yet.

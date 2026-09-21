@@ -75,6 +75,7 @@
           >
             <option value="random">Random</option>
             <option value="newest">Recently added</option>
+            <option value="captured">Date taken</option>
           </select>
         </label>
       {/if}

@@ -1,6 +1,6 @@
 import type { Pin } from "./types";
 
-export type LibrarySortOrder = "random" | "newest";
+export type LibrarySortOrder = "random" | "newest" | "captured";
 
 const RANDOM_SEED_MAX = 0x80000000;
 
@@ -23,11 +23,22 @@ export function randomKey(key: string, seed: number): number {
   return hash;
 }
 
+function parseTime(value: string | undefined): number {
+  if (!value) return 0;
+  // SQLite "YYYY-MM-DD HH:MM:SS" has no zone; read it as UTC like created_at.
+  return Date.parse(value.includes("T") ? value : value.replace(" ", "T") + "Z") || 0;
+}
+
 /** Newest first by created_at, then by key for a stable tie-break. */
 export function compareRecentPins(left: Pin, right: Pin): number {
-  const leftTime = Date.parse(left.createdAt ?? "") || 0;
-  const rightTime = Date.parse(right.createdAt ?? "") || 0;
-  return rightTime - leftTime || right.key.localeCompare(left.key);
+  return parseTime(right.createdAt) - parseTime(left.createdAt) || right.key.localeCompare(left.key);
+}
+
+/** Latest capture first, falling back to the upload time, then by key. */
+export function compareCapturedPins(left: Pin, right: Pin): number {
+  const l = parseTime(left.capturedAt) || parseTime(left.createdAt);
+  const r = parseTime(right.capturedAt) || parseTime(right.createdAt);
+  return r - l || right.key.localeCompare(left.key);
 }
 
 /**
@@ -38,6 +49,9 @@ export function compareRecentPins(left: Pin, right: Pin): number {
 export function combineLibraryPins(imagePins: Pin[], videoPins: Pin[], sort: LibrarySortOrder, seed: number): Pin[] {
   if (sort === "newest") {
     return [...imagePins, ...videoPins].sort(compareRecentPins);
+  }
+  if (sort === "captured") {
+    return [...imagePins, ...videoPins].sort(compareCapturedPins);
   }
 
   const first = randomKey("media:first", seed) % 2 === 0 ? videoPins : imagePins;

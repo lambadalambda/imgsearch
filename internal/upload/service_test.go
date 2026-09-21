@@ -15,6 +15,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"imgsearch/internal/db"
+	"imgsearch/internal/exif"
 )
 
 func setupService(t *testing.T) (*Service, *sql.DB) {
@@ -314,6 +315,45 @@ func TestStoreRejectsFakeAVIFByExtension(t *testing.T) {
 	}
 	if imageCount != 0 {
 		t.Fatalf("expected no images written, got %d", imageCount)
+	}
+}
+
+func TestStoreAppliesExifOrientationAndCaptureTime(t *testing.T) {
+	svc, sqlDB := setupService(t)
+	// A landscape fixture tagged as rotated 90° (orientation 6) with a
+	// capture time; the stored dimensions must be the displayed ones.
+	rotated := exif.InsertAPP1(fixtureImageBytes(t, "cat_1.jpg"), exif.BuildAPP1(6, "2024:05:06 07:08:09"))
+	plainW, plainH, err := decodeDimensionsFromBytes(rotated, "image/jpeg")
+	if err != nil {
+		t.Fatalf("decode fixture: %v", err)
+	}
+
+	out, err := svc.Store(context.Background(), "rotated.jpg", bytes.NewReader(rotated))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	var width, height int
+	var capturedAt string
+	if err := sqlDB.QueryRow(`SELECT width, height, captured_at FROM images WHERE id = ?`, out.ImageID).Scan(&width, &height, &capturedAt); err != nil {
+		t.Fatalf("load image: %v", err)
+	}
+	if width != plainH || height != plainW {
+		t.Fatalf("expected swapped dimensions %dx%d, got %dx%d", plainH, plainW, width, height)
+	}
+	if capturedAt != "2024-05-06 07:08:09" {
+		t.Fatalf("captured_at: got=%q", capturedAt)
+	}
+
+	// A PNG has no EXIF: dimensions stay and the row is marked scanned ("").
+	png, err := svc.Store(context.Background(), "plain.png", bytes.NewReader(pngBytes(t)))
+	if err != nil {
+		t.Fatalf("store png: %v", err)
+	}
+	if err := sqlDB.QueryRow(`SELECT captured_at FROM images WHERE id = ?`, png.ImageID).Scan(&capturedAt); err != nil {
+		t.Fatalf("load png: %v", err)
+	}
+	if capturedAt != "" {
+		t.Fatalf("png captured_at: got=%q want empty", capturedAt)
 	}
 }
 

@@ -9,6 +9,8 @@ export interface ImageRecord {
   height: number;
   index_state: string;
   created_at?: string;
+  /** EXIF capture time when known, else the upload time. */
+  captured_at?: string;
   title?: string;
   summary?: string;
   description?: string;
@@ -185,6 +187,7 @@ export interface Pin {
   durationMs?: number;
   /** ISO-ish backend creation timestamp. Used for client-side mixed-media sorting. */
   createdAt?: string;
+  capturedAt?: string;
   /** Whether this is the anchor of a similar-search. */
   isAnchor?: boolean;
   /** Whether this pin is currently flagged as NSFW (best-effort, derived from tags). */
