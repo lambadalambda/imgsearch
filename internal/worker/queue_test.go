@@ -1942,3 +1942,48 @@ WHERE j.id = 1
 		t.Fatalf("expected annotation persisted, got desc=%q tags=%q", desc, tagsJSON)
 	}
 }
+
+func TestProcessOneReannotatesImageWithExistingTextWhenFlagged(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE id = 1`); err != nil {
+		t.Fatalf("mark embed job done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+UPDATE images
+SET title = 'Old', summary = 'Old summary', description = 'An old annotation.', tags_json = '["old"]', reannotate_requested = 1
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed flagged image with existing text: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO index_jobs(id, kind, image_id, model_id, state)
+VALUES (2, 'annotate_image', 1, 1, 'pending')
+`); err != nil {
+		t.Fatalf("insert annotate job: %v", err)
+	}
+	annotator := &fakeAnnotator{annotation: embedder.ImageAnnotation{
+		Title:       "New",
+		Description: "A refreshed annotation.",
+		Tags:        []string{"new"},
+	}}
+	q.Annotator = annotator
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil {
+		t.Fatalf("process one: %v", err)
+	}
+	if !processed {
+		t.Fatal("expected processed=true")
+	}
+	if annotator.optsCalls != 1 {
+		t.Fatalf("expected the flagged image to be re-annotated despite existing text, got %d calls", annotator.optsCalls)
+	}
+	var description string
+	var reannotateRequested int
+	if err := sqlDB.QueryRow(`SELECT description, reannotate_requested FROM images WHERE id = 1`).Scan(&description, &reannotateRequested); err != nil {
+		t.Fatal(err)
+	}
+	if description != "A refreshed annotation." || reannotateRequested != 0 {
+		t.Fatalf("expected replaced text and cleared flag, got description=%q flag=%d", description, reannotateRequested)
+	}
+}

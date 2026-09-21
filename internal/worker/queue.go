@@ -763,6 +763,7 @@ SELECT i.original_name,
     WHEN trim(COALESCE(i.description, '')) = ''
       OR COALESCE(i.tags_json, '') = ''
       OR COALESCE(i.tags_json, '[]') = '[]'
+      OR COALESCE(i.reannotate_requested, 0) = 1
     THEN 1 ELSE 0
   END,
   COALESCE(i.reannotate_requested, 0),
@@ -833,7 +834,7 @@ WHERE id = ?
 	if err != nil {
 		return embedder.VideoAnnotationInput{}, false, fmt.Errorf("decode existing video %d tags: %w", videoID, err)
 	}
-	needsVideoAnnotations := annotationMissing(existingDescription, existingTags)
+	needsVideoAnnotations := annotationMissing(existingDescription, existingTags) || reannotateRequested == 1
 	type frameRow struct {
 		imageID      int64
 		originalName string

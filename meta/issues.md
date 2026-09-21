@@ -48,5 +48,4 @@
 ## Annotation backend settings
 
 - [ ] [Add a settings page for the annotation backend and model](issues/113-annotation-backend-settings-page.md)
-- [ ] [Add a re-annotate-all endpoint](issues/118-add-reannotate-all-endpoint.md)
 - [ ] [Add the Atelier Settings page](issues/119-add-atelier-settings-page.md)

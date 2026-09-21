@@ -84,6 +84,13 @@ func TestNewRuntimeBuildsMuxUploadServiceAndQueue(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), `"backend":"native"`) {
 		t.Fatalf("expected default native annotation settings, got %s", rr.Body.String())
 	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/jobs/reannotate-all", nil)
+	rr = httptest.NewRecorder()
+	runtime.Mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"queued_images"`) {
+		t.Fatalf("reannotate-all: got=%d body=%s", rr.Code, rr.Body.String())
+	}
 }
 
 func TestRuntimeCloseClosesOwnedResourcesInReverseOrder(t *testing.T) {
