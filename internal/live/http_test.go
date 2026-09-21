@@ -23,6 +23,9 @@ func setupLiveDB(t *testing.T) *sql.DB {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { _ = dbConn.Close() })
+	// Match production: one connection, so :memory: is shared and the
+	// change fingerprint sees in-process writes.
+	dbConn.SetMaxOpenConns(1)
 
 	if err := db.RunMigrations(context.Background(), dbConn); err != nil {
 		t.Fatalf("run migrations: %v", err)
@@ -115,12 +118,78 @@ func TestLiveHandlerStreamsSnapshot(t *testing.T) {
 		t.Fatalf("expected live snapshot to avoid requeueing done job, got %s", state)
 	}
 
+	// A write is what triggers the next push.
+	if _, err := dbConn.Exec(`UPDATE index_jobs SET state = 'done' WHERE image_id = 2`); err != nil {
+		t.Fatalf("update job: %v", err)
+	}
 	var next Snapshot
 	if err := conn.ReadJSON(&next); err != nil {
 		t.Fatalf("read second snapshot: %v", err)
 	}
 	if next.Type != "snapshot" {
 		t.Fatalf("second snapshot type: got=%q want=snapshot", next.Type)
+	}
+	if next.Stats.Queue.Done != 2 {
+		t.Fatalf("expected the pushed snapshot to reflect the write, got queue=%+v", next.Stats.Queue)
+	}
+}
+
+// TestLiveHandlerSharesSnapshotsAndSkipsIdleIntervals covers meta/issues/097:
+// two clients with no writes cost one snapshot build in total, and a write
+// reaches both within an interval.
+func TestLiveHandlerSharesSnapshotsAndSkipsIdleIntervals(t *testing.T) {
+	dbConn := setupLiveDB(t)
+	handler := &Handler{DB: dbConn, ModelID: 1, Interval: 20 * time.Millisecond, ImagesLimit: 10}
+	srv := httptest.NewServer(NewHandler(handler))
+	defer srv.Close()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+
+	var conns []*websocket.Conn
+	for i := 0; i < 2; i++ {
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		if err != nil {
+			t.Fatalf("dial websocket %d: %v", i, err)
+		}
+		defer func() { _ = conn.Close() }()
+		if err := conn.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+			t.Fatalf("set read deadline: %v", err)
+		}
+		var initial Snapshot
+		if err := conn.ReadJSON(&initial); err != nil {
+			t.Fatalf("read initial snapshot %d: %v", i, err)
+		}
+		conns = append(conns, conn)
+	}
+
+	time.Sleep(10 * handler.Interval)
+	handler.hub.mu.Lock()
+	idleComputations := handler.hub.computations
+	handler.hub.mu.Unlock()
+	if idleComputations != 1 {
+		t.Fatalf("expected one shared snapshot build for two idle clients, got %d", idleComputations)
+	}
+
+	if _, err := dbConn.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height)
+VALUES (3, 'c', 'three.jpg', 'images/c', 'image/jpeg', 30, 30)
+`); err != nil {
+		t.Fatalf("insert image: %v", err)
+	}
+	for i, conn := range conns {
+		var pushed Snapshot
+		if err := conn.ReadJSON(&pushed); err != nil {
+			t.Fatalf("client %d did not receive a snapshot after the write: %v", i, err)
+		}
+		if pushed.Images.Total != 3 {
+			t.Fatalf("client %d snapshot images total: got=%d want=3", i, pushed.Images.Total)
+		}
+	}
+
+	handler.hub.mu.Lock()
+	afterWrite := handler.hub.computations
+	handler.hub.mu.Unlock()
+	if afterWrite != 2 {
+		t.Fatalf("expected exactly one more snapshot build after the write, got %d", afterWrite)
 	}
 }
 

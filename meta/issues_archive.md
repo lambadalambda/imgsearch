@@ -104,3 +104,4 @@
 - [x] [Fix Feed and lightbox keyboard and advance conflicts](issues/101-fix-feed-and-lightbox-keyboard-conflicts.md)
 - [x] [Add lookup indexes for `index_jobs`](issues/099-add-index-jobs-lookup-indexes.md)
 - [x] [Replace the embedding snapshot `MAX(updated_at)` scan with a generation counter](issues/098-replace-embedding-snapshot-scan-with-generation-counter.md)
+- [x] [Gate live WebSocket snapshots on data changes and share them across clients](issues/097-gate-live-snapshots-on-data-version.md)

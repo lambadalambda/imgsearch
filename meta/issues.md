@@ -25,7 +25,6 @@
 ## Review 2026-09-21
 
 - [ ] [Share media action state between card and lightbox](issues/096-share-media-actions-between-card-and-lightbox.md)
-- [ ] [Gate live WebSocket snapshots on data changes and share them across clients](issues/097-gate-live-snapshots-on-data-version.md)
 - [ ] [Cache llama.cpp and libvips builds in CI](issues/103-cache-native-builds-in-ci.md)
 - [ ] [Extend CI beyond `go test`](issues/104-extend-ci-checks.md)
 - [ ] [Ship or clearly disable video transcription in releases](issues/105-ship-onnxruntime-for-transcription-in-releases.md)
