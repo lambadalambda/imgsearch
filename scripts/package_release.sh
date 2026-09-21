@@ -60,6 +60,16 @@ delete_macos_rpath_if_present() {
   fi
 }
 
+# Prebuilt libraries (ONNX Runtime) may already carry the rpath; adding it
+# twice makes install_name_tool fail.
+add_macos_rpath_if_missing() {
+  local file="$1"
+  local rpath="$2"
+  if ! has_macos_rpath "$file" "$rpath"; then
+    install_name_tool -add_rpath "$rpath" "$file"
+  fi
+}
+
 is_linux_system_library() {
   local path="$1"
   case "$path" in
@@ -216,13 +226,13 @@ case "$(uname -s)" in
     for source_rpath in "${source_rpaths[@]}"; do
       delete_macos_rpath_if_present "${pkg_root}/imgsearch" "${source_rpath}"
     done
-    install_name_tool -add_rpath "@executable_path/lib" "${pkg_root}/imgsearch"
+    add_macos_rpath_if_missing "${pkg_root}/imgsearch" "@executable_path/lib"
 
     while IFS= read -r dylib; do
       for source_rpath in "${source_rpaths[@]}"; do
         delete_macos_rpath_if_present "${dylib}" "${source_rpath}"
       done
-      install_name_tool -add_rpath "@loader_path" "${dylib}"
+      add_macos_rpath_if_missing "${dylib}" "@loader_path"
     done < <(find "${pkg_root}/lib" -type f -name '*.dylib')
 
     cat > "${pkg_root}/run.sh" <<'EOF'

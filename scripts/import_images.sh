@@ -94,8 +94,10 @@ if command -v vips >/dev/null 2>&1; then
   has_vips=1
 fi
 
+# IMGSEARCH_IMPORT_FFMPEG overrides the ffmpeg binary (path or name).
+ffmpeg_bin="${IMGSEARCH_IMPORT_FFMPEG:-ffmpeg}"
 has_ffmpeg=0
-if command -v ffmpeg >/dev/null 2>&1; then
+if command -v "$ffmpeg_bin" >/dev/null 2>&1; then
   has_ffmpeg=1
 fi
 
@@ -129,7 +131,7 @@ convert_with_vips() {
 convert_gif_to_mp4() {
   local src="$1"
   local dst="$2"
-  ffmpeg -nostdin -y -loglevel error -i "$src" -movflags +faststart -pix_fmt yuv420p -vf "fps=15,scale=trunc(iw/2)*2:trunc(ih/2)*2" "$dst"
+  "$ffmpeg_bin" -nostdin -y -loglevel error -i "$src" -movflags +faststart -pix_fmt yuv420p -vf "fps=15,scale=trunc(iw/2)*2:trunc(ih/2)*2" "$dst"
 }
 
 retry_delay_seconds() {

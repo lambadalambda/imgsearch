@@ -153,6 +153,7 @@ missing_ffmpeg_output="$({
   unset IMGSEARCH_IMPORT_API_KEY IMGSEARCH_API_KEY
   IMGSEARCH_TEST_CALL_LOG="$mock_log" \
     IMGSEARCH_IMPORT_HTTP_RETRY_DELAY_SECONDS=0 \
+    IMGSEARCH_IMPORT_FFMPEG="$missing_ffmpeg_bin/ffmpeg-not-installed" \
     PATH="$missing_ffmpeg_bin:/usr/bin:/bin" \
     "$repo_root/scripts/import_images.sh" "$source_dir" "http://127.0.0.1:8080"
 } 2>&1)"
