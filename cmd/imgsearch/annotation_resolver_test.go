@@ -4,7 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,6 +18,7 @@ import (
 
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/embedder/openaicompat"
 	"imgsearch/internal/settings"
 )
 
@@ -230,4 +237,73 @@ type imageOnlyAnnotator struct{}
 
 func (imageOnlyAnnotator) AnnotateImage(context.Context, string) (embedder.ImageAnnotation, error) {
 	return embedder.ImageAnnotation{Description: "plain"}, nil
+}
+
+// End-to-end: a settings save switches the resolver from a fake native
+// annotator to the real OpenAI-compatible client, and the next job reaches
+// the fake remote server.
+func TestResolverRoutesNextJobToRemoteServerAfterSettingsSave(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		hits.Add(1)
+		if r.Header.Get("Authorization") != "Bearer sk-e2e" {
+			t.Errorf("missing bearer auth, got %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"title\":\"Remote\",\"summary\":\"s\",\"full_description\":\"remote annotation\",\"tags\":[\"remote\"],\"is_nsfw\":false}"}}]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	conn := openResolverDB(t)
+	clock := time.Unix(1_700_000_000, 0)
+	native := &fakeSwitchAnnotator{id: "native"}
+	resolver := newAnnotatorResolver(annotatorResolverOptions{
+		DB:       conn,
+		Defaults: settings.DefaultAnnotation(),
+		BuildNative: func(context.Context, string) (embedder.ImageAnnotator, settings.ActiveAnnotation, error) {
+			return native, settings.ActiveAnnotation{Backend: settings.BackendNative, Model: "e4b"}, nil
+		},
+		BuildRemote: func(_ context.Context, s settings.AnnotationSettings) (embedder.ImageAnnotator, settings.ActiveAnnotation, error) {
+			cfg := openAIConfigFromSettings(s, 512, nil)
+			cfg.PrepareImage = func(context.Context, string, int) ([]byte, string, error) { return []byte("img"), "image/jpeg", nil }
+			remote, err := openaicompat.New(cfg)
+			if err != nil {
+				return nil, settings.ActiveAnnotation{}, err
+			}
+			return remote, remoteAnnotationStatus(s), nil
+		},
+		CheckInterval: time.Second,
+		Now:           func() time.Time { return clock },
+	})
+	ctx := context.Background()
+	imagePath := filepath.Join(t.TempDir(), "a.jpg")
+	if err := os.WriteFile(imagePath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := resolver.AnnotateImage(ctx, imagePath); err != nil {
+		t.Fatal(err)
+	}
+	if len(native.imageCalls) != 1 || hits.Load() != 0 {
+		t.Fatalf("expected the first job on native, got native=%d remote=%d", len(native.imageCalls), hits.Load())
+	}
+
+	if _, err := settings.SaveAnnotation(ctx, conn, settings.AnnotationSettings{
+		Backend: settings.BackendOpenAI,
+		OpenAI:  settings.OpenAISettings{BaseURL: srv.URL + "/v1", APIKey: "sk-e2e", Model: "vision"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(2 * time.Second)
+	got, err := resolver.AnnotateImage(ctx, imagePath)
+	if err != nil {
+		t.Fatalf("remote annotate: %v", err)
+	}
+	if got.Title != "Remote" || hits.Load() != 1 || len(native.imageCalls) != 1 {
+		t.Fatalf("expected the next job on the remote server, got %+v native=%d remote=%d", got, len(native.imageCalls), hits.Load())
+	}
 }

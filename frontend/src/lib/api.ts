@@ -1,6 +1,11 @@
 import type {
   ImagesPage,
+  ModelListResult,
+  ProbeResult,
+  ReannotateAllResponse,
   SearchResponse,
+  SettingsResponse,
+  SettingsUpdateRequest,
   StatsResponse,
   TagCloudResponse,
   UploadBatchResponse,
@@ -309,3 +314,46 @@ export async function uploadFiles(
 }
 
 export { ApiError };
+
+function jsonInit(method: string, body: unknown): RequestInit {
+  return {
+    method,
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  };
+}
+
+export async function getSettings(): Promise<SettingsResponse> {
+  return getJSON<SettingsResponse>("/api/settings");
+}
+
+export async function updateSettings(body: SettingsUpdateRequest): Promise<SettingsResponse> {
+  return getJSON<SettingsResponse>("/api/settings", jsonInit("PUT", body));
+}
+
+/** Probes a remote annotation server without saving. Failures come back as
+ *  `{ ok: false, error }` rather than throwing so the form can show them
+ *  inline. */
+export async function testAnnotationConnection(body: SettingsUpdateRequest): Promise<ProbeResult> {
+  try {
+    return await getJSON<ProbeResult>("/api/settings/annotation/test", jsonInit("POST", body));
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Lists a remote server's models; failures are returned in `error`. */
+export async function listAnnotationModels(body: SettingsUpdateRequest): Promise<ModelListResult> {
+  try {
+    const response = await getJSON<ModelListResult>("/api/settings/annotation/models", jsonInit("POST", body));
+    return { models: response.models ?? [], error: response.error };
+  } catch (err) {
+    return { models: [], error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export type ReannotateMedia = "all" | "images" | "videos";
+
+export async function reannotateAll(media: ReannotateMedia = "all"): Promise<ReannotateAllResponse> {
+  return (await postJSON(`/api/jobs/reannotate-all?media=${media}`)) as ReannotateAllResponse;
+}

@@ -44,8 +44,3 @@
 - [ ] [Add manual tag and title editing](issues/110-add-manual-tag-and-title-editing.md)
 - [ ] [Add a near-duplicate finder](issues/111-add-near-duplicate-finder.md)
 - [ ] [Search by an uploaded or pasted image](issues/112-search-by-uploaded-image.md)
-
-## Annotation backend settings
-
-- [ ] [Add a settings page for the annotation backend and model](issues/113-annotation-backend-settings-page.md)
-- [ ] [Add the Atelier Settings page](issues/119-add-atelier-settings-page.md)

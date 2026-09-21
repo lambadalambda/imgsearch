@@ -59,6 +59,7 @@ type testResponse struct {
 
 type modelsResponse struct {
 	Models []string `json:"models"`
+	Error  string   `json:"error,omitempty"`
 }
 
 // NewHandler serves GET/PUT /api/settings and POST /api/settings/annotation/test.
@@ -164,8 +165,10 @@ func (h *handler) handleTest(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// A probe that ran and found the server unusable is a result, not a
+	// transport failure, so it is reported with 200 and ok=false.
 	if err := h.cfg.TestConnection(r.Context(), candidate); err != nil {
-		httputil.WriteJSON(w, http.StatusBadGateway, testResponse{OK: false, Error: err.Error()})
+		httputil.WriteJSON(w, http.StatusOK, testResponse{OK: false, Error: err.Error()})
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, testResponse{OK: true})
@@ -194,7 +197,7 @@ func (h *handler) handleModels(w http.ResponseWriter, r *http.Request) {
 	}
 	models, err := h.cfg.ListModels(r.Context(), candidate)
 	if err != nil {
-		httputil.WriteJSON(w, http.StatusBadGateway, testResponse{OK: false, Error: err.Error()})
+		httputil.WriteJSON(w, http.StatusOK, modelsResponse{Models: []string{}, Error: err.Error()})
 		return
 	}
 	if models == nil {

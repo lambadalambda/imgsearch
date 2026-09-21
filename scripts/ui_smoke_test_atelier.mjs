@@ -204,6 +204,55 @@ const requestOrder = [];
 let similarVideoFailuresRemaining = 0;
 let expectedFetchFailureConsoleMessages = 0;
 
+
+// Settings stub state (meta/issues/119). PUT merges like the real handler:
+// a blank api_key keeps the stored key, clear_api_key drops it.
+const settingsState = {
+  version: 0,
+  annotation: {
+    backend: "native",
+    native_variant: "e4b",
+    openai: { base_url: "", api_key_set: false, model: "", timeout_seconds: 120, concurrency: 2 },
+  },
+  native_variant_locked: false,
+  annotations_disabled: false,
+  active: { backend: "native", model: "e4b", settings_version: 0, source: "worker" },
+};
+const settingsPuts = [];
+const reannotateAllCalls = [];
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+function applySettingsUpdate(body) {
+  const next = body.annotation || {};
+  const openai = next.openai || {};
+  const prev = settingsState.annotation.openai;
+  settingsState.annotation = {
+    backend: next.backend || "native",
+    native_variant: next.native_variant || "e4b",
+    openai: {
+      base_url: (openai.base_url || "").replace(/\/+$/, ""),
+      api_key_set: body.clear_api_key ? false : openai.api_key ? true : prev.api_key_set,
+      model: openai.model || "",
+      timeout_seconds: openai.timeout_seconds || 120,
+      concurrency: openai.concurrency || 2,
+    },
+  };
+  settingsState.version += 1;
+  const a = settingsState.annotation;
+  settingsState.active =
+    a.backend === "openai"
+      ? { backend: "openai", model: a.openai.model, detail: a.openai.base_url, settings_version: settingsState.version, source: "worker" }
+      : { backend: "native", model: a.native_variant, settings_version: settingsState.version, source: "worker" };
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   try {
@@ -473,6 +522,41 @@ const server = createServer(async (req, res) => {
         duplicates,
         failed: 0,
       });
+      return;
+    }
+    if (url.pathname === "/api/settings" && req.method === "GET") {
+      jsonResponse(res, 200, settingsState);
+      return;
+    }
+    if (url.pathname === "/api/settings" && req.method === "PUT") {
+      const body = JSON.parse((await readBody(req)) || "{}");
+      settingsPuts.push(body);
+      if (body.annotation?.backend === "openai" && !body.annotation.openai?.model) {
+        jsonResponse(res, 400, { error: "openai.model is required" });
+        return;
+      }
+      applySettingsUpdate(body);
+      jsonResponse(res, 200, settingsState);
+      return;
+    }
+    if (url.pathname === "/api/settings/annotation/test" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)) || "{}");
+      const baseUrl = body.annotation?.openai?.base_url || "";
+      if (baseUrl.includes("good")) {
+        jsonResponse(res, 200, { ok: true });
+      } else {
+        jsonResponse(res, 200, { ok: false, error: "connection refused" });
+      }
+      return;
+    }
+    if (url.pathname === "/api/settings/annotation/models" && req.method === "POST") {
+      await readBody(req);
+      jsonResponse(res, 200, { models: ["vision-a", "vision-b"] });
+      return;
+    }
+    if (url.pathname === "/api/jobs/reannotate-all" && req.method === "POST") {
+      reannotateAllCalls.push(url.searchParams.get("media") || "all");
+      jsonResponse(res, 200, { queued_images: 144, queued_videos: 7, skipped_leased: 1 });
       return;
     }
     if (url.pathname.startsWith("/media/")) {
@@ -1751,6 +1835,92 @@ try {
     throw new Error(
       `expected view preferences to survive a reload, got sort=${persistedSort} media=${persistedMedia} nsfw=${persistedNSFW}`,
     );
+  }
+
+
+  // 10. Settings page: remote backend flow, persistence, and re-annotate all
+  //     (meta/issues/119).
+  await page.locator('button[aria-label="Settings"]').click();
+  await page.waitForURL(/view=settings/, { timeout: 5000 });
+  const settingsPane = page.locator("[data-settings-pane]");
+  await settingsPane.waitFor({ state: "visible", timeout: 5000 });
+  const settingsCrumb = (await page.locator("header p").first().textContent() || "").trim();
+  if (!settingsCrumb.includes("Settings")) {
+    throw new Error(`expected settings breadcrumb, got ${JSON.stringify(settingsCrumb)}`);
+  }
+  const activeText = (await page.locator("[data-settings-active]").textContent()) || "";
+  if (!/native · e4b/.test(activeText)) {
+    throw new Error(`expected active native backend line, got ${JSON.stringify(activeText)}`);
+  }
+  if (!(await page.locator("[data-settings-save]").isDisabled())) {
+    throw new Error("expected Save to be disabled without changes");
+  }
+
+  await page.locator('[data-settings-backend="openai"]').check();
+  await page.locator("[data-settings-base-url]").fill("http://good.example/v1/");
+  await page.locator("[data-settings-api-key]").fill("sk-smoke");
+  await page.locator("[data-settings-fetch-models]").click();
+  await page.locator("[data-settings-models-count]").waitFor({ state: "visible", timeout: 5000 });
+  const autoModel = await page.locator("[data-settings-model]").inputValue();
+  if (autoModel !== "vision-a") {
+    throw new Error(`expected first fetched model to fill the empty model field, got ${JSON.stringify(autoModel)}`);
+  }
+  await page.locator("[data-settings-test]").click();
+  await page.locator("[data-settings-test-result]").waitFor({ state: "visible", timeout: 5000 });
+  const testText = (await page.locator("[data-settings-test-result]").textContent()) || "";
+  if (!/Connected/.test(testText)) {
+    throw new Error(`expected successful connection test, got ${JSON.stringify(testText)}`);
+  }
+  await page.locator("[data-settings-dirty]").waitFor({ state: "visible", timeout: 2000 });
+  await page.locator("[data-settings-save]").click();
+  await page.locator("[data-settings-save-notice]").waitFor({ state: "visible", timeout: 5000 });
+  const lastPut = settingsPuts[settingsPuts.length - 1];
+  if (!lastPut || lastPut.annotation.backend !== "openai" || lastPut.annotation.openai.api_key !== "sk-smoke" || lastPut.annotation.openai.model !== "vision-a") {
+    throw new Error(`unexpected settings PUT body ${JSON.stringify(lastPut)}`);
+  }
+  const savedActive = (await page.locator("[data-settings-active]").textContent()) || "";
+  if (!/remote · vision-a @ http:\/\/good.example\/v1/.test(savedActive)) {
+    throw new Error(`expected active line to reflect the saved remote backend, got ${JSON.stringify(savedActive)}`);
+  }
+
+  // Persisted values survive a reload; the key is masked, not echoed.
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator("[data-settings-pane]").waitFor({ state: "visible", timeout: 5000 });
+  if (!(await page.locator('[data-settings-backend="openai"]').isChecked())) {
+    throw new Error("expected remote backend to stay selected after reload");
+  }
+  if ((await page.locator("[data-settings-base-url]").inputValue()) !== "http://good.example/v1") {
+    throw new Error("expected base URL to persist after reload");
+  }
+  if ((await page.locator("[data-settings-api-key]").inputValue()) !== "") {
+    throw new Error("api key input must not echo the stored key");
+  }
+  const keyPlaceholder = (await page.locator("[data-settings-api-key]").getAttribute("placeholder")) || "";
+  if (!/Key is set/.test(keyPlaceholder)) {
+    throw new Error(`expected placeholder to say the key is set, got ${JSON.stringify(keyPlaceholder)}`);
+  }
+  // A failed probe is shown inline instead of thrown.
+  await page.locator("[data-settings-base-url]").fill("http://bad.example/v1");
+  await page.locator("[data-settings-test]").click();
+  await page.locator("[data-settings-test-result]").waitFor({ state: "visible", timeout: 5000 });
+  const failedTest = (await page.locator("[data-settings-test-result]").textContent()) || "";
+  if (!/Failed: connection refused/.test(failedTest)) {
+    throw new Error(`expected inline failure, got ${JSON.stringify(failedTest)}`);
+  }
+
+  // Re-annotate all asks for confirmation, then reports the queued counts.
+  await page.locator("[data-settings-reannotate-all]").click();
+  await page.locator("[data-confirm-dialog]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-confirm-cancel]").click();
+  if (reannotateAllCalls.length !== 0) {
+    throw new Error("cancelling the dialog must not queue re-annotation");
+  }
+  await page.locator("[data-settings-reannotate-all]").click();
+  await page.locator("[data-confirm-accept]").click();
+  await page.locator("[data-settings-reannotate-notice]").waitFor({ state: "visible", timeout: 5000 });
+  const reannotateText = (await page.locator("[data-settings-reannotate-notice]").textContent()) || "";
+  if (!/144 images and 7 videos/.test(reannotateText) || reannotateAllCalls.length !== 1) {
+    throw new Error(`unexpected re-annotate result ${JSON.stringify(reannotateText)} calls=${reannotateAllCalls.length}`);
   }
 
   console.log("atelier smoke checks passed");

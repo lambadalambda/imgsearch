@@ -8,6 +8,7 @@
     openFeed,
     openUpload,
     setLibrary,
+    setSettings,
     setStats,
     uploadOpen,
   } from "../lib/stores";
@@ -142,10 +143,11 @@
   </a>
   <button
     type="button"
-    class={railBtnBase}
-    disabled
-    aria-label="Settings (soon)"
-    title="Settings (soon)"
+    class="{railBtnBase} {$mode.mode === 'settings' ? activeBtn : ''}"
+    aria-label="Settings"
+    title="Settings"
+    data-rail-item="settings"
+    onclick={() => setSettings()}
   >
     <Icon name="settings" class="w-[19px] h-[19px]" />
   </button>

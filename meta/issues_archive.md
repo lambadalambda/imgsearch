@@ -92,3 +92,7 @@
 - [x] [Add an OpenAI-compatible remote annotator](issues/116-add-openai-compatible-remote-annotator.md)
 - [x] [Hot-swap the worker annotator from settings](issues/117-hot-swap-annotator-from-settings.md)
 - [x] [Add a re-annotate-all endpoint](issues/118-add-reannotate-all-endpoint.md)
+- [x] [Add the Atelier Settings page](issues/119-add-atelier-settings-page.md)
+
+- [x] [Add a settings page for the annotation backend and model](issues/113-annotation-backend-settings-page.md)
+

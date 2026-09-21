@@ -33,6 +33,8 @@
           <span>Tag</span>
         {:else if $mode.mode === "stats"}
           <span>Statistics</span>
+        {:else if $mode.mode === "settings"}
+          <span>Settings</span>
         {:else}
           <a href="?" class="text-muted hover:text-ink transition-colors no-underline" onclick={goHome}>Discover</a>
           <span class="mx-1.5 text-muted-2">/</span>

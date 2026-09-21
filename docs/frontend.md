@@ -39,6 +39,12 @@ The first cut of the Atelier SPA covers:
   (initial 4, then batches of 3 once fewer than 2 remain ahead), and
   preserves playback continuity by rotating queue indices across three
   CSS-positioned `<video>` slots rather than re-parenting DOM nodes
+- Statistics page (`?view=stats`) and Settings page (`?view=settings`),
+  both reached from the Rail; Settings edits the annotation backend via
+  `GET`/`PUT /api/settings`, probes a remote server with
+  `POST /api/settings/annotation/{test,models}` (probe failures come back
+  as `200` with `ok: false` so the browser console stays clean), and
+  queues `POST /api/jobs/reannotate-all` behind the shared `ConfirmDialog`
 
 The following still live in `/legacy` for now and will be ported in
 follow-ups:

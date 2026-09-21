@@ -147,8 +147,8 @@ func TestTestConnectionUsesInjectedTester(t *testing.T) {
 	}
 
 	rec, out = do(t, h, http.MethodPost, "/api/settings/annotation/test", `{"annotation":{"backend":"openai","openai":{"base_url":"http://x","model":"bad"}}}`)
-	if rec.Code != http.StatusBadGateway || out["ok"] != false || !strings.Contains(out["error"].(string), "model not found") {
-		t.Fatalf("expected 502 with error, got %d %v", rec.Code, out)
+	if rec.Code != http.StatusOK || out["ok"] != false || !strings.Contains(out["error"].(string), "model not found") {
+		t.Fatalf("expected 200 with ok=false, got %d %v", rec.Code, out)
 	}
 
 	rec, _ = do(t, h, http.MethodPost, "/api/settings/annotation/test", `{"annotation":{"backend":"native"}}`)
@@ -259,8 +259,8 @@ func TestListModelsUsesInjectedListerAndToleratesBlankModel(t *testing.T) {
 		t.Fatalf("lister should receive normalized settings, got %+v", seen)
 	}
 	rec, out = do(t, h, http.MethodPost, "/api/settings/annotation/models", `{"annotation":{"backend":"openai","openai":{"base_url":"http://down"}}}`)
-	if rec.Code != http.StatusBadGateway || out["ok"] != false {
-		t.Fatalf("expected 502, got %d %v", rec.Code, out)
+	if rec.Code != http.StatusOK || len(out["models"].([]any)) != 0 || !strings.Contains(out["error"].(string), "connection refused") {
+		t.Fatalf("expected 200 with empty models and error, got %d %v", rec.Code, out)
 	}
 	rec, _ = do(t, h, http.MethodPost, "/api/settings/annotation/models", `{"annotation":{"backend":"native"}}`)
 	if rec.Code != http.StatusBadRequest {

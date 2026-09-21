@@ -186,3 +186,73 @@ export interface Pin {
    *  Feed launcher can call canPlayType() before opening. */
   mimeType?: string;
 }
+
+/** Shapes for /api/settings. */
+export type AnnotationBackend = "native" | "openai";
+export type NativeVariant = "e4b" | "26b";
+
+export interface OpenAISettingsView {
+  base_url: string;
+  api_key_set: boolean;
+  model: string;
+  timeout_seconds: number;
+  concurrency: number;
+}
+
+export interface AnnotationSettingsView {
+  backend: AnnotationBackend;
+  native_variant: NativeVariant;
+  openai: OpenAISettingsView;
+}
+
+export interface ActiveAnnotation {
+  backend: string;
+  model: string;
+  detail?: string;
+  settings_version: number;
+  source: "worker" | "settings";
+}
+
+export interface SettingsResponse {
+  version: number;
+  annotation: AnnotationSettingsView;
+  native_variant_locked: boolean;
+  annotations_disabled: boolean;
+  active?: ActiveAnnotation;
+  active_error?: string;
+}
+
+/** Request body for PUT /api/settings and the remote probe endpoints. A
+ *  blank api_key keeps the stored key. */
+export interface AnnotationSettingsInput {
+  backend: AnnotationBackend;
+  native_variant: NativeVariant;
+  openai: {
+    base_url: string;
+    api_key?: string;
+    model: string;
+    timeout_seconds: number;
+    concurrency: number;
+  };
+}
+
+export interface SettingsUpdateRequest {
+  annotation: AnnotationSettingsInput;
+  clear_api_key?: boolean;
+}
+
+export interface ReannotateAllResponse {
+  queued_images: number;
+  queued_videos: number;
+  skipped_leased: number;
+}
+
+export interface ProbeResult {
+  ok: boolean;
+  error?: string;
+}
+
+export interface ModelListResult {
+  models: string[];
+  error?: string;
+}

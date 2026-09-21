@@ -4,6 +4,7 @@
   import SearchBar from "./components/SearchBar.svelte";
   import QuickRow from "./components/QuickRow.svelte";
   import StatisticsPane from "./components/StatisticsPane.svelte";
+  import SettingsPane from "./components/SettingsPane.svelte";
   import Masonry from "./components/Masonry.svelte";
   import Lightbox from "./components/Lightbox.svelte";
   import Upload from "./components/Upload.svelte";
@@ -326,6 +327,8 @@
 
     {#if $mode.mode === "stats"}
       <StatisticsPane />
+    {:else if $mode.mode === "settings"}
+      <SettingsPane />
     {:else}
       <div
         data-results-meta

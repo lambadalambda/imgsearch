@@ -1,7 +1,7 @@
 import { writable, derived, get } from "svelte/store";
 import type { Pin, StatsResponse } from "./types";
 
-export type ViewMode = "library" | "search" | "similar" | "tag" | "stats";
+export type ViewMode = "library" | "search" | "similar" | "tag" | "stats" | "settings";
 export type LibrarySort = "random" | "newest";
 export type LibraryMedia = "all" | "images" | "videos";
 
@@ -18,6 +18,9 @@ function readURL(): AppMode {
   const params = new URLSearchParams(window.location.search);
   if (params.get("view") === "stats") {
     return { mode: "stats" };
+  }
+  if (params.get("view") === "settings") {
+    return { mode: "settings" };
   }
   const q = params.get("q");
   const similar = params.get("similar");
@@ -40,6 +43,8 @@ function writeURL(state: AppMode, replace: boolean): void {
   const params = new URLSearchParams();
   if (state.mode === "stats") {
     params.set("view", "stats");
+  } else if (state.mode === "settings") {
+    params.set("view", "settings");
   } else if (state.mode === "search" && state.query) {
     params.set("q", state.query);
   } else if (state.mode === "similar" && state.similarTo !== undefined) {
@@ -121,6 +126,10 @@ export function setStats(): void {
   mode.set({ mode: "stats" });
 }
 
+export function setSettings(): void {
+  mode.set({ mode: "settings" });
+}
+
 /** Device-local view preference persisted in localStorage. Invalid or
  *  unreadable stored values (private mode, manual edits) fall back to the
  *  default. */
@@ -198,6 +207,9 @@ export const headline = derived(mode, ($mode) => {
   }
   if ($mode.mode === "stats") {
     return "Statistics";
+  }
+  if ($mode.mode === "settings") {
+    return "Settings";
   }
   return "Library";
 });

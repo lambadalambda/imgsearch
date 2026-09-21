@@ -6,11 +6,13 @@
     /** Secondary line, e.g. the filename being deleted. */
     detail?: string;
     confirmLabel?: string;
+    /** Footnote under the detail line; defaults to the irreversible warning. */
+    note?: string;
     onconfirm: () => void;
     oncancel: () => void;
   }
 
-  let { title, detail, confirmLabel = "Delete", onconfirm, oncancel }: Props = $props();
+  let { title, detail, confirmLabel = "Delete", note = "This cannot be undone.", onconfirm, oncancel }: Props = $props();
 
   function onKey(event: KeyboardEvent) {
     if (event.key === "Escape") {
@@ -44,7 +46,9 @@
     {#if detail}
       <p class="m-0 text-[13px] text-muted break-all">{detail}</p>
     {/if}
-    <p class="m-0 text-[13px] text-muted-2">This cannot be undone.</p>
+    {#if note}
+      <p class="m-0 text-[13px] text-muted-2">{note}</p>
+    {/if}
     <div class="flex justify-end gap-2 mt-1">
       <button
         type="button"
