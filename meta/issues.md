@@ -44,3 +44,13 @@
 - [ ] [Add manual tag and title editing](issues/110-add-manual-tag-and-title-editing.md)
 - [ ] [Add a near-duplicate finder](issues/111-add-near-duplicate-finder.md)
 - [ ] [Search by an uploaded or pasted image](issues/112-search-by-uploaded-image.md)
+
+## Annotation backend settings
+
+- [ ] [Add a settings page for the annotation backend and model](issues/113-annotation-backend-settings-page.md)
+- [ ] [Extract shared annotation prompts and response parsing](issues/114-extract-shared-annotation-prompts-and-parsing.md)
+- [ ] [Add a persisted settings store and `/api/settings`](issues/115-add-persisted-settings-store-and-api.md)
+- [ ] [Add an OpenAI-compatible remote annotator](issues/116-add-openai-compatible-remote-annotator.md)
+- [ ] [Hot-swap the worker annotator from settings](issues/117-hot-swap-annotator-from-settings.md)
+- [ ] [Add a re-annotate-all endpoint](issues/118-add-reannotate-all-endpoint.md)
+- [ ] [Add the Atelier Settings page](issues/119-add-atelier-settings-page.md)
