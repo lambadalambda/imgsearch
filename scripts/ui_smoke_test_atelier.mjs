@@ -223,6 +223,7 @@ const uploadRequests = [];
 const similarVideoRequests = [];
 const requestOrder = [];
 let similarVideoFailuresRemaining = 0;
+let similarVideoDelayMs = 0;
 let expectedFetchFailureConsoleMessages = 0;
 
 
@@ -469,6 +470,9 @@ const server = createServer(async (req, res) => {
         return;
       }
       const candidates = similarVideoResults([videoId, ...seenIds]).slice(0, limit);
+      if (similarVideoDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, similarVideoDelayMs));
+      }
       jsonResponse(res, 200, {
         results: candidates,
         total: candidates.length,
@@ -965,6 +969,50 @@ try {
   await page.keyboard.press("Escape");
   await page.locator("[data-feed-overlay]").waitFor({ state: "hidden", timeout: 5000 });
 
+  // 1d. Keyboard and advance conflicts (meta/issues/101).
+  //     - Initial focus lands on play/pause, so Space right after opening
+  //       toggles playback instead of activating the focused close button.
+  //     - "Next" at the tail while a lookahead fetch is in flight waits for
+  //       that fetch and advances, instead of silently no-op'ing.
+  await page.locator('button[aria-label^="Feed"]').click();
+  await page.locator("[data-feed-overlay]").waitFor({ state: "visible", timeout: 5000 });
+  await page.waitForFunction(
+    () => Number(document.querySelector("[data-feed-overlay]")?.getAttribute("data-feed-queue-size") || 0) === 5,
+    {},
+    { timeout: 5000 },
+  );
+  const feedInitialFocus = await page.evaluate(() => {
+    const el = document.activeElement;
+    return el instanceof HTMLElement && el.hasAttribute("data-feed-playpause");
+  });
+  if (!feedInitialFocus) {
+    throw new Error("expected Feed initial focus on the play/pause control");
+  }
+  await page.keyboard.press("Space");
+  await page.waitForTimeout(150);
+  if (!(await page.locator("[data-feed-overlay]").isVisible())) {
+    throw new Error("expected Space right after opening the Feed to not close it");
+  }
+  similarVideoDelayMs = 1500;
+  for (let step = 1; step <= 4; step += 1) {
+    await page.keyboard.press("ArrowDown");
+    await page.waitForFunction(
+      (idx) => Number(document.querySelector("[data-feed-overlay]")?.getAttribute("data-feed-current-index") || 0) === idx,
+      step,
+      { timeout: 5000 },
+    );
+  }
+  // At the tail (index 4 of 5) with the lookahead still in flight.
+  await page.locator("[data-feed-next]").click();
+  await page.waitForFunction(
+    () => Number(document.querySelector("[data-feed-overlay]")?.getAttribute("data-feed-current-index") || 0) === 5,
+    {},
+    { timeout: 5000 },
+  );
+  similarVideoDelayMs = 0;
+  await page.keyboard.press("Escape");
+  await page.locator("[data-feed-overlay]").waitFor({ state: "hidden", timeout: 5000 });
+
   // 2. Search flow.
   await page.locator("#atelier-search").fill("warm portrait");
   const searchInputType = await page.locator("#atelier-search").getAttribute("type");
@@ -1263,6 +1311,20 @@ try {
   }
   if (await page.locator("[data-lightbox-next]").isDisabled()) {
     throw new Error("expected next control to be enabled mid-list");
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+
+  // 3a'. Arrow keys on a focused <video controls> seek the video instead of
+  //      flipping to the neighbouring pin (meta/issues/101).
+  await page.locator('[data-pin][data-pin-key="video:200"] [data-pin-media]').click();
+  await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  const videoLightboxIndex = await page.locator("[data-lightbox]").getAttribute("data-lightbox-index");
+  await page.locator("[data-lightbox] video").focus();
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(200);
+  if ((await page.locator("[data-lightbox]").getAttribute("data-lightbox-index")) !== videoLightboxIndex) {
+    throw new Error("expected ArrowRight on a focused lightbox video to not navigate to the next pin");
   }
   await page.keyboard.press("Escape");
   await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });

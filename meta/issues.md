@@ -28,7 +28,6 @@
 - [ ] [Gate live WebSocket snapshots on data changes and share them across clients](issues/097-gate-live-snapshots-on-data-version.md)
 - [ ] [Replace the embedding snapshot `MAX(updated_at)` scan with a generation counter](issues/098-replace-embedding-snapshot-scan-with-generation-counter.md)
 - [ ] [Add lookup indexes for `index_jobs`](issues/099-add-index-jobs-lookup-indexes.md)
-- [ ] [Fix Feed and lightbox keyboard and advance conflicts](issues/101-fix-feed-and-lightbox-keyboard-conflicts.md)
 - [ ] [Cache llama.cpp and libvips builds in CI](issues/103-cache-native-builds-in-ci.md)
 - [ ] [Extend CI beyond `go test`](issues/104-extend-ci-checks.md)
 - [ ] [Ship or clearly disable video transcription in releases](issues/105-ship-onnxruntime-for-transcription-in-releases.md)

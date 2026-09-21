@@ -112,8 +112,12 @@
 
   function onKey(event: KeyboardEvent) {
     if (!$lightboxPin) return;
+    // A focused <video controls> owns the arrow keys for seeking.
+    const onVideo = event.target instanceof HTMLElement && event.target.tagName === "VIDEO";
     if (event.key === "Escape") {
       close();
+    } else if (onVideo) {
+      return;
     } else if (event.key === "ArrowLeft") {
       event.preventDefault();
       showPrev();

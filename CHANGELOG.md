@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(ui): Feed initial focus lands on play/pause so Space right after opening no longer closes the overlay, a tail "Next" waits for an in-flight lookahead fetch and advances, the play toggle no longer surfaces a rejected `play()` as an unhandled error, and lightbox arrow keys leave a focused video alone so keyboard seeking works (issue 101).
 - feat(upload): replace the shared 64 MiB request cap with per-file limits by media type (images 64 MiB, videos 2 GiB; `-max-image-upload-mb`, `-max-video-upload-mb`), answer `413` with a JSON body naming the file and `limit_bytes`, and give each upload request its own `-upload-timeout` deadline (default 30m) so large videos on slow links are not cut off by the server-wide read timeout (issue 100).
 - fix(upload): report a concurrent duplicate video upload as `duplicate: true` with the existing row instead of failing on the `sha256` UNIQUE constraint (issue 102).
 - fix(ui): de-duplicate pins by key when Load More appends an offset-paginated page, so a library that shifts between pages no longer crashes the keyed masonry with `each_key_duplicate` (issue 095).

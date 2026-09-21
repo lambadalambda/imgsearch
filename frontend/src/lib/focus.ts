@@ -1,7 +1,13 @@
+export interface FocusTrapOptions {
+  /** Selector for the element to focus on mount instead of the first
+   *  focusable, e.g. a play/pause control rather than the close button. */
+  initial?: string;
+}
+
 /** Svelte action for modal dialogs: moves focus into the node on mount,
  *  keeps Tab/Shift+Tab cycling inside it, and restores focus to the
  *  previously focused element when the node is destroyed. */
-export function focusTrap(node: HTMLElement) {
+export function focusTrap(node: HTMLElement, options: FocusTrapOptions = {}) {
   const previous =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
@@ -21,7 +27,8 @@ export function focusTrap(node: HTMLElement) {
     );
   }
 
-  (focusables()[0] ?? node).focus();
+  const initial = options.initial ? node.querySelector<HTMLElement>(options.initial) : null;
+  (initial ?? focusables()[0] ?? node).focus();
 
   function onKeydown(event: KeyboardEvent) {
     if (event.key !== "Tab") return;

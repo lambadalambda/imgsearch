@@ -390,7 +390,8 @@
 
   async function ensureLookahead(): Promise<void> {
     if (exhausted) return;
-    if (lookaheadPromise) return;
+    // Join an in-flight fetch so a tail "Next" waits for it and advances.
+    if (lookaheadPromise) return lookaheadPromise;
     if (remainingAhead > FEED_FETCH_AHEAD_THRESHOLD) return;
     lookaheadPromise = (async () => {
       loadingMore = true;
@@ -553,7 +554,7 @@
   function togglePlay(): void {
     const el = activeVideo();
     if (!el) return;
-    if (el.paused) void el.play();
+    if (el.paused) void playCurrent();
     else el.pause();
   }
 
@@ -732,7 +733,7 @@
     data-feed-current-index={currentIndex}
     data-feed-queue-size={queue.length}
     data-feed-exhausted={exhausted ? "true" : undefined}
-    use:focusTrap
+    use:focusTrap={{ initial: "[data-feed-playpause]" }}
     class="fixed inset-0 z-[1400] bg-black text-[#fffdf9] [touch-action:none] [overscroll-behavior:contain] flex flex-col"
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}
