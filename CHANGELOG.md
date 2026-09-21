@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(annotations): add an OpenAI-compatible remote annotator client (chat completions with image input, JSON-mode fallback, bounded retries with `Retry-After`) and wire `POST /api/settings/annotation/test` to it.
 - feat(settings): add persisted annotation settings (`settings` table) with `GET`/`PUT /api/settings`, masking the remote API key in responses and seeding defaults from the annotator flags. `POST /api/settings/annotation/test` is routed but answers `503` until the remote annotator client is wired.
 - feat(ui): expose Flag NSFW, Re-annotate, and Delete in the Atelier lightbox, synced with the card badges.
 - feat(ui): make the Feed progress bar an interactive scrubber with an elapsed/total time display and ArrowLeft/Right 5s seeking.

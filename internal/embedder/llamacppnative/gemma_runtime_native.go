@@ -110,13 +110,7 @@ func (e *Embedder) AnnotateImageWithOptions(ctx context.Context, imagePath strin
 		e.annotationTemperature,
 		e.annotationSeed,
 		imagePath,
-		annotation.ImageSystemPrompt,
-		annotation.ImageUserPrompt(opts.OriginalName),
-		annotation.FullJSONSchema,
-		annotation.ImageMaxTokens,
-		annotation.ImageRetrySystemPrompt,
-		annotation.ImageRetryUserPrompt,
-		annotation.ImageRetryMaxTokens,
+		annotation.ImageRequest(opts.OriginalName),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -141,7 +135,7 @@ func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAn
 	if len(input.Frames) == 0 {
 		return coreembedder.VideoAnnotation{}, fmt.Errorf("at least one frame annotation is required")
 	}
-	userPrompt, err := annotation.VideoUserPrompt(input)
+	req, err := annotation.VideoRequest(input)
 	if err != nil {
 		return coreembedder.VideoAnnotation{}, err
 	}
@@ -155,13 +149,7 @@ func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAn
 		e.annotationTemperature,
 		e.annotationSeed,
 		representativeFramePath,
-		annotation.VideoSystemPrompt,
-		userPrompt,
-		annotation.FullJSONSchema,
-		annotation.VideoMaxTokens,
-		annotation.VideoRetrySystemPrompt,
-		annotation.VideoRetryUserPrompt,
-		annotation.VideoRetryMaxTokens,
+		req,
 	)
 	if err != nil {
 		return coreembedder.VideoAnnotation{}, err
@@ -190,13 +178,7 @@ func (e *Embedder) AnnotateVideoFrame(ctx context.Context, imagePath string, opt
 		e.annotationTemperature,
 		e.annotationSeed,
 		imagePath,
-		annotation.VideoFrameSystemPrompt,
-		annotation.VideoFrameUserPrompt(opts.OriginalName),
-		annotation.CompactJSONSchema,
-		annotation.VideoFrameMaxTokens,
-		annotation.VideoFrameRetrySystemPrompt,
-		annotation.VideoFrameRetryUserPrompt,
-		annotation.VideoFrameRetryMaxTokens,
+		annotation.VideoFrameRequest(opts.OriginalName),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -323,13 +305,7 @@ func (r *nativeGemmaRuntime) AnnotateImageWithOptions(ctx context.Context, image
 		r.annotationTemperature,
 		r.annotationSeed,
 		imagePath,
-		annotation.ImageSystemPrompt,
-		annotation.ImageUserPrompt(opts.OriginalName),
-		annotation.FullJSONSchema,
-		annotation.ImageMaxTokens,
-		annotation.ImageRetrySystemPrompt,
-		annotation.ImageRetryUserPrompt,
-		annotation.ImageRetryMaxTokens,
+		annotation.ImageRequest(opts.OriginalName),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -358,7 +334,7 @@ func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedd
 	if len(input.Frames) == 0 {
 		return coreembedder.VideoAnnotation{}, fmt.Errorf("at least one frame annotation is required")
 	}
-	userPrompt, err := annotation.VideoUserPrompt(input)
+	req, err := annotation.VideoRequest(input)
 	if err != nil {
 		return coreembedder.VideoAnnotation{}, err
 	}
@@ -372,13 +348,7 @@ func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedd
 		r.annotationTemperature,
 		r.annotationSeed,
 		representativeFramePath,
-		annotation.VideoSystemPrompt,
-		userPrompt,
-		annotation.FullJSONSchema,
-		annotation.VideoMaxTokens,
-		annotation.VideoRetrySystemPrompt,
-		annotation.VideoRetryUserPrompt,
-		annotation.VideoRetryMaxTokens,
+		req,
 	)
 	if err != nil {
 		return coreembedder.VideoAnnotation{}, err
@@ -410,13 +380,7 @@ func (r *nativeGemmaRuntime) AnnotateVideoFrame(ctx context.Context, imagePath s
 		r.annotationTemperature,
 		r.annotationSeed,
 		imagePath,
-		annotation.VideoFrameSystemPrompt,
-		annotation.VideoFrameUserPrompt(opts.OriginalName),
-		annotation.CompactJSONSchema,
-		annotation.VideoFrameMaxTokens,
-		annotation.VideoFrameRetrySystemPrompt,
-		annotation.VideoFrameRetryUserPrompt,
-		annotation.VideoFrameRetryMaxTokens,
+		annotation.VideoFrameRequest(opts.OriginalName),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -514,15 +478,9 @@ func describeAndTagImageWithHandle(
 	annotationTemperature float32,
 	annotationSeed int64,
 	imagePath string,
-	systemPrompt string,
-	userPrompt string,
-	jsonSchema string,
-	maxTokens int,
-	retrySystemPrompt string,
-	retryUserPrompt string,
-	retryMaxTokens int,
+	req annotation.Request,
 ) (annotation.Response, string, error) {
-	raw, timing, err := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
+	raw, timing, err := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, req.SystemPrompt, req.UserPrompt, req.JSONSchema, req.MaxTokens)
 	if err != nil {
 		return annotation.Response{}, "", err
 	}
@@ -530,7 +488,7 @@ func describeAndTagImageWithHandle(
 
 	var result annotation.Response
 	if err := annotation.DecodeJSONObject(raw, &result); err != nil {
-		retryRaw, retryTiming, retryErr := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, retrySystemPrompt, retryUserPrompt, jsonSchema, retryMaxTokens)
+		retryRaw, retryTiming, retryErr := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, req.RetrySystemPrompt, req.RetryUserPrompt, req.JSONSchema, req.RetryMaxTokens)
 		if retryErr != nil {
 			return annotation.Response{}, raw, fmt.Errorf("%v; retry failed: %w", err, retryErr)
 		}

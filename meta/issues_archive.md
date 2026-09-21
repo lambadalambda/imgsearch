@@ -89,3 +89,4 @@
 - [x] [Replace window.confirm delete confirmation with a styled dialog](issues/090-replace-native-delete-confirm.md)
 - [x] [Extract shared annotation prompts and response parsing](issues/114-extract-shared-annotation-prompts-and-parsing.md)
 - [x] [Add a persisted settings store and `/api/settings`](issues/115-add-persisted-settings-store-and-api.md)
+- [x] [Add an OpenAI-compatible remote annotator](issues/116-add-openai-compatible-remote-annotator.md)
