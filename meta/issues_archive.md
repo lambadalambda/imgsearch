@@ -108,3 +108,4 @@
 - [x] [Add a `-version` flag and stamp release builds](issues/106-add-version-flag-and-release-stamp.md)
 - [x] [Fix documentation drift](issues/107-fix-docs-drift.md)
 - [x] [Share media action state between card and lightbox](issues/096-share-media-actions-between-card-and-lightbox.md)
+- [x] [Cache llama.cpp and libvips builds in CI](issues/103-cache-native-builds-in-ci.md)

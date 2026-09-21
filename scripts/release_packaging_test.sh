@@ -6,6 +6,7 @@ package_script="$(<"${repo_root}/scripts/package_release.sh")"
 build_script="$(<"${repo_root}/scripts/ensure_llama_cpp_native_build.sh")"
 ci_workflow="$(<"${repo_root}/.github/workflows/ci.yml")"
 release_workflow="$(<"${repo_root}/.github/workflows/rolling-release.yml")"
+native_action="$(<"${repo_root}/.github/actions/native-deps/action.yml")"
 
 assert_contains() {
   local haystack="$1"
@@ -39,17 +40,24 @@ assert_contains "${package_script}" '${archive_name}.tar.gz'
 assert_contains "${release_workflow}" 'removeArtifacts: true'
 assert_contains "${build_script}" 'IMGSEARCH_LLAMA_CMAKE_ARGS'
 assert_contains "${build_script}" 'IMGSEARCH_LLAMA_BUILD_JOBS'
-assert_contains "${ci_workflow}" 'ffmpeg'
-assert_contains "${ci_workflow}" 'vips-8.18.0.tar.xz'
+# Shared native dependency action: cached libvips and llama.cpp builds.
+assert_contains "${native_action}" 'vips-8.18.0.tar.xz'
+assert_contains "${native_action}" 'DESTDIR=/tmp/vips-stage meson install'
+assert_contains "${native_action}" 'actions/cache@v4'
+assert_contains "${native_action}" 'path: deps/llama.cpp/build'
+assert_contains "${native_action}" 'git rev-parse HEAD:deps/llama.cpp'
+assert_contains "${native_action}" 'IMGSEARCH_LLAMA_CMAKE_ARGS'
+assert_contains "${native_action}" 'IMGSEARCH_LLAMA_BUILD_JOBS'
+assert_not_contains "${native_action}" 'libvips-dev'
+# CI: shared native deps.
+assert_contains "${ci_workflow}" 'uses: ./.github/actions/native-deps'
+assert_contains "${ci_workflow}" 'extra-linux-packages: ffmpeg'
 assert_not_contains "${ci_workflow}" 'libvips-dev'
-assert_contains "${ci_workflow}" 'IMGSEARCH_LLAMA_BUILD_JOBS'
+# Release: same action with portable CPU flags on Linux.
 assert_contains "${release_workflow}" 'actions/setup-node@v4'
-assert_contains "${release_workflow}" "Build Linux llama.cpp runtime libraries"
-assert_contains "${release_workflow}" "if: runner.os == 'Linux'"
-assert_contains "${release_workflow}" 'IMGSEARCH_LLAMA_CMAKE_ARGS: -DGGML_NATIVE=OFF'
-assert_contains "${release_workflow}" 'IMGSEARCH_LLAMA_BUILD_JOBS: 2'
-assert_contains "${release_workflow}" "Build macOS llama.cpp runtime libraries"
-assert_contains "${release_workflow}" "if: runner.os == 'macOS'"
+assert_contains "${release_workflow}" 'uses: ./.github/actions/native-deps'
+assert_contains "${release_workflow}" 'extra-linux-packages: patchelf'
+assert_contains "${release_workflow}" '-DGGML_NATIVE=OFF'
 assert_contains "${release_workflow}" 'scripts/package_release.sh'
 assert_contains "${release_workflow}" 'the built Atelier frontend'
 assert_not_contains "${release_workflow}" 'default 8B Qwen'
