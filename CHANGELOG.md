@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(security): require the API key or UI cookie for `/media/` file routes and answer `404` for media directory paths, so an exposed bind can no longer list or download the library anonymously (issue 093).
 - feat(ui): add an Atelier Settings page (Rail button, `?view=settings`) to pick the annotation backend: native `e4b`/`26b` or a remote OpenAI-compatible server with model listing, connection test, masked API key, active-backend status, and a confirmed "Re-annotate all" action.
 - feat(settings): add `POST /api/settings/annotation/models` to list a remote annotation server's models for the settings page.
 - feat(jobs): add `POST /api/jobs/reannotate-all` (optional `media=images|videos|all`) that flags every standalone image and video for re-annotation and resets their jobs while keeping existing text visible until replaced; the worker now re-annotates flagged media even when text already exists.

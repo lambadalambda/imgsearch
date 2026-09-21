@@ -24,7 +24,6 @@
 
 ## Review 2026-09-21
 
-- [ ] [Authenticate `/media/` routes and refuse directory listings](issues/093-authenticate-media-routes-and-refuse-listings.md)
 - [ ] [Renew leases for batched embed jobs](issues/094-renew-leases-for-batched-embed-jobs.md)
 - [ ] [De-duplicate pins by key on Load More](issues/095-dedupe-pins-by-key-on-load-more.md)
 - [ ] [Share media action state between card and lightbox](issues/096-share-media-actions-between-card-and-lightbox.md)

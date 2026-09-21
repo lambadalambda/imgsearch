@@ -69,11 +69,16 @@ func NewHandler(dataDir string) http.Handler {
 	imagesRoot := filepath.Join(dataDir, "images")
 	videosRoot := filepath.Join(dataDir, "videos")
 	mediaMux := http.NewServeMux()
-	mediaMux.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(imagesRoot))))
-	mediaMux.Handle("/videos/", http.StripPrefix("/videos/", videoFileServer(videosRoot)))
+	mediaMux.Handle("/images/", http.StripPrefix("/images/", mediaFileServer(imagesRoot, nil)))
+	mediaMux.Handle("/videos/", http.StripPrefix("/videos/", mediaFileServer(videosRoot, sniffStoredVideoContentType)))
+	// Register the bare subtree paths too so ServeMux does not answer them with
+	// a redirect to the directory URL.
+	mediaMux.Handle("/images", http.NotFoundHandler())
+	mediaMux.Handle("/videos", http.NotFoundHandler())
 
 	mux := http.NewServeMux()
 	mux.Handle("/media/", http.StripPrefix("/media", mediaMux))
+	mux.Handle("/media", http.NotFoundHandler())
 
 	// Legacy UI at /legacy (assets at /legacy/assets/*).
 	mux.Handle("/legacy/assets/", http.StripPrefix("/legacy/assets/", http.FileServer(http.FS(legacyAssets))))
@@ -133,11 +138,22 @@ func legacyIndexHandler(index []byte) http.HandlerFunc {
 	}
 }
 
-func videoFileServer(root string) http.Handler {
+// mediaFileServer serves regular files below root and answers 404 for
+// anything else, including directories, so stored media is never listed.
+// contentType, when set, is given the resolved file path and may return a
+// Content-Type to force for it.
+func mediaFileServer(root string, contentType func(fullPath string) string) http.Handler {
 	files := http.FileServer(http.Dir(root))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet || r.Method == http.MethodHead {
-			if ct := sniffStoredVideoContentType(root, r.URL.Path); ct != "" {
+		fullPath := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")))
+		info, err := os.Stat(fullPath)
+		if err != nil || !info.Mode().IsRegular() {
+			http.NotFound(w, r)
+			return
+		}
+
+		if contentType != nil {
+			if ct := contentType(fullPath); ct != "" {
 				w.Header().Set("Content-Type", ct)
 			}
 		}
@@ -146,23 +162,12 @@ func videoFileServer(root string) http.Handler {
 	})
 }
 
-func sniffStoredVideoContentType(root string, requestPath string) string {
-	cleanPath := path.Clean("/" + requestPath)
-	if cleanPath == "/" {
-		return ""
-	}
-	fullPath := filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(cleanPath, "/")))
-
+func sniffStoredVideoContentType(fullPath string) string {
 	file, err := os.Open(fullPath)
 	if err != nil {
 		return ""
 	}
 	defer file.Close()
-
-	info, err := file.Stat()
-	if err != nil || info.IsDir() {
-		return ""
-	}
 
 	var header [512]byte
 	n, _ := file.Read(header[:])

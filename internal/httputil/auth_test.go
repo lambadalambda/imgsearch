@@ -142,11 +142,7 @@ func withAPISecurity(apiKey string, next http.Handler) http.Handler {
 // to use the API. A non-API request mints the auth cookie, and a subsequent
 // same-origin API call carrying that cookie is accepted.
 func TestAPISecurityChainMintsCookieOnWebAndAcceptsItOnAPI(t *testing.T) {
-	h := withAPISecurity("secret-token", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isAPIPath(r.URL.Path) {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+	h := withAPISecurity("secret-token", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -197,5 +193,49 @@ func TestAPISecurityChainAcceptsAPIHeaderAuthIndependentlyOfCookies(t *testing.T
 	h.ServeHTTP(headerRR, headerReq)
 	if headerRR.Code != http.StatusOK {
 		t.Fatalf("header status: got=%d want=%d body=%s", headerRR.Code, http.StatusOK, headerRR.Body.String())
+	}
+}
+
+func TestAPIAuthMiddlewareGuardsMediaRoutes(t *testing.T) {
+	h := NewAPIAuthMiddleware("secret-token")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	for _, path := range []string{"/media/images/abc", "/media/videos/abc", "/media/images/", "/media"} {
+		anon := httptest.NewRequest(http.MethodGet, path, nil)
+		anonRR := httptest.NewRecorder()
+		h.ServeHTTP(anonRR, anon)
+		if anonRR.Code != http.StatusUnauthorized {
+			t.Fatalf("%s anonymous status: got=%d want=%d", path, anonRR.Code, http.StatusUnauthorized)
+		}
+	}
+
+	withHeader := httptest.NewRequest(http.MethodGet, "/media/images/abc", nil)
+	withHeader.Header.Set(APIKeyHeaderName, "secret-token")
+	headerRR := httptest.NewRecorder()
+	h.ServeHTTP(headerRR, withHeader)
+	if headerRR.Code != http.StatusNoContent {
+		t.Fatalf("header status: got=%d want=%d", headerRR.Code, http.StatusNoContent)
+	}
+
+	withCookie := httptest.NewRequest(http.MethodGet, "/media/videos/abc", nil)
+	withCookie.AddCookie(&http.Cookie{Name: APIKeyCookieName, Value: apiKeyCookieValue("secret-token")})
+	cookieRR := httptest.NewRecorder()
+	h.ServeHTTP(cookieRR, withCookie)
+	if cookieRR.Code != http.StatusNoContent {
+		t.Fatalf("cookie status: got=%d want=%d", cookieRR.Code, http.StatusNoContent)
+	}
+}
+
+func TestAPIKeyCookieMiddlewareDoesNotMintCookieOnMediaRequests(t *testing.T) {
+	h := NewAPIKeyCookieMiddleware("secret-token")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/media/images/abc", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Header().Get("Set-Cookie") != "" {
+		t.Fatalf("did not expect auth cookie to be set on media request")
 	}
 }

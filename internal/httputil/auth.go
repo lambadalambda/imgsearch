@@ -25,7 +25,7 @@ func NewAPIAuthMiddleware(apiKey string) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !isAPIPath(r.URL.Path) {
+			if !isProtectedPath(r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -56,7 +56,7 @@ func NewAPIKeyCookieMiddleware(apiKey string) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !isAPIPath(r.URL.Path) {
+			if !isProtectedPath(r.URL.Path) {
 				cookieValue := apiKeyCookieValue(apiKey)
 				http.SetCookie(w, &http.Cookie{
 					Name:     APIKeyCookieName,
@@ -109,6 +109,14 @@ func secureTokenEqual(token string, expected string) bool {
 	return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
 }
 
-func isAPIPath(path string) bool {
-	return path == "/api" || strings.HasPrefix(path, "/api/")
+// isProtectedPath reports whether a request path requires API key or cookie
+// auth. Both the JSON API and the stored media files sit behind the same
+// trust boundary; only the UI shell and its static assets are open, because
+// loading them is what mints the auth cookie for browsers.
+func isProtectedPath(path string) bool {
+	return hasPathPrefix(path, "/api") || hasPathPrefix(path, "/media")
+}
+
+func hasPathPrefix(path string, prefix string) bool {
+	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }

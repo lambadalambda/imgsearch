@@ -257,3 +257,51 @@ func TestUnknownPathReturnsNotFound(t *testing.T) {
 		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusNotFound)
 	}
 }
+
+func TestMediaDirectoryPathsAreNotListed(t *testing.T) {
+	dataDir := t.TempDir()
+	for _, sub := range []string{"images", "videos", filepath.Join("images", "nested")} {
+		if err := os.MkdirAll(filepath.Join(dataDir, sub), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", sub, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "images", "visible.bin"), []byte("img"), 0o644); err != nil {
+		t.Fatalf("write image probe: %v", err)
+	}
+	// http.FileServer's classic listing side doors: an index.html redirect
+	// and a directory reached through a symlink.
+	if err := os.WriteFile(filepath.Join(dataDir, "images", "index.html"), []byte("<a href=\"visible.bin\">"), 0o644); err != nil {
+		t.Fatalf("write index probe: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(dataDir, "images", "nested"), filepath.Join(dataDir, "images", "linkdir")); err != nil {
+		t.Fatalf("symlink dir: %v", err)
+	}
+
+	h := NewHandler(dataDir)
+
+	for _, path := range []string{"/media/images/", "/media/videos/", "/media/images", "/media/videos", "/media/images/nested/", "/media/images/nested", "/media/images/linkdir/", "/media/images/linkdir", "/media/", "/media"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("%s: got=%d want=%d body=%q", path, rr.Code, http.StatusNotFound, rr.Body.String())
+		}
+		if strings.Contains(rr.Body.String(), "visible.bin") {
+			t.Fatalf("%s: response leaked directory listing: %q", path, rr.Body.String())
+		}
+	}
+
+	indexReq := httptest.NewRequest(http.MethodGet, "/media/images/index.html", nil)
+	indexRR := httptest.NewRecorder()
+	h.ServeHTTP(indexRR, indexReq)
+	if indexRR.Code == http.StatusOK && strings.Contains(indexRR.Body.String(), "visible.bin") {
+		t.Fatalf("index.html path must not list: got=%d body=%q", indexRR.Code, indexRR.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/media/images/visible.bin", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || rr.Body.String() != "img" {
+		t.Fatalf("file still served: got=%d body=%q", rr.Code, rr.Body.String())
+	}
+}
