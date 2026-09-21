@@ -97,3 +97,4 @@
 - [x] [Add a settings page for the annotation backend and model](issues/113-annotation-backend-settings-page.md)
 
 - [x] [Authenticate `/media/` routes and refuse directory listings](issues/093-authenticate-media-routes-and-refuse-listings.md)
+- [x] [Renew leases for batched embed jobs](issues/094-renew-leases-for-batched-embed-jobs.md)

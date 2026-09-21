@@ -446,6 +446,13 @@ func (q *Queue) processEmbedJobsBatch(ctx context.Context, batcher embedder.Batc
 		paths[i] = item.absPath
 	}
 
+	leasedJobs := make([]claimedJob, len(prepared))
+	for i, item := range prepared {
+		leasedJobs[i] = item.job
+	}
+	ctx, stopRenewingLeases := q.startLeaseRenewer(ctx, leasedJobs...)
+	defer stopRenewingLeases()
+
 	batchStartedAt := time.Now()
 	vecs, err := batcher.EmbedImages(ctx, paths)
 	batchDuration := time.Since(batchStartedAt)
@@ -1235,8 +1242,17 @@ WHERE id = ?
 	return nil
 }
 
-func (q *Queue) startLeaseRenewer(ctx context.Context, job claimedJob) (context.Context, func()) {
-	if job.ID <= 0 || job.LeaseOwner == "" {
+// startLeaseRenewer keeps the leases of the given jobs alive on a ticker
+// until the returned stop function is called. If any renewal fails the
+// returned context is cancelled so in-flight work for those jobs stops.
+func (q *Queue) startLeaseRenewer(ctx context.Context, jobs ...claimedJob) (context.Context, func()) {
+	renewable := jobs[:0:0]
+	for _, job := range jobs {
+		if job.ID > 0 && job.LeaseOwner != "" {
+			renewable = append(renewable, job)
+		}
+	}
+	if len(renewable) == 0 {
 		return ctx, func() {}
 	}
 	extension := q.LeaseDuration
@@ -1263,13 +1279,15 @@ func (q *Queue) startLeaseRenewer(ctx context.Context, job claimedJob) (context.
 			case <-jobCtx.Done():
 				return
 			case <-ticker.C:
-				if err := q.RenewLease(jobCtx, job.ID, job.LeaseOwner, extension); err != nil {
-					if jobCtx.Err() != nil {
+				for _, job := range renewable {
+					if err := q.RenewLease(jobCtx, job.ID, job.LeaseOwner, extension); err != nil {
+						if jobCtx.Err() != nil {
+							return
+						}
+						log.Printf("worker lease renewal failed job id=%d kind=%s owner=%s err=%v", job.ID, job.Kind, job.LeaseOwner, err)
+						cancel()
 						return
 					}
-					log.Printf("worker lease renewal failed job id=%d kind=%s owner=%s err=%v", job.ID, job.Kind, job.LeaseOwner, err)
-					cancel()
-					return
 				}
 			}
 		}
