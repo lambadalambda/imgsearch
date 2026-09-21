@@ -1,4 +1,5 @@
-import { defineConfig, loadEnv } from "vite";
+import { loadEnv } from "vite";
+import { defineConfig } from "vitest/config";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
@@ -42,6 +43,10 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: false,
       sourcemap: false,
       target: "es2022",
+    },
+    test: {
+      environment: "node",
+      include: ["src/**/*.test.ts"],
     },
     server: {
       port: 5173,

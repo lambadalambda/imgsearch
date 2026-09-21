@@ -76,6 +76,7 @@ jobs:
           cd frontend
           npm ci --no-audit --no-fund
           npm run check
+          npm test
           npm run build
 
       - name: Run shell script tests

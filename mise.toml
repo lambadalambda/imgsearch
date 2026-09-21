@@ -4,7 +4,11 @@ node = "lts"
 watchexec = "latest"
 
 [tasks.test]
-description = "Run Go tests"
+description = "Run Go tests and frontend unit tests"
+run = "go test ./... && cd frontend && npm install --no-audit --no-fund --silent && npm test"
+
+[tasks."test:go"]
+description = "Run Go tests only"
 run = "go test ./..."
 
 [tasks."dev:frontend"]

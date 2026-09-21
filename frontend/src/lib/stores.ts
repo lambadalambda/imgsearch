@@ -1,64 +1,19 @@
 import { writable, derived, get } from "svelte/store";
 import type { Pin, StatsResponse } from "./types";
+import { parseSearch, searchFor, type AppMode } from "./urlState";
 
-export type ViewMode = "library" | "search" | "similar" | "tag" | "stats" | "settings";
+export type { AppMode, ViewMode } from "./urlState";
 export type LibrarySort = "random" | "newest";
 export type LibraryMedia = "all" | "images" | "videos";
 
-export interface AppMode {
-  mode: ViewMode;
-  query?: string;
-  similarTo?: number;
-  tags?: string[];
-  tagMode?: "any" | "all";
-}
-
 function readURL(): AppMode {
   if (typeof window === "undefined") return { mode: "library" };
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("view") === "stats") {
-    return { mode: "stats" };
-  }
-  if (params.get("view") === "settings") {
-    return { mode: "settings" };
-  }
-  const q = params.get("q");
-  const similar = params.get("similar");
-  const tags = params.getAll("tag").filter(Boolean);
-  if (tags.length > 0) {
-    const tagMode = params.get("tag_mode") === "all" ? "all" : "any";
-    return { mode: "tag", tags, tagMode };
-  }
-  if (similar && Number.isFinite(Number(similar))) {
-    return { mode: "similar", similarTo: Number(similar) };
-  }
-  if (q) {
-    return { mode: "search", query: q };
-  }
-  return { mode: "library" };
+  return parseSearch(window.location.search);
 }
 
 function writeURL(state: AppMode, replace: boolean): void {
   if (typeof window === "undefined") return;
-  const params = new URLSearchParams();
-  if (state.mode === "stats") {
-    params.set("view", "stats");
-  } else if (state.mode === "settings") {
-    params.set("view", "settings");
-  } else if (state.mode === "search" && state.query) {
-    params.set("q", state.query);
-  } else if (state.mode === "similar" && state.similarTo !== undefined) {
-    params.set("similar", String(state.similarTo));
-  } else if (state.mode === "tag" && state.tags?.length) {
-    for (const tag of state.tags) {
-      params.append("tag", tag);
-    }
-    if (state.tagMode === "all") {
-      params.set("tag_mode", "all");
-    }
-  }
-  const newSearch = params.toString();
-  const targetSearch = newSearch ? `?${newSearch}` : "";
+  const targetSearch = searchFor(state);
   // Re-asserting the current view (e.g. re-submitting the same search) must
   // not pile up duplicate history entries.
   if (window.location.search === targetSearch) return;

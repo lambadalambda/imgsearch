@@ -38,6 +38,9 @@ One-command startup:
 - `mise run "serve:8b"` uses the 8B search model and `e4b` annotator.
 - `mise run "serve:smoke"` for a local startup smoke check that waits for `/healthz`
 
+Frontend unit tests:
+- `cd frontend && npm test` runs the vitest suite for the pure modules under `frontend/src/lib/` (feed feedback model, URL state, library ordering, pin helpers). `mise run test` runs it after the Go suite; `mise run test:go` runs Go only.
+
 Browser UI smoke tests:
 - `npm install` if Node dependencies are not installed yet.
 - `npm run playwright:install` if Chromium is not installed for Playwright yet.

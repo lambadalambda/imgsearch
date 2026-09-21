@@ -36,50 +36,10 @@
   } from "./lib/api";
   import { refreshStats } from "./lib/stats";
   import { appendUniquePins, pinFromImage, pinFromSearchResult, pinFromVideo } from "./lib/utils";
+  import { combineLibraryPins, newLibrarySeed } from "./lib/library";
   import type { Pin } from "./lib/types";
 
   const PAGE_SIZE = 48;
-  const RANDOM_SEED_MAX = 0x80000000;
-
-  function newLibrarySeed(): number {
-    if (globalThis.crypto?.getRandomValues) {
-      const values = new Uint32Array(1);
-      globalThis.crypto.getRandomValues(values);
-      return values[0] & 0x7fffffff;
-    }
-    return Math.floor(Math.random() * RANDOM_SEED_MAX);
-  }
-
-  function randomKey(key: string, seed: number): number {
-    let hash = seed >>> 0;
-    for (let i = 0; i < key.length; i += 1) {
-      hash = Math.imul(hash ^ key.charCodeAt(i), 16777619) >>> 0;
-    }
-    return hash;
-  }
-
-  function compareRecentPins(left: Pin, right: Pin): number {
-    const leftTime = Date.parse(left.createdAt ?? "") || 0;
-    const rightTime = Date.parse(right.createdAt ?? "") || 0;
-    return rightTime - leftTime || right.key.localeCompare(left.key);
-  }
-
-  function combineLibraryPins(imagePins: Pin[], videoPins: Pin[], sort: "random" | "newest", seed: number): Pin[] {
-    if (sort === "newest") {
-      return [...imagePins, ...videoPins].sort(compareRecentPins);
-    }
-
-    const first = randomKey("media:first", seed) % 2 === 0 ? videoPins : imagePins;
-    const second = first === videoPins ? imagePins : videoPins;
-    const out: Pin[] = [];
-    const max = Math.max(first.length, second.length);
-    for (let i = 0; i < max; i += 1) {
-      if (first[i]) out.push(first[i]);
-      if (second[i]) out.push(second[i]);
-    }
-    return out;
-  }
-
   // Stats are cheap and useful in the search bar, so fetch them immediately.
   // Tag cloud is deferred until after the first page load because its JSON tag
   // scan can otherwise monopolize the single SQLite connection before images.
