@@ -102,3 +102,4 @@
 - [x] [Upsert video uploads on sha256 conflict](issues/102-upsert-video-uploads-on-digest-conflict.md)
 - [x] [Raise upload limits and timeouts to fit video uploads](issues/100-raise-upload-limits-for-video.md)
 - [x] [Fix Feed and lightbox keyboard and advance conflicts](issues/101-fix-feed-and-lightbox-keyboard-conflicts.md)
+- [x] [Add lookup indexes for `index_jobs`](issues/099-add-index-jobs-lookup-indexes.md)

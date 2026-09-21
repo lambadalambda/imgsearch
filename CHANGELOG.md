@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- perf(db): add `index_jobs` lookup indexes on `(image_id, model_id, kind)`, `(video_id, model_id, kind)`, and `(state, kind, run_after, created_at)` so media deletes, library list joins, video list CTEs, and worker claims no longer full-scan or build automatic indexes (issue 099).
 - fix(ui): Feed initial focus lands on play/pause so Space right after opening no longer closes the overlay, a tail "Next" waits for an in-flight lookahead fetch and advances, the play toggle no longer surfaces a rejected `play()` as an unhandled error, and lightbox arrow keys leave a focused video alone so keyboard seeking works (issue 101).
 - feat(upload): replace the shared 64 MiB request cap with per-file limits by media type (images 64 MiB, videos 2 GiB; `-max-image-upload-mb`, `-max-video-upload-mb`), answer `413` with a JSON body naming the file and `limit_bytes`, and give each upload request its own `-upload-timeout` deadline (default 30m) so large videos on slow links are not cut off by the server-wide read timeout (issue 100).
 - fix(upload): report a concurrent duplicate video upload as `duplicate: true` with the existing row instead of failing on the `sha256` UNIQUE constraint (issue 102).

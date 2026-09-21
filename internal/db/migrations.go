@@ -216,6 +216,19 @@ CREATE TABLE IF NOT EXISTS settings_version (
 INSERT OR IGNORE INTO settings_version(id, version) VALUES (1, 0);
 `,
 	},
+	{
+		version: 10,
+		sql: `
+CREATE INDEX IF NOT EXISTS idx_index_jobs_image_lookup
+ON index_jobs(image_id, model_id, kind);
+
+CREATE INDEX IF NOT EXISTS idx_index_jobs_video_lookup
+ON index_jobs(video_id, model_id, kind);
+
+CREATE INDEX IF NOT EXISTS idx_index_jobs_claim
+ON index_jobs(state, kind, run_after, created_at);
+`,
+	},
 }
 
 func LatestVersion() int {

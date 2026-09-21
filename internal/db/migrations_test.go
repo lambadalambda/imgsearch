@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -181,4 +182,60 @@ func TestRunMigrationsCreatesCoreTables(t *testing.T) {
 			t.Fatalf("expected table %q to exist: %v", table, err)
 		}
 	}
+}
+
+// TestRunMigrationsAddsIndexJobsLookupIndexes pins the query plans for the
+// index_jobs shapes that used to full-scan or build automatic indexes
+// (meta/issues/099): media deletes, the library list joins, the video list
+// CTEs, and the worker claim.
+func TestRunMigrationsAddsIndexJobsLookupIndexes(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	if err := RunMigrations(ctx, db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+
+	for _, name := range []string{"idx_index_jobs_image_lookup", "idx_index_jobs_video_lookup", "idx_index_jobs_claim"} {
+		var got string
+		if err := db.QueryRowContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?`, name).Scan(&got); err != nil {
+			t.Fatalf("index %s missing: %v", name, err)
+		}
+	}
+
+	queries := map[string]string{
+		"delete image jobs": `DELETE FROM index_jobs WHERE image_id = 1`,
+		"delete video jobs": `DELETE FROM index_jobs WHERE video_id = 1`,
+		"images list join":  `SELECT i.id, COALESCE(j.state, 'pending') FROM images i LEFT JOIN index_jobs j ON j.image_id = i.id AND j.model_id = 1 AND j.kind = 'embed_image' ORDER BY i.id DESC LIMIT 10`,
+		"videos list cte":   `SELECT j.video_id, COUNT(j.id) FROM index_jobs j WHERE j.video_id IS NOT NULL AND j.model_id = 1 AND j.kind = 'annotate_video' GROUP BY j.video_id`,
+		"frame jobs cte":    `SELECT vf.video_id, COUNT(j.id) FROM video_frames vf LEFT JOIN index_jobs j ON j.image_id = vf.image_id AND j.model_id = 1 AND j.kind = 'embed_image' GROUP BY vf.video_id`,
+		"worker claim":      `SELECT id, kind FROM index_jobs WHERE kind IN ('embed_image', 'annotate_image') AND (run_after IS NULL OR run_after <= datetime('now')) AND (state = 'pending' OR (state = 'leased' AND leased_until IS NOT NULL AND leased_until <= datetime('now'))) ORDER BY CASE kind WHEN 'embed_image' THEN 0 ELSE 1 END ASC, created_at ASC LIMIT 1`,
+	}
+	for name, query := range queries {
+		plan := explainQueryPlan(t, db, query)
+		if strings.Contains(plan, "SCAN index_jobs") || strings.Contains(plan, "AUTOMATIC") {
+			t.Fatalf("%s still scans index_jobs:\n%s", name, plan)
+		}
+		if !strings.Contains(plan, "USING") || !strings.Contains(plan, "idx_index_jobs_") {
+			t.Fatalf("%s does not use an index_jobs lookup index:\n%s", name, plan)
+		}
+	}
+}
+
+func explainQueryPlan(t *testing.T, db *sql.DB, query string) string {
+	t.Helper()
+	rows, err := db.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+query)
+	if err != nil {
+		t.Fatalf("explain %q: %v", query, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var lines []string
+	for rows.Next() {
+		var id, parent, notUsed int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notUsed, &detail); err != nil {
+			t.Fatalf("scan plan row: %v", err)
+		}
+		lines = append(lines, detail)
+	}
+	return strings.Join(lines, "\n")
 }
