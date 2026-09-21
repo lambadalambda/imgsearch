@@ -51,11 +51,11 @@ type FailureItem struct {
 }
 
 type Response struct {
-	ImagesTotal           int64                   `json:"images_total"`
-	StandaloneImagesTotal int64                   `json:"standalone_images_total"`
-	VideoFrameImagesTotal int64                   `json:"video_frame_images_total"`
-	VideosTotal           int64                   `json:"videos_total"`
-	Queue                 QueueStats              `json:"queue"`
+	ImagesTotal           int64      `json:"images_total"`
+	StandaloneImagesTotal int64      `json:"standalone_images_total"`
+	VideoFrameImagesTotal int64      `json:"video_frame_images_total"`
+	VideosTotal           int64      `json:"videos_total"`
+	Queue                 QueueStats `json:"queue"`
 	// Expected totals and missing counts per non-embed job kind. The embed
 	// kind is reported via Queue (which already exposes total/missing).
 	ImageAnnotationExpected    int64                   `json:"image_annotation_expected"`
