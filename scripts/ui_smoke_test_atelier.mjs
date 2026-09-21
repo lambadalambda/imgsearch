@@ -215,6 +215,7 @@ async function serveDist(res, pathname) {
 let nsfwToggleCount = 0;
 const metadataPatches = [];
 const duplicateRequests = [];
+const byImageRequests = [];
 const deletedImageIds = new Set();
 let statsServed = 0;
 let reannotateCount = 0;
@@ -480,6 +481,13 @@ const server = createServer(async (req, res) => {
         results: candidates,
         total: candidates.length,
       });
+      return;
+    }
+    if (url.pathname === "/api/search/by-image" && req.method === "POST") {
+      let bytes = 0;
+      for await (const chunk of req) bytes += chunk.length;
+      byImageRequests.push({ bytes, limit: url.searchParams.get("limit") });
+      jsonResponse(res, 200, { results: searchResults().slice(0, 5), total: 5, debug: { duration_ms: 9 } });
       return;
     }
     if (url.pathname === "/api/search/similar") {
@@ -2073,6 +2081,28 @@ try {
   }
   await page.locator('a[aria-label="imgsearch home"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
+
+  // 8c. Pasting an image into the search bar runs a search-by-image
+  //     (meta/issues/112): the file is POSTed, results replace the grid, the
+  //     provenance line shows a preview, and no library item is created.
+  await page.locator("#atelier-search").focus();
+  await page.evaluate(() => {
+    const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (c) => c.charCodeAt(0));
+    const file = new File([png], "clipboard.png", { type: "image/png" });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    const event = new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true });
+    document.querySelector("#atelier-search")?.dispatchEvent(event);
+  });
+  await page.waitForFunction(() => /view=byimage/.test(window.location.search), {}, { timeout: 5000 });
+  await page.locator("[data-query-image]").waitFor({ state: "visible", timeout: 5000 });
+  await page.waitForFunction(() => document.querySelectorAll("[data-pin]").length === 5, {}, { timeout: 5000 });
+  if (byImageRequests.length !== 1 || byImageRequests[0].bytes < 60) {
+    throw new Error(`expected one by-image POST carrying the pasted file, got ${JSON.stringify(byImageRequests)}`);
+  }
+  await page.locator("[data-query-image-clear]").click();
+  await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
+  await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
 
   // 9. View preferences persist across reloads via localStorage
   //    (meta/issues/085).

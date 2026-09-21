@@ -1,4 +1,4 @@
-export type ViewMode = "library" | "search" | "similar" | "tag" | "stats" | "settings" | "duplicates";
+export type ViewMode = "library" | "search" | "similar" | "tag" | "stats" | "settings" | "duplicates" | "byimage";
 
 export interface AppMode {
   mode: ViewMode;
@@ -20,6 +20,8 @@ export function parseSearch(search: string): AppMode {
   if (params.get("view") === "duplicates") {
     return { mode: "duplicates" };
   }
+  // "byimage" is deliberately not restored from the URL: the query image
+  // lives only in memory, so a reload lands on the library.
   const q = params.get("q");
   const similar = params.get("similar");
   const tags = params.getAll("tag").filter(Boolean);
@@ -45,6 +47,8 @@ export function searchFor(state: AppMode): string {
     params.set("view", "settings");
   } else if (state.mode === "duplicates") {
     params.set("view", "duplicates");
+  } else if (state.mode === "byimage") {
+    params.set("view", "byimage");
   } else if (state.mode === "search" && state.query) {
     params.set("q", state.query);
   } else if (state.mode === "similar" && state.similarTo !== undefined) {

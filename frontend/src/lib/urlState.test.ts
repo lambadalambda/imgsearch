@@ -36,6 +36,10 @@ describe("searchFor", () => {
       expect(parseSearch(searchFor(view))).toEqual(view);
     }
   });
+  it("does not restore an image query from the URL", () => {
+    expect(searchFor({ mode: "byimage" })).toBe("?view=byimage");
+    expect(parseSearch("?view=byimage")).toEqual({ mode: "library" });
+  });
   it("falls back to the library for incomplete views", () => {
     expect(searchFor({ mode: "search" })).toBe("");
     expect(searchFor({ mode: "tag", tags: [] })).toBe("");

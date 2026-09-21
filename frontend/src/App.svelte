@@ -25,6 +25,9 @@
     pageBump,
     bumpPage,
     dataEpoch,
+    queryImage,
+    clearQueryImage,
+    setLibrary,
   } from "./lib/stores";
   import {
     ApiError,
@@ -32,6 +35,7 @@
     listTagCloud,
     listVideos,
     searchSimilar,
+    searchByImage,
     searchTags,
     searchText,
   } from "./lib/api";
@@ -93,8 +97,15 @@
     // Subscribe to dataEpoch so successful uploads (or other refresh events)
     // can force a fresh, replacing fetch without changing mode.
     const epoch = $dataEpoch;
+    const image = $queryImage;
+    if (state.mode === "byimage" && !image) {
+      // Nothing to search with (for example after a reload): back to the library.
+      setLibrary();
+      return;
+    }
     const dataKey = [
       state.mode,
+      state.mode === "byimage" ? String(image?.id ?? "") : "",
       state.query ?? "",
       state.similarTo ?? "",
       state.tags?.join("\u0000") ?? "",
@@ -149,6 +160,15 @@
           // the backend; "Load more" still re-runs but the response is the same set.
           const response = await searchSimilar({
             imageId: state.similarTo,
+            limit: PAGE_SIZE,
+            includeNSFW: includeNsfw,
+            signal: ac.signal,
+          });
+          nextPins = response.results.map(pinFromSearchResult);
+          total = response.total ?? response.results.length;
+        } else if (state.mode === "byimage" && image) {
+          const response = await searchByImage({
+            file: image.file,
             limit: PAGE_SIZE,
             includeNSFW: includeNsfw,
             signal: ac.signal,
@@ -271,7 +291,7 @@
       ? ` The library is still indexing (${embeddingBacklog.done.toLocaleString()} of ${embeddingBacklog.expected.toLocaleString()} images embedded), so results will improve as it completes.`
       : "";
     if ($mode.mode === "search") return `No matches for "${$mode.query ?? ""}".${indexingSuffix}`;
-    if ($mode.mode === "similar") return `No similar items found in your library.${indexingSuffix}`;
+    if ($mode.mode === "similar" || $mode.mode === "byimage") return `No similar items found in your library.${indexingSuffix}`;
     if ($mode.mode === "tag" && $mode.tags?.length) {
       return `No items tagged ${$mode.tags.join(", ")}.`;
     }
@@ -301,6 +321,24 @@
         aria-live="polite"
         class="px-5 sm:px-9 mt-3 mb-1 text-[12.5px] text-muted-2 flex flex-wrap gap-2 items-center"
       >
+        {#if $mode.mode === "byimage" && $queryImage}
+          <span data-query-image class="inline-flex items-center gap-2 pr-1 mr-1 border-r border-line">
+            <img src={$queryImage.previewUrl} alt="" class="w-7 h-7 rounded-[6px] object-cover border border-line" />
+            <span class="text-ink-2">Similar to {$queryImage.name}</span>
+            <button
+              type="button"
+              data-query-image-clear
+              aria-label="Clear image query"
+              onclick={() => {
+                clearQueryImage();
+                setLibrary();
+              }}
+              class="inline-grid place-items-center w-5 h-5 bg-transparent border-0 text-muted rounded-full cursor-pointer hover:bg-bg-2 hover:text-ink"
+            >
+              ×
+            </button>
+          </span>
+        {/if}
         {#if $resultsMeta.loading}
           <span>Loading…</span>
         {:else if $resultsMeta.error}

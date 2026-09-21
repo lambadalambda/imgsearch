@@ -111,6 +111,41 @@ export async function searchSimilar(opts: SimilarSearchOptions): Promise<SearchR
   return getJSON<SearchResponse>(`/api/search/similar?${params.toString()}`, { signal: opts.signal });
 }
 
+export interface ByImageSearchOptions {
+  file: File | Blob;
+  limit?: number;
+  includeNSFW?: boolean;
+  signal?: AbortSignal;
+}
+
+/** POST a pasted or dropped image; it is embedded server-side and never stored. */
+export async function searchByImage(opts: ByImageSearchOptions): Promise<SearchResponse> {
+  const params = new URLSearchParams();
+  params.set("limit", String(opts.limit ?? 48));
+  if (opts.includeNSFW) params.set("include_nsfw", "1");
+  const form = new FormData();
+  form.append("file", opts.file, opts.file instanceof File ? opts.file.name : "query");
+  const response = await fetch(`/api/search/by-image?${params.toString()}`, {
+    method: "POST",
+    credentials: "same-origin",
+    body: form,
+    signal: opts.signal,
+  });
+  if (!response.ok) {
+    let message = response.statusText || "image search failed";
+    try {
+      const payload = await response.json();
+      if (payload && typeof payload === "object" && "error" in payload) {
+        message = String((payload as { error: unknown }).error);
+      }
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(response.status, message);
+  }
+  return (await response.json()) as SearchResponse;
+}
+
 export interface SimilarVideoOptions {
   videoId: number;
   /** Optional matched-frame image_id; when absent the backend falls back to

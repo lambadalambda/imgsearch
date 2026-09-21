@@ -37,6 +37,10 @@
           <span>Settings</span>
         {:else if $mode.mode === "duplicates"}
           <span>Duplicates</span>
+        {:else if $mode.mode === "byimage"}
+          <a href="?" class="text-muted hover:text-ink transition-colors no-underline" onclick={goHome}>Discover</a>
+          <span class="mx-1.5 text-muted-2">/</span>
+          <span>Similar to image</span>
         {:else}
           <a href="?" class="text-muted hover:text-ink transition-colors no-underline" onclick={goHome}>Discover</a>
           <span class="mx-1.5 text-muted-2">/</span>

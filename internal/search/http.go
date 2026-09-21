@@ -98,6 +98,7 @@ func NewHandler(h *Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/search/text", h.handleTextSearch)
 	mux.HandleFunc("/api/search/similar", h.handleSimilarSearch)
+	mux.HandleFunc("/api/search/by-image", h.handleByImageSearch)
 	mux.HandleFunc("/api/search/similar-videos", h.handleSimilarVideoSearch)
 	mux.HandleFunc("/api/search/tags", h.handleTagSearch)
 	mux.HandleFunc("/api/search/tag-cloud", h.handleTagCloud)

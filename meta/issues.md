@@ -23,5 +23,3 @@
 - [ ] [Ignore Feed touch gestures from chrome controls](issues/064-ignore-feed-touch-gestures-from-chrome.md)
 
 ## Review 2026-09-21
-
-- [ ] [Search by an uploaded or pasted image](issues/112-search-by-uploaded-image.md)

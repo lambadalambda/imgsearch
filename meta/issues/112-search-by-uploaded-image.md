@@ -18,3 +18,4 @@
 ## Notes
 
 - Found during the 2026-09-21 review.
+- Outcome (2026-09-21): the query image is spooled under `data/tmp/`, embedded with the configured image embedder, and deleted; the `byimage` view is not restored from the URL after a reload because the file only lives in memory.

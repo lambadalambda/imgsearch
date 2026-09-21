@@ -307,7 +307,7 @@ This is documented in `meta/issues/054-harden-ui-api-cookie-auth.md` so the trus
 - Upload limits are per file: images up to 64 MiB and videos up to 2048 MiB by default (`-max-image-upload-mb`, `-max-video-upload-mb`). An oversized file rejects the whole request with `413 Payload Too Large` and a JSON body naming the file, its media type, and `limit_bytes`. One upload request may run for up to `-upload-timeout` (default 30m) regardless of the server-wide read/write timeouts.
 - Video transcription (Parakeet via ONNX Runtime) is on when `-parakeet-onnxruntime-lib` points at an ONNX Runtime shared library. Release archives bundle it and the `run.sh` wrappers pass it; the Parakeet model bundle downloads on first run. Without the flag the startup log prints one line saying transcription is disabled.
 - Data is stored in `./data` by default.
-- The UI includes uploads, indexing status, gallery browsing, text and tag search, similar-image search, a similar-video Feed, and an annotation settings page.
+- The UI includes uploads, indexing status, gallery browsing, text and tag search, similar-image search (including by a pasted or dropped picture), a near-duplicate finder, manual title and tag editing, a similar-video Feed, and an annotation settings page.
 
 ## For Developers
 

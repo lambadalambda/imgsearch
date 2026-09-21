@@ -85,6 +85,31 @@ export function setDuplicates(): void {
   mode.set({ mode: "duplicates" });
 }
 
+/** The pasted or dropped picture behind a "similar to image" search. */
+export interface QueryImage {
+  id: number;
+  file: File | Blob;
+  name: string;
+  previewUrl: string;
+}
+
+export const queryImage = writable<QueryImage | null>(null);
+let queryImageSeq = 0;
+
+export function setByImage(file: File | Blob, name = "pasted image"): void {
+  const previous = get(queryImage);
+  if (previous) URL.revokeObjectURL(previous.previewUrl);
+  queryImageSeq += 1;
+  queryImage.set({ id: queryImageSeq, file, name, previewUrl: URL.createObjectURL(file) });
+  mode.set({ mode: "byimage" });
+}
+
+export function clearQueryImage(): void {
+  const previous = get(queryImage);
+  if (previous) URL.revokeObjectURL(previous.previewUrl);
+  queryImage.set(null);
+}
+
 export function setSettings(): void {
   mode.set({ mode: "settings" });
 }
@@ -172,6 +197,9 @@ export const headline = derived(mode, ($mode) => {
   }
   if ($mode.mode === "duplicates") {
     return "Duplicates";
+  }
+  if ($mode.mode === "byimage") {
+    return "Similar to your image";
   }
   return "Library";
 });
