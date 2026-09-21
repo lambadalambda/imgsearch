@@ -54,6 +54,8 @@ type RuntimeOptions struct {
 	NativeVariantLocked bool
 	// AnnotationsDisabled is true when annotations are switched off by flag.
 	AnnotationsDisabled bool
+	// AnnotationModelLister lists a remote backend's models for the settings page.
+	AnnotationModelLister func(ctx context.Context, s settings.AnnotationSettings) ([]string, error)
 }
 
 type Runtime struct {
@@ -136,6 +138,7 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 		Status:              opts.AnnotationStatus,
 		NativeVariantLocked: opts.NativeVariantLocked,
 		AnnotationsDisabled: opts.AnnotationsDisabled,
+		ListModels:          opts.AnnotationModelLister,
 	})
 	mux.Handle("/api/settings", settingsHandler)
 	mux.Handle("/api/settings/", settingsHandler)

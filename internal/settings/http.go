@@ -29,6 +29,9 @@ type Handler struct {
 	// AnnotationsDisabled is true when -enable-annotations=false, so the
 	// page can explain that settings are saved but not applied.
 	AnnotationsDisabled bool
+	// ListModels queries a remote backend for its model IDs without saving.
+	// Nil disables the endpoint.
+	ListModels func(ctx context.Context, s AnnotationSettings) ([]string, error)
 }
 
 type handler struct {
@@ -54,12 +57,17 @@ type testResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
+type modelsResponse struct {
+	Models []string `json:"models"`
+}
+
 // NewHandler serves GET/PUT /api/settings and POST /api/settings/annotation/test.
 func NewHandler(cfg *Handler) http.Handler {
 	h := &handler{cfg: cfg}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/settings", h.handleSettings)
 	mux.HandleFunc("/api/settings/annotation/test", h.handleTest)
+	mux.HandleFunc("/api/settings/annotation/models", h.handleModels)
 	mux.HandleFunc("/api/settings/", func(w http.ResponseWriter, _ *http.Request) {
 		httputil.WriteJSONError(w, http.StatusNotFound, "not found")
 	})
@@ -140,30 +148,16 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) handleTest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		httputil.WriteMethodNotAllowed(w, http.MethodPost)
-		return
-	}
-	if h.cfg == nil || h.cfg.DB == nil {
-		httputil.WriteJSONError(w, http.StatusServiceUnavailable, "settings backend unavailable")
-		return
-	}
-	if h.cfg.TestConnection == nil {
+	if h.cfg != nil && h.cfg.TestConnection == nil {
+		if r.Method != http.MethodPost {
+			httputil.WriteMethodNotAllowed(w, http.MethodPost)
+			return
+		}
 		httputil.WriteJSONError(w, http.StatusServiceUnavailable, "connection test unavailable")
 		return
 	}
-	req, ok := decodeUpdate(w, r)
+	candidate, ok := h.remoteCandidate(w, r)
 	if !ok {
-		return
-	}
-	current, _, err := h.load(r.Context())
-	if err != nil {
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "load settings failed")
-		return
-	}
-	candidate := mergeAPIKey(req, current)
-	if candidate.Backend != BackendOpenAI {
-		httputil.WriteJSONError(w, http.StatusBadRequest, "only the openai backend supports a connection test")
 		return
 	}
 	if err := candidate.Validate(); err != nil {
@@ -175,6 +169,67 @@ func (h *handler) handleTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, testResponse{OK: true})
+}
+
+func (h *handler) handleModels(w http.ResponseWriter, r *http.Request) {
+	if h.cfg != nil && h.cfg.ListModels == nil {
+		if r.Method != http.MethodPost {
+			httputil.WriteMethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		httputil.WriteJSONError(w, http.StatusServiceUnavailable, "model listing unavailable")
+		return
+	}
+	candidate, ok := h.remoteCandidate(w, r)
+	if !ok {
+		return
+	}
+	// Model listing only needs the server, so an empty model name is fine.
+	if candidate.OpenAI.Model == "" {
+		candidate.OpenAI.Model = "-"
+	}
+	if err := candidate.Validate(); err != nil {
+		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	models, err := h.cfg.ListModels(r.Context(), candidate)
+	if err != nil {
+		httputil.WriteJSON(w, http.StatusBadGateway, testResponse{OK: false, Error: err.Error()})
+		return
+	}
+	if models == nil {
+		models = []string{}
+	}
+	httputil.WriteJSON(w, http.StatusOK, modelsResponse{Models: models})
+}
+
+// remoteCandidate decodes a POST body into remote settings merged with the
+// stored key, for the probe endpoints that act without saving. Validation
+// is left to the caller so listing can tolerate a blank model.
+func (h *handler) remoteCandidate(w http.ResponseWriter, r *http.Request) (AnnotationSettings, bool) {
+	if r.Method != http.MethodPost {
+		httputil.WriteMethodNotAllowed(w, http.MethodPost)
+		return AnnotationSettings{}, false
+	}
+	if h.cfg == nil || h.cfg.DB == nil {
+		httputil.WriteJSONError(w, http.StatusServiceUnavailable, "settings backend unavailable")
+		return AnnotationSettings{}, false
+	}
+	req, ok := decodeUpdate(w, r)
+	if !ok {
+		return AnnotationSettings{}, false
+	}
+	current, _, err := h.load(r.Context())
+	if err != nil {
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "load settings failed")
+		return AnnotationSettings{}, false
+	}
+	candidate := mergeAPIKey(req, current)
+	if candidate.Backend != BackendOpenAI {
+		httputil.WriteJSONError(w, http.StatusBadRequest, "only the openai backend supports remote probes")
+		return AnnotationSettings{}, false
+	}
+	return candidate, true
 }
 
 func decodeUpdate(w http.ResponseWriter, r *http.Request) (updateRequest, bool) {

@@ -50,6 +50,15 @@ func prepareImageForRemote(ctx context.Context, path string, maxSide int) ([]byt
 	return data, mime, nil
 }
 
+// listAnnotationModels backs POST /api/settings/annotation/models.
+func listAnnotationModels(imageMaxSide int) func(context.Context, settings.AnnotationSettings) ([]string, error) {
+	return func(ctx context.Context, s settings.AnnotationSettings) ([]string, error) {
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		return openaicompat.ListModels(ctx, openAIConfigFromSettings(s, imageMaxSide, nil))
+	}
+}
+
 // testAnnotationConnection backs POST /api/settings/annotation/test.
 func testAnnotationConnection(imageMaxSide int) func(context.Context, settings.AnnotationSettings) error {
 	return func(ctx context.Context, s settings.AnnotationSettings) error {

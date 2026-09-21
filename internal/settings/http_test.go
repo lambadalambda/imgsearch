@@ -236,3 +236,39 @@ func TestGetSettingsReportsLockAndActiveStatus(t *testing.T) {
 		t.Fatalf("expected active_error without active, got %d %v", rec.Code, out)
 	}
 }
+
+func TestListModelsUsesInjectedListerAndToleratesBlankModel(t *testing.T) {
+	var seen AnnotationSettings
+	h := newTestHandler(t, &Handler{
+		ListModels: func(_ context.Context, s AnnotationSettings) ([]string, error) {
+			seen = s
+			if s.OpenAI.BaseURL == "http://down" {
+				return nil, errors.New("connection refused")
+			}
+			return []string{"vision-a", "vision-b"}, nil
+		},
+	})
+	rec, out := do(t, h, http.MethodPost, "/api/settings/annotation/models", `{"annotation":{"backend":"openai","openai":{"base_url":"http://x/","api_key":"k"}}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if models := out["models"].([]any); len(models) != 2 || models[0] != "vision-a" {
+		t.Fatalf("unexpected models: %v", out["models"])
+	}
+	if seen.OpenAI.BaseURL != "http://x" || seen.OpenAI.APIKey != "k" {
+		t.Fatalf("lister should receive normalized settings, got %+v", seen)
+	}
+	rec, out = do(t, h, http.MethodPost, "/api/settings/annotation/models", `{"annotation":{"backend":"openai","openai":{"base_url":"http://down"}}}`)
+	if rec.Code != http.StatusBadGateway || out["ok"] != false {
+		t.Fatalf("expected 502, got %d %v", rec.Code, out)
+	}
+	rec, _ = do(t, h, http.MethodPost, "/api/settings/annotation/models", `{"annotation":{"backend":"native"}}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for native, got %d", rec.Code)
+	}
+	none := newTestHandler(t, &Handler{})
+	rec, _ = do(t, none, http.MethodPost, "/api/settings/annotation/models", `{"annotation":{"backend":"openai","openai":{"base_url":"http://x"}}}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 without lister, got %d", rec.Code)
+	}
+}

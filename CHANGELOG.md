@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(settings): add `POST /api/settings/annotation/models` to list a remote annotation server's models for the settings page.
 - feat(jobs): add `POST /api/jobs/reannotate-all` (optional `media=images|videos|all`) that flags every standalone image and video for re-annotation and resets their jobs while keeping existing text visible until replaced; the worker now re-annotates flagged media even when text already exists.
 - feat(annotations): follow the persisted annotation settings at runtime: the worker swaps between native `e4b`/`26b` models and a remote OpenAI-compatible server between jobs without a restart, a remote backend skips the native GGUF download at startup, and `GET /api/settings` reports the active backend plus whether flag-pinned native paths lock the variant selector.
 - feat(annotations): add an OpenAI-compatible remote annotator client (chat completions with image input, JSON-mode fallback, bounded retries with `Retry-After`) and wire `POST /api/settings/annotation/test` to it.

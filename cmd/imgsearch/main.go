@@ -349,6 +349,7 @@ func main() {
 		VideoTranscriptsOn:         videoTranscriber != nil,
 		AnnotationDefaults:         annotationDefaults,
 		AnnotationConnectionTester: testAnnotationConnection(cfg.AnnotatorImageMaxSide),
+		AnnotationModelLister:      listAnnotationModels(cfg.AnnotatorImageMaxSide),
 		AnnotationStatus:           annotationStatus,
 		NativeVariantLocked:        nativeAnnotatorPinned,
 		AnnotationsDisabled:        !cfg.EnableAnnotations,
