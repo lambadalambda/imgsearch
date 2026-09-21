@@ -277,9 +277,6 @@ func main() {
 		}
 		log.Printf("video transcription enabled via Parakeet ONNX bundle %s", resolvedParakeetBundleDir)
 	} else {
-		log.Printf("video transcription disabled")
-	}
-	if videoTranscriber == nil {
 		log.Printf("video transcription disabled: pass -parakeet-onnxruntime-lib <path to the ONNX Runtime shared library> to enable it (release archives bundle it under lib/ and run.sh passes it; source builds: scripts/resolve_onnxruntime_lib.sh)")
 	}
 
