@@ -9,8 +9,8 @@
   import {
     ApiError,
     UPLOAD_ACCEPT,
-    UPLOAD_MAX_BYTES,
     UPLOAD_MAX_FILES,
+    uploadLimitFor,
     uploadFiles,
   } from "../lib/api";
   import type { UploadEntry } from "../lib/types";
@@ -134,11 +134,13 @@
   async function submit(): Promise<void> {
     const pending = rows.filter((r) => r.state === "pending");
     if (pending.length === 0 || uploading) return;
-    const totalBytes = pending.reduce((sum, r) => sum + r.file.size, 0);
-    if (totalBytes > UPLOAD_MAX_BYTES) {
-      error = `Total selection ${(totalBytes / (1024 * 1024)).toFixed(
-        1,
-      )} MiB exceeds the 64 MiB request limit. Try fewer files at once.`;
+    const oversized = pending.find((r) => r.file.size > uploadLimitFor(r.file).limitBytes);
+    if (oversized) {
+      const { mediaType, limitBytes } = uploadLimitFor(oversized.file);
+      error = `${oversized.file.name} is ${bytesLabel(oversized.file.size)}, over the ${(
+        limitBytes /
+        (1024 * 1024)
+      ).toFixed(0)} MiB ${mediaType} limit. Remove it to continue.`;
       return;
     }
     uploading = true;
@@ -261,7 +263,7 @@
         >
           <p class="m-0 text-ink font-medium">Drop files here or click to choose</p>
           <p class="mt-1 text-[13px] text-muted">
-            JPEG, PNG, WEBP, AVIF, MP4, MOV, WEBM, MKV — up to {UPLOAD_MAX_FILES} files / 64 MiB per batch.
+            JPEG, PNG, WEBP, AVIF, MP4, MOV, WEBM, MKV — up to {UPLOAD_MAX_FILES} files per batch; images up to 64 MiB and videos up to 2 GiB each.
           </p>
         </button>
         <input

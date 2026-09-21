@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func multipartBody(t *testing.T, filename string, content []byte) (*bytes.Buffer, string) {
@@ -348,11 +349,188 @@ func TestUploadHandlerRejectsMissingDependencies(t *testing.T) {
 	}
 }
 
-func TestUploadHandlerRejectsPayloadTooLarge(t *testing.T) {
-	svc, _ := setupService(t)
+func decodeLimitError(t *testing.T, rr *httptest.ResponseRecorder) UploadLimitError {
+	t.Helper()
+	var out UploadLimitError
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode limit error: %v body=%s", err, rr.Body.String())
+	}
+	return out
+}
+
+func TestUploadHandlerRejectsImageOverImageLimit(t *testing.T) {
+	svc, sqlDB := setupService(t)
+	svc.MaxImageBytes = 1024
+	svc.MaxVideoBytes = 1 << 20
 	h := NewHandler(svc)
 
-	large := bytes.Repeat([]byte("a"), maxUploadBytes+1024)
+	padded := append(pngBytes(t), make([]byte, 2048)...)
+	body, contentType := multipartBody(t, "big.png", padded)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusRequestEntityTooLarge, rr.Body.String())
+	}
+	out := decodeLimitError(t, rr)
+	if out.Filename != "big.png" || out.MediaType != "image" || out.LimitBytes != 1024 || !strings.Contains(out.Error, "big.png") {
+		t.Fatalf("unexpected limit error: %+v", out)
+	}
+	var imageCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM images`).Scan(&imageCount); err != nil {
+		t.Fatalf("count images: %v", err)
+	}
+	if imageCount != 0 {
+		t.Fatalf("expected nothing stored, got %d images", imageCount)
+	}
+}
+
+func TestUploadHandlerAllowsVideoLargerThanImageLimit(t *testing.T) {
+	svc, _ := setupService(t)
+	svc.VideoSampler = &fakeVideoSampler{durationMS: 12_000, width: 1920, height: 1080, frames: 2}
+	svc.MaxImageBytes = 1024
+	svc.MaxVideoBytes = 1 << 20
+	h := NewHandler(svc)
+
+	padded := append(mp4Bytes(), make([]byte, 4096)...)
+	body, contentType := multipartBody(t, "clip.mp4", padded)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusCreated, rr.Body.String())
+	}
+}
+
+func TestUploadHandlerRejectsVideoOverVideoLimit(t *testing.T) {
+	svc, _ := setupService(t)
+	svc.VideoSampler = &fakeVideoSampler{durationMS: 12_000, width: 1920, height: 1080, frames: 2}
+	svc.MaxImageBytes = 1 << 20
+	svc.MaxVideoBytes = 2048
+	h := NewHandler(svc)
+
+	padded := append(mp4Bytes(), make([]byte, 4096)...)
+	body, contentType := multipartBody(t, "clip.mp4", padded)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusRequestEntityTooLarge, rr.Body.String())
+	}
+	out := decodeLimitError(t, rr)
+	if out.Filename != "clip.mp4" || out.MediaType != "video" || out.LimitBytes != 2048 {
+		t.Fatalf("unexpected limit error: %+v", out)
+	}
+}
+
+func TestUploadHandlerRejectsWholeBatchWhenOneFileIsOversized(t *testing.T) {
+	svc, sqlDB := setupService(t)
+	svc.MaxImageBytes = 1024
+	h := NewHandler(svc)
+
+	body, contentType := multipartBodyWithFiles(t, []struct {
+		filename string
+		content  []byte
+	}{
+		{filename: "ok.png", content: pngBytes(t)},
+		{filename: "big.png", content: append(pngBytes(t), make([]byte, 2048)...)},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusRequestEntityTooLarge, rr.Body.String())
+	}
+	if out := decodeLimitError(t, rr); out.Filename != "big.png" {
+		t.Fatalf("expected the oversized file to be named, got %+v", out)
+	}
+	var imageCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM images`).Scan(&imageCount); err != nil {
+		t.Fatalf("count images: %v", err)
+	}
+	if imageCount != 0 {
+		t.Fatalf("expected nothing stored from a rejected batch, got %d images", imageCount)
+	}
+}
+
+func TestUploadHandlerRejectsDeclaredOversizeWithoutReadingBody(t *testing.T) {
+	svc, _ := setupService(t)
+	svc.MaxVideoBytes = 1 << 20
+	h := NewHandler(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", &blockingReader{})
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+	req.ContentLength = maxUploadFilesPerRequest*(1<<20) + 1
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusRequestEntityTooLarge, rr.Body.String())
+	}
+}
+
+// blockingReader fails the test if the handler reads from it.
+type blockingReader struct{}
+
+func (blockingReader) Read([]byte) (int, error) {
+	return 0, fmt.Errorf("body must not be read")
+}
+
+// TestUploadHandlerOutlivesServerReadTimeout proves the per-request deadline
+// overrides a server configured with a short ReadTimeout: the body trickles
+// in slower than the server timeout and still completes.
+func TestUploadHandlerOutlivesServerReadTimeout(t *testing.T) {
+	svc, _ := setupService(t)
+	svc.RequestTimeout = 10 * time.Second
+	server := httptest.NewUnstartedServer(NewHandler(svc))
+	server.Config.ReadTimeout = 200 * time.Millisecond
+	server.Config.WriteTimeout = 200 * time.Millisecond
+	server.Start()
+	defer server.Close()
+
+	body, contentType := multipartBody(t, "slow.png", pngBytes(t))
+	pr, pw := io.Pipe()
+	go func() {
+		defer pw.Close()
+		data := body.Bytes()
+		half := len(data) / 2
+		_, _ = pw.Write(data[:half])
+		time.Sleep(500 * time.Millisecond)
+		_, _ = pw.Write(data[half:])
+	}()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/api/upload", pr)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	req.ContentLength = int64(body.Len())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("slow upload failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		payload, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: got=%d want=%d body=%s", resp.StatusCode, http.StatusCreated, payload)
+	}
+}
+
+func TestUploadHandlerRejectsPayloadTooLarge(t *testing.T) {
+	svc, _ := setupService(t)
+	svc.MaxImageBytes = 1 << 20
+	svc.MaxVideoBytes = 1 << 20
+	h := NewHandler(svc)
+
+	large := bytes.Repeat([]byte("a"), maxUploadFilesPerRequest*(1<<20)+1024)
 	body := &bytes.Buffer{}
 	mw := multipart.NewWriter(body)
 	fw, err := mw.CreateFormFile("file", "big.png")
@@ -373,6 +551,9 @@ func TestUploadHandlerRejectsPayloadTooLarge(t *testing.T) {
 
 	if rr.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusRequestEntityTooLarge, rr.Body.String())
+	}
+	if out := decodeLimitError(t, rr); out.LimitBytes != maxUploadFilesPerRequest*(1<<20) {
+		t.Fatalf("expected request limit in body, got %+v", out)
 	}
 }
 

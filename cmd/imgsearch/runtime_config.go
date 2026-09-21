@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
+
+	"imgsearch/internal/upload"
 )
 
 type runtimeConfig struct {
@@ -21,6 +24,10 @@ type runtimeConfig struct {
 
 	WorkerBatchSize int
 	VideoFrameCount int
+
+	MaxImageUploadMB int
+	MaxVideoUploadMB int
+	UploadTimeout    time.Duration
 
 	LlamaNativeModelPath                  string
 	LlamaNativeMMProjPath                 string
@@ -83,6 +90,10 @@ func defaultRuntimeConfig(getenv func(string) string) runtimeConfig {
 		WorkerBatchSize: 1,
 		VideoFrameCount: defaultVideoFrameCount,
 
+		MaxImageUploadMB: int(upload.DefaultMaxImageBytes >> 20),
+		MaxVideoUploadMB: int(upload.DefaultMaxVideoBytes >> 20),
+		UploadTimeout:    upload.DefaultRequestTimeout,
+
 		LlamaNativeModelPath:             defaultLlamaNativeModelPath,
 		LlamaNativeMMProjPath:            defaultLlamaNativeMMProjPath,
 		LlamaNativeDimensions:            defaultLlamaNativeDimensions,
@@ -129,6 +140,9 @@ func registerRuntimeFlags(fs *flag.FlagSet, cfg *runtimeConfig) {
 	fs.StringVar(&cfg.ModeFlag, "mode", cfg.ModeFlag, "process mode: all, api, or worker")
 	fs.IntVar(&cfg.WorkerBatchSize, "worker-batch-size", cfg.WorkerBatchSize, "number of jobs to claim per batch (1 disables batching)")
 	fs.IntVar(&cfg.VideoFrameCount, "video-frame-count", cfg.VideoFrameCount, "number of uniformly sampled frames to extract per uploaded video")
+	fs.IntVar(&cfg.MaxImageUploadMB, "max-image-upload-mb", cfg.MaxImageUploadMB, "per-file upload limit for images in MiB")
+	fs.IntVar(&cfg.MaxVideoUploadMB, "max-video-upload-mb", cfg.MaxVideoUploadMB, "per-file upload limit for videos in MiB")
+	fs.DurationVar(&cfg.UploadTimeout, "upload-timeout", cfg.UploadTimeout, "deadline for one multipart upload request (body transfer and response), overriding the server-wide read/write timeouts")
 	fs.StringVar(&cfg.LlamaNativeModelPath, "llama-native-model-path", cfg.LlamaNativeModelPath, "path to the llama.cpp GGUF embedding model")
 	fs.StringVar(&cfg.LlamaNativeMMProjPath, "llama-native-mmproj-path", cfg.LlamaNativeMMProjPath, "path to the llama.cpp GGUF mmproj model")
 	fs.IntVar(&cfg.LlamaNativeDimensions, "llama-native-dimensions", cfg.LlamaNativeDimensions, "embedding dimensions for llama-cpp-native model metadata")
@@ -186,6 +200,9 @@ func (cfg *runtimeConfig) Resolve() error {
 	}
 	if cfg.VideoFrameCount <= 0 {
 		return fmt.Errorf("configure video sampling: video frame count must be positive")
+	}
+	if cfg.MaxImageUploadMB <= 0 || cfg.MaxVideoUploadMB <= 0 || cfg.UploadTimeout <= 0 {
+		return fmt.Errorf("configure uploads: upload limits and timeout must be positive")
 	}
 	cfg.ResolvedLlamaNativeImageMaxSide, cfg.ResolvedLlamaNativeImageMaxTokens, err = resolveLlamaCPPNativeImageLimits(cfg.LlamaNativeImageMaxSide, cfg.LlamaNativeImageMaxTokens)
 	if err != nil {

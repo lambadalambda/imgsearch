@@ -100,3 +100,4 @@
 - [x] [Renew leases for batched embed jobs](issues/094-renew-leases-for-batched-embed-jobs.md)
 - [x] [De-duplicate pins by key on Load More](issues/095-dedupe-pins-by-key-on-load-more.md)
 - [x] [Upsert video uploads on sha256 conflict](issues/102-upsert-video-uploads-on-digest-conflict.md)
+- [x] [Raise upload limits and timeouts to fit video uploads](issues/100-raise-upload-limits-for-video.md)

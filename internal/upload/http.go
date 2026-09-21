@@ -2,18 +2,30 @@ package upload
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"imgsearch/internal/httputil"
 )
 
 const (
-	maxUploadBytes           = 64 << 20
 	maxUploadMemoryBytes     = 8 << 20
 	maxUploadFilesPerRequest = 32
 )
+
+// UploadLimitError is the 413 body: it names the file and the limit that
+// applied so clients can explain the rejection.
+type UploadLimitError struct {
+	Error      string `json:"error"`
+	Filename   string `json:"filename,omitempty"`
+	MediaType  string `json:"media_type,omitempty"`
+	LimitBytes int64  `json:"limit_bytes"`
+}
 
 type UploadResponse struct {
 	Filename  string `json:"filename,omitempty"`
@@ -43,12 +55,37 @@ func NewHandler(svc *Service) http.Handler {
 			return
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+		// Large uploads on slow links outlive the server-wide read/write
+		// timeouts, so give this request its own deadline.
+		deadline := time.Now().Add(svc.requestTimeout())
+		rc := http.NewResponseController(w)
+		for _, err := range []error{rc.SetReadDeadline(deadline), rc.SetWriteDeadline(deadline)} {
+			if err != nil && !errors.Is(err, http.ErrNotSupported) {
+				log.Printf("upload: extend request deadline: %v", err)
+			}
+		}
+
+		// The request cap only guards against unbounded bodies; per-file
+		// limits below are what users actually hit. The multipart body is
+		// spooled to the OS temp dir in full before those checks run, so
+		// reject a declared oversize up front without reading it.
+		maxRequestBytes := maxUploadFilesPerRequest * svc.maxVideoBytes()
+		writeRequestTooLarge := func() {
+			httputil.WriteJSON(w, http.StatusRequestEntityTooLarge, UploadLimitError{
+				Error:      fmt.Sprintf("upload too large: request exceeds the %d MiB limit", maxRequestBytes>>20),
+				LimitBytes: maxRequestBytes,
+			})
+		}
+		if r.ContentLength > maxRequestBytes {
+			writeRequestTooLarge()
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
 
 		if err := r.ParseMultipartForm(maxUploadMemoryBytes); err != nil {
 			var maxBytesErr *http.MaxBytesError
 			if errors.As(err, &maxBytesErr) {
-				httputil.WriteJSONError(w, http.StatusRequestEntityTooLarge, "upload too large")
+				writeRequestTooLarge()
 				return
 			}
 			httputil.WriteJSONError(w, http.StatusBadRequest, "invalid multipart upload")
@@ -68,6 +105,21 @@ func NewHandler(svc *Service) http.Handler {
 		if len(files) > maxUploadFilesPerRequest {
 			httputil.WriteJSONError(w, http.StatusBadRequest, "too many files in single request")
 			return
+		}
+		// Check every file against its media-type limit before storing any,
+		// so an oversized file rejects the whole batch cleanly.
+		for _, header := range files {
+			mediaType, limit := svc.uploadLimitFor(header)
+			if header.Size > limit {
+				filename := filepath.Base(header.Filename)
+				httputil.WriteJSON(w, http.StatusRequestEntityTooLarge, UploadLimitError{
+					Error:      fmt.Sprintf("file too large: %s exceeds the %d MiB %s limit", filename, limit>>20, mediaType),
+					Filename:   filename,
+					MediaType:  mediaType,
+					LimitBytes: limit,
+				})
+				return
+			}
 		}
 
 		uploads := make([]UploadResponse, 0, len(files))
@@ -131,4 +183,22 @@ func NewHandler(svc *Service) http.Handler {
 			Failed:     failed,
 		})
 	})
+}
+
+// uploadLimitFor sniffs the file's media type and returns it with the
+// per-file byte limit that applies. Unknown types get the image limit; the
+// store rejects them later anyway.
+func (s *Service) uploadLimitFor(header *multipart.FileHeader) (string, int64) {
+	file, err := header.Open()
+	if err != nil {
+		return "image", s.maxImageBytes()
+	}
+	defer func() { _ = file.Close() }()
+
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(file, head)
+	if isSupportedVideoMime(sniffMime(head[:n])) {
+		return "video", s.maxVideoBytes()
+	}
+	return "image", s.maxImageBytes()
 }

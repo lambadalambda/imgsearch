@@ -303,7 +303,8 @@ This is documented in `meta/issues/054-harden-ui-api-cookie-auth.md` so the trus
 - Set `-api-key <token>` (or `IMGSEARCH_API_KEY`) to use your own key; when unset, the server falls back to a built-in development key and logs a startup warning.
 - If you bind to a non-loopback address (for example `-addr 0.0.0.0:8080`), startup requires an explicit strong API key; the built-in development key is rejected.
 - API clients can authenticate with `X-Imgsearch-API-Key: <token>` or `Authorization: Bearer <token>`.
-- Multipart uploads to `/api/upload` keep partial-success semantics: each uploaded file returns either IDs/digest data or an `error`, mixed success/failure batches return `207 Multi-Status`, and oversized requests return `413 Payload Too Large`.
+- Multipart uploads to `/api/upload` keep partial-success semantics: each uploaded file returns either IDs/digest data or an `error`, and mixed success/failure batches return `207 Multi-Status`.
+- Upload limits are per file: images up to 64 MiB and videos up to 2048 MiB by default (`-max-image-upload-mb`, `-max-video-upload-mb`). An oversized file rejects the whole request with `413 Payload Too Large` and a JSON body naming the file, its media type, and `limit_bytes`. One upload request may run for up to `-upload-timeout` (default 30m) regardless of the server-wide read/write timeouts.
 - Data is stored in `./data` by default.
 - The UI includes uploads, indexing status, gallery browsing, text search, and similar-image search.
 

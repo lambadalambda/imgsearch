@@ -264,7 +264,25 @@ export async function deleteMedia(kind: MediaKind, id: number): Promise<void> {
 
 /** Backend caps from internal/upload/http.go. Keep in sync. */
 export const UPLOAD_MAX_FILES = 32;
-export const UPLOAD_MAX_BYTES = 64 * 1024 * 1024; // 64 MiB request body
+// Per-file limits mirroring the server defaults (-max-image-upload-mb and
+// -max-video-upload-mb). The server answers 413 with the applicable limit
+// when its configured limits are lower.
+export const UPLOAD_MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+export const UPLOAD_MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024;
+
+const VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".mkv"];
+
+/** The default per-file limit for a File. Browsers report an empty type for
+ *  some video containers (notably .mkv), so fall back to the extension. */
+export function uploadLimitFor(file: { type?: string; name?: string }): { mediaType: "image" | "video"; limitBytes: number } {
+  const type = file.type || "";
+  const name = (file.name || "").toLowerCase();
+  const isVideo = type.startsWith("video/") || (type === "" && VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext)));
+  if (isVideo) {
+    return { mediaType: "video", limitBytes: UPLOAD_MAX_VIDEO_BYTES };
+  }
+  return { mediaType: "image", limitBytes: UPLOAD_MAX_IMAGE_BYTES };
+}
 
 export const UPLOAD_ACCEPT =
   "image/png,image/jpeg,image/webp,image/avif,video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.webm,.mkv";

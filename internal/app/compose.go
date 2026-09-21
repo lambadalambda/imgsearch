@@ -41,7 +41,11 @@ type RuntimeOptions struct {
 	LiveImagesOffset     int
 	VideoFrameCount      int
 	VideoSampler         upload.VideoSampler
-	VideoTranscriptsOn   bool
+	// Upload limits and deadline; zero selects the upload package defaults.
+	UploadMaxImageBytes int64
+	UploadMaxVideoBytes int64
+	UploadTimeout       time.Duration
+	VideoTranscriptsOn  bool
 	// AnnotationDefaults is served by /api/settings until the user saves;
 	// main seeds it from the annotator flags.
 	AnnotationDefaults settings.AnnotationSettings
@@ -105,6 +109,9 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 		VideoFrameCount:        opts.VideoFrameCount,
 		VideoSampler:           opts.VideoSampler,
 		EnableVideoTranscripts: opts.VideoTranscriptsOn,
+		MaxImageBytes:          opts.UploadMaxImageBytes,
+		MaxVideoBytes:          opts.UploadMaxVideoBytes,
+		RequestTimeout:         opts.UploadTimeout,
 	}
 
 	queue := &worker.Queue{

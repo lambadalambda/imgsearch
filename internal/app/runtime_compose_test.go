@@ -53,6 +53,9 @@ func TestNewRuntimeBuildsMuxUploadServiceAndQueue(t *testing.T) {
 		LiveImagesOffset:     0,
 		VideoFrameCount:      3,
 		VideoTranscriptsOn:   true,
+		UploadMaxImageBytes:  1 << 20,
+		UploadMaxVideoBytes:  8 << 20,
+		UploadTimeout:        time.Minute,
 	})
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -63,6 +66,9 @@ func TestNewRuntimeBuildsMuxUploadServiceAndQueue(t *testing.T) {
 	}
 	if runtime.UploadService.ModelID != 7 || !runtime.UploadService.EnableVideoTranscripts || runtime.UploadService.VideoFrameCount != 3 {
 		t.Fatalf("unexpected upload service: %+v", runtime.UploadService)
+	}
+	if runtime.UploadService.MaxImageBytes != 1<<20 || runtime.UploadService.MaxVideoBytes != 8<<20 || runtime.UploadService.RequestTimeout != time.Minute {
+		t.Fatalf("unexpected upload limits: %+v", runtime.UploadService)
 	}
 	if runtime.Queue.DB != dbConn || runtime.Queue.DataDir == "" || runtime.Queue.LeaseDuration != 30*time.Second {
 		t.Fatalf("unexpected queue: %+v", runtime.Queue)

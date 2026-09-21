@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"imgsearch/internal/jobkind"
 )
@@ -67,6 +68,14 @@ func looksLikeAVIF(header []byte) bool {
 		}
 	}
 	return false
+}
+
+// sniffMime classifies content from its first bytes (at most 512 are used).
+func sniffMime(head []byte) string {
+	if len(head) > 512 {
+		head = head[:512]
+	}
+	return resolveMime(head, http.DetectContentType(head))
 }
 
 func resolveMime(header []byte, detected string) string {
@@ -124,6 +133,16 @@ func decodeDimensionsFromBytes(content []byte, mime string) (int, int, error) {
 	return 0, 0, ErrUnsupportedFormat
 }
 
+const (
+	// DefaultMaxImageBytes is the per-file upload limit for images.
+	DefaultMaxImageBytes int64 = 64 << 20
+	// DefaultMaxVideoBytes is the per-file upload limit for videos.
+	DefaultMaxVideoBytes int64 = 2 << 30
+	// DefaultRequestTimeout bounds one multipart upload request, including
+	// the body transfer and video frame sampling.
+	DefaultRequestTimeout = 30 * time.Minute
+)
+
 type Service struct {
 	DB                     *sql.DB
 	DataDir                string
@@ -131,6 +150,34 @@ type Service struct {
 	VideoFrameCount        int
 	VideoSampler           VideoSampler
 	EnableVideoTranscripts bool
+	// MaxImageBytes and MaxVideoBytes are per-file upload limits; zero
+	// selects the defaults.
+	MaxImageBytes int64
+	MaxVideoBytes int64
+	// RequestTimeout replaces the server-wide read/write timeouts for the
+	// duration of one upload request; zero selects the default.
+	RequestTimeout time.Duration
+}
+
+func (s *Service) maxImageBytes() int64 {
+	if s.MaxImageBytes > 0 {
+		return s.MaxImageBytes
+	}
+	return DefaultMaxImageBytes
+}
+
+func (s *Service) maxVideoBytes() int64 {
+	if s.MaxVideoBytes > 0 {
+		return s.MaxVideoBytes
+	}
+	return DefaultMaxVideoBytes
+}
+
+func (s *Service) requestTimeout() time.Duration {
+	if s.RequestTimeout > 0 {
+		return s.RequestTimeout
+	}
+	return DefaultRequestTimeout
 }
 
 type StoreResult struct {
@@ -193,7 +240,7 @@ func (s *Service) Store(ctx context.Context, originalName string, src io.Reader)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return StoreResult{}, fmt.Errorf("read header bytes: %w", err)
 	}
-	mime := resolveMime(header[:n], http.DetectContentType(header[:n]))
+	mime := sniffMime(header[:n])
 	if !isSupportedMime(mime) {
 		return StoreResult{}, ErrUnsupportedFormat
 	}
@@ -419,11 +466,7 @@ func (s *Service) storeVideoFrameTx(ctx context.Context, tx *sql.Tx, videoID int
 	if err != nil {
 		return 0, "", fmt.Errorf("read sampled frame: %w", err)
 	}
-	header := content
-	if len(header) > 512 {
-		header = header[:512]
-	}
-	mime := resolveMime(header, http.DetectContentType(header))
+	mime := sniffMime(content)
 	if !isSupportedImageMime(mime) {
 		return 0, "", ErrUnsupportedFormat
 	}

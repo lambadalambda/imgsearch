@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseRuntimeConfigResolvesModeAndAPIKey(t *testing.T) {
@@ -59,6 +60,23 @@ func TestParseRuntimeConfigAcceptsExperimentalNGramSpeculation(t *testing.T) {
 	}
 	if !cfg.LlamaNativeAnnotationNGramSpeculation {
 		t.Fatalf("expected experimental n-gram speculation to be enabled")
+	}
+}
+
+func TestParseRuntimeConfigAcceptsUploadLimits(t *testing.T) {
+	cfg, err := parseRuntimeConfig([]string{"-max-image-upload-mb", "16", "-max-video-upload-mb", "512", "-upload-timeout", "5m"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if cfg.MaxImageUploadMB != 16 || cfg.MaxVideoUploadMB != 512 || cfg.UploadTimeout != 5*time.Minute {
+		t.Fatalf("upload limits: got image=%d video=%d timeout=%s", cfg.MaxImageUploadMB, cfg.MaxVideoUploadMB, cfg.UploadTimeout)
+	}
+}
+
+func TestParseRuntimeConfigRejectsInvalidUploadLimits(t *testing.T) {
+	_, err := parseRuntimeConfig([]string{"-max-video-upload-mb", "0"}, func(string) string { return "" })
+	if err == nil || !strings.Contains(err.Error(), "configure uploads") {
+		t.Fatalf("expected upload limits error, got %v", err)
 	}
 }
 
