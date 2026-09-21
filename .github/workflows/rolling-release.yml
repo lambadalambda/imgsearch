@@ -113,10 +113,14 @@ jobs:
           prerelease: true
           allowUpdates: true
           replacesArtifacts: true
+          # Archive names carry the commit SHA, so drop the previous
+          # commit's artifacts instead of accumulating them.
+          removeArtifacts: true
           artifactErrorsFailBuild: true
           artifacts: "dist/*.tar.gz,dist/*.sha256"
           body: |
-            Automated rolling release from `${{ github.ref_name }}`.
+            Automated rolling release from `${{ github.ref_name }}` at `${{ github.sha }}`.
+            Archive names end with the short commit SHA; `./imgsearch -version` prints the same stamp.
 
             Included artifacts:
             - Linux x86_64 build

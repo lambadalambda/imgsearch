@@ -12,6 +12,15 @@ dist_dir="${2:-dist}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pkg_name="imgsearch-${target_label}"
 pkg_root="${repo_root}/${dist_dir}/${pkg_name}"
+
+# Build stamp: the archive name carries the short SHA so users can tell
+# which commit a rolling artifact came from, and the binary reports it via
+# -version and /api/stats.
+build_commit="$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null || echo unknown)"
+build_short_commit="${build_commit:0:12}"
+build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+build_version="${IMGSEARCH_VERSION:-$(git -C "${repo_root}" describe --tags --exact-match 2>/dev/null || echo "rolling-$(date -u +%Y%m%d)-${build_short_commit}")}"
+archive_name="${pkg_name}-${build_short_commit}"
 llama_lib_dir="${IMGSEARCH_LLAMA_LIB_DIR:-${repo_root}/deps/llama.cpp/build/bin}"
 sqlite_vector_dir="${repo_root}/tools/sqlite-vector"
 
@@ -143,7 +152,9 @@ build_atelier_frontend
 
 (
   cd "${repo_root}"
-  go build -trimpath -ldflags='-s -w' -o "${pkg_root}/imgsearch" ./cmd/imgsearch
+  go build -trimpath \
+    -ldflags="-s -w -X imgsearch/internal/buildinfo.Version=${build_version} -X imgsearch/internal/buildinfo.Commit=${build_commit} -X imgsearch/internal/buildinfo.Date=${build_date}" \
+    -o "${pkg_root}/imgsearch" ./cmd/imgsearch
 )
 
 case "$(uname -s)" in
@@ -161,9 +172,8 @@ esac
 
 cp -a "${sqlite_vector_dir}"/* "${pkg_root}/tools/sqlite-vector/"
 
-cat > "${pkg_root}/README.txt" <<'EOF'
-imgsearch rolling release
-
+printf 'imgsearch release\nVersion: %s\nCommit: %s\nBuilt: %s\n\n' "${build_version}" "${build_commit}" "${build_date}" > "${pkg_root}/README.txt"
+cat >> "${pkg_root}/README.txt" <<'EOF'
 Contents:
 - imgsearch
 - lib/            bundled llama.cpp shared libraries
@@ -288,12 +298,12 @@ EOF
 esac
 
 mkdir -p "${repo_root}/${dist_dir}"
-tar -C "${repo_root}/${dist_dir}" -czf "${repo_root}/${dist_dir}/${pkg_name}.tar.gz" "${pkg_name}"
+tar -C "${repo_root}/${dist_dir}" -czf "${repo_root}/${dist_dir}/${archive_name}.tar.gz" "${pkg_name}"
 
 if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum "${repo_root}/${dist_dir}/${pkg_name}.tar.gz" > "${repo_root}/${dist_dir}/${pkg_name}.tar.gz.sha256"
+  sha256sum "${repo_root}/${dist_dir}/${archive_name}.tar.gz" > "${repo_root}/${dist_dir}/${archive_name}.tar.gz.sha256"
 else
-  shasum -a 256 "${repo_root}/${dist_dir}/${pkg_name}.tar.gz" > "${repo_root}/${dist_dir}/${pkg_name}.tar.gz.sha256"
+  shasum -a 256 "${repo_root}/${dist_dir}/${archive_name}.tar.gz" > "${repo_root}/${dist_dir}/${archive_name}.tar.gz.sha256"
 fi
 
 echo "packaged ${repo_root}/${dist_dir}/${pkg_name}.tar.gz"

@@ -116,7 +116,14 @@ export interface FailureItem {
   updated_at: string;
 }
 
+export interface BuildInfo {
+  version: string;
+  commit: string;
+  date: string;
+}
+
 export interface StatsResponse {
+  build?: BuildInfo;
   images_total: number;
   standalone_images_total: number;
   video_frame_images_total?: number;

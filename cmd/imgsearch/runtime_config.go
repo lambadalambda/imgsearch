@@ -11,6 +11,8 @@ import (
 )
 
 type runtimeConfig struct {
+	ShowVersion bool
+
 	DataDir string
 	Addr    string
 	APIKey  string
@@ -134,6 +136,7 @@ func defaultRuntimeConfig(getenv func(string) string) runtimeConfig {
 }
 
 func registerRuntimeFlags(fs *flag.FlagSet, cfg *runtimeConfig) {
+	fs.BoolVar(&cfg.ShowVersion, "version", false, "print version, commit, and build date, then exit")
 	fs.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "data directory")
 	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "http listen address")
 	fs.StringVar(&cfg.APIKey, "api-key", cfg.APIKey, "API key required for /api/* requests (falls back to built-in development default when unset)")

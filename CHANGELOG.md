@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(build): add `-version` (version, commit, build date via `internal/buildinfo`), expose the same under `build` in `/api/stats` and the Atelier statistics pane, stamp release builds through `-ldflags -X`, name rolling archives with the short commit SHA, and document the versioning convention (issue 106).
 - perf(live): compute one `/api/live` snapshot per interval per NSFW variant and broadcast it to every connected client, and skip the computation entirely while the database change fingerprint (`total_changes()` plus `data_version`) has not moved, so idle tabs cost nothing and N tabs no longer cost N recomputations (issue 097).
 - perf(search): replace the per-search `MAX(updated_at)` scan of `image_embeddings` with a trigger-maintained generation counter (`image_embeddings_generation`), so the sqlite-vector requantize check is a one-row read and still notices writes from other processes (issue 098).
 - perf(db): add `index_jobs` lookup indexes on `(image_id, model_id, kind)`, `(video_id, model_id, kind)`, and `(state, kind, run_after, created_at)` so media deletes, library list joins, video list CTEs, and worker claims no longer full-scan or build automatic indexes (issue 099).

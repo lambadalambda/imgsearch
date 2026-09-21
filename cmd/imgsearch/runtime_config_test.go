@@ -63,6 +63,16 @@ func TestParseRuntimeConfigAcceptsExperimentalNGramSpeculation(t *testing.T) {
 	}
 }
 
+func TestParseRuntimeConfigAcceptsVersionFlag(t *testing.T) {
+	cfg, err := parseRuntimeConfig([]string{"-version"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if !cfg.ShowVersion {
+		t.Fatal("expected -version to set ShowVersion")
+	}
+}
+
 func TestParseRuntimeConfigAcceptsUploadLimits(t *testing.T) {
 	cfg, err := parseRuntimeConfig([]string{"-max-image-upload-mb", "16", "-max-video-upload-mb", "512", "-upload-timeout", "5m"}, func(string) string { return "" })
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"imgsearch/internal/buildinfo"
 	"net/http"
 
 	"imgsearch/internal/httputil"
@@ -66,6 +67,7 @@ type Response struct {
 	VideoTranscriptionMissing  int64                   `json:"video_transcription_missing"`
 	JobKinds                   map[string]JobKindStats `json:"job_kinds,omitempty"`
 	RecentFailures             []FailureItem           `json:"recent_failures"`
+	Build                      buildinfo.Info          `json:"build"`
 }
 
 func Collect(ctx context.Context, db *sql.DB, modelID int64) (Response, error) {
@@ -73,7 +75,7 @@ func Collect(ctx context.Context, db *sql.DB, modelID int64) (Response, error) {
 		return Response{}, fmt.Errorf("stats database unavailable")
 	}
 
-	var resp Response
+	resp := Response{Build: buildinfo.Current()}
 
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM images`).Scan(&resp.ImagesTotal); err != nil {
 		return Response{}, fmt.Errorf("count images: %w", err)

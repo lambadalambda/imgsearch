@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"imgsearch/internal/app"
+	"imgsearch/internal/buildinfo"
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/embedder/openaicompat"
@@ -41,6 +42,10 @@ func main() {
 	cfg := defaultRuntimeConfig(os.Getenv)
 	registerRuntimeFlags(flag.CommandLine, &cfg)
 	flag.Parse()
+	if cfg.ShowVersion {
+		fmt.Println(buildinfo.Current().String())
+		return
+	}
 	if err := cfg.Resolve(); err != nil {
 		log.Fatalf("%v", err)
 	}

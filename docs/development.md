@@ -104,6 +104,13 @@ Optional arguments and behavior:
 - `IMGSEARCH_IMPORT_4CHAN_MIN_DELAY_SECONDS` sets the base per-file delay between 4chan media downloads (default: 5).
 - `IMGSEARCH_IMPORT_4CHAN_JITTER_SECONDS` adds random delay jitter on top of the base delay (default: 2).
 
+## Versioning
+
+- `./imgsearch -version` prints the version, commit, and build date. `/api/stats` returns the same values under `build`, and the Atelier statistics pane shows them.
+- `scripts/package_release.sh` stamps these through `-ldflags -X` on `internal/buildinfo`. The version is `IMGSEARCH_VERSION` if set, else the exact git tag on `HEAD`, else `rolling-<YYYYMMDD>-<short sha>`. Archive names end with the short SHA (`imgsearch-linux-x86_64-<sha>.tar.gz`).
+- Development builds fall back to the VCS metadata Go embeds (`go build` stamps the commit; `go run` does not).
+- Convention: the `rolling` GitHub release tracks `master` and keeps only the newest commit's archives. When a stable cut is wanted, tag `vYYYY.MM.DD` on `master`, move the `CHANGELOG.md` Unreleased entries under that heading, and run the release workflow from the tag.
+
 ## Observability
 
 - App health endpoint: `GET /healthz`

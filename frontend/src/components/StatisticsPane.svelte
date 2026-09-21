@@ -67,6 +67,11 @@
       <p class="m-0 mt-1 text-[12.5px] text-muted-2">
         {formatCount(totalMedia)} media items · {formatCount(embed.done)} embedded · {formatCount(imageAnnotate.done)} annotated
       </p>
+      {#if $stats?.build}
+        <p data-stats-build class="m-0 mt-1 text-[12px] text-muted tabular-nums">
+          imgsearch {$stats.build.version}{$stats.build.commit ? ` · ${$stats.build.commit.slice(0, 12)}` : ""}{$stats.build.date ? ` · built ${$stats.build.date}` : ""}
+        </p>
+      {/if}
     </header>
 
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
