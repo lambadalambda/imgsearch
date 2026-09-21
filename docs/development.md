@@ -10,11 +10,18 @@
    - `git submodule update --init --recursive deps/llama.cpp`
 3. Build llama.cpp runtime libraries:
    - `mise run llama-cpp-native-build`
-4. Start the app with native embedding + sqlite-vector:
+4. Build the Atelier frontend (Node 20+), which is embedded into the Go binary:
+   - `mise run build:frontend` (or `cd frontend && npm install && npm run build`)
+   - Without this step the server answers `/` with an "Atelier frontend not built yet" page. The `mise run serve*` tasks run it for you.
+5. Start the app with native embedding + sqlite-vector:
    - `go run ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
-5. On first run, if `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf` or `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf` are missing, imgsearch downloads them automatically from `VesNFF/Qwen3-VL-Embedding-2B-GGUF` on Hugging Face.
-6. Open the UI:
+6. On first run, if `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf` or `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf` are missing, imgsearch downloads them automatically from `VesNFF/Qwen3-VL-Embedding-2B-GGUF` on Hugging Face.
+7. Open the UI:
    - `http://127.0.0.1:8080/`
+
+Frontend iteration:
+- `mise run dev:frontend` starts the Vite dev server with an API proxy to the Go server, so Svelte edits hot-reload without rebuilding the binary.
+- `mise run check:frontend` runs `svelte-check`. See `docs/frontend.md` for the SPA layout and conventions.
 
 Embed-only mode:
 - Add `-enable-annotations=false` to skip Gemma resolution/loading and run the API with search-only embedding.
@@ -27,7 +34,7 @@ Process modes:
 - `-mode=worker` is the matching split-process worker configuration.
 
 One-command startup:
-- `mise run serve` uses the default 2B search model and `e4b` annotator.
+- `mise run serve` builds the frontend, then uses the default 2B search model and `e4b` annotator.
 - `mise run "serve:8b"` uses the 8B search model and `e4b` annotator.
 - `mise run "serve:smoke"` for a local startup smoke check that waits for `/healthz`
 
@@ -74,7 +81,7 @@ Notes:
 
 - Native defaults target `VesNFF/Qwen3-VL-Embedding-2B-GGUF` at `2048` dimensions. Use the 8B paths with `-llama-native-dimensions 4096` or `mise run "serve:8b"` for the higher-memory search profile.
 - Native path defaults to `-llama-native-image-max-side 384` to reduce normal indexing latency while keeping fixture retrieval quality green.
-- Native image embedding preprocesses every image through libvips (via `github.com/cshum/vipsgen`) and writes a temporary JPEG before mtmd, which avoids WEBP/AVIF decode failures in llama.cpp input handling.
+- Native image embedding preprocesses every image through libvips (direct cgo calls in `internal/embedder/llamacppnative`, so the packaged Ubuntu 24.04 libvips works) and writes a temporary JPEG before mtmd, which avoids WEBP/AVIF decode failures in llama.cpp input handling.
 - Native prompting uses Qwen chat-template style framing (`system` + `user` + assistant generation prompt) for text and image embeddings.
 - Optional: set `-llama-native-image-max-tokens` to override mtmd image token cap (`0` keeps model defaults).
 - Optional: use `-llama-native-query-instruction` and `-llama-native-passage-instruction` to tune retrieval framing.
@@ -175,11 +182,14 @@ The semantic checks verify expected relative similarity trends, such as cat imag
 
 ## UI Summary
 
-The UI includes:
+The default UI at `/` is the Atelier SPA (Svelte 5 + Tailwind 4, embedded from `internal/webui/atelier/dist`):
 
-- upload form
-- indexing status panel with queue totals, progress, and recent failures
-- gallery view with indexing states
-- live status/gallery updates over WebSocket with polling fallback
-- text search with optional negative prompt via `neg`
-- similar-image search buttons on cards
+- masonry library of images and videos with newest/random sort, NSFW visibility toggle, media filter, and Load More
+- upload modal with drag and drop, per-file limits, and partial-success results
+- text search (with `neg` negative prompt), tag search from the tag cloud, and similar-image search from any card
+- similar-video Feed with keyboard and touch navigation, seeking, and session feedback
+- lightbox with prev/next, tags, full annotation text, and NSFW / re-annotate / delete actions
+- statistics pane with queue, annotation, and build info; live updates over WebSocket
+- settings page for the annotation backend (native `e4b`/`26b` or an OpenAI-compatible server) and "Re-annotate all"
+
+The legacy single-file shell stays at `/legacy` for features not yet ported (bulk select, ops menu).

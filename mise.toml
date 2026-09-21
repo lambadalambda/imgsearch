@@ -45,6 +45,7 @@ run = "RUN_SQLITE_VECTOR_INTEGRATION=1 SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-
 
 [tasks.serve]
 description = "Run imgsearch with autorestart on source and static asset changes"
+depends = ["build:frontend"]
 run = "mise watch serve:run --restart --stop-signal SIGTERM --debounce 300ms --no-vcs-ignore --watch cmd --watch internal --watch go.mod --watch go.sum --watch mise.toml --watch scripts/ensure_sqlite_vector_ready.sh --watch scripts/ensure_llama_cpp_native_build.sh --watch scripts/resolve_onnxruntime_lib.sh --exts go,html,css,js,toml,sh"
 
 [tasks."serve:run"]
@@ -53,6 +54,7 @@ run = "scripts/ensure_sqlite_vector_ready.sh; scripts/ensure_llama_cpp_native_bu
 
 [tasks."serve:8b"]
 description = "Run imgsearch with the 8B native embedder"
+depends = ["build:frontend"]
 run = "mise watch serve:8b:run --restart --stop-signal SIGTERM --debounce 300ms --no-vcs-ignore --watch cmd --watch internal --watch go.mod --watch go.sum --watch mise.toml --watch scripts/ensure_sqlite_vector_ready.sh --watch scripts/ensure_llama_cpp_native_build.sh --watch scripts/resolve_onnxruntime_lib.sh --exts go,html,css,js,toml,sh"
 
 [tasks."serve:8b:run"]
@@ -61,6 +63,7 @@ run = "scripts/ensure_sqlite_vector_ready.sh; scripts/ensure_llama_cpp_native_bu
 
 [tasks."serve:api"]
 description = "Run imgsearch HTTP server only"
+depends = ["build:frontend"]
 run = "scripts/ensure_sqlite_vector_ready.sh; scripts/ensure_llama_cpp_native_build.sh; ort_lib=\"${PARAKEET_ONNXRUNTIME_LIB:-$(bash scripts/resolve_onnxruntime_lib.sh)}\"; bin=\"${TMPDIR:-/tmp}/imgsearch-mise-serve-api\"; go build -o \"$bin\" ./cmd/imgsearch && SQLITE_VECTOR_PATH=\"$(pwd)/tools/sqlite-vector/vector\" \"$bin\" -mode api -enable-annotations=false -vector-backend sqlite-vector -llama-native-model-path \"${LLAMA_NATIVE_MODEL_PATH:-$(pwd)/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf}\" -llama-native-mmproj-path \"${LLAMA_NATIVE_MMPROJ_PATH:-$(pwd)/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf}\" -llama-native-dimensions \"${LLAMA_NATIVE_DIMS:-2048}\" -llama-native-gpu-layers \"${LLAMA_NATIVE_GPU_LAYERS:-99}\" -llama-native-use-gpu=${LLAMA_NATIVE_USE_GPU:-true} -llama-native-context-size \"${LLAMA_NATIVE_CONTEXT_SIZE:-8192}\" -llama-native-batch-size \"${LLAMA_NATIVE_BATCH_SIZE:-512}\" -llama-native-threads \"${LLAMA_NATIVE_THREADS:-0}\" -llama-native-image-max-side \"${LLAMA_NATIVE_IMAGE_MAX_SIDE:-384}\" -llama-native-image-max-tokens \"${LLAMA_NATIVE_IMAGE_MAX_TOKENS:-0}\" -parakeet-onnxruntime-lib \"${ort_lib}\" -parakeet-onnx-coreml=${PARAKEET_ONNX_COREML:-0}"
 
 [tasks."serve:worker"]
@@ -69,6 +72,7 @@ run = "scripts/ensure_sqlite_vector_ready.sh; scripts/ensure_llama_cpp_native_bu
 
 [tasks."serve:8b:annotator-26b"]
 description = "Run imgsearch with the 8B native embedder and 26B Gemma annotator, autorestarting on source and static asset changes"
+depends = ["build:frontend"]
 run = "mise watch serve:8b:annotator-26b:run --restart --stop-signal SIGTERM --debounce 300ms --no-vcs-ignore --watch cmd --watch internal --watch go.mod --watch go.sum --watch mise.toml --watch scripts/ensure_sqlite_vector_ready.sh --watch scripts/ensure_llama_cpp_native_build.sh --watch scripts/resolve_onnxruntime_lib.sh --exts go,html,css,js,toml,sh"
 
 [tasks."serve:8b:annotator-26b:run"]
@@ -77,6 +81,7 @@ run = "scripts/ensure_sqlite_vector_ready.sh; scripts/ensure_llama_cpp_native_bu
 
 [tasks."serve:smoke"]
 description = "Smoke-test local server startup"
+depends = ["build:frontend"]
 run = "scripts/smoke_serve.sh"
 
 [tasks.llama-cpp-native-build]

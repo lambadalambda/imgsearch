@@ -4,7 +4,7 @@
 - Follow TDD: write a failing test first, implement the smallest change, then refactor.
 - Follow red -> green -> refactor: tests should fail before writing implementation code unless this is absolutely unworkable for the specific change.
 - Use Go as the primary language for backend, worker, and server-side logic.
-- Use plain web technologies (HTML/CSS/JavaScript) for the frontend unless changed explicitly.
+- The Atelier frontend is Svelte 5 + Tailwind 4 + Vite under `frontend/`, built into `internal/webui/atelier/dist` and embedded in the Go binary; the legacy plain HTML/CSS/JavaScript shell stays reachable at `/legacy`.
 - Keep commits small and topical; one concern per commit.
 - Commit early and often to keep progress visible and reversible.
 

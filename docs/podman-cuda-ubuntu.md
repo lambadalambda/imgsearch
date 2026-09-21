@@ -44,7 +44,7 @@ podman build \
 
 (`CUDA_DOCKER_ARCH=default` is the default and builds for a broader target set.)
 
-The build stage compiles `libvips` `8.18.0` from source (matching CI) so native preprocessing works with current `vipsgen` bindings.
+The build stage compiles `libvips` `8.18.0` from source (matching CI) so native preprocessing links against a known libvips version.
 
 The image now defaults to `GCC_VERSION=12` for better llama.cpp CUDA build stability on Ubuntu 24.04. You can override it if needed:
 

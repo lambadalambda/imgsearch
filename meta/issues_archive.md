@@ -106,3 +106,4 @@
 - [x] [Replace the embedding snapshot `MAX(updated_at)` scan with a generation counter](issues/098-replace-embedding-snapshot-scan-with-generation-counter.md)
 - [x] [Gate live WebSocket snapshots on data changes and share them across clients](issues/097-gate-live-snapshots-on-data-version.md)
 - [x] [Add a `-version` flag and stamp release builds](issues/106-add-version-flag-and-release-stamp.md)
+- [x] [Fix documentation drift](issues/107-fix-docs-drift.md)

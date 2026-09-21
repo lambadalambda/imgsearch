@@ -1,4 +1,4 @@
-# Planned Architecture
+# Architecture
 
 ## Overview
 The application is a single Go process that exposes an HTTP server and runs a background indexing worker.
@@ -17,17 +17,18 @@ MVP design priorities:
 ## Components
 
 ### 1) Web Server (Go)
-- Serves HTML/CSS/JS assets.
-- Handles upload endpoints and search endpoints.
-- Serves image files or thumbnails.
+- Serves the embedded Atelier SPA at `/` (and the legacy shell at `/legacy`).
+- Handles upload, list, search, stats, settings, and live WebSocket endpoints under `/api/`.
+- Serves stored media under `/media/images/` and `/media/videos/`, behind the same auth as `/api/`.
 
 ### 2) Queue + Worker (Go)
-- Job states: `pending`, `leased`, `done`, `failed`.
-- Retry policy with capped attempts.
+- Job kinds: `embed_image`, `annotate_image`, `annotate_video`, `transcribe_video`; states: `pending`, `leased`, `done`, `failed`.
+- Retry policy with capped attempts and `run_after` backoff.
 - Idempotent indexing by content hash to avoid duplicate work.
-- Lease-based claiming with expiry (`leased_until`) so crash-recovery can requeue stale jobs.
-- Single worker goroutine in MVP to minimize SQLite write contention.
-- See `docs/indexing-annotation-pipeline-notes.md` for planned follow-up work to split embedding and annotation into separate pipeline stages.
+- Lease-based claiming with expiry (`leased_until`) and periodic renewal for long jobs, so crash-recovery can requeue stale jobs.
+- Single worker loop per process (optionally batched embeds) to minimize SQLite write contention; `-mode=api` / `-mode=worker` split the server and worker into separate processes.
+- The annotator can be swapped at runtime from the settings page (native Gemma `e4b`/`26b` or an OpenAI-compatible remote server).
+- See `docs/indexing-annotation-pipeline-notes.md` for pipeline notes.
 
 ### 3) Storage (SQLite)
 - Stores image metadata, queue jobs, and vector representations.
@@ -38,7 +39,8 @@ MVP design priorities:
 ### 4) Native Embedding Runtime
 - Embedding uses the in-process `llama-cpp-native` runtime.
 - Query-time text embedding stays in the serving process so search remains available while background indexing runs.
-- A separate optional native Gemma annotator can be loaded for descriptions and tags.
+- A separate optional annotator produces titles, summaries, descriptions, and tags: native Gemma (`e4b` default, `26b` optional) in-process, or an OpenAI-compatible remote server chosen in the settings page.
+- Video transcription (optional, ONNX Runtime + Parakeet) embeds transcript text alongside sampled frames.
 - Runtime configuration still lives behind Go interfaces so handlers and worker code stay decoupled from model details.
 
 ### 5) Search Layer
@@ -66,72 +68,59 @@ Proposed interface:
 ### 8) File Storage
 - Configurable data directory (default: `./data`).
 - Layout:
-  - `./data/images/<sha256>` for original images
-  - `./data/thumbs/<sha256>.jpg` for thumbnails
-  - `./data/tmp/<uuid>` for upload staging
+  - `./data/images/<sha256>` for original images and sampled video frames
+  - `./data/videos/<sha256>` for original videos
+  - `./data/tmp/` for upload staging
+  - `./data/imgsearch.sqlite` for the database
+- There are no thumbnail derivatives yet; the grid serves originals (see issue 079).
 - Upload flow:
   1. write upload to temp file,
-  2. validate image and hash content,
-  3. commit DB rows,
-  4. atomically move temp file to final location.
+  2. sniff the media type, validate, and hash content,
+  3. for videos, sample frames with ffmpeg,
+  4. commit DB rows (adopting an existing row on a hash conflict),
+  5. atomically move temp files to their final locations.
 
-## Data Model (Initial)
+## Data Model
+
+Migrations live in `internal/db/migrations.go`; this is the shape after the current version.
 
 ### `schema_migrations`
-- `version` (PK)
-- `applied_at`
+- `version` (PK), `applied_at`
 
 ### `images`
-- `id` (PK)
-- `sha256` (unique)
-- `original_name`
-- `storage_path`
-- `thumbnail_path` (nullable)
-- `mime_type`
-- `width`
-- `height`
-- `created_at`
+- `id` (PK), `sha256` (unique), `original_name`, `storage_path`, `thumbnail_path` (nullable, unused), `mime_type`, `width`, `height`, `created_at`
+- annotation text: `title`, `summary`, `description`, `tags_json`, `annotation_updated_at`, `reannotate_requested`
+- Sampled video frames are rows here too, linked through `video_frames`.
+
+### `videos`
+- `id` (PK), `sha256` (unique), `original_name`, `storage_path`, `mime_type`, `duration_ms`, `width`, `height`, `frame_count`, `created_at`
+- annotation text: `title`, `summary`, `description`, `tags_json`, `annotation_updated_at`, `reannotate_requested`
+
+### `video_frames`
+- `video_id` (FK), `image_id` (FK), `frame_index`, `timestamp_ms`
+
+### `video_transcript_embeddings`
+- `video_id` (FK), `model_id` (FK), transcript text and its embedding, `created_at`, `updated_at`
 
 ### `embedding_models`
-- `id` (PK)
-- `name`
-- `version`
-- `dimensions`
-- `metric` (e.g. `cosine`)
-- `normalized` (boolean)
-- `created_at`
+- `id` (PK), `name`, `version`, `dimensions`, `metric` (e.g. `cosine`), `normalized`, `created_at`
 
 ### `image_embeddings`
-- `image_id` (FK)
-- `model_id` (FK)
-- `dim`
-- `vector_blob`
-- `created_at`
-- `updated_at`
-
-Primary key: (`image_id`, `model_id`)
+- `image_id` (FK), `model_id` (FK), `dim`, `vector_blob`, `created_at`, `updated_at`
+- Primary key: (`image_id`, `model_id`)
+- `image_embeddings_generation` is a one-row counter bumped by triggers on every write, used by the vector index to decide when to requantize.
 
 ### `index_jobs`
-- `id` (PK)
-- `kind` (e.g. `embed_image`)
-- `image_id` (FK)
-- `model_id` (FK)
-- `state` (`pending`, `leased`, `done`, `failed`)
-- `run_after`
-- `leased_until`
-- `lease_owner`
-- `attempts`
-- `max_attempts`
-- `last_error`
-- `created_at`
-- `updated_at`
+- `id` (PK), `kind`, `image_id` (FK, nullable), `video_id` (FK, nullable), `model_id` (FK), `state`, `run_after`, `leased_until`, `lease_owner`, `attempts`, `max_attempts`, `last_error`, `created_at`, `updated_at`
+- Exactly one of `image_id` / `video_id` is set; unique per (`kind`, target, `model_id`).
+- Lookup indexes on (`image_id`, `model_id`, `kind`), (`video_id`, `model_id`, `kind`), and (`state`, `kind`, `run_after`, `created_at`).
 
-Unique key: (`kind`, `image_id`, `model_id`)
+### `settings` / `settings_version`
+- Key/value JSON settings (currently the annotation backend) plus a version counter the worker polls to hot-swap the annotator.
 
 ## Operational Notes
 - Use WAL mode for better concurrency.
 - Keep uploads under a configured max size.
-- Generate thumbnails asynchronously after base indexing.
 - Add health endpoint for worker queue depth and failure count.
 - On startup, recover expired leases so no job stays stuck in `leased` indefinitely.
 - Restrict network binding to localhost by default.
