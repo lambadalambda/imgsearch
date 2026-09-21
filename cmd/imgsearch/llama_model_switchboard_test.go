@@ -225,3 +225,42 @@ func TestLlamaModelSwitchboardClosePreventsFurtherUse(t *testing.T) {
 		t.Fatalf("expected closed error from embedder after switchboard close, got %v", err)
 	}
 }
+
+func TestLlamaModelSwitchboardReplaceAnnotatorLoaderClosesLoadedModel(t *testing.T) {
+	first := &fakeSwitchAnnotator{id: "annotator-1"}
+	second := &fakeSwitchAnnotator{id: "annotator-2"}
+	switchboard := newLlamaModelSwitchboard(
+		&fakeSwitchEmbedder{id: "embedder-1"},
+		func(context.Context) (embedder.Embedder, error) { return &fakeSwitchEmbedder{id: "embedder-1"}, nil },
+		func(context.Context) (embedder.ImageAnnotator, error) { return first, nil },
+		true,
+	)
+	annotator := switchboard.Annotator()
+	if _, err := annotator.AnnotateImage(context.Background(), "a.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	if err := switchboard.replaceAnnotatorLoader(func(context.Context) (embedder.ImageAnnotator, error) { return second, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if first.closeCount != 1 {
+		t.Fatalf("expected loaded annotator to be closed on replace, got %d", first.closeCount)
+	}
+	if _, err := annotator.AnnotateImage(context.Background(), "b.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	if len(second.imageCalls) != 1 || len(first.imageCalls) != 1 {
+		t.Fatalf("expected second loader to serve after replace: first=%v second=%v", first.imageCalls, second.imageCalls)
+	}
+	if err := switchboard.unloadAnnotator(); err != nil {
+		t.Fatal(err)
+	}
+	if second.closeCount != 1 {
+		t.Fatalf("expected unload to close the annotator, got %d", second.closeCount)
+	}
+	if err := switchboard.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := switchboard.replaceAnnotatorLoader(nil); err == nil {
+		t.Fatal("expected error replacing loader on a closed switchboard")
+	}
+}

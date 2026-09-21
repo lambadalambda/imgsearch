@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(annotations): follow the persisted annotation settings at runtime: the worker swaps between native `e4b`/`26b` models and a remote OpenAI-compatible server between jobs without a restart, a remote backend skips the native GGUF download at startup, and `GET /api/settings` reports the active backend plus whether flag-pinned native paths lock the variant selector.
 - feat(annotations): add an OpenAI-compatible remote annotator client (chat completions with image input, JSON-mode fallback, bounded retries with `Retry-After`) and wire `POST /api/settings/annotation/test` to it.
 - feat(settings): add persisted annotation settings (`settings` table) with `GET`/`PUT /api/settings`, masking the remote API key in responses and seeding defaults from the annotator flags. `POST /api/settings/annotation/test` is routed but answers `503` until the remote annotator client is wired.
 - feat(ui): expose Flag NSFW, Re-annotate, and Delete in the Atelier lightbox, synced with the card badges.

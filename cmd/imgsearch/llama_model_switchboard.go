@@ -366,3 +366,35 @@ func (a *switchingVideoAnnotator) AnnotateVideoFrame(ctx context.Context, path s
 	}
 	return annotation, nil
 }
+
+// replaceAnnotatorLoader swaps the lazy annotator loader, closing any
+// currently loaded annotator so the next annotation call loads the new one.
+// It blocks while an annotation is in flight, so a running job finishes on
+// the model it started with.
+func (s *llamaModelSwitchboard) replaceAnnotatorLoader(loader llamaAnnotatorLoader) error {
+	if s == nil {
+		return fmt.Errorf("llama model switchboard is unavailable")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return fmt.Errorf("llama model switchboard is closed")
+	}
+	err := s.closeAnnotatorLocked()
+	s.loadAnnotator = loader
+	return err
+}
+
+// unloadAnnotator frees the loaded native annotator, for example when a
+// remote backend takes over, without changing the loader.
+func (s *llamaModelSwitchboard) unloadAnnotator() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil
+	}
+	return s.closeAnnotatorLocked()
+}

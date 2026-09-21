@@ -17,7 +17,9 @@ import (
 	"imgsearch/internal/app"
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/embedder/openaicompat"
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/settings"
 	"imgsearch/internal/transcribe"
 	"imgsearch/internal/transcribe/parakeetonnx"
 	"imgsearch/internal/vectorindex/sqlitevector"
@@ -91,11 +93,29 @@ func main() {
 		log.Fatalf("resolve llama-cpp-native model assets: %v", err)
 	}
 	loadAnnotator := cfg.LoadAnnotator
+	annotationDefaults := annotationSettingsFromConfig(cfg)
+	startupAnnotation, err := settings.LoadAnnotationOrDefault(rootCtx, sqlDB, annotationDefaults)
+	if err != nil {
+		log.Fatalf("load annotation settings: %v", err)
+	}
+	pinnedAnnotatorModelPath := strings.TrimSpace(cfg.AnnotatorModelPath)
+	pinnedAnnotatorMMProjPath := strings.TrimSpace(cfg.AnnotatorMMProjPath)
+	nativeAnnotatorPinned := pinnedAnnotatorModelPath != "" || pinnedAnnotatorMMProjPath != ""
+	if nativeAnnotatorPinned && (pinnedAnnotatorModelPath == "" || pinnedAnnotatorMMProjPath == "") {
+		log.Fatalf("configure annotator: both -llama-native-annotator-model-path and -llama-native-annotator-mmproj-path must be set together")
+	}
+	startupNativeVariant := cfg.AnnotatorVariant
+	if !nativeAnnotatorPinned {
+		startupNativeVariant = startupAnnotation.NativeVariant
+	}
+	// Download native assets up front only when they will be used at
+	// startup; a remote backend selected in settings must not pull GGUFs.
+	eagerNativeAssets := loadAnnotator && (nativeAnnotatorPinned || startupAnnotation.Backend != settings.BackendOpenAI)
 	cfg.AnnotatorModelPath, cfg.AnnotatorMMProjPath, err = resolveAnnotatorAssetPaths(
 		rootCtx,
 		cfg.EnableAnnotations,
-		loadAnnotator,
-		cfg.AnnotatorVariant,
+		eagerNativeAssets,
+		startupNativeVariant,
 		cfg.AnnotatorModelPath,
 		cfg.AnnotatorMMProjPath,
 		ensureDefaultLlamaNativeAnnotatorAssetsForVariant,
@@ -238,20 +258,10 @@ func main() {
 	}
 
 	var imageAnnotator embedder.ImageAnnotator
-	canAnnotateImages := false
-	annotatorModelPath := strings.TrimSpace(cfg.AnnotatorModelPath)
-	annotatorVisionPath := strings.TrimSpace(cfg.AnnotatorMMProjPath)
 	var modelSwitchboard *llamaModelSwitchboard
+	var annotationResolver *annotatorResolver
 	if loadAnnotator {
-		imageAnnotator, canAnnotateImages = activeEmbedder.(embedder.ImageAnnotator)
-	}
-	if loadAnnotator && (annotatorModelPath != "" || annotatorVisionPath != "") {
-		if annotatorModelPath == "" || annotatorVisionPath == "" {
-			log.Fatalf("configure annotator: both -llama-native-annotator-model-path and -llama-native-annotator-mmproj-path must be set together")
-		}
-		annotatorOpts := llamaCPPNativeAnnotatorOptions{
-			ModelPath:                  annotatorModelPath,
-			VisionModelPath:            annotatorVisionPath,
+		nativeOpts := llamaCPPNativeAnnotatorOptions{
 			GPULayers:                  cfg.AnnotatorGPULayers,
 			UseGPU:                     cfg.AnnotatorUseGPU,
 			ContextSize:                cfg.AnnotatorContextSize,
@@ -266,22 +276,40 @@ func main() {
 			CacheTypeK:                 cfg.AnnotatorCacheTypeK,
 			CacheTypeV:                 cfg.AnnotatorCacheTypeV,
 		}
+		nativeLoader := nativeAnnotatorLoaderFactory(nativeOpts, nativeAnnotatorPinned, pinnedAnnotatorModelPath, pinnedAnnotatorMMProjPath)
 		modelSwitchboard = newLlamaModelSwitchboard(
 			activeEmbedder,
 			func(context.Context) (embedder.Embedder, error) {
 				return newLlamaCPPNativeEmbedder(embedderOpts)
 			},
-			func(context.Context) (embedder.ImageAnnotator, error) {
-				return newLlamaCPPNativeAnnotator(annotatorOpts)
-			},
+			nativeLoader(startupNativeVariant),
 			true,
 		)
 		activeEmbedder = modelSwitchboard.Embedder()
-		imageAnnotator = modelSwitchboard.Annotator()
-		canAnnotateImages = true
-		log.Printf("image annotations enabled via separate native annotator model %s", annotatorModelPath)
-	} else if loadAnnotator && canAnnotateImages {
-		log.Printf("image annotations enabled via active embedder model")
+		annotationResolver = newAnnotatorResolver(annotatorResolverOptions{
+			DB:       sqlDB,
+			Defaults: annotationDefaults,
+			BuildNative: func(_ context.Context, variant string) (embedder.ImageAnnotator, settings.ActiveAnnotation, error) {
+				if err := modelSwitchboard.replaceAnnotatorLoader(nativeLoader(variant)); err != nil {
+					return nil, settings.ActiveAnnotation{}, err
+				}
+				return modelSwitchboard.Annotator(), nativeAnnotationStatus(variant, nativeAnnotatorPinned, pinnedAnnotatorModelPath), nil
+			},
+			BuildRemote: func(_ context.Context, s settings.AnnotationSettings) (embedder.ImageAnnotator, settings.ActiveAnnotation, error) {
+				if err := modelSwitchboard.unloadAnnotator(); err != nil {
+					log.Printf("unload native annotator: %v", err)
+				}
+				remote, err := openaicompat.New(openAIConfigFromSettings(s, cfg.AnnotatorImageMaxSide, log.Printf))
+				if err != nil {
+					return nil, settings.ActiveAnnotation{}, err
+				}
+				return remote, remoteAnnotationStatus(s), nil
+			},
+		})
+		imageAnnotator = annotationResolver
+		if _, err := annotationResolver.Status(rootCtx); err != nil {
+			log.Printf("image annotations enabled but the configured backend is unavailable: %v", err)
+		}
 	} else {
 		log.Printf("image annotations disabled")
 	}
@@ -295,7 +323,14 @@ func main() {
 	} else if closer, ok := activeEmbedder.(app.Closer); ok {
 		closers = append(closers, closer)
 	}
+	if annotationResolver != nil {
+		closers = append(closers, annotationResolver)
+	}
 
+	var annotationStatus func(context.Context) (settings.ActiveAnnotation, error)
+	if cfg.EnableAnnotations {
+		annotationStatus = annotationStatusFunc(annotationResolver, sqlDB, annotationDefaults, nativeAnnotatorPinned, pinnedAnnotatorModelPath)
+	}
 	runtime, err := app.NewRuntime(app.RuntimeOptions{
 		Data:                       dataRuntime,
 		DataDir:                    cfg.DataDir,
@@ -312,8 +347,11 @@ func main() {
 		LiveImagesOffset:           0,
 		VideoFrameCount:            cfg.VideoFrameCount,
 		VideoTranscriptsOn:         videoTranscriber != nil,
-		AnnotationDefaults:         annotationSettingsFromConfig(cfg),
+		AnnotationDefaults:         annotationDefaults,
 		AnnotationConnectionTester: testAnnotationConnection(cfg.AnnotatorImageMaxSide),
+		AnnotationStatus:           annotationStatus,
+		NativeVariantLocked:        nativeAnnotatorPinned,
+		AnnotationsDisabled:        !cfg.EnableAnnotations,
 	})
 	if err != nil {
 		log.Fatalf("compose runtime: %v", err)

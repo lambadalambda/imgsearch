@@ -21,6 +21,14 @@ type Handler struct {
 	// the test endpoint. Its error text is returned to the client verbatim,
 	// so implementations must not echo the API key.
 	TestConnection func(ctx context.Context, s AnnotationSettings) error
+	// NativeVariantLocked is true when explicit native model paths were
+	// passed as flags, so the variant selector has no effect.
+	NativeVariantLocked bool
+	// Status reports the backend currently in use. Nil omits it.
+	Status func(ctx context.Context) (ActiveAnnotation, error)
+	// AnnotationsDisabled is true when -enable-annotations=false, so the
+	// page can explain that settings are saved but not applied.
+	AnnotationsDisabled bool
 }
 
 type handler struct {
@@ -28,8 +36,12 @@ type handler struct {
 }
 
 type response struct {
-	Version    int64          `json:"version"`
-	Annotation AnnotationView `json:"annotation"`
+	Version             int64             `json:"version"`
+	Annotation          AnnotationView    `json:"annotation"`
+	NativeVariantLocked bool              `json:"native_variant_locked"`
+	AnnotationsDisabled bool              `json:"annotations_disabled"`
+	Active              *ActiveAnnotation `json:"active,omitempty"`
+	ActiveError         string            `json:"active_error,omitempty"`
 }
 
 type updateRequest struct {
@@ -76,7 +88,20 @@ func (h *handler) writeCurrent(w http.ResponseWriter, ctx context.Context) {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "load settings failed")
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, response{Version: version, Annotation: current.View()})
+	httputil.WriteJSON(w, http.StatusOK, h.response(ctx, version, current))
+}
+
+func (h *handler) response(ctx context.Context, version int64, current AnnotationSettings) response {
+	out := response{Version: version, Annotation: current.View(), NativeVariantLocked: h.cfg.NativeVariantLocked, AnnotationsDisabled: h.cfg.AnnotationsDisabled}
+	if h.cfg.Status != nil {
+		active, err := h.cfg.Status(ctx)
+		if err != nil {
+			out.ActiveError = err.Error()
+		} else {
+			out.Active = &active
+		}
+	}
+	return out
 }
 
 func (h *handler) load(ctx context.Context) (AnnotationSettings, int64, error) {
@@ -111,7 +136,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "save settings failed")
 		return
 	}
-	httputil.WriteJSON(w, http.StatusOK, response{Version: version, Annotation: next.View()})
+	httputil.WriteJSON(w, http.StatusOK, h.response(r.Context(), version, next))
 }
 
 func (h *handler) handleTest(w http.ResponseWriter, r *http.Request) {

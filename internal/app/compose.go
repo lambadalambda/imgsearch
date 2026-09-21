@@ -48,6 +48,12 @@ type RuntimeOptions struct {
 	// AnnotationConnectionTester probes a remote annotation backend for the
 	// settings "Test connection" action. Nil disables that endpoint.
 	AnnotationConnectionTester func(ctx context.Context, s settings.AnnotationSettings) error
+	// AnnotationStatus reports the backend in use for the settings page.
+	AnnotationStatus func(ctx context.Context) (settings.ActiveAnnotation, error)
+	// NativeVariantLocked is true when native model paths are pinned by flags.
+	NativeVariantLocked bool
+	// AnnotationsDisabled is true when annotations are switched off by flag.
+	AnnotationsDisabled bool
 }
 
 type Runtime struct {
@@ -122,7 +128,14 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: opts.Data.DB, ModelID: opts.ModelID}))
 	mux.Handle("/api/live", live.NewHandler(&live.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, Interval: opts.LiveInterval, ImagesLimit: opts.LiveImagesLimit, ImagesOffset: opts.LiveImagesOffset}))
 	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: opts.Data.DB, ModelID: opts.ModelID}))
-	settingsHandler := settings.NewHandler(&settings.Handler{DB: opts.Data.DB, Defaults: opts.AnnotationDefaults, TestConnection: opts.AnnotationConnectionTester})
+	settingsHandler := settings.NewHandler(&settings.Handler{
+		DB:                  opts.Data.DB,
+		Defaults:            opts.AnnotationDefaults,
+		TestConnection:      opts.AnnotationConnectionTester,
+		Status:              opts.AnnotationStatus,
+		NativeVariantLocked: opts.NativeVariantLocked,
+		AnnotationsDisabled: opts.AnnotationsDisabled,
+	})
 	mux.Handle("/api/settings", settingsHandler)
 	mux.Handle("/api/settings/", settingsHandler)
 	mux.Handle("/api/search/", search.NewHandler(&search.Handler{

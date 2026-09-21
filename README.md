@@ -266,6 +266,17 @@ Both processes must point at the same `-data-dir` if you split them. On a single
 | Indexing is too slow but stable | Raise `-llama-native-gpu-layers` or `-llama-native-batch-size` one step at a time |
 | Descriptions/tags are not needed | Keep `-enable-annotations=false` permanently |
 
+## Annotation Settings
+
+Descriptions, titles, summaries, and tags come from an annotation backend that you can change at runtime from the Atelier Settings page or through the API, without restarting:
+
+- **Native** runs the bundled Gemma annotator in-process. Pick the `e4b` variant (default, lower memory) or `26b` (richer output, high-memory systems). Switching variants unloads and reloads the GGUF files, downloading them on first use. If you pinned custom paths with `-llama-native-annotator-model-path` / `-llama-native-annotator-mmproj-path`, the variant selector is locked to those files.
+- **Remote server** sends images to any OpenAI-compatible chat-completions endpoint with vision support, such as llama-server, Ollama, LM Studio, vLLM, OpenAI, or OpenRouter. Configure the base URL (for example `http://127.0.0.1:11434/v1`), an optional API key, the model name, a request timeout, and the number of parallel requests. While a remote backend is selected, the native annotator is unloaded and no GGUF download happens at startup.
+
+Existing annotations are kept when you switch. Use "Re-annotate all" to refresh the library with the new backend, keeping in mind that paid remote APIs bill per image.
+
+The same settings are available at `GET`/`PUT /api/settings`, and `POST /api/settings/annotation/test` checks a remote server without saving. The worker picks up saved changes between jobs, also when it runs as a separate `-mode=worker` process sharing the same `-data-dir`.
+
 ## Security Model
 
 `imgsearch` keeps a single trust boundary: the network address it binds to.

@@ -208,3 +208,31 @@ func TestPutRejectsOversizedBody(t *testing.T) {
 		t.Fatalf("expected 413, got %d", rec.Code)
 	}
 }
+
+func TestGetSettingsReportsLockAndActiveStatus(t *testing.T) {
+	h := newTestHandler(t, &Handler{
+		NativeVariantLocked: true,
+		Status: func(context.Context) (ActiveAnnotation, error) {
+			return ActiveAnnotation{Backend: BackendNative, Model: "custom.gguf", SettingsVersion: 0}, nil
+		},
+	})
+	rec, out := do(t, h, http.MethodGet, "/api/settings", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if out["native_variant_locked"] != true || out["annotations_disabled"] != false {
+		t.Fatalf("expected lock flags, got %v", out)
+	}
+	active := out["active"].(map[string]any)
+	if active["backend"] != BackendNative || active["model"] != "custom.gguf" {
+		t.Fatalf("unexpected active: %v", active)
+	}
+
+	failing := newTestHandler(t, &Handler{Status: func(context.Context) (ActiveAnnotation, error) {
+		return ActiveAnnotation{}, errors.New("model load failed")
+	}})
+	rec, out = do(t, failing, http.MethodGet, "/api/settings", "")
+	if rec.Code != http.StatusOK || out["active_error"] != "model load failed" || out["active"] != nil {
+		t.Fatalf("expected active_error without active, got %d %v", rec.Code, out)
+	}
+}

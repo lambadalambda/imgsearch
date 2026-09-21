@@ -137,3 +137,22 @@ func (s AnnotationSettings) View() AnnotationView {
 		},
 	}
 }
+
+// ActiveAnnotation describes the backend in use, for display next to the
+// editable settings.
+type ActiveAnnotation struct {
+	Backend string `json:"backend"`
+	Model   string `json:"model"`
+	Detail  string `json:"detail,omitempty"`
+	// SettingsVersion is the version the backend was built from.
+	SettingsVersion int64 `json:"settings_version"`
+	// Source is "worker" when reported by the process running annotation
+	// jobs, or "settings" when derived from the saved settings by an
+	// API-only process that cannot observe the worker.
+	Source string `json:"source"`
+}
+
+const (
+	ActiveSourceWorker   = "worker"
+	ActiveSourceSettings = "settings"
+)
