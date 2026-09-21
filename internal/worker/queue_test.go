@@ -2096,3 +2096,34 @@ WHERE id = 1
 		t.Fatalf("after reannotate: title=%q tags=%s annotator=%s", title, tags, annotator)
 	}
 }
+
+// An NSFW flag the user switched off must stay off when the annotator
+// emits "nsfw" again (meta/issues/110).
+func TestReannotationKeepsUserRemovedNSFWOff(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE id = 1`); err != nil {
+		t.Fatalf("mark embed job done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+UPDATE images
+SET description = 'Old.', tags_json = '["cat"]', annotator_tags_json = '["cat","nsfw"]',
+    user_tags_json = '[]', removed_tags_json = '["nsfw"]', reannotate_requested = 1
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO index_jobs(id, kind, image_id, model_id, state) VALUES (2, 'annotate_image', 1, 1, 'pending')`); err != nil {
+		t.Fatalf("seed annotate job: %v", err)
+	}
+	q.Annotator = &fakeAnnotator{annotation: embedder.ImageAnnotation{Description: "New.", Tags: []string{"cat", "nsfw"}}}
+	if processed, err := q.ProcessOne(context.Background(), "worker-1"); err != nil || !processed {
+		t.Fatalf("process: processed=%v err=%v", processed, err)
+	}
+	var tags string
+	if err := sqlDB.QueryRow(`SELECT tags_json FROM images WHERE id = 1`).Scan(&tags); err != nil {
+		t.Fatal(err)
+	}
+	if tags != `["cat"]` {
+		t.Fatalf("expected nsfw to stay removed, got %s", tags)
+	}
+}

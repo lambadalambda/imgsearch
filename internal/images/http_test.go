@@ -918,3 +918,29 @@ func TestToggleNSFWCountsAsManualEdit(t *testing.T) {
 		t.Fatalf("after toggle off: served=%s user=%s", served, user)
 	}
 }
+
+// Re-annotating must not drop manual edits from the served columns while
+// the job is pending: a user NSFW flag has to keep filtering meanwhile.
+func TestReannotateKeepsManualEditsServed(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`
+UPDATE images SET title = 'Mine', user_title = 'Mine', annotator_title = 'Theirs',
+  tags_json = '["cat","nsfw"]', annotator_tags_json = '["cat"]', user_tags_json = '["nsfw"]'
+WHERE id = 1`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+	req := httptest.NewRequest(http.MethodPost, "/api/images/1/reannotate", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("status: got=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var title, tags string
+	if err := dbConn.QueryRow(`SELECT title, tags_json FROM images WHERE id = 1`).Scan(&title, &tags); err != nil {
+		t.Fatal(err)
+	}
+	if title != "Mine" || tags != `["nsfw"]` {
+		t.Fatalf("served during re-annotation: title=%q tags=%s", title, tags)
+	}
+}

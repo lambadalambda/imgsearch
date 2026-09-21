@@ -393,7 +393,7 @@ func Reannotate(ctx context.Context, db *sql.DB, modelID int64, imageID int64) e
 	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE images
-SET title = '', summary = '', description = '', tags_json = '[]', reannotate_requested = 1
+SET title = user_title, summary = '', description = '', tags_json = user_tags_json, reannotate_requested = 1
 WHERE id = ?
 `, imageID); err != nil {
 		_ = tx.Rollback()

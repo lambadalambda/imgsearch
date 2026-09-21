@@ -278,12 +278,14 @@ ALTER TABLE images ADD COLUMN annotator_tags_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE images ADD COLUMN user_tags_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE images ADD COLUMN removed_tags_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE images ADD COLUMN user_title TEXT NOT NULL DEFAULT '';
+ALTER TABLE images ADD COLUMN annotator_title TEXT NOT NULL DEFAULT '';
 ALTER TABLE videos ADD COLUMN annotator_tags_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE videos ADD COLUMN user_tags_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE videos ADD COLUMN removed_tags_json TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE videos ADD COLUMN user_title TEXT NOT NULL DEFAULT '';
-UPDATE images SET annotator_tags_json = COALESCE(tags_json, '[]');
-UPDATE videos SET annotator_tags_json = COALESCE(tags_json, '[]');
+ALTER TABLE videos ADD COLUMN annotator_title TEXT NOT NULL DEFAULT '';
+UPDATE images SET annotator_tags_json = COALESCE(tags_json, '[]'), annotator_title = COALESCE(title, '');
+UPDATE videos SET annotator_tags_json = COALESCE(tags_json, '[]'), annotator_title = COALESCE(title, '');
 `,
 	},
 }

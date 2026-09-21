@@ -122,7 +122,9 @@ func queryVideos(ctx context.Context, db *sql.DB, modelID int64, limit int, offs
 	args = append(args, limit, offset)
 
 	var total int64
-	if err := db.QueryRowContext(ctx, fmt.Sprintf(`
+	if onlyVideoID > 0 {
+		total = 1
+	} else if err := db.QueryRowContext(ctx, fmt.Sprintf(`
 SELECT COUNT(*)
 FROM videos v
 WHERE (? = 1 OR NOT (%s))
@@ -437,7 +439,7 @@ func Reannotate(ctx context.Context, db *sql.DB, modelID int64, videoID int64) e
 	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE videos
-SET title = '', summary = '', description = '', tags_json = '[]', annotation_updated_at = NULL, reannotate_requested = 1
+SET title = user_title, summary = '', description = '', tags_json = user_tags_json, annotation_updated_at = NULL, reannotate_requested = 1
 WHERE id = ?
 `, videoID); err != nil {
 		_ = tx.Rollback()

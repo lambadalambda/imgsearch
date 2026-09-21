@@ -21,3 +21,4 @@ The only per-item mutations are delete, re-annotate, and toggle-NSFW (`internal/
 
 - Found during the 2026-09-21 review.
 - Outcome (2026-09-21): `tags_json` stays the served list so search, tag cloud, and NSFW SQL are unchanged; `annotator_tags_json`, `user_tags_json`, `removed_tags_json`, and `user_title` (migration 13) let `internal/mediaops` re-merge on re-annotation. The Rail "Tags (soon)" explorer button is a separate feature and stays disabled.
+- Review follow-up: the single-item re-annotate endpoint now serves the user title and user tags while the job is pending instead of clearing them; `annotator_title` lets a cleared manual title revert immediately. Known limit: NSFW flags toggled before migration 13 count as annotator tags, so a later annotation that omits `nsfw` drops them (same as before the migration).

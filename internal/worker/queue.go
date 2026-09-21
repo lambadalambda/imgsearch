@@ -942,16 +942,25 @@ func annotationMissing(description string, tags []string) bool {
 }
 
 func (q *Queue) storeImageAnnotation(ctx context.Context, imageID int64, annotation embedder.ImageAnnotation) error {
+	tx, err := q.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin store annotation tx: %w", err)
+	}
 	text := annotationtext.Build(annotation.Title, annotation.Summary, annotation.Description)
-	if _, err := q.DB.ExecContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 UPDATE images
 SET `+mediaops.AnnotatorTitleSQL+`, summary = ?, description = ?
 WHERE id = ?
 `, text.Title, text.Summary, text.FullDescription, imageID); err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("update image annotations: %w", err)
 	}
-	if _, err := mediaops.ApplyAnnotatorTags(ctx, q.DB, mediaops.TableImages, imageID, annotation.Tags); err != nil {
+	if _, err := mediaops.ApplyAnnotatorTags(ctx, tx, mediaops.TableImages, imageID, annotation.Tags); err != nil {
+		_ = tx.Rollback()
 		return fmt.Errorf("update image tags: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit store annotation tx: %w", err)
 	}
 	return nil
 }

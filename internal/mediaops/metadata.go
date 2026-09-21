@@ -98,13 +98,13 @@ func SetServedTags(ctx context.Context, q execQuerier, table Table, id int64, se
 
 // SetUserTitle stores a manual title. A non-empty title replaces the served
 // title and survives re-annotation; an empty one clears the override and
-// keeps the current title until the next annotation.
+// serves the annotator's title again.
 func SetUserTitle(ctx context.Context, q execQuerier, table Table, id int64, title string) error {
 	if err := table.validate(); err != nil {
 		return err
 	}
 	title = strings.TrimSpace(title)
-	res, err := q.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET user_title = ?, title = CASE WHEN ? = '' THEN title ELSE ? END WHERE id = ?`, table), title, title, title, id)
+	res, err := q.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET user_title = ?1, title = CASE WHEN ?1 = '' THEN annotator_title ELSE ?1 END WHERE id = ?2`, table), title, id)
 	if err != nil {
 		return fmt.Errorf("update %s title: %w", table, err)
 	}
@@ -119,8 +119,10 @@ func SetUserTitle(ctx context.Context, q execQuerier, table Table, id int64, tit
 }
 
 // AnnotatorTitleSQL is the assignment the worker uses so a manual title is
-// not overwritten by a fresh annotation. It consumes one argument.
-const AnnotatorTitleSQL = "title = CASE WHEN COALESCE(user_title, '') = '' THEN ? ELSE user_title END"
+// not overwritten by a fresh annotation. It consumes one positional
+// argument (?1, the annotator's title); later "?" placeholders in the same
+// statement continue numbering after it.
+const AnnotatorTitleSQL = "annotator_title = ?1, title = CASE WHEN COALESCE(user_title, '') = '' THEN ?1 ELSE user_title END"
 
 // MetadataPatch is the body of PATCH /api/{images,videos}/{id}. Absent
 // fields are left unchanged; tags replace the whole served list.
@@ -136,6 +138,9 @@ func DecodeMetadataPatch(r io.Reader) (MetadataPatch, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&patch); err != nil {
 		return MetadataPatch{}, fmt.Errorf("%w: %v", ErrInvalidPatch, err)
+	}
+	if dec.More() {
+		return MetadataPatch{}, fmt.Errorf("%w: trailing data after the JSON object", ErrInvalidPatch)
 	}
 	if patch.Title == nil && patch.Tags == nil {
 		return MetadataPatch{}, fmt.Errorf("%w: nothing to update", ErrInvalidPatch)

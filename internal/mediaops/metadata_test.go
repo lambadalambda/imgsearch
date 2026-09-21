@@ -71,15 +71,18 @@ func TestUserEditsSurviveReannotation(t *testing.T) {
 		t.Fatalf("after reannotate: served=%s annotator=%s title=%q", served, annotator, title)
 	}
 
-	// Clearing the manual title lets the next annotation through.
+	// Clearing the manual title reverts to the annotator's title right away.
 	if err := SetUserTitle(ctx, conn, TableImages, 1, ""); err != nil {
 		t.Fatalf("clear title: %v", err)
 	}
-	if _, err := conn.ExecContext(ctx, `UPDATE images SET `+AnnotatorTitleSQL+` WHERE id = 1`, "Second annotator title"); err != nil {
+	if _, _, _, _, title, _ = readTags(t, conn); title != "Fresh annotator title" {
+		t.Fatalf("title after clearing override: %q", title)
+	}
+	if _, err := conn.ExecContext(ctx, `UPDATE images SET `+AnnotatorTitleSQL+`, summary = ? WHERE id = ?`, "Second annotator title", "s", 1); err != nil {
 		t.Fatalf("annotator title 2: %v", err)
 	}
 	if _, _, _, _, title, _ = readTags(t, conn); title != "Second annotator title" {
-		t.Fatalf("title after clearing override: %q", title)
+		t.Fatalf("title after second annotation: %q", title)
 	}
 }
 
@@ -97,6 +100,9 @@ func TestDecodeMetadataPatchValidation(t *testing.T) {
 		if _, err := DecodeMetadataPatch(strings.NewReader(body)); !errors.Is(err, ErrInvalidPatch) {
 			t.Fatalf("expected ErrInvalidPatch for %s, got %v", body, err)
 		}
+	}
+	if _, err := DecodeMetadataPatch(strings.NewReader(`{"title":"x"} trailing`)); !errors.Is(err, ErrInvalidPatch) {
+		t.Fatalf("expected trailing data to be rejected, got %v", err)
 	}
 	patch, err := DecodeMetadataPatch(strings.NewReader(`{"tags": []}`))
 	if err != nil || patch.Tags == nil || len(*patch.Tags) != 0 || patch.Title != nil {

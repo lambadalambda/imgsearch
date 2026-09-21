@@ -665,3 +665,22 @@ func TestGetVideoItemAndPatchMetadata(t *testing.T) {
 		t.Fatalf("stored edits: title=%q user_tags=%s", userTitle, userTags)
 	}
 }
+
+func TestPatchVideoRejectsInvalidBodies(t *testing.T) {
+	dbConn := setupVideosDB(t)
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+	for _, body := range []string{`{}`, `{"tags":"x"}`, `{"nope":1}`, `garbage`} {
+		req := httptest.NewRequest(http.MethodPatch, "/api/videos/1", strings.NewReader(body))
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("%s: got=%d want=400 body=%s", body, rr.Code, rr.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/videos/999", strings.NewReader(`{"title":"x"}`))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("missing video: got=%d", rr.Code)
+	}
+}
