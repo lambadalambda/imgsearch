@@ -9,58 +9,26 @@ package llamacppnative
 import "C"
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 	"unsafe"
 
-	"imgsearch/internal/annotationtext"
+	"imgsearch/internal/annotation"
 	coreembedder "imgsearch/internal/embedder"
 )
 
 const gemmaDescriptionJSONSchema = `{"type":"object","properties":{"short_description":{"type":"string"},"labels":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":8,"uniqueItems":true}},"required":["short_description","labels"],"additionalProperties":false}`
 const gemmaTagsJSONSchema = `{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true}},"required":["tags"],"additionalProperties":false}`
 const gemmaDescriptionAndTagsJSONSchema = `{"type":"object","properties":{"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true}},"required":["description","tags"],"additionalProperties":false}`
-const gemmaAppAnnotationJSONSchema = `{"type":"object","properties":{"title":{"type":"string"},"summary":{"type":"string"},"full_description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":12,"uniqueItems":true},"is_nsfw":{"type":"boolean"}},"required":["title","summary","full_description","tags","is_nsfw"],"additionalProperties":false}`
-const gemmaCompactAnnotationJSONSchema = `{"type":"object","properties":{"description":{"type":"string"},"tags":{"type":"array","items":{"type":"string"},"minItems":3,"maxItems":10,"uniqueItems":true},"is_nsfw":{"type":"boolean"}},"required":["description","tags","is_nsfw"],"additionalProperties":false}`
 
-const gemmaAppAnnotationSystemPrompt = "You are annotating a private image collection for high-recall search. Return exactly one valid JSON object and nothing else. Do not use markdown code fences. Be explicit and concrete when describing visible content. Do not sanitize clearly visible NSFW material. Only describe what is visually present or clearly legible in the image."
-const gemmaAppAnnotationRetrySystemPrompt = "Return exactly one valid JSON object and nothing else. Do not use markdown code fences, prose, or comments."
-
-const gemmaVideoFrameAnnotationSystemPrompt = "You are annotating one sampled frame from a private video collection for later video-level summarization. Return exactly one valid JSON object and nothing else. Do not use markdown code fences. Capture high-signal visible evidence, but keep the frame note compact."
-const gemmaVideoFrameAnnotationRetrySystemPrompt = "Return exactly one compact valid JSON object and nothing else. Do not use markdown code fences, prose, or comments."
-
-const gemmaVideoAnnotationSystemPrompt = "You are annotating a private video collection for high-recall search. You are given summaries from multiple sampled frames of one video and optionally transcript context. Return exactly one valid JSON object and nothing else. Do not use markdown code fences. Be explicit and concrete, and stay grounded in provided frame evidence."
-const gemmaVideoAnnotationRetrySystemPrompt = "Return exactly one valid JSON object and nothing else. Do not use markdown code fences, prose, or comments."
-
-const gemmaAppAnnotationRetryUserPrompt = "Retry with compact output. Return JSON with title, summary, full_description, tags, and is_nsfw. Keep details that matter for retrieval, but stay concise unless the scene is complex. full_description may be up to 220 words. If there is text in the image, describe it and translate non-English text. Return 3 to 10 unique lowercase tags, set is_nsfw accurately, and return JSON only."
-const gemmaVideoFrameAnnotationRetryUserPrompt = "Retry with compact output. Describe only durable frame evidence needed for video summarization in 1 to 2 sentences. Return 3 to 8 lowercase tags, set is_nsfw accurately, and return JSON only."
-const gemmaVideoAnnotationRetryUserPrompt = "Retry with compact output. Return JSON with title, summary, full_description, tags, and is_nsfw. Keep details that matter for retrieval, but stay concise unless the video evidence is complex. full_description may be up to 260 words. If there is text, describe it and translate non-English text. If a meaningful filename is provided, you may infer likely media context (meme, music video, show clip) when it does not conflict with frame evidence. Return 5 to 12 unique lowercase tags, set is_nsfw accurately, and return JSON only."
-
-const gemmaAppAnnotationMaxTokens = 1024
-const gemmaVideoFrameAnnotationMaxTokens = 320
-const gemmaRetryAnnotationMaxTokens = 512
-const gemmaRetryVideoFrameAnnotationMaxTokens = 256
-const gemmaVideoAnnotationMaxTokens = 1200
-const gemmaRetryVideoAnnotationMaxTokens = 640
 const gemmaGenerationOutputBufferSize = 32 * 1024
 const gemmaAnnotationTopP = 0.95
-
-var noisyFilenamePatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)^[0-9a-f]{16,}$`),
-	regexp.MustCompile(`(?i)^[a-z0-9+/=]{20,}$`),
-	regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`),
-	regexp.MustCompile(`(?i)^(img|dsc|dscf|gopr|mvi|vid|pxl|screenshot)[_-]?\d+$`),
-	regexp.MustCompile(`^\d{8}[_-]?\d{4,6}$`),
-	regexp.MustCompile(`^\d+$`),
-}
 
 type gemmaImageDescription struct {
 	ShortDescription string   `json:"short_description"`
@@ -74,174 +42,6 @@ type gemmaImageTags struct {
 type gemmaImageDescriptionAndTags struct {
 	Description string   `json:"description"`
 	Tags        []string `json:"tags"`
-}
-
-type gemmaAppAnnotation struct {
-	Title           string   `json:"title"`
-	Summary         string   `json:"summary"`
-	FullDescription string   `json:"full_description"`
-	Description     string   `json:"description"`
-	Tags            []string `json:"tags"`
-	IsNSFW          bool     `json:"is_nsfw"`
-}
-
-type videoFramePromptEntry struct {
-	FrameIndex  int      `json:"frame_index"`
-	TimestampMS int64    `json:"timestamp_ms"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags,omitempty"`
-}
-
-func buildImageAnnotationUserPrompt(originalName string) string {
-	var b strings.Builder
-	b.Grow(2400)
-	b.WriteString("You are given an image. Return JSON with exactly this shape: {\"title\": string, \"summary\": string, \"full_description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
-	b.WriteString("Write title as a short concrete card title, summary as a 1 to 2 sentence overview, and full_description as one paragraph that is as detailed as needed for high-recall search, up to about 500 words. Keep all fields shorter when the image is simple. ")
-	b.WriteString("Focus on the main subject, visible attributes, composition, setting, and clearly visible actions. ")
-	b.WriteString("If people are the focus, include concrete visible details such as perceived age range, perceived ethnicity, body shape/build, facial features, hairstyle, clothing, accessories, posture, and activity. ")
-	b.WriteString("If there is text in the image, please describe it. If it is not in English, also translate it. ")
-	b.WriteString("If NSFW content is visible, describe it directly and concretely. ")
-	b.WriteString("Return 3 to 10 unique lowercase tags that are specific and search-friendly. ")
-	b.WriteString("Set is_nsfw to true only when clearly NSFW content is visible; include tag nsfw if and only if is_nsfw is true. ")
-	b.WriteString("Use original filename as optional context only when it looks meaningful and matches visible content; ignore noisy hash-like or camera-style names and any filename claims that conflict with the image. ")
-	if filenameHint := meaningfulFilenameHint(originalName); filenameHint != "" {
-		b.WriteString("Original filename: \"")
-		b.WriteString(filenameHint)
-		b.WriteString("\". ")
-	}
-	b.WriteString("Avoid speculation. Output JSON only.")
-	return b.String()
-}
-
-func buildVideoFrameAnnotationUserPrompt(originalName string) string {
-	var b strings.Builder
-	b.Grow(1000)
-	b.WriteString("You are given one sampled video frame. Return JSON with exactly this shape: {\"description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
-	b.WriteString("Write 1 to 2 compact sentences, up to about 80 words, that capture durable evidence useful for the later video-level summary. ")
-	b.WriteString("Focus on the main subject, setting, visible action, distinctive attributes, and clearly visible text. ")
-	b.WriteString("If NSFW content is visible, describe it directly and concretely. ")
-	b.WriteString("Return 3 to 8 unique lowercase tags. Include nsfw if and only if is_nsfw is true. ")
-	if filenameHint := meaningfulFilenameHint(originalName); filenameHint != "" {
-		b.WriteString("Original filename: \"")
-		b.WriteString(filenameHint)
-		b.WriteString("\". ")
-	}
-	b.WriteString("Avoid speculation. Output JSON only.")
-	return b.String()
-}
-
-func buildVideoAnnotationUserPrompt(input coreembedder.VideoAnnotationInput) (string, error) {
-	if len(input.Frames) == 0 {
-		return "", fmt.Errorf("video annotation requires at least one frame")
-	}
-	entries := make([]videoFramePromptEntry, 0, len(input.Frames))
-	for _, frame := range input.Frames {
-		description := strings.TrimSpace(frame.Description)
-		if description == "" {
-			continue
-		}
-		entries = append(entries, videoFramePromptEntry{
-			FrameIndex:  frame.FrameIndex,
-			TimestampMS: frame.TimestampMS,
-			Description: description,
-			Tags:        normalizeUniqueTags(frame.Tags),
-		})
-	}
-	if len(entries) == 0 {
-		return "", fmt.Errorf("video annotation requires at least one frame description")
-	}
-	framesJSON, err := json.Marshal(entries)
-	if err != nil {
-		return "", fmt.Errorf("marshal frame annotations: %w", err)
-	}
-
-	transcript := strings.TrimSpace(input.TranscriptText)
-	if len(transcript) > 1200 {
-		transcript = strings.TrimSpace(transcript[:1200])
-	}
-
-	var b bytes.Buffer
-	b.WriteString("You are given sampled frame annotations from one video. Return JSON with exactly this shape: {\"title\": string, \"summary\": string, \"full_description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
-	b.WriteString("Write title as a short concrete card title, summary as a 1 to 2 sentence overview, and full_description as one paragraph that is as detailed as needed for search, up to about 500 words. Keep all fields shorter when the evidence is simple. ")
-	b.WriteString("Synthesize recurring content across frames into a single video-level description. Mention progression only when supported by frame evidence. ")
-	b.WriteString("If people are the focus, include concrete visible details such as perceived age range, perceived ethnicity, body shape/build, facial features, hairstyle, clothing, accessories, posture, and activity. ")
-	b.WriteString("If there is text in frames, describe it, and if non-English also translate it. ")
-	b.WriteString("Use transcript as supporting context only when it matches visual evidence. ")
-	b.WriteString("When a filename looks meaningful, feel free to infer likely media type or source context from it (for example a meme, a music video, or a clip from a show) as long as it does not conflict with frame evidence. ")
-	b.WriteString("Return 5 to 12 unique lowercase tags that capture persistent high-signal content. Include nsfw if and only if is_nsfw is true. ")
-	b.WriteString("Avoid unsupported specifics and avoid one-off details that are not central. Output JSON only.\n")
-	if filenameHint := meaningfulFilenameHint(input.OriginalName); filenameHint != "" {
-		b.WriteString("Original filename: \"")
-		b.WriteString(filenameHint)
-		b.WriteString("\"\n")
-	}
-	b.WriteString(fmt.Sprintf("Duration (ms): %d\n", input.DurationMS))
-	b.WriteString("Sampled frame annotations (chronological):\n")
-	b.Write(framesJSON)
-	b.WriteString("\n")
-	if transcript != "" {
-		b.WriteString("Optional transcript snippet:\n")
-		b.WriteString(sanitizePromptSnippet(transcript, 1200))
-		b.WriteString("\n")
-	}
-	return b.String(), nil
-}
-
-func meaningfulFilenameHint(originalName string) string {
-	trimmed := strings.TrimSpace(originalName)
-	if trimmed == "" {
-		return ""
-	}
-	base := filepath.Base(trimmed)
-	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	stem = strings.TrimSpace(stem)
-	if stem == "" {
-		return ""
-	}
-	normalized := strings.Join(strings.Fields(strings.NewReplacer("_", " ", "-", " ", ".", " ").Replace(stem)), " ")
-	normalized = sanitizePromptSnippet(normalized, 80)
-	if normalized == "" {
-		return ""
-	}
-	lower := strings.ToLower(normalized)
-	for _, re := range noisyFilenamePatterns {
-		if re.MatchString(lower) {
-			return ""
-		}
-	}
-	alphaTokenCount := 0
-	for _, token := range strings.Fields(lower) {
-		letters := 0
-		for _, r := range token {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				letters++
-			}
-		}
-		if letters >= 3 {
-			alphaTokenCount++
-		}
-	}
-	if alphaTokenCount < 2 {
-		return ""
-	}
-	return normalized
-}
-
-func sanitizePromptSnippet(input string, maxLen int) string {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" {
-		return ""
-	}
-	cleaned := strings.Map(func(r rune) rune {
-		if r < 32 {
-			return -1
-		}
-		return r
-	}, trimmed)
-	if maxLen > 0 && len(cleaned) > maxLen {
-		cleaned = strings.TrimSpace(cleaned[:maxLen])
-	}
-	return cleaned
 }
 
 type nativeGemmaRuntimeConfig struct {
@@ -302,7 +102,7 @@ func (e *Embedder) AnnotateImageWithOptions(ctx context.Context, imagePath strin
 	}
 	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(e.annotationImageMaxSide, opts.ImageMaxSideMultiplier)
 
-	annotation, _, err := describeAndTagImageWithHandle(
+	resp, _, err := describeAndTagImageWithHandle(
 		ctx,
 		e.handle,
 		"annotate_image",
@@ -310,19 +110,19 @@ func (e *Embedder) AnnotateImageWithOptions(ctx context.Context, imagePath strin
 		e.annotationTemperature,
 		e.annotationSeed,
 		imagePath,
-		gemmaAppAnnotationSystemPrompt,
-		buildImageAnnotationUserPrompt(opts.OriginalName),
-		gemmaAppAnnotationJSONSchema,
-		gemmaAppAnnotationMaxTokens,
-		gemmaAppAnnotationRetrySystemPrompt,
-		gemmaAppAnnotationRetryUserPrompt,
-		gemmaRetryAnnotationMaxTokens,
+		annotation.ImageSystemPrompt,
+		annotation.ImageUserPrompt(opts.OriginalName),
+		annotation.FullJSONSchema,
+		annotation.ImageMaxTokens,
+		annotation.ImageRetrySystemPrompt,
+		annotation.ImageRetryUserPrompt,
+		annotation.ImageRetryMaxTokens,
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
 	}
 
-	return coreImageAnnotation(annotation), nil
+	return resp.ImageAnnotation(), nil
 }
 
 func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAnnotationInput) (coreembedder.VideoAnnotation, error) {
@@ -341,13 +141,13 @@ func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAn
 	if len(input.Frames) == 0 {
 		return coreembedder.VideoAnnotation{}, fmt.Errorf("at least one frame annotation is required")
 	}
-	userPrompt, err := buildVideoAnnotationUserPrompt(input)
+	userPrompt, err := annotation.VideoUserPrompt(input)
 	if err != nil {
 		return coreembedder.VideoAnnotation{}, err
 	}
 	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(e.annotationImageMaxSide, input.ImageMaxSideMultiplier)
 
-	annotation, _, err := describeAndTagImageWithHandle(
+	resp, _, err := describeAndTagImageWithHandle(
 		ctx,
 		e.handle,
 		"annotate_video",
@@ -355,19 +155,19 @@ func (e *Embedder) AnnotateVideo(ctx context.Context, input coreembedder.VideoAn
 		e.annotationTemperature,
 		e.annotationSeed,
 		representativeFramePath,
-		gemmaVideoAnnotationSystemPrompt,
+		annotation.VideoSystemPrompt,
 		userPrompt,
-		gemmaAppAnnotationJSONSchema,
-		gemmaVideoAnnotationMaxTokens,
-		gemmaVideoAnnotationRetrySystemPrompt,
-		gemmaVideoAnnotationRetryUserPrompt,
-		gemmaRetryVideoAnnotationMaxTokens,
+		annotation.FullJSONSchema,
+		annotation.VideoMaxTokens,
+		annotation.VideoRetrySystemPrompt,
+		annotation.VideoRetryUserPrompt,
+		annotation.VideoRetryMaxTokens,
 	)
 	if err != nil {
 		return coreembedder.VideoAnnotation{}, err
 	}
 
-	return coreVideoAnnotation(annotation), nil
+	return resp.VideoAnnotation(), nil
 }
 
 func (e *Embedder) AnnotateVideoFrame(ctx context.Context, imagePath string, opts coreembedder.ImageAnnotationOptions) (coreembedder.ImageAnnotation, error) {
@@ -382,7 +182,7 @@ func (e *Embedder) AnnotateVideoFrame(ctx context.Context, imagePath string, opt
 	}
 	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(e.annotationImageMaxSide, opts.ImageMaxSideMultiplier)
 
-	annotation, _, err := describeAndTagImageWithHandle(
+	resp, _, err := describeAndTagImageWithHandle(
 		ctx,
 		e.handle,
 		"annotate_video_frame",
@@ -390,19 +190,19 @@ func (e *Embedder) AnnotateVideoFrame(ctx context.Context, imagePath string, opt
 		e.annotationTemperature,
 		e.annotationSeed,
 		imagePath,
-		gemmaVideoFrameAnnotationSystemPrompt,
-		buildVideoFrameAnnotationUserPrompt(opts.OriginalName),
-		gemmaCompactAnnotationJSONSchema,
-		gemmaVideoFrameAnnotationMaxTokens,
-		gemmaVideoFrameAnnotationRetrySystemPrompt,
-		gemmaVideoFrameAnnotationRetryUserPrompt,
-		gemmaRetryVideoFrameAnnotationMaxTokens,
+		annotation.VideoFrameSystemPrompt,
+		annotation.VideoFrameUserPrompt(opts.OriginalName),
+		annotation.CompactJSONSchema,
+		annotation.VideoFrameMaxTokens,
+		annotation.VideoFrameRetrySystemPrompt,
+		annotation.VideoFrameRetryUserPrompt,
+		annotation.VideoFrameRetryMaxTokens,
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
 	}
 
-	return coreImageAnnotation(annotation), nil
+	return resp.ImageAnnotation(), nil
 }
 
 func NewAnnotator(cfg AnnotatorConfig) (*Annotator, error) {
@@ -515,7 +315,7 @@ func (r *nativeGemmaRuntime) AnnotateImageWithOptions(ctx context.Context, image
 	}
 	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(r.imageMaxSide, opts.ImageMaxSideMultiplier)
 
-	annotation, _, err := describeAndTagImageWithHandle(
+	resp, _, err := describeAndTagImageWithHandle(
 		ctx,
 		r.handle,
 		"annotate_image",
@@ -523,19 +323,19 @@ func (r *nativeGemmaRuntime) AnnotateImageWithOptions(ctx context.Context, image
 		r.annotationTemperature,
 		r.annotationSeed,
 		imagePath,
-		gemmaAppAnnotationSystemPrompt,
-		buildImageAnnotationUserPrompt(opts.OriginalName),
-		gemmaAppAnnotationJSONSchema,
-		gemmaAppAnnotationMaxTokens,
-		gemmaAppAnnotationRetrySystemPrompt,
-		gemmaAppAnnotationRetryUserPrompt,
-		gemmaRetryAnnotationMaxTokens,
+		annotation.ImageSystemPrompt,
+		annotation.ImageUserPrompt(opts.OriginalName),
+		annotation.FullJSONSchema,
+		annotation.ImageMaxTokens,
+		annotation.ImageRetrySystemPrompt,
+		annotation.ImageRetryUserPrompt,
+		annotation.ImageRetryMaxTokens,
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
 	}
 
-	return coreImageAnnotation(annotation), nil
+	return resp.ImageAnnotation(), nil
 }
 
 func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedder.VideoAnnotationInput) (coreembedder.VideoAnnotation, error) {
@@ -558,13 +358,13 @@ func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedd
 	if len(input.Frames) == 0 {
 		return coreembedder.VideoAnnotation{}, fmt.Errorf("at least one frame annotation is required")
 	}
-	userPrompt, err := buildVideoAnnotationUserPrompt(input)
+	userPrompt, err := annotation.VideoUserPrompt(input)
 	if err != nil {
 		return coreembedder.VideoAnnotation{}, err
 	}
 	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(r.imageMaxSide, input.ImageMaxSideMultiplier)
 
-	annotation, _, err := describeAndTagImageWithHandle(
+	resp, _, err := describeAndTagImageWithHandle(
 		ctx,
 		r.handle,
 		"annotate_video",
@@ -572,19 +372,19 @@ func (r *nativeGemmaRuntime) AnnotateVideo(ctx context.Context, input coreembedd
 		r.annotationTemperature,
 		r.annotationSeed,
 		representativeFramePath,
-		gemmaVideoAnnotationSystemPrompt,
+		annotation.VideoSystemPrompt,
 		userPrompt,
-		gemmaAppAnnotationJSONSchema,
-		gemmaVideoAnnotationMaxTokens,
-		gemmaVideoAnnotationRetrySystemPrompt,
-		gemmaVideoAnnotationRetryUserPrompt,
-		gemmaRetryVideoAnnotationMaxTokens,
+		annotation.FullJSONSchema,
+		annotation.VideoMaxTokens,
+		annotation.VideoRetrySystemPrompt,
+		annotation.VideoRetryUserPrompt,
+		annotation.VideoRetryMaxTokens,
 	)
 	if err != nil {
 		return coreembedder.VideoAnnotation{}, err
 	}
 
-	return coreVideoAnnotation(annotation), nil
+	return resp.VideoAnnotation(), nil
 }
 
 func (r *nativeGemmaRuntime) AnnotateVideoFrame(ctx context.Context, imagePath string, opts coreembedder.ImageAnnotationOptions) (coreembedder.ImageAnnotation, error) {
@@ -602,7 +402,7 @@ func (r *nativeGemmaRuntime) AnnotateVideoFrame(ctx context.Context, imagePath s
 	}
 	annotationImageMaxSide := annotationImageMaxSideWithMultiplier(r.imageMaxSide, opts.ImageMaxSideMultiplier)
 
-	annotation, _, err := describeAndTagImageWithHandle(
+	resp, _, err := describeAndTagImageWithHandle(
 		ctx,
 		r.handle,
 		"annotate_video_frame",
@@ -610,19 +410,19 @@ func (r *nativeGemmaRuntime) AnnotateVideoFrame(ctx context.Context, imagePath s
 		r.annotationTemperature,
 		r.annotationSeed,
 		imagePath,
-		gemmaVideoFrameAnnotationSystemPrompt,
-		buildVideoFrameAnnotationUserPrompt(opts.OriginalName),
-		gemmaCompactAnnotationJSONSchema,
-		gemmaVideoFrameAnnotationMaxTokens,
-		gemmaVideoFrameAnnotationRetrySystemPrompt,
-		gemmaVideoFrameAnnotationRetryUserPrompt,
-		gemmaRetryVideoFrameAnnotationMaxTokens,
+		annotation.VideoFrameSystemPrompt,
+		annotation.VideoFrameUserPrompt(opts.OriginalName),
+		annotation.CompactJSONSchema,
+		annotation.VideoFrameMaxTokens,
+		annotation.VideoFrameRetrySystemPrompt,
+		annotation.VideoFrameRetryUserPrompt,
+		annotation.VideoFrameRetryMaxTokens,
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
 	}
 
-	return coreImageAnnotation(annotation), nil
+	return resp.ImageAnnotation(), nil
 }
 
 func (r *nativeGemmaRuntime) DescribeImage(ctx context.Context, imagePath string) (gemmaImageDescription, string, error) {
@@ -635,7 +435,7 @@ func (r *nativeGemmaRuntime) DescribeImage(ctx context.Context, imagePath string
 
 	var description gemmaImageDescription
 	if err := json.Unmarshal([]byte(raw), &description); err != nil {
-		jsonOnly, ok := extractJSONObject(raw)
+		jsonOnly, ok := annotation.ExtractJSONObject(raw)
 		if !ok {
 			return gemmaImageDescription{}, raw, fmt.Errorf("decode description JSON: %w; raw=%q", err, raw)
 		}
@@ -647,7 +447,7 @@ func (r *nativeGemmaRuntime) DescribeImage(ctx context.Context, imagePath string
 	for i, label := range description.Labels {
 		description.Labels[i] = strings.ToLower(strings.TrimSpace(label))
 	}
-	description.Labels = normalizeUniqueTags(description.Labels)
+	description.Labels = annotation.NormalizeUniqueTags(description.Labels)
 
 	return description, raw, nil
 }
@@ -662,7 +462,7 @@ func (r *nativeGemmaRuntime) AutoTagImage(ctx context.Context, imagePath string)
 
 	var tags gemmaImageTags
 	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
-		jsonOnly, ok := extractJSONObject(raw)
+		jsonOnly, ok := annotation.ExtractJSONObject(raw)
 		if !ok {
 			return gemmaImageTags{}, raw, fmt.Errorf("decode tags JSON: %w; raw=%q", err, raw)
 		}
@@ -673,7 +473,7 @@ func (r *nativeGemmaRuntime) AutoTagImage(ctx context.Context, imagePath string)
 	for i, tag := range tags.Tags {
 		tags.Tags[i] = strings.ToLower(strings.TrimSpace(tag))
 	}
-	tags.Tags = normalizeUniqueTags(tags.Tags)
+	tags.Tags = annotation.NormalizeUniqueTags(tags.Tags)
 
 	return tags, raw, nil
 }
@@ -688,7 +488,7 @@ func (r *nativeGemmaRuntime) DescribeAndTagImage(ctx context.Context, imagePath 
 
 	var result gemmaImageDescriptionAndTags
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		jsonOnly, ok := extractJSONObject(raw)
+		jsonOnly, ok := annotation.ExtractJSONObject(raw)
 		if !ok {
 			return gemmaImageDescriptionAndTags{}, raw, fmt.Errorf("decode description+tags JSON: %w; raw=%q", err, raw)
 		}
@@ -701,7 +501,7 @@ func (r *nativeGemmaRuntime) DescribeAndTagImage(ctx context.Context, imagePath 
 	for i, tag := range result.Tags {
 		result.Tags[i] = strings.ToLower(strings.TrimSpace(tag))
 	}
-	result.Tags = normalizeUniqueTags(result.Tags)
+	result.Tags = annotation.NormalizeUniqueTags(result.Tags)
 
 	return result, raw, nil
 }
@@ -721,68 +521,31 @@ func describeAndTagImageWithHandle(
 	retrySystemPrompt string,
 	retryUserPrompt string,
 	retryMaxTokens int,
-) (gemmaAppAnnotation, string, error) {
+) (annotation.Response, string, error) {
 	raw, timing, err := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, systemPrompt, userPrompt, jsonSchema, maxTokens)
 	if err != nil {
-		return gemmaAppAnnotation{}, "", err
+		return annotation.Response{}, "", err
 	}
 	log.Printf("%s", formatGenerationTimingLog(kind, "primary", imagePath, timing))
 
-	var result gemmaAppAnnotation
-	if err := decodeGemmaJSONObject(raw, &result, "description+tags"); err != nil {
+	var result annotation.Response
+	if err := annotation.DecodeJSONObject(raw, &result); err != nil {
 		retryRaw, retryTiming, retryErr := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, retrySystemPrompt, retryUserPrompt, jsonSchema, retryMaxTokens)
 		if retryErr != nil {
-			return gemmaAppAnnotation{}, raw, fmt.Errorf("%v; retry failed: %w", err, retryErr)
+			return annotation.Response{}, raw, fmt.Errorf("%v; retry failed: %w", err, retryErr)
 		}
 		log.Printf("%s", formatGenerationTimingLog(kind, "retry", imagePath, retryTiming))
-		var retryResult gemmaAppAnnotation
-		if retryDecodeErr := decodeGemmaJSONObject(retryRaw, &retryResult, "description+tags retry"); retryDecodeErr != nil {
-			return gemmaAppAnnotation{}, retryRaw, fmt.Errorf("%v; retry decode failed: %w", err, retryDecodeErr)
+		var retryResult annotation.Response
+		if retryDecodeErr := annotation.DecodeJSONObject(retryRaw, &retryResult); retryDecodeErr != nil {
+			return annotation.Response{}, retryRaw, fmt.Errorf("%v; retry decode failed: %w", err, retryDecodeErr)
 		}
 		result = retryResult
 		raw = retryRaw
 	}
 
-	result = normalizeGemmaAppAnnotation(result)
+	result = annotation.Normalize(result)
 
 	return result, raw, nil
-}
-
-func normalizeGemmaAppAnnotation(annotation gemmaAppAnnotation) gemmaAppAnnotation {
-	annotation.Title = strings.TrimSpace(annotation.Title)
-	annotation.Summary = strings.TrimSpace(annotation.Summary)
-	annotation.Description = strings.TrimSpace(annotation.Description)
-	annotation.FullDescription = strings.TrimSpace(annotation.FullDescription)
-	if annotation.FullDescription == "" {
-		annotation.FullDescription = annotation.Description
-	}
-	text := annotationtext.Build(annotation.Title, annotation.Summary, annotation.FullDescription)
-	annotation.Title = text.Title
-	annotation.Summary = text.Summary
-	annotation.FullDescription = text.FullDescription
-	annotation.Description = text.FullDescription
-	annotation.Tags = normalizeUniqueTags(annotation.Tags)
-	annotation.Tags = applyNSFWTag(annotation.Tags, annotation.IsNSFW)
-	return annotation
-}
-
-func coreImageAnnotation(annotation gemmaAppAnnotation) coreembedder.ImageAnnotation {
-	return coreembedder.ImageAnnotation{
-		Title:       annotation.Title,
-		Summary:     annotation.Summary,
-		Description: annotation.Description,
-		Tags:        annotation.Tags,
-	}
-}
-
-func coreVideoAnnotation(annotation gemmaAppAnnotation) coreembedder.VideoAnnotation {
-	return coreembedder.VideoAnnotation{
-		Title:       annotation.Title,
-		Summary:     annotation.Summary,
-		Description: annotation.Description,
-		Tags:        annotation.Tags,
-		IsNSFW:      annotation.IsNSFW,
-	}
 }
 
 func (r *nativeGemmaRuntime) generateImageJSON(ctx context.Context, imagePath string, systemPrompt string, userPrompt string, jsonSchema string, maxTokens int) (string, error) {
@@ -900,113 +663,4 @@ func boolToCInt32(v bool) C.int32_t {
 		return 1
 	}
 	return 0
-}
-
-func extractJSONObject(raw string) (string, bool) {
-	start := strings.IndexByte(raw, '{')
-	if start < 0 {
-		return "", false
-	}
-
-	depth := 0
-	inString := false
-	escaped := false
-	for i := start; i < len(raw); i++ {
-		ch := raw[i]
-		if inString {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if ch == '\\' {
-				escaped = true
-				continue
-			}
-			if ch == '"' {
-				inString = false
-			}
-			continue
-		}
-
-		switch ch {
-		case '"':
-			inString = true
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return raw[start : i+1], true
-			}
-		}
-	}
-
-	return "", false
-}
-
-func decodeGemmaJSONObject(raw string, out any, label string) error {
-	normalizedRaw := stripMarkdownCodeFences(strings.TrimSpace(raw))
-	if err := json.Unmarshal([]byte(normalizedRaw), out); err != nil {
-		jsonOnly, ok := extractJSONObject(normalizedRaw)
-		if !ok {
-			return fmt.Errorf("decode %s JSON: %w; raw=%q", label, err, raw)
-		}
-		if err := json.Unmarshal([]byte(jsonOnly), out); err != nil {
-			return fmt.Errorf("decode extracted %s JSON: %w; raw=%q", label, err, raw)
-		}
-	}
-	return nil
-}
-
-func stripMarkdownCodeFences(raw string) string {
-	trimmed := strings.TrimSpace(raw)
-	if !strings.HasPrefix(trimmed, "```") {
-		return trimmed
-	}
-	lines := strings.Split(trimmed, "\n")
-	if len(lines) == 0 {
-		return trimmed
-	}
-	if strings.HasPrefix(strings.TrimSpace(lines[0]), "```") {
-		lines = lines[1:]
-	}
-	if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "```" {
-		lines = lines[:len(lines)-1]
-	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
-}
-
-func normalizeUniqueTags(tags []string) []string {
-	seen := make(map[string]struct{}, len(tags))
-	normalized := make([]string, 0, len(tags))
-	for _, tag := range tags {
-		trimmed := strings.ToLower(strings.TrimSpace(tag))
-		if trimmed == "" {
-			continue
-		}
-		if _, ok := seen[trimmed]; ok {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		normalized = append(normalized, trimmed)
-	}
-	return normalized
-}
-
-func applyNSFWTag(tags []string, isNSFW bool) []string {
-	normalized := normalizeUniqueTags(tags)
-	filtered := normalized[:0]
-	for _, tag := range normalized {
-		if tag == "nsfw" {
-			continue
-		}
-		filtered = append(filtered, tag)
-	}
-	if isNSFW {
-		if len(filtered) >= 10 {
-			filtered = filtered[:9]
-		}
-		filtered = append(filtered, "nsfw")
-	}
-	return filtered
 }
