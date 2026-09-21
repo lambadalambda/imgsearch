@@ -201,6 +201,21 @@ ALTER TABLE videos ADD COLUMN title TEXT NOT NULL DEFAULT '';
 ALTER TABLE videos ADD COLUMN summary TEXT NOT NULL DEFAULT '';
 `,
 	},
+	{
+		version: 9,
+		sql: `
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS settings_version (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  version INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO settings_version(id, version) VALUES (1, 0);
+`,
+	},
 }
 
 func LatestVersion() int {

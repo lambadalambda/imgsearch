@@ -312,6 +312,7 @@ func main() {
 		LiveImagesOffset:     0,
 		VideoFrameCount:      cfg.VideoFrameCount,
 		VideoTranscriptsOn:   videoTranscriber != nil,
+		AnnotationDefaults:   annotationSettingsFromConfig(cfg),
 	})
 	if err != nil {
 		log.Fatalf("compose runtime: %v", err)

@@ -167,6 +167,8 @@ func TestRunMigrationsCreatesCoreTables(t *testing.T) {
 		"embedding_models",
 		"image_embeddings",
 		"index_jobs",
+		"settings",
+		"settings_version",
 	}
 
 	for _, table := range tables {

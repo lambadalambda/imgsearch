@@ -48,7 +48,6 @@
 ## Annotation backend settings
 
 - [ ] [Add a settings page for the annotation backend and model](issues/113-annotation-backend-settings-page.md)
-- [ ] [Add a persisted settings store and `/api/settings`](issues/115-add-persisted-settings-store-and-api.md)
 - [ ] [Add an OpenAI-compatible remote annotator](issues/116-add-openai-compatible-remote-annotator.md)
 - [ ] [Hot-swap the worker annotator from settings](issues/117-hot-swap-annotator-from-settings.md)
 - [ ] [Add a re-annotate-all endpoint](issues/118-add-reannotate-all-endpoint.md)

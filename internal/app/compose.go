@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"imgsearch/internal/jobs"
 	"imgsearch/internal/live"
 	"imgsearch/internal/search"
+	"imgsearch/internal/settings"
 	"imgsearch/internal/stats"
 	"imgsearch/internal/transcribe"
 	"imgsearch/internal/upload"
@@ -40,6 +42,12 @@ type RuntimeOptions struct {
 	VideoFrameCount      int
 	VideoSampler         upload.VideoSampler
 	VideoTranscriptsOn   bool
+	// AnnotationDefaults is served by /api/settings until the user saves;
+	// main seeds it from the annotator flags.
+	AnnotationDefaults settings.AnnotationSettings
+	// AnnotationConnectionTester probes a remote annotation backend for the
+	// settings "Test connection" action. Nil disables that endpoint.
+	AnnotationConnectionTester func(ctx context.Context, s settings.AnnotationSettings) error
 }
 
 type Runtime struct {
@@ -78,6 +86,9 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 	if opts.LiveImagesLimit <= 0 {
 		opts.LiveImagesLimit = 120
 	}
+	if opts.AnnotationDefaults == (settings.AnnotationSettings{}) {
+		opts.AnnotationDefaults = settings.DefaultAnnotation()
+	}
 
 	uploadSvc := &upload.Service{
 		DB:                     opts.Data.DB,
@@ -111,6 +122,9 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: opts.Data.DB, ModelID: opts.ModelID}))
 	mux.Handle("/api/live", live.NewHandler(&live.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, Interval: opts.LiveInterval, ImagesLimit: opts.LiveImagesLimit, ImagesOffset: opts.LiveImagesOffset}))
 	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: opts.Data.DB, ModelID: opts.ModelID}))
+	settingsHandler := settings.NewHandler(&settings.Handler{DB: opts.Data.DB, Defaults: opts.AnnotationDefaults, TestConnection: opts.AnnotationConnectionTester})
+	mux.Handle("/api/settings", settingsHandler)
+	mux.Handle("/api/settings/", settingsHandler)
 	mux.Handle("/api/search/", search.NewHandler(&search.Handler{
 		DB:       opts.Data.DB,
 		ModelID:  opts.ModelID,

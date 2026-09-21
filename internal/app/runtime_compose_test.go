@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +73,16 @@ func TestNewRuntimeBuildsMuxUploadServiceAndQueue(t *testing.T) {
 	runtime.Mux.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("health status: got=%d want=%d", rr.Code, http.StatusOK)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	rr = httptest.NewRecorder()
+	runtime.Mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("settings status: got=%d want=%d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"backend":"native"`) {
+		t.Fatalf("expected default native annotation settings, got %s", rr.Body.String())
 	}
 }
 
