@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(ui): share media action state between the card and the lightbox through a common `mediaActions` module, so an NSFW flag set from the card menu shows in the lightbox and vice versa, and delete/re-annotate/flag logic is no longer duplicated (issue 096).
 - docs: fix documentation drift: AGENTS.md and the development guide describe the Svelte Atelier frontend and its build step, the architecture doc drops "Planned" and documents the real file layout and data model (videos, frames, transcripts, annotations, settings), the README covers video formats and the bundled Linux archives, ADRs 005 to 007 record the Svelte migration, video support, and annotation model choice, `mise run serve*` tasks build the frontend first, and the unreferenced `docs/screenshot.png` is removed (issue 107).
 - feat(build): add `-version` (version, commit, build date via `internal/buildinfo`), expose the same under `build` in `/api/stats` and the Atelier statistics pane, stamp release builds through `-ldflags -X`, name rolling archives with the short commit SHA, and document the versioning convention (issue 106).
 - perf(live): compute one `/api/live` snapshot per interval per NSFW variant and broadcast it to every connected client, and skip the computation entirely while the database change fingerprint (`total_changes()` plus `data_version`) has not moved, so idle tabs cost nothing and N tabs no longer cost N recomputations (issue 097).

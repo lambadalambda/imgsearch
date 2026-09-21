@@ -1710,6 +1710,37 @@ try {
     throw new Error(`expected a second DELETE from the lightbox, got ${deleteCount}`);
   }
 
+  // 6c. NSFW state is shared between the card and the lightbox
+  //     (meta/issues/096): flag from the card menu, the lightbox shows the
+  //     flagged state, unflag from the lightbox, the card follows.
+  const sharedPin = page.locator('[data-pin][data-pin-key="image:1005"]');
+  await sharedPin.hover();
+  await sharedPin.locator('[data-pin-action="more"]').click();
+  const nsfwBeforeCard = nsfwToggleCount;
+  await sharedPin.locator('[data-pin-menu="nsfw"]').click();
+  await page.waitForFunction(
+    () => document.querySelector('[data-pin][data-pin-key="image:1005"]')?.getAttribute("data-pin-nsfw") === "true",
+    {},
+    { timeout: 5000 },
+  );
+  await sharedPin.locator("[data-pin-media]").click();
+  await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  const lightboxNsfwLabel = (await page.locator('[data-lightbox-action="nsfw"]').textContent() || "").trim();
+  if (lightboxNsfwLabel !== "Unflag NSFW") {
+    throw new Error(`expected the lightbox to show the card's NSFW flag, got ${JSON.stringify(lightboxNsfwLabel)}`);
+  }
+  await page.locator('[data-lightbox-action="nsfw"]').click();
+  await page.waitForFunction(
+    () => document.querySelector('[data-pin][data-pin-key="image:1005"]')?.getAttribute("data-pin-nsfw") !== "true",
+    {},
+    { timeout: 5000 },
+  );
+  if (nsfwToggleCount !== nsfwBeforeCard + 2) {
+    throw new Error(`expected two NSFW toggle POSTs (card, then lightbox), got ${nsfwToggleCount - nsfwBeforeCard}`);
+  }
+  await page.keyboard.press("Escape");
+  await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
+
   // 7. Load more — ensure clicking it grows the masonry.
   const beforeLoadMore = await page.locator("[data-pin]").count();
   const libraryRequestBeforeLoadMore = imagesRequests[imagesRequests.length - 1];

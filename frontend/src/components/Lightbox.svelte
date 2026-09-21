@@ -2,7 +2,7 @@
   import { lightboxPin, pins, setSimilar, setTagSearch } from "../lib/stores";
   import { formatDuration, formatPercent } from "../lib/utils";
   import { focusTrap } from "../lib/focus";
-  import { ApiError, deleteMedia, reannotate, toggleNSFW } from "../lib/api";
+  import { createMediaActions } from "../lib/mediaActions";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import Icon from "./Icon.svelte";
 
@@ -10,66 +10,23 @@
     lightboxPin.set(null);
   }
 
-  // Media actions, mirroring the card overflow menu (meta/issues/084).
-  let actionPending = $state(false);
-  let actionError = $state<string | null>(null);
+  // Media actions shared with the card overflow menu (meta/issues/084, 096).
+  const actions = createMediaActions();
+  const actionPending = actions.pending;
+  const actionError = actions.error;
   let confirmingDelete = $state(false);
 
-  async function runAction(label: string, fn: () => Promise<unknown>): Promise<boolean> {
-    if (actionPending) return false;
-    actionPending = true;
-    actionError = null;
-    try {
-      await fn();
-      return true;
-    } catch (err) {
-      actionError =
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : `${label} failed`;
-      return false;
-    } finally {
-      actionPending = false;
-    }
+  function nsfwAction() {
+    if ($lightboxPin) void actions.flagNSFW($lightboxPin);
   }
 
-  /** Update a pin's NSFW flag everywhere it is rendered: the masonry card
-   *  derives its badge from the store entry, so the change reflects there. */
-  function setPinNSFW(key: string, value: boolean) {
-    pins.update((list) => list.map((p) => (p.key === key ? { ...p, isNSFW: value } : p)));
-    lightboxPin.update((p) => (p && p.key === key ? { ...p, isNSFW: value } : p));
-  }
-
-  function actionTarget(pin: { mediaType: "image" | "video"; imageId: number; videoId?: number }) {
-    const kind = pin.mediaType;
-    const id = kind === "video" && pin.videoId !== undefined ? pin.videoId : pin.imageId;
-    return { kind, id };
-  }
-
-  async function nsfwAction() {
-    const pin = $lightboxPin;
-    if (!pin) return;
-    const { kind, id } = actionTarget(pin);
-    const next = !(pin.isNSFW ?? false);
-    setPinNSFW(pin.key, next); // optimistic
-    const ok = await runAction(next ? "flag" : "unflag", () => toggleNSFW(kind, id));
-    if (!ok) setPinNSFW(pin.key, !next);
-  }
-
-  async function reannotateAction() {
-    const pin = $lightboxPin;
-    if (!pin) return;
-    const { kind, id } = actionTarget(pin);
-    await runAction("re-annotate", () => reannotate(kind, id));
+  function reannotateAction() {
+    if ($lightboxPin) void actions.reannotate($lightboxPin);
   }
 
   async function confirmDelete() {
     confirmingDelete = false;
-    const pin = $lightboxPin;
-    if (!pin) return;
-    const { kind, id } = actionTarget(pin);
-    const ok = await runAction("delete", () => deleteMedia(kind, id));
-    if (!ok) return;
-    pins.update((existing) => existing.filter((p) => p.key !== pin.key));
-    close();
+    if ($lightboxPin) await actions.remove($lightboxPin);
   }
 
   // Position of the open pin within the current results, for prev/next
@@ -288,7 +245,7 @@
           <button
             type="button"
             data-lightbox-action="nsfw"
-            disabled={actionPending}
+            disabled={$actionPending}
             onclick={nsfwAction}
             class="px-[14px] py-[9px] bg-surface text-ink-2 border border-line-2 rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-surface-2 disabled:opacity-50 disabled:cursor-default"
           >
@@ -297,7 +254,7 @@
           <button
             type="button"
             data-lightbox-action="reannotate"
-            disabled={actionPending}
+            disabled={$actionPending}
             onclick={reannotateAction}
             class="px-[14px] py-[9px] bg-surface text-ink-2 border border-line-2 rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-surface-2 disabled:opacity-50 disabled:cursor-default"
           >
@@ -306,16 +263,16 @@
           <button
             type="button"
             data-lightbox-action="delete"
-            disabled={actionPending}
+            disabled={$actionPending}
             onclick={() => (confirmingDelete = true)}
             class="px-[14px] py-[9px] bg-surface text-bad border border-bad/40 rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-[color-mix(in_oklab,#f4d8d6_60%,white_40%)] disabled:opacity-50 disabled:cursor-default"
           >
             Delete…
           </button>
         </div>
-        {#if actionError}
+        {#if $actionError}
           <p role="alert" class="mt-3 mb-0 px-3 py-2 rounded-[10px] bg-bad/10 text-bad text-[13px]">
-            {actionError}
+            {$actionError}
           </p>
         {/if}
       </div>

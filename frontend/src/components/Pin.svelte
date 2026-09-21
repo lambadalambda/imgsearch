@@ -1,14 +1,8 @@
 <script lang="ts">
   import type { Pin } from "../lib/types";
   import { formatDuration, formatPercent, tagTone } from "../lib/utils";
-  import {
-    setSimilar,
-    setTagSearch,
-    lightboxPin,
-    pins,
-    openFeed,
-  } from "../lib/stores";
-  import { deleteMedia, reannotate, toggleNSFW, ApiError } from "../lib/api";
+  import { setSimilar, setTagSearch, lightboxPin, openFeed } from "../lib/stores";
+  import { createMediaActions } from "../lib/mediaActions";
   import ConfirmDialog from "./ConfirmDialog.svelte";
 
   interface Props {
@@ -17,15 +11,15 @@
 
   let { pin }: Props = $props();
 
-  // Local state for the overflow menu + per-action feedback. We keep this
-  // per-pin so multiple cards can show their state independently.
+  // Local state for the overflow menu + per-action feedback. Actions write
+  // optimistic state to the shared stores, so the lightbox agrees with the
+  // card; the pending/error feedback stays per card.
   let menuOpen = $state(false);
   let menuEl: HTMLDetailsElement | undefined = $state();
   let confirmingDelete = $state(false);
-  let actionPending = $state(false);
-  let actionError = $state<string | null>(null);
-  let isHidden = $state(false);
-  let nsfwLocal = $state<boolean | null>(null);
+  const actions = createMediaActions();
+  const actionPending = actions.pending;
+  const actionError = actions.error;
 
   function open() {
     lightboxPin.set(pin);
@@ -52,44 +46,14 @@
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   });
 
-  async function runAction(label: string, fn: () => Promise<unknown>): Promise<boolean> {
-    if (actionPending) return false;
-    actionPending = true;
-    actionError = null;
-    try {
-      await fn();
-      return true;
-    } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : `${label} failed`;
-      actionError = msg;
-      return false;
-    } finally {
-      actionPending = false;
-    }
+  function flagNSFW() {
+    closeMenu();
+    void actions.flagNSFW(pin);
   }
 
-  async function flagNSFW() {
+  function reannotateAction() {
     closeMenu();
-    const kind = pin.mediaType;
-    const id = kind === "video" && pin.videoId !== undefined ? pin.videoId : pin.imageId;
-    const wasFlagged = nsfwLocal ?? pin.isNSFW ?? false;
-    nsfwLocal = !wasFlagged; // optimistic
-    const ok = await runAction(wasFlagged ? "unflag" : "flag", () => toggleNSFW(kind, id));
-    if (!ok) {
-      nsfwLocal = wasFlagged; // revert on failure
-    }
-  }
-
-  async function reannotateAction() {
-    closeMenu();
-    const kind = pin.mediaType;
-    const id = kind === "video" && pin.videoId !== undefined ? pin.videoId : pin.imageId;
-    await runAction("re-annotate", () => reannotate(kind, id));
+    void actions.reannotate(pin);
   }
 
   function deleteAction() {
@@ -97,14 +61,9 @@
     confirmingDelete = true;
   }
 
-  async function confirmDelete() {
+  function confirmDelete() {
     confirmingDelete = false;
-    const kind = pin.mediaType;
-    const id = kind === "video" && pin.videoId !== undefined ? pin.videoId : pin.imageId;
-    const ok = await runAction("delete", () => deleteMedia(kind, id));
-    if (!ok) return;
-    isHidden = true;
-    pins.update((existing) => existing.filter((p) => p.key !== pin.key));
+    void actions.remove(pin);
   }
 
   function handleTagClick(tag: string) {
@@ -124,7 +83,7 @@
   const durationLabel = $derived(formatDuration(pin.durationMs));
   const tagsToShow = $derived(pin.tags.slice(0, 5));
   const hiddenTagCount = $derived(Math.max(0, pin.tags.length - tagsToShow.length));
-  const nsfwFlagged = $derived(nsfwLocal ?? pin.isNSFW ?? false);
+  const nsfwFlagged = $derived(pin.isNSFW ?? false);
   // Feed only needs a video seed id. Do not gate it on canPlayType(): mobile
   // browsers can return false negatives for playable WebM/extensionless media.
   const canFeed = $derived(pin.mediaType === "video" && pin.videoId !== undefined);
@@ -145,8 +104,7 @@
   const cornerPrimary = "bg-ink text-[#fffdf8] border border-ink";
 </script>
 
-{#if !isHidden}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <article
     data-pin
     data-pin-key={pin.key}
@@ -269,7 +227,7 @@
             data-pin-menu="nsfw"
             class="text-left bg-transparent border-0 text-ink-2 px-2.5 py-2 rounded-lg [font:500_13px/1.2_var(--font-sans)] cursor-pointer transition-colors duration-100 ease-soft hover:not-disabled:bg-bg-2 hover:not-disabled:text-ink disabled:opacity-50 disabled:cursor-default"
             onclick={flagNSFW}
-            disabled={actionPending}
+            disabled={$actionPending}
           >
             {nsfwFlagged ? "Unflag NSFW" : "Flag NSFW"}
           </button>
@@ -279,7 +237,7 @@
             data-pin-menu="reannotate"
             class="text-left bg-transparent border-0 text-ink-2 px-2.5 py-2 rounded-lg [font:500_13px/1.2_var(--font-sans)] cursor-pointer transition-colors duration-100 ease-soft hover:not-disabled:bg-bg-2 hover:not-disabled:text-ink disabled:opacity-50 disabled:cursor-default"
             onclick={reannotateAction}
-            disabled={actionPending}
+            disabled={$actionPending}
           >
             Re-annotate
           </button>
@@ -289,7 +247,7 @@
             data-pin-menu="delete"
             class="text-left bg-transparent border-0 text-bad px-2.5 py-2 rounded-lg [font:500_13px/1.2_var(--font-sans)] cursor-pointer transition-colors duration-100 ease-soft hover:not-disabled:bg-[color-mix(in_oklab,#f4d8d6_60%,white_40%)] disabled:opacity-50 disabled:cursor-default"
             onclick={deleteAction}
-            disabled={actionPending}
+            disabled={$actionPending}
           >
             Delete…
           </button>
@@ -297,12 +255,12 @@
       </details>
     </div>
 
-    {#if actionError}
+    {#if $actionError}
       <p
         class="absolute inset-x-2 bottom-2 m-0 px-2.5 py-1.5 bg-bad/90 text-[#fffdf8] rounded-lg text-[12px] font-medium leading-snug text-center z-[4] backdrop-blur-sm"
         role="alert"
       >
-        {actionError}
+        {$actionError}
       </p>
     {/if}
     {#if nsfwFlagged}
@@ -371,4 +329,3 @@
       oncancel={() => (confirmingDelete = false)}
     />
   {/if}
-{/if}

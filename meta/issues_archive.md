@@ -107,3 +107,4 @@
 - [x] [Gate live WebSocket snapshots on data changes and share them across clients](issues/097-gate-live-snapshots-on-data-version.md)
 - [x] [Add a `-version` flag and stamp release builds](issues/106-add-version-flag-and-release-stamp.md)
 - [x] [Fix documentation drift](issues/107-fix-docs-drift.md)
+- [x] [Share media action state between card and lightbox](issues/096-share-media-actions-between-card-and-lightbox.md)
