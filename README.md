@@ -18,8 +18,8 @@ It runs as a small local web app that:
 
 1. Download the latest archive from the GitHub `rolling` release for your system (the name ends with the commit SHA).
 2. Extract it.
-3. Linux: run `./run.sh`. The archive bundles `libvips`, the llama.cpp libraries, and `sqlite-vector`, and the wrapper sets the library path.
-4. macOS: install `libvips` (for example `brew install vips`), then run `./imgsearch`.
+3. Linux: run `./run.sh`. The archive bundles `libvips`, the llama.cpp libraries, `sqlite-vector`, and the ONNX Runtime for video transcription; the wrapper sets the library path and enables transcription.
+4. macOS: install `libvips` (for example `brew install vips`), then run `./run.sh` (or `./imgsearch` without video transcription).
 5. Open `http://127.0.0.1:8080/`.
 
 On first run, `imgsearch` downloads the default 2B embedding model into `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/` if it is missing, and also downloads the default Gemma `e4b` annotator files when annotations are enabled.
@@ -305,6 +305,7 @@ This is documented in `meta/issues/054-harden-ui-api-cookie-auth.md` so the trus
 - API clients can authenticate with `X-Imgsearch-API-Key: <token>` or `Authorization: Bearer <token>`.
 - Multipart uploads to `/api/upload` keep partial-success semantics: each uploaded file returns either IDs/digest data or an `error`, and mixed success/failure batches return `207 Multi-Status`.
 - Upload limits are per file: images up to 64 MiB and videos up to 2048 MiB by default (`-max-image-upload-mb`, `-max-video-upload-mb`). An oversized file rejects the whole request with `413 Payload Too Large` and a JSON body naming the file, its media type, and `limit_bytes`. One upload request may run for up to `-upload-timeout` (default 30m) regardless of the server-wide read/write timeouts.
+- Video transcription (Parakeet via ONNX Runtime) is on when `-parakeet-onnxruntime-lib` points at an ONNX Runtime shared library. Release archives bundle it and the `run.sh` wrappers pass it; the Parakeet model bundle downloads on first run. Without the flag the startup log prints one line saying transcription is disabled.
 - Data is stored in `./data` by default.
 - The UI includes uploads, indexing status, gallery browsing, text and tag search, similar-image search, a similar-video Feed, and an annotation settings page.
 

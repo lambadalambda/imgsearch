@@ -261,6 +261,9 @@ func main() {
 	} else {
 		log.Printf("video transcription disabled")
 	}
+	if videoTranscriber == nil {
+		log.Printf("video transcription disabled: pass -parakeet-onnxruntime-lib <path to the ONNX Runtime shared library> to enable it (release archives bundle it under lib/ and run.sh passes it; source builds: scripts/resolve_onnxruntime_lib.sh)")
+	}
 
 	var imageAnnotator embedder.ImageAnnotator
 	var modelSwitchboard *llamaModelSwitchboard

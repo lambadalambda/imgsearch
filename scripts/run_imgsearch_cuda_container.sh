@@ -18,6 +18,21 @@ case "${IMGSEARCH_CUDA_GRAPHS:-0}" in
     ;;
 esac
 
+# Video transcription: use the bundled ONNX Runtime unless overridden or absent.
+ort_lib="${IMGSEARCH_ONNXRUNTIME_LIB:-}"
+if [[ -z "${ort_lib}" ]]; then
+  for candidate in "$(dirname "${imgsearch_bin}")"/lib/libonnxruntime.so.* /opt/imgsearch/lib/libonnxruntime.so.*; do
+    if [[ -f "${candidate}" ]]; then
+      ort_lib="${candidate}"
+      break
+    fi
+  done
+fi
+ort_args=()
+if [[ -n "${ort_lib}" ]]; then
+  ort_args=(-parakeet-onnxruntime-lib "${ort_lib}")
+fi
+
 exec "${imgsearch_bin}" \
   -data-dir "${data_dir}" \
   -addr "${addr}" \
@@ -30,4 +45,5 @@ exec "${imgsearch_bin}" \
   -llama-native-dimensions "${IMGSEARCH_LLAMA_DIMS:-2048}" \
   -llama-native-annotator-model-path "${IMGSEARCH_ANNOTATOR_MODEL_PATH:-${models_dir}/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf}" \
   -llama-native-annotator-mmproj-path "${IMGSEARCH_ANNOTATOR_MMPROJ_PATH:-${models_dir}/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf}" \
+  ${ort_args[@]+"${ort_args[@]}"} \
   "$@"

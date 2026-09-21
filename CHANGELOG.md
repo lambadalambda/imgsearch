@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(transcription): ship video transcription in releases and the CUDA container by bundling the pinned ONNX Runtime 1.24.1 under `lib/` and passing it from the `run.sh` wrappers; `scripts/resolve_onnxruntime_lib.sh` now downloads that official build into `tools/onnxruntime/` for Linux x86_64/aarch64 and macOS arm64 (`IMGSEARCH_ONNXRUNTIME_LIB` overrides it), and startup logs one clear line when transcription is disabled (issue 105).
 - test(frontend): add a vitest unit test runner (`cd frontend && npm test`, also run by `mise run test` and CI) and move the library ordering and URL state logic out of `App.svelte` and `stores.ts` into `lib/library.ts` and `lib/urlState.ts`, with tests for those, the feed feedback model, and the pin helpers (issue 108).
 - ci: fail on unformatted Go files and vet warnings, run the Go suite under the race detector on Linux, type-check and build the Atelier frontend, run the shell script tests, and run the Playwright smoke suites against the built dist (issue 104).
 - ci: move the shared dependency steps into a composite `native-deps` action that caches the libvips 8.18 build and the llama.cpp runtime libraries (keyed on the submodule SHA and CMake args) for CI and the rolling release, and clone the llama.cpp submodule shallowly (issue 103).

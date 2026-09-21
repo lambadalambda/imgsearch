@@ -94,8 +94,12 @@ RUN ./scripts/setup_sqlite_vector.sh
 
 RUN go build -trimpath -ldflags="-s -w" -o /out/imgsearch ./cmd/imgsearch
 
+# Pinned ONNX Runtime for Parakeet video transcription.
+RUN bash scripts/resolve_onnxruntime_lib.sh > /tmp/onnxruntime-lib.txt
+
 RUN mkdir -p /out/bin /out/lib /out/tools/sqlite-vector && \
     cp -a deps/llama.cpp/build/bin/lib*.so* /out/lib/ && \
+    cp -a "$(cat /tmp/onnxruntime-lib.txt)" /out/lib/ && \
     cp -a /usr/local/lib/x86_64-linux-gnu/libvips*.so* /out/lib/ && \
     cp -a tools/sqlite-vector/* /out/tools/sqlite-vector/ && \
     ln -s ../lib /out/bin/lib && \

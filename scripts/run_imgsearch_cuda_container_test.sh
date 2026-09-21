@@ -130,4 +130,26 @@ if [[ "$explicit_cuda_graph_disable_set" != "" ]]; then
   exit 1
 fi
 
+
+# Video transcription: the bundled ONNX Runtime is passed when present, an
+# explicit IMGSEARCH_ONNXRUNTIME_LIB wins, and nothing is passed otherwise.
+run_entrypoint
+if extract_flag_value "-parakeet-onnxruntime-lib" "$args_file" >/dev/null; then
+  echo "expected no -parakeet-onnxruntime-lib without a bundled library" >&2
+  exit 1
+fi
+mkdir -p "$tmp_dir/lib"
+touch "$tmp_dir/lib/libonnxruntime.so.1.24.1"
+run_entrypoint
+if [[ "$(extract_flag_value "-parakeet-onnxruntime-lib" "$args_file")" != "$tmp_dir/lib/libonnxruntime.so.1.24.1" ]]; then
+  echo "expected the bundled libonnxruntime next to the binary to be passed" >&2
+  exit 1
+fi
+touch "$tmp_dir/custom-ort.so"
+IMGSEARCH_ONNXRUNTIME_LIB="$tmp_dir/custom-ort.so" run_entrypoint
+if [[ "$(extract_flag_value "-parakeet-onnxruntime-lib" "$args_file")" != "$tmp_dir/custom-ort.so" ]]; then
+  echo "expected IMGSEARCH_ONNXRUNTIME_LIB to override the bundled library" >&2
+  exit 1
+fi
+
 echo "ok"

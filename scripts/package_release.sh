@@ -172,19 +172,24 @@ esac
 
 cp -a "${sqlite_vector_dir}"/* "${pkg_root}/tools/sqlite-vector/"
 
+# Bundle the pinned ONNX Runtime so video transcription works out of the box;
+# the wrappers pass it with -parakeet-onnxruntime-lib when present.
+onnxruntime_lib="$(bash "${repo_root}/scripts/resolve_onnxruntime_lib.sh")"
+cp -a "${onnxruntime_lib}" "${pkg_root}/lib/"
+
 printf 'imgsearch release\nVersion: %s\nCommit: %s\nBuilt: %s\n\n' "${build_version}" "${build_commit}" "${build_date}" > "${pkg_root}/README.txt"
 cat >> "${pkg_root}/README.txt" <<'EOF'
 Contents:
 - imgsearch
-- lib/            bundled llama.cpp shared libraries
+- lib/            bundled llama.cpp shared libraries and the ONNX Runtime for video transcription
 - tools/sqlite-vector/  bundled sqlite-vector extension
 - models/         default model download location (auto-populated on first run)
 
 First run:
-1. On Linux, run ./run.sh (or the preset wrappers) so bundled shared libraries are used.
-2. On macOS, run ./imgsearch
-3. The default 2B Qwen GGUF files and default Gemma e4b annotator files are downloaded automatically if missing.
-4. Add --enable-annotations=false if you want to skip loading the Gemma annotator.
+1. Run ./run.sh (or the preset wrappers) so bundled shared libraries are used and video transcription is enabled.
+2. The default 2B Qwen GGUF files, the default Gemma e4b annotator files, and the Parakeet transcription bundle are downloaded automatically if missing.
+3. Add --enable-annotations=false if you want to skip loading the Gemma annotator.
+4. Running ./imgsearch directly works too, but video transcription stays off unless you pass -parakeet-onnxruntime-lib lib/<libonnxruntime>; the startup log says so.
 
 Modes:
  - ./run.sh                    start the HTTP server and background worker in one process.
@@ -199,6 +204,7 @@ Notes:
  - Data is stored in ./data by default.
  - Linux release archives also bundle libvips and its non-glibc runtime dependencies.
  - macOS release archives still expect libvips to be installed on the system.
+ - Video transcription uses the bundled lib/libonnxruntime; the Parakeet ONNX model bundle downloads on first run.
 EOF
 
 case "$(uname -s)" in
@@ -218,6 +224,19 @@ case "$(uname -s)" in
       done
       install_name_tool -add_rpath "@loader_path" "${dylib}"
     done < <(find "${pkg_root}/lib" -type f -name '*.dylib')
+
+    cat > "${pkg_root}/run.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
+ort_args=()
+for ort_lib in "$script_dir"/lib/libonnxruntime.*.dylib; do
+  [[ -f "$ort_lib" ]] && ort_args=(-parakeet-onnxruntime-lib "$ort_lib") && break
+done
+exec "$script_dir/imgsearch" ${ort_args[@]+"${ort_args[@]}"} -vector-backend sqlite-vector "$@"
+EOF
+    chmod +x "${pkg_root}/run.sh"
     ;;
   Linux)
     linux_runtime_roots=("${pkg_root}/imgsearch")
@@ -243,7 +262,11 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
-exec "$script_dir/imgsearch" -vector-backend sqlite-vector "$@"
+ort_args=()
+for ort_lib in "$script_dir"/lib/libonnxruntime.so.*; do
+  [[ -f "$ort_lib" ]] && ort_args=(-parakeet-onnxruntime-lib "$ort_lib") && break
+done
+exec "$script_dir/imgsearch" ${ort_args[@]+"${ort_args[@]}"} -vector-backend sqlite-vector "$@"
 EOF
 
     cat > "${pkg_root}/run-8b.sh" <<'EOF'
@@ -252,7 +275,11 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
-exec "$script_dir/imgsearch" \
+ort_args=()
+for ort_lib in "$script_dir"/lib/libonnxruntime.so.*; do
+  [[ -f "$ort_lib" ]] && ort_args=(-parakeet-onnxruntime-lib "$ort_lib") && break
+done
+exec "$script_dir/imgsearch" ${ort_args[@]+"${ort_args[@]}"} \
   -vector-backend sqlite-vector \
   -llama-native-model-path "$script_dir/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf" \
   -llama-native-mmproj-path "$script_dir/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf" \
@@ -266,7 +293,11 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
-exec "$script_dir/imgsearch" -mode api -enable-annotations=false -vector-backend sqlite-vector "$@"
+ort_args=()
+for ort_lib in "$script_dir"/lib/libonnxruntime.so.*; do
+  [[ -f "$ort_lib" ]] && ort_args=(-parakeet-onnxruntime-lib "$ort_lib") && break
+done
+exec "$script_dir/imgsearch" ${ort_args[@]+"${ort_args[@]}"} -mode api -enable-annotations=false -vector-backend sqlite-vector "$@"
 EOF
 
     cat > "${pkg_root}/run-worker.sh" <<'EOF'
@@ -275,7 +306,11 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
-exec "$script_dir/imgsearch" -mode worker -vector-backend sqlite-vector "$@"
+ort_args=()
+for ort_lib in "$script_dir"/lib/libonnxruntime.so.*; do
+  [[ -f "$ort_lib" ]] && ort_args=(-parakeet-onnxruntime-lib "$ort_lib") && break
+done
+exec "$script_dir/imgsearch" ${ort_args[@]+"${ort_args[@]}"} -mode worker -vector-backend sqlite-vector "$@"
 EOF
 
     cat > "${pkg_root}/run-8b-annotator-26b.sh" <<'EOF'
@@ -284,7 +319,11 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="$script_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"
-exec "$script_dir/imgsearch" \
+ort_args=()
+for ort_lib in "$script_dir"/lib/libonnxruntime.so.*; do
+  [[ -f "$ort_lib" ]] && ort_args=(-parakeet-onnxruntime-lib "$ort_lib") && break
+done
+exec "$script_dir/imgsearch" ${ort_args[@]+"${ort_args[@]}"} \
   -vector-backend sqlite-vector \
   -llama-native-model-path "$script_dir/models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf" \
   -llama-native-mmproj-path "$script_dir/models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf" \

@@ -179,3 +179,7 @@ podman run --rm \
   -llama-native-gpu-layers 99 \
   -worker-batch-size 2
 ```
+
+## Video Transcription
+
+The image bundles the pinned ONNX Runtime under `/opt/imgsearch/lib`, and `run.sh` passes it with `-parakeet-onnxruntime-lib`, so video transcription is on by default; the Parakeet model bundle downloads into `/models` on first run. Set `IMGSEARCH_ONNXRUNTIME_LIB` to use a different library.

@@ -49,6 +49,10 @@ Browser UI smoke tests:
 
 Script regression tests:
 - `mise run "test:scripts"` runs shell-script portability tests for imports, CUDA container entrypoint defaults, and ONNX Runtime library resolution.
+
+Video transcription in development:
+- The `mise run serve*` tasks call `scripts/resolve_onnxruntime_lib.sh`, which downloads the pinned official ONNX Runtime (the version `onnxruntime_go` targets) into `tools/onnxruntime/` on first use for Linux x86_64/aarch64 and macOS arm64, and passes it with `-parakeet-onnxruntime-lib`. Set `IMGSEARCH_ONNXRUNTIME_LIB` to use your own build (required on Intel macOS, which has no official 1.24 build), or `IMGSEARCH_ONNXRUNTIME_DOWNLOAD=0` to forbid downloads.
+- Release archives and the CUDA container bundle the same library under `lib/`.
 - `mise run "test:full"` runs Go tests, script tests, and browser smoke tests.
 
 Optional native tuning env vars for `mise run serve`:
