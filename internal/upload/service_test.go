@@ -97,6 +97,9 @@ type fakeVideoSampler struct {
 	frames              int
 	requestedFrameCount int
 	err                 error
+	// beforeReturn runs after sampling, before the caller's transaction
+	// starts, to simulate a concurrent upload winning the race.
+	beforeReturn func()
 }
 
 func (f *fakeVideoSampler) Sample(ctx context.Context, videoPath string, frameCount int, tmpDir string) (VideoSample, error) {
@@ -105,6 +108,9 @@ func (f *fakeVideoSampler) Sample(ctx context.Context, videoPath string, frameCo
 	f.requestedFrameCount = frameCount
 	if f.err != nil {
 		return VideoSample{}, f.err
+	}
+	if f.beforeReturn != nil {
+		f.beforeReturn()
 	}
 	out := VideoSample{DurationMS: f.durationMS, Width: f.width, Height: f.height}
 	for i := 0; i < f.frames && i < frameCount; i++ {
@@ -308,6 +314,46 @@ func TestStoreRejectsFakeAVIFByExtension(t *testing.T) {
 	}
 	if imageCount != 0 {
 		t.Fatalf("expected no images written, got %d", imageCount)
+	}
+}
+
+func TestStoreReportsVideoDuplicateWhenConcurrentUploadWins(t *testing.T) {
+	svc, sqlDB := setupService(t)
+	winner := &Service{DB: svc.DB, DataDir: svc.DataDir, ModelID: svc.ModelID, VideoFrameCount: 2,
+		VideoSampler: &fakeVideoSampler{durationMS: 12_000, width: 1920, height: 1080, frames: 2}}
+	var winnerOut StoreResult
+	svc.VideoFrameCount = 2
+	svc.VideoSampler = &fakeVideoSampler{durationMS: 12_000, width: 1920, height: 1080, frames: 2, beforeReturn: func() {
+		out, err := winner.Store(context.Background(), "clip.mp4", bytes.NewReader(mp4Bytes()))
+		if err != nil {
+			t.Fatalf("winner store: %v", err)
+		}
+		winnerOut = out
+	}}
+
+	out, err := svc.Store(context.Background(), "clip.mp4", bytes.NewReader(mp4Bytes()))
+	if err != nil {
+		t.Fatalf("loser store: %v", err)
+	}
+	if !out.Duplicate {
+		t.Fatal("expected loser to be reported as duplicate")
+	}
+	if out.VideoID != winnerOut.VideoID || out.StoragePath != winnerOut.StoragePath || out.MediaType != "video" {
+		t.Fatalf("loser result mismatch: got=%+v want=%+v", out, winnerOut)
+	}
+
+	var videoCount, frameCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM videos`).Scan(&videoCount); err != nil {
+		t.Fatalf("count videos: %v", err)
+	}
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM video_frames`).Scan(&frameCount); err != nil {
+		t.Fatalf("count frames: %v", err)
+	}
+	if videoCount != 1 || frameCount != 2 {
+		t.Fatalf("expected 1 video with 2 frames, got videos=%d frames=%d", videoCount, frameCount)
+	}
+	if _, err := os.Stat(filepath.Join(svc.DataDir, filepath.FromSlash(winnerOut.StoragePath))); err != nil {
+		t.Fatalf("winner video file missing: %v", err)
 	}
 }
 

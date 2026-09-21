@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(upload): report a concurrent duplicate video upload as `duplicate: true` with the existing row instead of failing on the `sha256` UNIQUE constraint (issue 102).
 - fix(ui): de-duplicate pins by key when Load More appends an offset-paginated page, so a library that shifts between pages no longer crashes the keyed masonry with `each_key_duplicate` (issue 095).
 - fix(worker): renew leases for every job in a batched embed run so slow CPU batches with `-worker-batch-size` above 1 complete instead of being reclaimed and re-embedded forever (issue 094).
 - fix(security): require the API key or UI cookie for `/media/` file routes and answer `404` for media directory paths, so an exposed bind can no longer list or download the library anonymously (issue 093).

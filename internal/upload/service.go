@@ -341,13 +341,30 @@ func (s *Service) storeVideo(ctx context.Context, originalName string, tmpDir st
 		}
 	}()
 
+	// A concurrent upload of the same video may have committed while we were
+	// sampling frames; the loser adopts the existing row instead of failing.
 	res, err := tx.ExecContext(ctx, `
 INSERT INTO videos(sha256, original_name, storage_path, mime_type, duration_ms, width, height, frame_count)
 VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(sha256) DO NOTHING
 `, digest, originalName, storageRel, mime, sample.DurationMS, sample.Width, sample.Height, len(sample.Frames))
 	if err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert video: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return StoreResult{}, fmt.Errorf("video rows affected: %w", err)
+	}
+	if rows == 0 {
+		err := tx.QueryRowContext(ctx, `SELECT id, storage_path FROM videos WHERE sha256 = ?`, digest).Scan(&out.VideoID, &out.StoragePath)
+		_ = tx.Rollback()
+		if err != nil {
+			return StoreResult{}, fmt.Errorf("load existing video: %w", err)
+		}
+		out.Duplicate = true
+		return out, nil
 	}
 	out.VideoID, err = res.LastInsertId()
 	if err != nil {

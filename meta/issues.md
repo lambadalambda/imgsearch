@@ -30,7 +30,6 @@
 - [ ] [Add lookup indexes for `index_jobs`](issues/099-add-index-jobs-lookup-indexes.md)
 - [ ] [Raise upload limits and timeouts to fit video uploads](issues/100-raise-upload-limits-for-video.md)
 - [ ] [Fix Feed and lightbox keyboard and advance conflicts](issues/101-fix-feed-and-lightbox-keyboard-conflicts.md)
-- [ ] [Upsert video uploads on sha256 conflict](issues/102-upsert-video-uploads-on-digest-conflict.md)
 - [ ] [Cache llama.cpp and libvips builds in CI](issues/103-cache-native-builds-in-ci.md)
 - [ ] [Extend CI beyond `go test`](issues/104-extend-ci-checks.md)
 - [ ] [Ship or clearly disable video transcription in releases](issues/105-ship-onnxruntime-for-transcription-in-releases.md)
