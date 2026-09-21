@@ -132,6 +132,22 @@ export function pinFromSearchResult(record: SearchResult): Pin {
   };
 }
 
+/**
+ * Append `incoming` to `existing`, dropping any pin whose key is already
+ * present. Offset-paginated modes can hand back an item twice when the
+ * library shifts between pages, and a repeated key would crash the keyed
+ * masonry list.
+ */
+export function appendUniquePins(existing: Pin[], incoming: Pin[]): Pin[] {
+  const seen = new Set(existing.map((pin) => pin.key));
+  const fresh = incoming.filter((pin) => {
+    if (seen.has(pin.key)) return false;
+    seen.add(pin.key);
+    return true;
+  });
+  return fresh.length === 0 ? existing : [...existing, ...fresh];
+}
+
 const TAG_TONES = ["plum", "moss", "gold"] as const;
 export type TagTone = (typeof TAG_TONES)[number];
 

@@ -98,3 +98,4 @@
 
 - [x] [Authenticate `/media/` routes and refuse directory listings](issues/093-authenticate-media-routes-and-refuse-listings.md)
 - [x] [Renew leases for batched embed jobs](issues/094-renew-leases-for-batched-embed-jobs.md)
+- [x] [De-duplicate pins by key on Load More](issues/095-dedupe-pins-by-key-on-load-more.md)

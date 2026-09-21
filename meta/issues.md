@@ -24,7 +24,6 @@
 
 ## Review 2026-09-21
 
-- [ ] [De-duplicate pins by key on Load More](issues/095-dedupe-pins-by-key-on-load-more.md)
 - [ ] [Share media action state between card and lightbox](issues/096-share-media-actions-between-card-and-lightbox.md)
 - [ ] [Gate live WebSocket snapshots on data changes and share them across clients](issues/097-gate-live-snapshots-on-data-version.md)
 - [ ] [Replace the embedding snapshot `MAX(updated_at)` scan with a generation counter](issues/098-replace-embedding-snapshot-scan-with-generation-counter.md)

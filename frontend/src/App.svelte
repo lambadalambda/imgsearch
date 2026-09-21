@@ -35,7 +35,7 @@
     searchText,
   } from "./lib/api";
   import { refreshStats } from "./lib/stats";
-  import { pinFromImage, pinFromSearchResult, pinFromVideo } from "./lib/utils";
+  import { appendUniquePins, pinFromImage, pinFromSearchResult, pinFromVideo } from "./lib/utils";
   import type { Pin } from "./lib/types";
 
   const PAGE_SIZE = 48;
@@ -249,7 +249,9 @@
         if (token !== currentRequestToken) return;
 
         if (appending) {
-          pins.update((existing) => [...existing, ...nextPins]);
+          // Advance by what the server returned, not by what we kept, so a
+          // de-duplicated page never gets re-requested.
+          pins.update((existing) => appendUniquePins(existing, nextPins));
           currentOffset += nextPins.length;
         } else {
           pins.set(nextPins);

@@ -111,6 +111,27 @@ const sampleVideos = Array.from({ length: 6 }, (_, i) => ({
   tags: i === 0 ? ["seed-only"] : i === 1 || i === 4 ? ["cat", "warm-tone", "rerank-target"] : ["video", `clip-${i}`],
 }));
 
+const OVERLAP_PAGE_TWO_SIZE = 4;
+
+function overlapSearchHits(start, count) {
+  return sampleImages.slice(start, start + count).map((image, i) => ({
+    image_id: image.image_id,
+    media_type: "image",
+    preview_path: image.storage_path,
+    storage_path: image.storage_path,
+    mime_type: image.mime_type,
+    width: image.width,
+    height: image.height,
+    distance: 0.1 + (start + i) * 0.002,
+    original_name: image.original_name,
+    title: image.title,
+    summary: image.summary,
+    description: image.description,
+    full_description: image.full_description,
+    tags: image.tags,
+  }));
+}
+
 function searchResults(seedOffset = 0) {
   const imageHits = sampleImages.slice(0, 10).map((image, i) => ({
     image_id: image.image_id,
@@ -395,6 +416,14 @@ const server = createServer(async (req, res) => {
       // (meta/issues/080). The stub stats report incomplete embedding.
       if (url.searchParams.get("q") === "tofu") {
         jsonResponse(res, 200, { results: [], total: 0, debug: { duration_ms: 4 } });
+        return;
+      }
+      // Offset paging that shifts between pages (meta/issues/095): page 2
+      // repeats the last hit of page 1. The grid must show it once.
+      if (url.searchParams.get("q") === "overlap") {
+        const offset = Number(url.searchParams.get("offset") || 0);
+        const page = offset === 0 ? overlapSearchHits(0, PAGE_SIZE) : overlapSearchHits(PAGE_SIZE - 1, OVERLAP_PAGE_TWO_SIZE + 1);
+        jsonResponse(res, 200, { results: page, total: PAGE_SIZE + OVERLAP_PAGE_TWO_SIZE, debug: { duration_ms: 3 } });
         return;
       }
       jsonResponse(res, 200, {
@@ -1818,6 +1847,26 @@ try {
     throw new Error(
       `expected empty search on a half-indexed library to mention indexing progress, got ${JSON.stringify(emptyStateText)}`,
     );
+  }
+  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
+
+  // 8b. Load More on an offset-paginated search de-duplicates pins by key
+  //     (meta/issues/095): page 2 repeats the last hit of page 1, and the
+  //     grid must render it once without a keyed-each crash.
+  await page.locator("#atelier-search").fill("overlap");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => /overlap/.test(window.location.search), {}, { timeout: 5000 });
+  await page.waitForFunction((n) => document.querySelectorAll("[data-pin]").length === n, PAGE_SIZE, { timeout: 5000 });
+  await page.locator("[data-load-more]").click();
+  await page.waitForFunction(
+    (n) => document.querySelectorAll("[data-pin]").length === n,
+    PAGE_SIZE + OVERLAP_PAGE_TWO_SIZE,
+    { timeout: 5000 },
+  );
+  const overlapKeys = await page.locator("[data-pin]").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-pin-key")));
+  if (new Set(overlapKeys).size !== overlapKeys.length) {
+    throw new Error(`expected unique pin keys after overlapping Load More, got ${overlapKeys.length} pins / ${new Set(overlapKeys).size} unique`);
   }
   await page.locator('a[aria-label="imgsearch home"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
