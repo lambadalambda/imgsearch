@@ -60,8 +60,31 @@ VALUES
 	if snapshot.totalCount != 3 {
 		t.Fatalf("total count: got=%d want=3", snapshot.totalCount)
 	}
-	if snapshot.latestUpdatedAt != "2026-01-01 00:00:05" {
-		t.Fatalf("latest updated_at: got=%q want=%q", snapshot.latestUpdatedAt, "2026-01-01 00:00:05")
+	if snapshot.generation != 3 {
+		t.Fatalf("generation: got=%d want=3 (one bump per inserted embedding)", snapshot.generation)
+	}
+
+	// Unchanged generation: the cached snapshot is returned without a recount.
+	index.snapshots[1] = embeddingSnapshot{modelCount: 99, quantizationSnapshot: snapshot.quantizationSnapshot}
+	cached, err := index.embeddingSnapshot(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("cached embedding snapshot: %v", err)
+	}
+	if cached.modelCount != 99 {
+		t.Fatalf("expected cached snapshot while generation is unchanged, got modelCount=%d", cached.modelCount)
+	}
+
+	// A write that bypasses the Index (another process, an API delete) bumps
+	// the generation through the trigger and forces a recount.
+	if _, err := dbConn.Exec(`DELETE FROM image_embeddings WHERE image_id = 1`); err != nil {
+		t.Fatalf("delete embedding: %v", err)
+	}
+	refreshed, err := index.embeddingSnapshot(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("refreshed embedding snapshot: %v", err)
+	}
+	if refreshed.modelCount != 1 || refreshed.totalCount != 2 || refreshed.generation != 4 {
+		t.Fatalf("refreshed snapshot: got=%+v want modelCount=1 totalCount=2 generation=4", refreshed)
 	}
 }
 
@@ -69,8 +92,8 @@ func TestNeedsQuantizationRefreshWhenSnapshotChanges(t *testing.T) {
 	index := NewIndex(nil)
 	modelID := int64(7)
 	snapshot := quantizationSnapshot{
-		totalCount:      12,
-		latestUpdatedAt: "2026-01-01 00:00:05",
+		totalCount: 12,
+		generation: 5,
 	}
 
 	if !index.needsQuantizationRefresh(modelID, snapshot) {
@@ -83,19 +106,19 @@ func TestNeedsQuantizationRefreshWhenSnapshotChanges(t *testing.T) {
 	}
 
 	changedCount := quantizationSnapshot{
-		totalCount:      snapshot.totalCount + 1,
-		latestUpdatedAt: snapshot.latestUpdatedAt,
+		totalCount: snapshot.totalCount + 1,
+		generation: snapshot.generation,
 	}
 	if !index.needsQuantizationRefresh(modelID, changedCount) {
 		t.Fatalf("expected count change to require re-quantization")
 	}
 
-	changedTimestamp := quantizationSnapshot{
-		totalCount:      snapshot.totalCount,
-		latestUpdatedAt: "2026-01-01 00:00:06",
+	changedGeneration := quantizationSnapshot{
+		totalCount: snapshot.totalCount,
+		generation: snapshot.generation + 1,
 	}
-	if !index.needsQuantizationRefresh(modelID, changedTimestamp) {
-		t.Fatalf("expected updated_at change to require re-quantization")
+	if !index.needsQuantizationRefresh(modelID, changedGeneration) {
+		t.Fatalf("expected generation change to require re-quantization")
 	}
 }
 

@@ -170,6 +170,7 @@ func TestRunMigrationsCreatesCoreTables(t *testing.T) {
 		"index_jobs",
 		"settings",
 		"settings_version",
+		"image_embeddings_generation",
 	}
 
 	for _, table := range tables {
@@ -238,4 +239,41 @@ func explainQueryPlan(t *testing.T, db *sql.DB, query string) string {
 		lines = append(lines, detail)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func TestRunMigrationsBumpsEmbeddingGenerationOnWrites(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	if err := RunMigrations(ctx, db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO embedding_models(id, name, version, dimensions, metric, normalized) VALUES (1, 'm', 'v', 4, 'cosine', 1)`); err != nil {
+		t.Fatalf("seed model: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height) VALUES (1, 'a', 'a.jpg', 'images/a', 'image/jpeg', 1, 1)`); err != nil {
+		t.Fatalf("seed image: %v", err)
+	}
+
+	generation := func() int64 {
+		var got int64
+		if err := db.QueryRowContext(ctx, `SELECT generation FROM image_embeddings_generation WHERE id = 1`).Scan(&got); err != nil {
+			t.Fatalf("read generation: %v", err)
+		}
+		return got
+	}
+
+	start := generation()
+	steps := []string{
+		`INSERT INTO image_embeddings(image_id, model_id, dim, vector_blob) VALUES (1, 1, 4, X'00000000')`,
+		`UPDATE image_embeddings SET vector_blob = X'01000000' WHERE image_id = 1`,
+		`DELETE FROM image_embeddings WHERE image_id = 1`,
+	}
+	for n, step := range steps {
+		if _, err := db.ExecContext(ctx, step); err != nil {
+			t.Fatalf("step %d: %v", n, err)
+		}
+		if got := generation(); got != start+int64(n)+1 {
+			t.Fatalf("generation after step %d: got=%d want=%d", n, got, start+int64(n)+1)
+		}
+	}
 }

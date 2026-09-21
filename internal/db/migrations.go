@@ -229,6 +229,37 @@ CREATE INDEX IF NOT EXISTS idx_index_jobs_claim
 ON index_jobs(state, kind, run_after, created_at);
 `,
 	},
+	{
+		// A generation counter bumped by triggers on image_embeddings lets
+		// the vector index notice writes from any process with a one-row
+		// read instead of scanning the table on every search.
+		version: 11,
+		sql: `
+CREATE TABLE IF NOT EXISTS image_embeddings_generation (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  generation INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO image_embeddings_generation(id, generation) VALUES (1, 0);
+
+CREATE TRIGGER IF NOT EXISTS trg_image_embeddings_generation_insert
+AFTER INSERT ON image_embeddings
+BEGIN
+  UPDATE image_embeddings_generation SET generation = generation + 1 WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_image_embeddings_generation_update
+AFTER UPDATE ON image_embeddings
+BEGIN
+  UPDATE image_embeddings_generation SET generation = generation + 1 WHERE id = 1;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_image_embeddings_generation_delete
+AFTER DELETE ON image_embeddings
+BEGIN
+  UPDATE image_embeddings_generation SET generation = generation + 1 WHERE id = 1;
+END;
+`,
+	},
 }
 
 func LatestVersion() int {

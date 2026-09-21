@@ -13,9 +13,13 @@ import (
 
 var errQuantizationUnavailable = errors.New("sqlite-vector quantization unavailable")
 
+// quantizationSnapshot identifies the state of image_embeddings that the
+// current quantization was built from. generation comes from the
+// trigger-maintained image_embeddings_generation row, so writes by any
+// process (worker, API deletes, model purges) are visible here.
 type quantizationSnapshot struct {
-	totalCount      int64
-	latestUpdatedAt string
+	totalCount int64
+	generation int64
 }
 
 type embeddingSnapshot struct {
@@ -28,6 +32,7 @@ type Index struct {
 	Distance              string
 	initialized           map[int64]bool
 	quantized             map[int64]quantizationSnapshot
+	snapshots             map[int64]embeddingSnapshot
 	quantizationAvailable bool
 	mu                    sync.Mutex
 }
@@ -38,6 +43,7 @@ func NewIndex(db *sql.DB) *Index {
 		Distance:              "COSINE",
 		initialized:           map[int64]bool{},
 		quantized:             map[int64]quantizationSnapshot{},
+		snapshots:             map[int64]embeddingSnapshot{},
 		quantizationAvailable: true,
 	}
 }
@@ -198,17 +204,35 @@ func (i *Index) countEmbeddings(ctx context.Context, modelID int64) (int64, erro
 	return total, nil
 }
 
+// embeddingSnapshot reads the embeddings generation and, only when it moved
+// since the last call for this model, recounts the table. The steady-state
+// cost per search is therefore a single-row read.
 func (i *Index) embeddingSnapshot(ctx context.Context, modelID int64) (embeddingSnapshot, error) {
-	var snapshot embeddingSnapshot
+	var generation int64
+	if err := i.DB.QueryRowContext(ctx, `SELECT generation FROM image_embeddings_generation WHERE id = 1`).Scan(&generation); err != nil {
+		return embeddingSnapshot{}, fmt.Errorf("embedding generation: %w", err)
+	}
+
+	i.mu.Lock()
+	cached, ok := i.snapshots[modelID]
+	i.mu.Unlock()
+	if ok && cached.generation == generation {
+		return cached, nil
+	}
+
+	snapshot := embeddingSnapshot{quantizationSnapshot: quantizationSnapshot{generation: generation}}
 	if err := i.DB.QueryRowContext(ctx, `
 SELECT
   (SELECT COUNT(*) FROM image_embeddings WHERE model_id = ?) AS model_count,
-  COUNT(*) AS total_count,
-  COALESCE(MAX(updated_at), '') AS latest_updated_at
+  COUNT(*) AS total_count
 FROM image_embeddings
-`, modelID).Scan(&snapshot.modelCount, &snapshot.totalCount, &snapshot.latestUpdatedAt); err != nil {
+`, modelID).Scan(&snapshot.modelCount, &snapshot.totalCount); err != nil {
 		return embeddingSnapshot{}, fmt.Errorf("embedding snapshot: %w", err)
 	}
+
+	i.mu.Lock()
+	i.snapshots[modelID] = snapshot
+	i.mu.Unlock()
 	return snapshot, nil
 }
 
@@ -257,7 +281,7 @@ func (i *Index) needsQuantizationRefresh(modelID int64, snapshot quantizationSna
 	if known.totalCount != snapshot.totalCount {
 		return true
 	}
-	return known.latestUpdatedAt != snapshot.latestUpdatedAt
+	return known.generation != snapshot.generation
 }
 
 func isQuantizationUnsupportedErr(err error) bool {

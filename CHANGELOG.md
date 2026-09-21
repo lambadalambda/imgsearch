@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- perf(search): replace the per-search `MAX(updated_at)` scan of `image_embeddings` with a trigger-maintained generation counter (`image_embeddings_generation`), so the sqlite-vector requantize check is a one-row read and still notices writes from other processes (issue 098).
 - perf(db): add `index_jobs` lookup indexes on `(image_id, model_id, kind)`, `(video_id, model_id, kind)`, and `(state, kind, run_after, created_at)` so media deletes, library list joins, video list CTEs, and worker claims no longer full-scan or build automatic indexes (issue 099).
 - fix(ui): Feed initial focus lands on play/pause so Space right after opening no longer closes the overlay, a tail "Next" waits for an in-flight lookahead fetch and advances, the play toggle no longer surfaces a rejected `play()` as an unhandled error, and lightbox arrow keys leave a focused video alone so keyboard seeking works (issue 101).
 - feat(upload): replace the shared 64 MiB request cap with per-file limits by media type (images 64 MiB, videos 2 GiB; `-max-image-upload-mb`, `-max-video-upload-mb`), answer `413` with a JSON body naming the file and `limit_bytes`, and give each upload request its own `-upload-timeout` deadline (default 30m) so large videos on slow links are not cut off by the server-wide read timeout (issue 100).
