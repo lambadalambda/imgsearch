@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- ci: fail on unformatted Go files and vet warnings, run the Go suite under the race detector on Linux, type-check and build the Atelier frontend, run the shell script tests, and run the Playwright smoke suites against the built dist (issue 104).
 - ci: move the shared dependency steps into a composite `native-deps` action that caches the libvips 8.18 build and the llama.cpp runtime libraries (keyed on the submodule SHA and CMake args) for CI and the rolling release, and clone the llama.cpp submodule shallowly (issue 103).
 - fix(ui): share media action state between the card and the lightbox through a common `mediaActions` module, so an NSFW flag set from the card menu shows in the lightbox and vice versa, and delete/re-annotate/flag logic is no longer duplicated (issue 096).
 - docs: fix documentation drift: AGENTS.md and the development guide describe the Svelte Atelier frontend and its build step, the architecture doc drops "Planned" and documents the real file layout and data model (videos, frames, transcripts, annotations, settings), the README covers video formats and the bundled Linux archives, ADRs 005 to 007 record the Svelte migration, video support, and annotation model choice, `mise run serve*` tasks build the frontend first, and the unreferenced `docs/screenshot.png` is removed (issue 107).

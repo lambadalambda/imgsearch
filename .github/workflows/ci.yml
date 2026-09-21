@@ -36,6 +36,15 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            package-lock.json
+
       - name: Install native dependencies
         uses: ./.github/actions/native-deps
         with:
@@ -43,5 +52,42 @@ jobs:
           extra-macos-packages: ffmpeg
           llama-build-jobs: ${{ runner.os == 'Linux' && '2' || '' }}
 
+      - name: Check Go formatting
+        run: |
+          unformatted="$(gofmt -l ./cmd ./internal)"
+          if [[ -n "${unformatted}" ]]; then
+            echo "gofmt needed on:" >&2
+            echo "${unformatted}" >&2
+            exit 1
+          fi
+
+      - name: Vet Go code
+        run: go vet ./...
+
       - name: Run Go tests
         run: go test ./...
+
+      - name: Run Go tests with the race detector
+        if: runner.os == 'Linux'
+        run: go test -race ./...
+
+      - name: Check and build the Atelier frontend
+        run: |
+          cd frontend
+          npm ci --no-audit --no-fund
+          npm run check
+          npm run build
+
+      - name: Run shell script tests
+        run: |
+          for test in scripts/*_test.sh; do
+            echo "== ${test}"
+            bash "${test}"
+          done
+
+      - name: Run browser smoke tests
+        if: runner.os == 'Linux'
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npm test

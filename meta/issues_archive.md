@@ -109,3 +109,4 @@
 - [x] [Fix documentation drift](issues/107-fix-docs-drift.md)
 - [x] [Share media action state between card and lightbox](issues/096-share-media-actions-between-card-and-lightbox.md)
 - [x] [Cache llama.cpp and libvips builds in CI](issues/103-cache-native-builds-in-ci.md)
+- [x] [Extend CI beyond `go test`](issues/104-extend-ci-checks.md)

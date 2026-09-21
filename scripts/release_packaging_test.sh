@@ -49,9 +49,16 @@ assert_contains "${native_action}" 'git rev-parse HEAD:deps/llama.cpp'
 assert_contains "${native_action}" 'IMGSEARCH_LLAMA_CMAKE_ARGS'
 assert_contains "${native_action}" 'IMGSEARCH_LLAMA_BUILD_JOBS'
 assert_not_contains "${native_action}" 'libvips-dev'
-# CI: shared native deps.
+# CI: native deps plus formatting, vet, race, frontend, script, and smoke checks.
 assert_contains "${ci_workflow}" 'uses: ./.github/actions/native-deps'
 assert_contains "${ci_workflow}" 'extra-linux-packages: ffmpeg'
+assert_contains "${ci_workflow}" 'gofmt -l'
+assert_contains "${ci_workflow}" 'go vet ./...'
+assert_contains "${ci_workflow}" 'go test -race ./...'
+assert_contains "${ci_workflow}" 'npm run check'
+assert_contains "${ci_workflow}" 'npm run build'
+assert_contains "${ci_workflow}" 'scripts/*_test.sh'
+assert_contains "${ci_workflow}" 'npx playwright install --with-deps chromium'
 assert_not_contains "${ci_workflow}" 'libvips-dev'
 # Release: same action with portable CPU flags on Linux.
 assert_contains "${release_workflow}" 'actions/setup-node@v4'
