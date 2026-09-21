@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -282,12 +283,13 @@ func TestListImagesRequiresExactCollectionPath(t *testing.T) {
 	dbConn := setupImagesDB(t)
 	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/images/1", nil)
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
+	for _, path := range []string{"/api/images/1/extra", "/api/imagesx", "/api/images/"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("%s status: got=%d want=%d body=%s", path, rr.Code, http.StatusNotFound, rr.Body.String())
+		}
 	}
 }
 
@@ -833,5 +835,86 @@ UPDATE images SET captured_at = CASE id WHEN 1 THEN '2030-01-01 00:00:00' WHEN 2
 	}
 	if !reflect.DeepEqual(captured, []string{"2030-01-01 00:00:00", "2022-01-01 00:00:00", "2021-01-01 00:00:00"}) {
 		t.Fatalf("captured_at values: %v", captured)
+	}
+}
+
+func TestGetImageItemAndPatchMetadata(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`UPDATE images SET title = 'Annotated', tags_json = '["cat","blurry"]', annotator_tags_json = '["cat","blurry"]' WHERE id = 1`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	get := func(path string) (*httptest.ResponseRecorder, ImageItem) {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		var item ImageItem
+		_ = json.Unmarshal(rr.Body.Bytes(), &item)
+		return rr, item
+	}
+	rr, item := get("/api/images/1")
+	if rr.Code != http.StatusOK || item.ImageID != 1 || item.Title != "Annotated" || item.IndexState != "done" {
+		t.Fatalf("get item: code=%d item=%+v", rr.Code, item)
+	}
+	if rr, _ := get("/api/images/999"); rr.Code != http.StatusNotFound {
+		t.Fatalf("missing item: code=%d", rr.Code)
+	}
+	if rr, _ := get("/api/images/abc"); rr.Code != http.StatusNotFound {
+		t.Fatalf("bad id: code=%d", rr.Code)
+	}
+
+	patch := func(path string, body string) (*httptest.ResponseRecorder, ImageItem) {
+		req := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(body))
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		var item ImageItem
+		_ = json.Unmarshal(rr.Body.Bytes(), &item)
+		return rr, item
+	}
+	rr, item = patch("/api/images/1", `{"title":"Mine","tags":["cat","holiday"]}`)
+	if rr.Code != http.StatusOK || item.Title != "Mine" || !reflect.DeepEqual(item.Tags, []string{"cat", "holiday"}) {
+		t.Fatalf("patch: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if rr, _ := patch("/api/images/1", `{"tags":"cat"}`); rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid patch: code=%d", rr.Code)
+	}
+	if rr, _ := patch("/api/images/999", `{"title":"x"}`); rr.Code != http.StatusNotFound {
+		t.Fatalf("patch missing: code=%d", rr.Code)
+	}
+	// Persisted, and the annotator list stays separate.
+	var served, user, removed string
+	if err := dbConn.QueryRow(`SELECT tags_json, user_tags_json, removed_tags_json FROM images WHERE id = 1`).Scan(&served, &user, &removed); err != nil {
+		t.Fatal(err)
+	}
+	if served != `["cat","holiday"]` || user != `["holiday"]` || removed != `["blurry"]` {
+		t.Fatalf("stored tags: served=%s user=%s removed=%s", served, user, removed)
+	}
+}
+
+func TestToggleNSFWCountsAsManualEdit(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`UPDATE images SET tags_json = '["cat"]', annotator_tags_json = '["cat"]' WHERE id = 1`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	isNSFW, err := ToggleNSFW(context.Background(), dbConn, 1)
+	if err != nil || !isNSFW {
+		t.Fatalf("toggle on: nsfw=%v err=%v", isNSFW, err)
+	}
+	var served, user string
+	if err := dbConn.QueryRow(`SELECT tags_json, user_tags_json FROM images WHERE id = 1`).Scan(&served, &user); err != nil {
+		t.Fatal(err)
+	}
+	if served != `["cat","nsfw"]` || user != `["nsfw"]` {
+		t.Fatalf("after toggle on: served=%s user=%s", served, user)
+	}
+	if isNSFW, err := ToggleNSFW(context.Background(), dbConn, 1); err != nil || isNSFW {
+		t.Fatalf("toggle off: nsfw=%v err=%v", isNSFW, err)
+	}
+	if err := dbConn.QueryRow(`SELECT tags_json, user_tags_json FROM images WHERE id = 1`).Scan(&served, &user); err != nil {
+		t.Fatal(err)
+	}
+	if served != `["cat"]` || user != `[]` {
+		t.Fatalf("after toggle off: served=%s user=%s", served, user)
 	}
 }

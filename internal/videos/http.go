@@ -3,6 +3,7 @@ package videos
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -64,6 +65,41 @@ func List(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int,
 }
 
 func listWithOrder(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool, order string, seed int64) (ListResponse, error) {
+	return queryVideos(ctx, db, modelID, limit, offset, includeNSFW, order, seed, 0)
+}
+
+// GetItem returns one video in the list shape. It reports sql.ErrNoRows for
+// an unknown id.
+func GetItem(ctx context.Context, db *sql.DB, modelID int64, videoID int64) (VideoItem, error) {
+	resp, err := queryVideos(ctx, db, modelID, 1, 0, true, listOrderNewest, 0, videoID)
+	if err != nil {
+		return VideoItem{}, err
+	}
+	if len(resp.Videos) == 0 {
+		return VideoItem{}, sql.ErrNoRows
+	}
+	return resp.Videos[0], nil
+}
+
+// Update applies a metadata patch (manual title and tags) and returns the
+// updated item.
+func Update(ctx context.Context, db *sql.DB, modelID int64, videoID int64, patch mediaops.MetadataPatch) (VideoItem, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return VideoItem{}, fmt.Errorf("begin update video tx: %w", err)
+	}
+	if err := mediaops.ApplyMetadataPatch(ctx, tx, mediaops.TableVideos, videoID, patch); err != nil {
+		_ = tx.Rollback()
+		return VideoItem{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return VideoItem{}, fmt.Errorf("commit update video tx: %w", err)
+	}
+	return GetItem(ctx, db, modelID, videoID)
+}
+
+// queryVideos lists videos; onlyVideoID > 0 restricts the result to one id.
+func queryVideos(ctx context.Context, db *sql.DB, modelID int64, limit int, offset int, includeNSFW bool, order string, seed int64, onlyVideoID int64) (ListResponse, error) {
 	if db == nil {
 		return ListResponse{}, fmt.Errorf("videos database unavailable")
 	}
@@ -77,7 +113,7 @@ func listWithOrder(ctx context.Context, db *sql.DB, modelID int64, limit int, of
 	videoHasNSFWCountExpr := nsfwsql.VideoHasNSFW("v.id", "v.tags_json", "tag", "vtag")
 	videoHasNSFWListExpr := nsfwsql.VideoHasNSFW("v.id", "v.tags_json", "tag_nsfw", "vtag_nsfw")
 	orderClause := "v.id DESC"
-	args := []any{modelID, jobkind.EmbedImage, modelID, jobkind.TranscribeVideo, modelID, jobkind.AnnotateVideo, includeNSFWInt}
+	args := []any{modelID, jobkind.EmbedImage, modelID, jobkind.TranscribeVideo, modelID, jobkind.AnnotateVideo, includeNSFWInt, onlyVideoID, onlyVideoID}
 	if order == listOrderRandom {
 		seed = seed & randomOrderMask
 		orderClause = "((((v.id * 1103515245 + ?) & 2147483647) | (((v.id * 1103515245 + ?) & 2147483647) >> 16)) * 1103515245 + 12345) & 2147483647 ASC, v.id ASC"
@@ -171,6 +207,7 @@ LEFT JOIN transcript_jobs tj ON tj.video_id = v.id
 LEFT JOIN annotation_jobs aj ON aj.video_id = v.id
 LEFT JOIN preview_frames p ON p.video_id = v.id AND p.rn = 1
 WHERE (? = 1 OR NOT (%s))
+  AND (? = 0 OR v.id = ?)
 ORDER BY %s
 LIMIT ? OFFSET ?
 `, videoHasNSFWListExpr, orderClause), args...)
@@ -239,7 +276,13 @@ func NewHandler(h *Handler) http.Handler {
 				return
 			}
 			if r.URL.Path != "/api/videos" {
-				httputil.WriteJSONError(w, http.StatusNotFound, "not found")
+				videoID, err := httputil.ParseItemIDPath(r.URL.Path, "/api/videos/")
+				if err != nil {
+					httputil.WriteJSONError(w, http.StatusNotFound, "not found")
+					return
+				}
+				item, err := GetItem(r.Context(), h.DB, h.ModelID, videoID)
+				writeVideoItem(w, item, err)
 				return
 			}
 			limit := httputil.ParseLimitQuery(r, 50)
@@ -255,6 +298,23 @@ func NewHandler(h *Handler) http.Handler {
 			}
 
 			httputil.WriteJSON(w, http.StatusOK, resp)
+		case http.MethodPatch:
+			if h == nil || h.DB == nil {
+				httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
+				return
+			}
+			videoID, err := httputil.ParseItemIDPath(r.URL.Path, "/api/videos/")
+			if err != nil {
+				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid video id")
+				return
+			}
+			patch, err := mediaops.DecodeMetadataPatch(r.Body)
+			if err != nil {
+				httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := Update(r.Context(), h.DB, h.ModelID, videoID, patch)
+			writeVideoItem(w, item, err)
 		case http.MethodDelete:
 			if h == nil || h.DB == nil {
 				httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
@@ -330,9 +390,20 @@ func NewHandler(h *Handler) http.Handler {
 				httputil.WriteMethodNotAllowed(w, http.MethodGet)
 				return
 			}
-			httputil.WriteMethodNotAllowed(w, http.MethodDelete, http.MethodPost)
+			httputil.WriteMethodNotAllowed(w, http.MethodGet, http.MethodPatch, http.MethodDelete, http.MethodPost)
 		}
 	})
+}
+
+func writeVideoItem(w http.ResponseWriter, item VideoItem, err error) {
+	switch {
+	case err == nil:
+		httputil.WriteJSON(w, http.StatusOK, item)
+	case errors.Is(err, sql.ErrNoRows):
+		httputil.WriteJSONError(w, http.StatusNotFound, "video not found")
+	default:
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
+	}
 }
 
 func parseReannotateVideoIDPath(path string) (int64, error) {
@@ -407,17 +478,13 @@ WHERE id = ?
 		return false, err
 	}
 
-	encodedTags, isNSFW, err := tagutil.ToggleTagJSON(tagsJSON, "nsfw")
+	tags, err := tagutil.DecodeJSON(tagsJSON)
 	if err != nil {
 		_ = tx.Rollback()
 		return false, fmt.Errorf("decode video tags: %w", err)
 	}
-
-	if _, err := tx.ExecContext(ctx, `
-UPDATE videos
-SET tags_json = ?
-WHERE id = ?
-`, encodedTags, videoID); err != nil {
+	toggled, isNSFW := tagutil.ToggleTag(tags, "nsfw")
+	if _, err := mediaops.SetServedTags(ctx, tx, mediaops.TableVideos, videoID, toggled); err != nil {
 		_ = tx.Rollback()
 		return false, fmt.Errorf("update video tags: %w", err)
 	}

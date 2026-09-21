@@ -3,6 +3,7 @@ package images
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -95,17 +96,7 @@ WHERE NOT EXISTS (
 		return ListResponse{}, fmt.Errorf("count images: %w", err)
 	}
 
-	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
-SELECT i.id, i.original_name, i.storage_path, i.thumbnail_path, i.mime_type, i.width, i.height,
-	COALESCE(i.title, ''), COALESCE(i.summary, ''), COALESCE(i.description, ''), COALESCE(i.tags_json, '[]'),
-	COALESCE(j.state, 'pending') AS state,
-	i.created_at,
-	COALESCE(NULLIF(i.captured_at, ''), i.created_at) AS captured_at
-FROM images i
-LEFT JOIN index_jobs j
-	ON j.image_id = i.id
-	AND j.model_id = ?
-	AND j.kind = ?
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(imageItemSelect+`
 WHERE NOT EXISTS (
 	SELECT 1
 	FROM video_frames vf
@@ -122,42 +113,9 @@ LIMIT ? OFFSET ?
 
 	items := make([]ImageItem, 0, limit)
 	for rows.Next() {
-		var item ImageItem
-		var thumb sql.NullString
-		var tagsJSON string
-		var title string
-		var summary string
-		var fullDescription string
-		if err := rows.Scan(
-			&item.ImageID,
-			&item.OriginalName,
-			&item.StoragePath,
-			&thumb,
-			&item.MimeType,
-			&item.Width,
-			&item.Height,
-			&title,
-			&summary,
-			&fullDescription,
-			&tagsJSON,
-			&item.IndexState,
-			&item.CreatedAt,
-			&item.CapturedAt,
-		); err != nil {
-			return ListResponse{}, fmt.Errorf("decode image row: %w", err)
-		}
-		if tags, err := tagutil.DecodeJSON(tagsJSON); err != nil {
-			return ListResponse{}, fmt.Errorf("decode image tags: %w", err)
-		} else {
-			item.Tags = tags
-		}
-		text := annotationtext.Build(title, summary, fullDescription)
-		item.Title = text.Title
-		item.Summary = text.Summary
-		item.Description = text.Description
-		item.FullDescription = text.FullDescription
-		if thumb.Valid {
-			item.ThumbnailPath = thumb.String
+		item, err := scanImageItem(rows)
+		if err != nil {
+			return ListResponse{}, err
 		}
 		items = append(items, item)
 	}
@@ -166,6 +124,100 @@ LIMIT ? OFFSET ?
 	}
 
 	return ListResponse{Images: items, Total: total}, nil
+}
+
+// imageItemSelect lists the columns scanImageItem expects; it takes the
+// model id and embed job kind as its two arguments.
+const imageItemSelect = `
+SELECT i.id, i.original_name, i.storage_path, i.thumbnail_path, i.mime_type, i.width, i.height,
+	COALESCE(i.title, ''), COALESCE(i.summary, ''), COALESCE(i.description, ''), COALESCE(i.tags_json, '[]'),
+	COALESCE(j.state, 'pending') AS state,
+	i.created_at,
+	COALESCE(NULLIF(i.captured_at, ''), i.created_at) AS captured_at
+FROM images i
+LEFT JOIN index_jobs j
+	ON j.image_id = i.id
+	AND j.model_id = ?
+	AND j.kind = ?`
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanImageItem(row rowScanner) (ImageItem, error) {
+	var item ImageItem
+	var thumb sql.NullString
+	var tagsJSON string
+	var title string
+	var summary string
+	var fullDescription string
+	if err := row.Scan(
+		&item.ImageID,
+		&item.OriginalName,
+		&item.StoragePath,
+		&thumb,
+		&item.MimeType,
+		&item.Width,
+		&item.Height,
+		&title,
+		&summary,
+		&fullDescription,
+		&tagsJSON,
+		&item.IndexState,
+		&item.CreatedAt,
+		&item.CapturedAt,
+	); err != nil {
+		return ImageItem{}, fmt.Errorf("decode image row: %w", err)
+	}
+	tags, err := tagutil.DecodeJSON(tagsJSON)
+	if err != nil {
+		return ImageItem{}, fmt.Errorf("decode image tags: %w", err)
+	}
+	item.Tags = tags
+	text := annotationtext.Build(title, summary, fullDescription)
+	item.Title = text.Title
+	item.Summary = text.Summary
+	item.Description = text.Description
+	item.FullDescription = text.FullDescription
+	if thumb.Valid {
+		item.ThumbnailPath = thumb.String
+	}
+	return item, nil
+}
+
+// GetItem returns one image in the list shape. It reports sql.ErrNoRows for
+// an unknown id.
+func GetItem(ctx context.Context, db *sql.DB, modelID int64, imageID int64) (ImageItem, error) {
+	if db == nil {
+		return ImageItem{}, fmt.Errorf("images database unavailable")
+	}
+	row := db.QueryRowContext(ctx, imageItemSelect+`
+WHERE i.id = ?`, modelID, jobkind.EmbedImage, imageID)
+	item, err := scanImageItem(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ImageItem{}, sql.ErrNoRows
+		}
+		return ImageItem{}, err
+	}
+	return item, nil
+}
+
+// Update applies a metadata patch (manual title and tags) and returns the
+// updated item.
+func Update(ctx context.Context, db *sql.DB, modelID int64, imageID int64, patch mediaops.MetadataPatch) (ImageItem, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return ImageItem{}, fmt.Errorf("begin update image tx: %w", err)
+	}
+	if err := mediaops.ApplyMetadataPatch(ctx, tx, mediaops.TableImages, imageID, patch); err != nil {
+		_ = tx.Rollback()
+		return ImageItem{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return ImageItem{}, fmt.Errorf("commit update image tx: %w", err)
+	}
+	return GetItem(ctx, db, modelID, imageID)
 }
 
 func NewHandler(h *Handler) http.Handler {
@@ -177,7 +229,13 @@ func NewHandler(h *Handler) http.Handler {
 				return
 			}
 			if r.URL.Path != "/api/images" {
-				httputil.WriteJSONError(w, http.StatusNotFound, "not found")
+				imageID, err := httputil.ParseItemIDPath(r.URL.Path, "/api/images/")
+				if err != nil {
+					httputil.WriteJSONError(w, http.StatusNotFound, "not found")
+					return
+				}
+				item, err := GetItem(r.Context(), h.DB, h.ModelID, imageID)
+				writeImageItem(w, item, err)
 				return
 			}
 			limit := httputil.ParseLimitQuery(r, 50)
@@ -193,6 +251,23 @@ func NewHandler(h *Handler) http.Handler {
 			}
 
 			httputil.WriteJSON(w, http.StatusOK, resp)
+		case http.MethodPatch:
+			if h == nil || h.DB == nil {
+				httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
+				return
+			}
+			imageID, err := httputil.ParseItemIDPath(r.URL.Path, "/api/images/")
+			if err != nil {
+				httputil.WriteJSONError(w, http.StatusBadRequest, "invalid image id")
+				return
+			}
+			patch, err := mediaops.DecodeMetadataPatch(r.Body)
+			if err != nil {
+				httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			item, err := Update(r.Context(), h.DB, h.ModelID, imageID, patch)
+			writeImageItem(w, item, err)
 		case http.MethodDelete:
 			if h == nil || h.DB == nil {
 				httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
@@ -271,9 +346,20 @@ func NewHandler(h *Handler) http.Handler {
 				httputil.WriteMethodNotAllowed(w, http.MethodGet)
 				return
 			}
-			httputil.WriteMethodNotAllowed(w, http.MethodDelete, http.MethodPost)
+			httputil.WriteMethodNotAllowed(w, http.MethodGet, http.MethodPatch, http.MethodDelete, http.MethodPost)
 		}
 	})
+}
+
+func writeImageItem(w http.ResponseWriter, item ImageItem, err error) {
+	switch {
+	case err == nil:
+		httputil.WriteJSON(w, http.StatusOK, item)
+	case errors.Is(err, sql.ErrNoRows):
+		httputil.WriteJSONError(w, http.StatusNotFound, "image not found")
+	default:
+		httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
+	}
 }
 
 func parseReannotateImageIDPath(path string) (int64, error) {
@@ -348,17 +434,15 @@ WHERE id = ?
 		return false, err
 	}
 
-	encodedTags, isNSFW, err := tagutil.ToggleTagJSON(tagsJSON, "nsfw")
+	tags, err := tagutil.DecodeJSON(tagsJSON)
 	if err != nil {
 		_ = tx.Rollback()
 		return false, fmt.Errorf("decode image tags: %w", err)
 	}
-
-	if _, err := tx.ExecContext(ctx, `
-UPDATE images
-SET tags_json = ?
-WHERE id = ?
-`, encodedTags, imageID); err != nil {
+	toggled, isNSFW := tagutil.ToggleTag(tags, "nsfw")
+	// Route through the served-tags writer so the flag counts as a manual
+	// edit and survives re-annotation.
+	if _, err := mediaops.SetServedTags(ctx, tx, mediaops.TableImages, imageID, toggled); err != nil {
 		_ = tx.Rollback()
 		return false, fmt.Errorf("update image tags: %w", err)
 	}

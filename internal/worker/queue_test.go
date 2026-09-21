@@ -2058,3 +2058,41 @@ VALUES (2, 'annotate_image', 1, 1, 'pending')
 		t.Fatalf("expected replaced text and cleared flag, got description=%q flag=%d", description, reannotateRequested)
 	}
 }
+
+// Re-annotation must merge with manual edits (meta/issues/110): user tags
+// stay, removed annotator tags stay hidden, a manual title is kept.
+func TestReannotationPreservesManualTagsAndTitle(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE id = 1`); err != nil {
+		t.Fatalf("mark embed job done: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+UPDATE images
+SET title = 'My title', user_title = 'My title', description = 'Old text.',
+    tags_json = '["cat","holiday"]', annotator_tags_json = '["cat","blurry"]',
+    user_tags_json = '["holiday"]', removed_tags_json = '["blurry"]', reannotate_requested = 1
+WHERE id = 1
+`); err != nil {
+		t.Fatalf("seed edited image: %v", err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO index_jobs(id, kind, image_id, model_id, state) VALUES (2, 'annotate_image', 1, 1, 'pending')`); err != nil {
+		t.Fatalf("seed annotate job: %v", err)
+	}
+	q.Annotator = &fakeAnnotator{annotation: embedder.ImageAnnotation{
+		Title:       "Annotator title",
+		Description: "Fresh text.",
+		Tags:        []string{"cat", "blurry", "outdoor"},
+	}}
+
+	processed, err := q.ProcessOne(context.Background(), "worker-1")
+	if err != nil || !processed {
+		t.Fatalf("process: processed=%v err=%v", processed, err)
+	}
+	var title, tags, annotator string
+	if err := sqlDB.QueryRow(`SELECT title, tags_json, annotator_tags_json FROM images WHERE id = 1`).Scan(&title, &tags, &annotator); err != nil {
+		t.Fatal(err)
+	}
+	if title != "My title" || tags != `["cat","outdoor","holiday"]` || annotator != `["cat","blurry","outdoor"]` {
+		t.Fatalf("after reannotate: title=%q tags=%s annotator=%s", title, tags, annotator)
+	}
+}

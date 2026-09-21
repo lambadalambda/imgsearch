@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -15,6 +14,7 @@ import (
 	"imgsearch/internal/annotationtext"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/jobkind"
+	"imgsearch/internal/mediaops"
 	"imgsearch/internal/tagutil"
 	"imgsearch/internal/transcribe"
 	"imgsearch/internal/vectorindex"
@@ -942,17 +942,16 @@ func annotationMissing(description string, tags []string) bool {
 }
 
 func (q *Queue) storeImageAnnotation(ctx context.Context, imageID int64, annotation embedder.ImageAnnotation) error {
-	tagsJSON, err := json.Marshal(annotation.Tags)
-	if err != nil {
-		return fmt.Errorf("marshal image tags: %w", err)
-	}
 	text := annotationtext.Build(annotation.Title, annotation.Summary, annotation.Description)
 	if _, err := q.DB.ExecContext(ctx, `
 UPDATE images
-SET title = ?, summary = ?, description = ?, tags_json = ?
+SET `+mediaops.AnnotatorTitleSQL+`, summary = ?, description = ?
 WHERE id = ?
-`, text.Title, text.Summary, text.FullDescription, string(tagsJSON), imageID); err != nil {
+`, text.Title, text.Summary, text.FullDescription, imageID); err != nil {
 		return fmt.Errorf("update image annotations: %w", err)
+	}
+	if _, err := mediaops.ApplyAnnotatorTags(ctx, q.DB, mediaops.TableImages, imageID, annotation.Tags); err != nil {
+		return fmt.Errorf("update image tags: %w", err)
 	}
 	return nil
 }
@@ -992,30 +991,22 @@ func (q *Queue) completeJob(ctx context.Context, job claimedJob, annotation *emb
 	}
 
 	if annotation != nil {
-		tagsJSON, err := json.Marshal(annotation.Tags)
-		if err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("marshal image tags: %w", err)
-		}
 		text := annotationtext.Build(annotation.Title, annotation.Summary, annotation.Description)
+		clearRequest := ""
 		if job.Kind == jobkind.AnnotateImage {
-			if _, err := tx.ExecContext(ctx, `
+			clearRequest = ", reannotate_requested = 0"
+		}
+		if _, err := tx.ExecContext(ctx, `
 UPDATE images
-SET title = ?, summary = ?, description = ?, tags_json = ?, reannotate_requested = 0
+SET `+mediaops.AnnotatorTitleSQL+`, summary = ?, description = ?`+clearRequest+`
 WHERE id = ?
-`, text.Title, text.Summary, text.FullDescription, string(tagsJSON), job.ImageID); err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("update image annotations: %w", err)
-			}
-		} else {
-			if _, err := tx.ExecContext(ctx, `
-UPDATE images
-SET title = ?, summary = ?, description = ?, tags_json = ?
-WHERE id = ?
-`, text.Title, text.Summary, text.FullDescription, string(tagsJSON), job.ImageID); err != nil {
-				_ = tx.Rollback()
-				return fmt.Errorf("update image annotations: %w", err)
-			}
+`, text.Title, text.Summary, text.FullDescription, job.ImageID); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("update image annotations: %w", err)
+		}
+		if _, err := mediaops.ApplyAnnotatorTags(ctx, tx, mediaops.TableImages, job.ImageID, annotation.Tags); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("update image tags: %w", err)
 		}
 	}
 
@@ -1049,24 +1040,22 @@ func (q *Queue) completeVideoAnnotationJob(ctx context.Context, job claimedJob, 
 	}
 
 	if annotation != nil {
-		tagsJSON, err := json.Marshal(annotation.Tags)
-		if err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("marshal video tags: %w", err)
-		}
 		text := annotationtext.Build(annotation.Title, annotation.Summary, annotation.Description)
 		if _, err := tx.ExecContext(ctx, `
 UPDATE videos
-SET title = ?,
+SET `+mediaops.AnnotatorTitleSQL+`,
     summary = ?,
     description = ?,
-    tags_json = ?,
     annotation_updated_at = datetime('now'),
     reannotate_requested = 0
 WHERE id = ?
-`, text.Title, text.Summary, text.FullDescription, string(tagsJSON), job.VideoID); err != nil {
+`, text.Title, text.Summary, text.FullDescription, job.VideoID); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("update video annotations: %w", err)
+		}
+		if _, err := mediaops.ApplyAnnotatorTags(ctx, tx, mediaops.TableVideos, job.VideoID, annotation.Tags); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("update video tags: %w", err)
 		}
 	} else {
 		if _, err := tx.ExecContext(ctx, `

@@ -268,6 +268,24 @@ END;
 ALTER TABLE images ADD COLUMN captured_at TEXT;
 `,
 	},
+	{
+		// Manual metadata edits: tags_json stays the served list; the
+		// annotator's own list plus the user's additions and removals are
+		// kept so re-annotation can re-merge instead of clobbering edits.
+		version: 13,
+		sql: `
+ALTER TABLE images ADD COLUMN annotator_tags_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE images ADD COLUMN user_tags_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE images ADD COLUMN removed_tags_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE images ADD COLUMN user_title TEXT NOT NULL DEFAULT '';
+ALTER TABLE videos ADD COLUMN annotator_tags_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE videos ADD COLUMN user_tags_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE videos ADD COLUMN removed_tags_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE videos ADD COLUMN user_title TEXT NOT NULL DEFAULT '';
+UPDATE images SET annotator_tags_json = COALESCE(tags_json, '[]');
+UPDATE videos SET annotator_tags_json = COALESCE(tags_json, '[]');
+`,
+	},
 }
 
 func LatestVersion() int {

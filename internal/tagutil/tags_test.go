@@ -1,6 +1,9 @@
 package tagutil
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDecodeJSON(t *testing.T) {
 	tags, err := DecodeJSON("")
@@ -63,5 +66,34 @@ func TestToggleTagJSONEncodesUpdatedTags(t *testing.T) {
 	}
 	if encoded != `["portrait","nsfw"]` {
 		t.Fatalf("encoded tags: got=%s", encoded)
+	}
+}
+
+func TestNormalizeTrimsAndDedupesCaseInsensitively(t *testing.T) {
+	got := Normalize([]string{" Cat ", "", "cat", "dog", "DOG ", "bird"})
+	want := []string{"Cat", "dog", "bird"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("normalize: got=%v want=%v", got, want)
+	}
+	if EncodeJSON(nil) != "[]" || EncodeJSON([]string{"a"}) != `["a"]` {
+		t.Fatalf("encode: %q %q", EncodeJSON(nil), EncodeJSON([]string{"a"}))
+	}
+}
+
+func TestMergeAndDiffRoundTrip(t *testing.T) {
+	annotator := []string{"cat", "indoor", "blurry"}
+	served := []string{"cat", "indoor", "my-trip", "Holiday"}
+	user, removed := Diff(annotator, served)
+	if strings.Join(user, ",") != "my-trip,Holiday" || strings.Join(removed, ",") != "blurry" {
+		t.Fatalf("diff: user=%v removed=%v", user, removed)
+	}
+	// A fresh annotation keeps the user's additions and removals.
+	merged := Merge([]string{"cat", "blurry", "outdoor"}, user, removed)
+	if strings.Join(merged, ",") != "cat,outdoor,my-trip,Holiday" {
+		t.Fatalf("merge: %v", merged)
+	}
+	// No edits: merge is the normalized annotator list.
+	if got := Merge([]string{"a", "A", " b "}, nil, nil); strings.Join(got, ",") != "a,b" {
+		t.Fatalf("merge without edits: %v", got)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -229,12 +230,13 @@ func TestListVideosRequiresExactCollectionPath(t *testing.T) {
 	dbConn := setupVideosDB(t)
 	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/videos/1", nil)
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusNotFound {
-		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusNotFound, rr.Body.String())
+	for _, path := range []string{"/api/videos/1/extra", "/api/videosx", "/api/videos/"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("%s status: got=%d want=%d body=%s", path, rr.Code, http.StatusNotFound, rr.Body.String())
+		}
 	}
 }
 
@@ -622,4 +624,44 @@ func hasTag(tags []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func TestGetVideoItemAndPatchMetadata(t *testing.T) {
+	dbConn := setupVideosDB(t)
+	// Rows seeded after migration 13 need the annotator list set explicitly.
+	if _, err := dbConn.Exec(`UPDATE videos SET annotator_tags_json = tags_json`); err != nil {
+		t.Fatalf("seed annotator tags: %v", err)
+	}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/videos/1", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	var item VideoItem
+	if err := json.Unmarshal(rr.Body.Bytes(), &item); err != nil || rr.Code != http.StatusOK || item.VideoID != 1 || item.MediaType != "video" {
+		t.Fatalf("get item: code=%d err=%v body=%s", rr.Code, err, rr.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/videos/999", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("missing item: code=%d", rr.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/videos/1", strings.NewReader(`{"title":"Renamed clip","tags":["concert","live"]}`))
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if err := json.Unmarshal(rr.Body.Bytes(), &item); err != nil || rr.Code != http.StatusOK {
+		t.Fatalf("patch: code=%d err=%v body=%s", rr.Code, err, rr.Body.String())
+	}
+	if item.Title != "Renamed clip" || !reflect.DeepEqual(item.Tags, []string{"concert", "live"}) {
+		t.Fatalf("patched item: %+v", item)
+	}
+	var userTitle, userTags string
+	if err := dbConn.QueryRow(`SELECT user_title, user_tags_json FROM videos WHERE id = 1`).Scan(&userTitle, &userTags); err != nil {
+		t.Fatal(err)
+	}
+	if userTitle != "Renamed clip" || userTags != `["live"]` {
+		t.Fatalf("stored edits: title=%q user_tags=%s", userTitle, userTags)
+	}
 }
