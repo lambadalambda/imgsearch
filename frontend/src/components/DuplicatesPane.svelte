@@ -3,7 +3,7 @@
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import { listDuplicates, deleteMedia, ApiError } from "../lib/api";
   import { includeNSFW, lightboxPin, bumpDataEpoch } from "../lib/stores";
-  import { mediaUrl, pinFromImage, formatCount } from "../lib/utils";
+  import { fallbackToOriginal, mediaUrl, pinFromImage, formatCount } from "../lib/utils";
   import type { DuplicatesResponse, ImageRecord } from "../lib/types";
 
   let loading = $state(true);
@@ -147,7 +147,13 @@
                   class="block p-0 border border-line rounded-[10px] overflow-hidden bg-bg-2 cursor-pointer w-full aspect-[4/3]"
                   aria-label={`Open ${item.original_name}`}
                 >
-                  <img src={mediaUrl(item.storage_path)} alt={item.title || item.original_name} loading="lazy" class="block w-full h-full object-cover" />
+                  <img
+                    src={mediaUrl(item.thumbnail_path || item.storage_path)}
+                    onerror={(event) => fallbackToOriginal(event.currentTarget, mediaUrl(item.storage_path))}
+                    alt={item.title || item.original_name}
+                    loading="lazy"
+                    class="block w-full h-full object-cover"
+                  />
                 </button>
                 <figcaption class="flex flex-col gap-1.5 text-[12px] leading-snug text-ink-2 break-all">
                   <span class="block font-medium text-ink truncate" title={item.original_name}>{item.original_name}</span>

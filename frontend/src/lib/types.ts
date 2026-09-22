@@ -6,6 +6,7 @@ export interface ImageRecord {
   image_id: number;
   original_name: string;
   storage_path: string;
+  thumbnail_path?: string;
   mime_type: string;
   width: number;
   height: number;
@@ -45,6 +46,7 @@ export interface SearchResult {
   distance: number;
   original_name: string;
   storage_path: string;
+  thumbnail_path?: string;
   title?: string;
   summary?: string;
   description?: string;

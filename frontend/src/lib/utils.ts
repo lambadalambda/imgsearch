@@ -7,6 +7,13 @@ export function mediaUrl(storagePath: string | undefined | null): string {
   return `/media/${trimmed}`;
 }
 
+/** Retry a failed image thumbnail with its original, but never retry a failed original. */
+export function fallbackToOriginal(image: Pick<Element, "getAttribute" | "setAttribute">, originalUrl: string): void {
+  if (originalUrl && image.getAttribute("src") !== originalUrl) {
+    image.setAttribute("src", originalUrl);
+  }
+}
+
 /** Convert backend `distance` (lower = closer) into a 0-1 similarity score. */
 export function matchScore(distance: number | undefined): number | undefined {
   if (distance === undefined || distance === null || Number.isNaN(distance)) return undefined;
@@ -64,7 +71,7 @@ export function pinFromImage(record: ImageRecord): Pin {
     key: `image:${record.image_id}`,
     imageId: record.image_id,
     mediaType: "image",
-    thumbUrl: mediaUrl(record.storage_path),
+    thumbUrl: mediaUrl(record.thumbnail_path || record.storage_path),
     mediaUrl: mediaUrl(record.storage_path),
     width: record.width,
     height: record.height,
@@ -108,7 +115,9 @@ export function pinFromVideo(record: VideoRecord): Pin {
 }
 
 export function pinFromSearchResult(record: SearchResult): Pin {
-  const thumb = mediaUrl(record.preview_path || record.storage_path);
+  const thumb = mediaUrl(
+    (record.media_type === "image" ? record.thumbnail_path : record.preview_path) || record.storage_path,
+  );
   const media = mediaUrl(record.storage_path);
   const tags = record.tags ?? [];
   // Tag-based search results have no meaningful similarity score — `distance: 0`

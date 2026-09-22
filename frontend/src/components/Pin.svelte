@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Pin } from "../lib/types";
-  import { formatDuration, formatPercent, tagTone } from "../lib/utils";
+  import { fallbackToOriginal, formatDuration, formatPercent, tagTone } from "../lib/utils";
   import { setSimilar, setTagSearch, lightboxPin, openFeed } from "../lib/stores";
   import { createMediaActions } from "../lib/mediaActions";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -138,6 +138,7 @@
     >
       <img
         src={pin.thumbUrl}
+        onerror={pin.mediaType === "image" ? (event) => fallbackToOriginal(event.currentTarget, pin.mediaUrl) : undefined}
         alt={pin.title}
         loading="lazy"
         decoding="async"

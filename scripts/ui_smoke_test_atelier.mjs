@@ -69,6 +69,7 @@ const sampleImages = Array.from({ length: 144 }, (_, i) => ({
   image_id: 1000 + i,
   original_name: `sample-${i}.jpg`,
   storage_path: `images/sample-${i}`,
+  thumbnail_path: `images/thumbnails/${1000 + i}.webp`,
   mime_type: "image/jpeg",
   width: 800 + (i % 4) * 80,
   height: 600 + (i % 5) * 60,
@@ -119,6 +120,7 @@ function overlapSearchHits(start, count) {
     media_type: "image",
     preview_path: image.storage_path,
     storage_path: image.storage_path,
+    thumbnail_path: image.thumbnail_path,
     mime_type: image.mime_type,
     width: image.width,
     height: image.height,
@@ -138,6 +140,7 @@ function searchResults(seedOffset = 0) {
     media_type: "image",
     preview_path: image.storage_path,
     storage_path: image.storage_path,
+    thumbnail_path: image.thumbnail_path,
     mime_type: image.mime_type,
     width: image.width,
     height: image.height,
@@ -663,6 +666,12 @@ const server = createServer(async (req, res) => {
       jsonResponse(res, 200, { queued_images: 144, queued_videos: 7, skipped_leased: 1 });
       return;
     }
+    // A corrupt derivative exercises image-error fallback without a failing API.
+    if (url.pathname === "/media/images/thumbnails/1013.webp") {
+      res.writeHead(200, { "Content-Type": "image/webp" });
+      res.end("invalid thumbnail");
+      return;
+    }
     if (url.pathname.startsWith("/media/")) {
       const png = Buffer.from(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
@@ -683,10 +692,54 @@ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const address = server.address();
 const baseURL = `http://127.0.0.1:${address.port}`;
 
+// Assert both the rendered source and actual browser requests (not just API fields).
+async function assertImageThumbnail(page, container, image, requestedMedia, originalNotYetRequested = false) {
+  const thumb = `/media/${image.thumbnail_path}`;
+  const original = `/media/${image.storage_path}`;
+  const img = container.locator("img").first();
+  await img.scrollIntoViewIfNeeded();
+  if ((await img.getAttribute("src")) !== thumb) {
+    throw new Error(`expected grid thumbnail ${thumb}, got ${await img.getAttribute("src")}`);
+  }
+  await page.waitForFunction((src) => [...document.images].some((img) => img.getAttribute("src") === src && img.complete && img.naturalWidth > 0), thumb);
+  if (!requestedMedia.has(thumb)) throw new Error(`grid did not request thumbnail ${thumb}`);
+  if (originalNotYetRequested && requestedMedia.has(original)) {
+    throw new Error(`grid requested original before opening lightbox: ${original}`);
+  }
+  await container.getByRole("button", { name: `Open ${image.original_name}`, exact: true }).click();
+  const lightbox = page.locator("[data-lightbox]");
+  await lightbox.waitFor({ state: "visible", timeout: 5000 });
+  if ((await lightbox.locator("img").getAttribute("src")) !== original ||
+      (await lightbox.getByRole("link", { name: "Open original" }).getAttribute("href")) !== original) {
+    throw new Error(`lightbox and Open original must use ${original}`);
+  }
+  await page.waitForFunction((src) => [...document.querySelectorAll("[data-lightbox] img")].some((img) => img.getAttribute("src") === src && img.complete && img.naturalWidth > 0), original);
+  if (!requestedMedia.has(original)) throw new Error(`lightbox did not request original ${original}`);
+  await page.keyboard.press("Escape");
+  await lightbox.waitFor({ state: "hidden", timeout: 5000 });
+}
+
+async function assertThumbnailFallback(page, selector, requestedMedia) {
+  const img = page.locator(`${selector} img`);
+  await img.scrollIntoViewIfNeeded();
+  await page.waitForFunction((selector) => {
+    const img = document.querySelector(`${selector} img`);
+    return img?.getAttribute("src") === "/media/images/sample-13" && img.complete && img.naturalWidth > 0;
+  }, selector, { timeout: 5000 });
+  if (!requestedMedia.has("/media/images/thumbnails/1013.webp") || !requestedMedia.has("/media/images/sample-13")) {
+    throw new Error("expected failed thumbnail request followed by original fallback");
+  }
+}
+
 let browser;
 try {
   browser = await chromium.launch();
   const page = await browser.newPage();
+  const requestedMedia = new Set();
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.startsWith("/media/")) requestedMedia.add(pathname);
+  });
   await page.addInitScript(() => {
     const originalCanPlayType = HTMLMediaElement.prototype.canPlayType;
     HTMLMediaElement.prototype.canPlayType = function canPlayType(type) {
@@ -731,6 +784,13 @@ try {
   if (headline !== "Library") {
     throw new Error(`expected library headline, got ${JSON.stringify(headline)}`);
   }
+
+  const firstImagePin = page.locator('[data-pin-media-type="image"]').first();
+  const firstImageId = Number((await firstImagePin.getAttribute("data-pin-key")).split(":")[1]);
+  await assertImageThumbnail(page, firstImagePin, sampleImages.find((image) => image.image_id === firstImageId), requestedMedia, true);
+
+  await assertThumbnailFallback(page, '[data-pin-key="image:1013"]', requestedMedia);
+  await page.evaluate(() => window.scrollTo(0, 0));
 
   // 1a*. The quick-row signals horizontal overflow and supports wheel
   //      scrolling, instead of clipping chips with a hidden scrollbar
@@ -1143,6 +1203,7 @@ try {
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => /\?q=/.test(window.location.search), {}, { timeout: 5000 });
   await page.locator("[data-pin-match]").first().waitFor({ state: "visible", timeout: 5000 });
+  await assertImageThumbnail(page, page.locator('[data-pin-key="image:1000"]'), sampleImages[0], requestedMedia);
   const searchHeadline = (await page.locator("h1").first().textContent() || "").trim();
   if (searchHeadline !== "warm portrait") {
     throw new Error(`expected search headline to mirror query, got ${JSON.stringify(searchHeadline)}`);
@@ -1903,9 +1964,13 @@ try {
   await page.waitForURL(/view=duplicates/, { timeout: 5000 });
   await page.locator("[data-duplicates-pane]").waitFor({ state: "visible", timeout: 5000 });
   await page.locator('[data-duplicate-group="1"]').waitFor({ state: "visible", timeout: 5000 });
+  const firstDuplicate = page.locator("[data-duplicate-item]").first();
+  const duplicateId = Number(await firstDuplicate.getAttribute("data-duplicate-item"));
+  await assertImageThumbnail(page, firstDuplicate, sampleImages.find((image) => image.image_id === duplicateId), requestedMedia);
   if ((await page.locator('[data-duplicate-group="0"] [data-duplicate-item]').count()) !== 3) {
     throw new Error("expected the first duplicate group to list three copies");
   }
+  await assertThumbnailFallback(page, '[data-duplicate-item="1013"]', requestedMedia);
   await page.locator('[data-duplicate-delete="1011"]').click();
   await page.locator("[data-confirm-dialog]").waitFor({ state: "visible", timeout: 5000 });
   await page.locator("[data-confirm-accept]").click();

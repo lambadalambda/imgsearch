@@ -8,7 +8,6 @@
 
 ## UI/UX review 2026-06-10
 
-- [ ] [Serve thumbnail derivatives for grid images](issues/079-serve-image-thumbnails-for-grid.md)
 - [ ] [Normalize near-duplicate annotation tags](issues/092-normalize-near-duplicate-tags.md)
 
 ## Migrated from `docs/issues.md` (priority P0 to P3)

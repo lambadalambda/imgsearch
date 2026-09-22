@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
-import type { Pin } from "./types";
-import { appendUniquePins, deriveTitle, formatDuration, matchScore, mediaUrl, tagTone, trimTitle } from "./utils";
+import { describe, expect, it, vi } from "vitest";
+import type { ImageRecord, Pin, SearchResult } from "./types";
+import { appendUniquePins, deriveTitle, fallbackToOriginal, formatDuration, matchScore, mediaUrl, pinFromImage, pinFromSearchResult, pinFromVideo, tagTone, trimTitle } from "./utils";
 
 function pin(key: string): Pin {
   return { key, imageId: 1, mediaType: "image", thumbUrl: "", mediaUrl: "", title: key, tags: [] } as unknown as Pin;
@@ -73,5 +73,75 @@ describe("appendUniquePins", () => {
   it("returns the same array when nothing new arrives", () => {
     const existing = [pin("a")];
     expect(appendUniquePins(existing, [pin("a")])).toBe(existing);
+  });
+});
+
+describe("image thumbnail URLs", () => {
+  const image: ImageRecord = {
+    image_id: 79,
+    original_name: "original.jpg",
+    storage_path: "images/original.jpg",
+    mime_type: "image/jpeg",
+    width: 1600,
+    height: 1200,
+    index_state: "done",
+  };
+  const thumbnail = { thumbnail_path: "images/thumbnails/79.webp" };
+  const search: SearchResult = {
+    ...image,
+    media_type: "image",
+    distance: 0.2,
+    preview_path: "images/old-preview.jpg",
+  };
+
+  it("uses the derivative for list/get/duplicate pins, keeping the original media URL", () => {
+    expect(pinFromImage({ ...image, ...thumbnail })).toMatchObject({
+      thumbUrl: "/media/images/thumbnails/79.webp",
+      mediaUrl: "/media/images/original.jpg",
+    });
+  });
+
+  it("uses image search thumbnails instead of preview_path, keeping the original media URL", () => {
+    expect(pinFromSearchResult({ ...search, ...thumbnail })).toMatchObject({
+      thumbUrl: "/media/images/thumbnails/79.webp",
+      mediaUrl: "/media/images/original.jpg",
+    });
+  });
+
+  it("falls back to the original for legacy image responses without thumbnail_path", () => {
+    for (const pin of [pinFromImage(image), pinFromSearchResult(search)]) {
+      expect(pin.thumbUrl).toBe("/media/images/original.jpg");
+      expect(pin.mediaUrl).toBe("/media/images/original.jpg");
+    }
+  });
+
+  it("keeps video previews and original media unchanged even if thumbnail_path is present", () => {
+    const video = { ...image, ...thumbnail, video_id: 4, preview_path: "images/frame.jpg", storage_path: "videos/original.mp4" };
+    for (const pin of [pinFromVideo(video), pinFromSearchResult({ ...video, media_type: "video", distance: 0.2 })]) {
+      expect(pin.thumbUrl).toBe("/media/images/frame.jpg");
+      expect(pin.mediaUrl).toBe("/media/videos/original.mp4");
+    }
+    expect(pinFromVideo({ ...video, preview_path: undefined }).thumbUrl).toBe("/media/videos/original.mp4");
+    expect(pinFromSearchResult({ ...video, preview_path: undefined, media_type: "video", distance: 0.2 }).thumbUrl).toBe("/media/videos/original.mp4");
+  });
+});
+
+describe("fallbackToOriginal", () => {
+  it("tries the original only once, even if it also fails", () => {
+    let src = "/media/images/thumbnails/79.webp";
+    const setAttribute = vi.fn((_name: string, value: string) => { src = value; });
+    const image = { getAttribute: () => src, setAttribute };
+    fallbackToOriginal(image, "/media/images/original.jpg");
+    expect(src).toBe("/media/images/original.jpg");
+    fallbackToOriginal(image, "/media/images/original.jpg");
+    expect(setAttribute).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a legacy original or set an empty source", () => {
+    const setAttribute = vi.fn();
+    const image = { getAttribute: () => "/media/images/original.jpg", setAttribute };
+    fallbackToOriginal(image, "/media/images/original.jpg");
+    fallbackToOriginal(image, "");
+    expect(setAttribute).not.toHaveBeenCalled();
   });
 });

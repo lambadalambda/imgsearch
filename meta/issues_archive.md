@@ -120,3 +120,4 @@
 - [x] [Show annotation progress on cards and refresh them live](issues/121-live-annotation-state-on-cards.md)
 - [x] [Give the annotator the existing tag vocabulary](issues/122-reuse-existing-tags-in-annotation-prompts.md)
 - [x] [Review repository and recommend next priorities](issues/review-repository-next-priorities.md)
+- [x] [Serve thumbnail derivatives for grid images](issues/079-serve-image-thumbnails-for-grid.md)

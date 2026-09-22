@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- perf(ui): use thumbnail derivatives in Atelier library, search, and duplicate grids while keeping originals in the lightbox and Open original; fall back to the original if a thumbnail cannot load (issue 079).
 - feat(media): serve lazy, persistent 640px WebP image thumbnails through authenticated media URLs, expose thumbnail paths in image and search responses, and reuse the libvips resize pipeline without changing originals or requiring an eager library backfill (issue 079).
 - feat(annotations): the annotator now sees the library's existing tag vocabulary: the worker passes the 150 most used tags (used at least twice, refreshed every 5 minutes) to both the native and the OpenAI-compatible backends, and the image, frame, and video prompts ask the model to reuse those tags before inventing near-synonyms (issue 122).
 - feat(ui): annotation progress on cards: list responses and a new `GET /api/media/status?images=&videos=` report `annotation_state` (queued, annotating, failed, done, none) and `annotation_updated_at`; the Atelier polls the status of the pins on screen every 3s while the tab is visible, shows a Queued / Annotating… / Annotation failed badge on the card, and refreshes a card's title, summary, description, and tags in place (and the open lightbox) when its annotation lands. `images.annotation_updated_at` is new (migration 15) (issue 121).
