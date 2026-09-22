@@ -118,6 +118,13 @@ Optional arguments and behavior:
 - `IMGSEARCH_IMPORT_4CHAN_MIN_DELAY_SECONDS` sets the base per-file delay between 4chan media downloads (default: 5).
 - `IMGSEARCH_IMPORT_4CHAN_JITTER_SECONDS` adds random delay jitter on top of the base delay (default: 2).
 
+## Fediverse Importer
+
+- `mise run import-fediverse -- https://server/@user --days 7 --dry-run` previews attachments; remove `--dry-run` and optionally add an imgsearch base URL to upload.
+- `scripts/import_fediverse.py` uses Python's standard library for profile resolution, opaque-ID pagination, date filtering, bounded downloads, and retries. This standalone CLI uses the Python runtime already needed by the 4chan tooling; application/worker logic remains in Go.
+- Actual uploads call `scripts/import_images.sh` with one temporary file at a time, preserving existing conversion/auth/deduplication behavior. Source fetching and destination authentication are deliberately separate. The helper's summary is checked so a silently skipped oversized video cannot count as success.
+- `scripts/import_fediverse_test.sh` runs offline unit/HTTP/CLI integration tests. It is included in `mise run test:scripts` and CI's `*_test.sh` discovery. No live server or credentials are required.
+
 ## Versioning
 
 - `./imgsearch -version` prints the version, commit, and build date. `/api/stats` returns the same values under `build`, and the Atelier statistics pane shows them.

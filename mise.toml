@@ -25,7 +25,7 @@ run = "cd frontend && npm install --no-audit --no-fund --silent && npm run check
 
 [tasks."test:scripts"]
 description = "Run shell script regression tests"
-run = "scripts/import_images_4chan_test.sh && scripts/import_images_gif_test.sh && scripts/run_imgsearch_cuda_container_test.sh && scripts/benchmark_ingestion_container_test.sh && scripts/ensure_llama_cpp_native_build_test.sh && scripts/dockerignore_test.sh && scripts/resolve_onnxruntime_lib_test.sh && scripts/mise_serve_tasks_test.sh && scripts/release_packaging_test.sh"
+run = "scripts/import_fediverse_test.sh && scripts/import_images_4chan_test.sh && scripts/import_images_gif_test.sh && scripts/run_imgsearch_cuda_container_test.sh && scripts/benchmark_ingestion_container_test.sh && scripts/ensure_llama_cpp_native_build_test.sh && scripts/dockerignore_test.sh && scripts/resolve_onnxruntime_lib_test.sh && scripts/mise_serve_tasks_test.sh && scripts/release_packaging_test.sh"
 
 [tasks."test:full"]
 description = "Run Go, script, and browser smoke tests"
@@ -115,6 +115,10 @@ run = "scripts/ensure_llama_cpp_native_build.sh; RUN_LLAMACPP_NATIVE_INTEGRATION
 [tasks.llama-cpp-native-bench-gemma]
 description = "Benchmark native Gemma image annotation"
 run = "scripts/ensure_llama_cpp_native_build.sh; RUN_LLAMACPP_NATIVE_GEMMA_BENCH=1 LLAMA_NATIVE_GEMMA_MODEL_PATH=\"${LLAMA_NATIVE_GEMMA_MODEL_PATH:-$(pwd)/models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P.gguf}\" LLAMA_NATIVE_GEMMA_MMPROJ_PATH=\"${LLAMA_NATIVE_GEMMA_MMPROJ_PATH:-$(pwd)/models/HauhauCS/Gemma-4-E4B-Uncensored-HauhauCS-Aggressive/mmproj-Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-f16.gguf}\" LLAMA_NATIVE_GEMMA_GPU_LAYERS=\"${LLAMA_NATIVE_GEMMA_GPU_LAYERS:-99}\" LLAMA_NATIVE_GEMMA_USE_GPU=\"${LLAMA_NATIVE_GEMMA_USE_GPU:-true}\" LLAMA_NATIVE_GEMMA_CONTEXT_SIZE=\"${LLAMA_NATIVE_GEMMA_CONTEXT_SIZE:-8192}\" LLAMA_NATIVE_GEMMA_BATCH_SIZE=\"${LLAMA_NATIVE_GEMMA_BATCH_SIZE:-512}\" LLAMA_NATIVE_GEMMA_THREADS=\"${LLAMA_NATIVE_GEMMA_THREADS:-0}\" LLAMA_NATIVE_GEMMA_IMAGE_MAX_SIDE=\"${LLAMA_NATIVE_GEMMA_IMAGE_MAX_SIDE:-1024}\" LLAMA_NATIVE_GEMMA_IMAGE_MAX_TOKENS=\"${LLAMA_NATIVE_GEMMA_IMAGE_MAX_TOKENS:-0}\" go test ./internal/embedder/llamacppnative -run '^$' -bench BenchmarkNativeAnnotateImage -benchtime=\"${BENCH_TIME:-3x}\" -count=\"${BENCH_COUNT:-3}\" -benchmem"
+
+[tasks.import-fediverse]
+description = "Import public account media from the last N days (Mastodon-compatible servers)"
+run = "python3 scripts/import_fediverse.py"
 
 [tasks.import-images]
 description = "Bulk upload images and videos from a folder"

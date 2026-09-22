@@ -53,6 +53,34 @@ By default, 4chan media downloads are paced (about every 5 seconds with jitter) 
 `scripts/import_images.sh` / `mise run import-images` now sends an API key header by default.
 Set `IMGSEARCH_IMPORT_API_KEY` (or `IMGSEARCH_API_KEY`) to override the built-in development key.
 
+### Import Media From a Fediverse Account
+
+Preview public image/video attachments posted in the last 30 days:
+
+```bash
+mise run import-fediverse -- \
+  https://stereophonic.space/users/genmaicha --days 30 --dry-run
+```
+
+Import them into a running imgsearch instance (set `IMGSEARCH_IMPORT_API_KEY` to that instance's API key first):
+
+```bash
+mise run import-fediverse -- \
+  https://stereophonic.space/users/genmaicha \
+  https://imgsearch.home.heldscal.la --days 30
+```
+
+You can also run `python3 scripts/import_fediverse.py ...` directly. The destination defaults to `IMGSEARCH_API_URL`, then `http://127.0.0.1:8080`; authentication uses the same environment variables as `import_images.sh`.
+
+- Requires Python 3.9+, Bash, and curl; GIF conversion also requires ffmpeg. No Python packages to install.
+- Supports Mastodon-compatible account lookup/status APIs, including modern Pleroma/Akkoma, with `/@user` and `/users/user` profile URLs. It is **not** a universal ActivityPub importer.
+- Imports original image/video/gifv attachments, including replies and sensitive media when publicly accessible. Skips boosts, audio, link previews, and older posts. Private/followers-only or login-required timelines are not supported.
+- `--days` is a rolling UTC window. Pagination follows the server's reverse-chronological account timeline; retention limits or deleted/unavailable posts cannot be recovered.
+- Dry-run lists matching original URLs without downloading media or contacting imgsearch. Actual imports process one file at a time and clean up temporary files.
+- Re-running is safe for identical files: imgsearch de-duplicates by content hash, although the importer downloads them again.
+- Source requests pause one second by default (`--delay` adjusts this) and retry rate limits/transient failures up to three attempts, respecting `Retry-After`. Exhausted HTTP 429 retries or a requested pause over five minutes stop the entire run; retry it later instead of continuing to hit the throttled source. The imgsearch API key is never sent to source/media servers.
+- Downloads are limited to 64 MiB per image and 2 GiB per video; `IMGSEARCH_IMPORT_MAX_VIDEO_BYTES` overrides the video limit. The server's own upload limits still apply. Upload/conversion failures are reported, remaining attachments continue, and any failure produces a nonzero exit status.
+
 ### Build From Source
 
 If there is no release for your system:
