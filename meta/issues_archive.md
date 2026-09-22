@@ -153,3 +153,4 @@
 - [x] [Make search modes and scope explicit](issues/clarify-search-filter-scope-and-match-labels.md)
 - [x] [“Back to library” should go to the Library](issues/make-feed-exit-destination-and-loading-state-explicit.md)
 - [x] [Turn operational states into next steps](issues/clarify-library-health-and-error-recovery.md)
+- [x] [Complete and deploy the remaining recommended UX sweep](issues/complete-and-deploy-ux-sweep.md)

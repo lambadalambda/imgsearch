@@ -40,7 +40,6 @@
 
 - [ ] [Measure collection summary queries at representative scale](issues/measure-collection-summary-queries.md)
 
-- [ ] [Complete and deploy the remaining recommended UX sweep](issues/complete-and-deploy-ux-sweep.md)
 
 - [ ] [Keep NSFW-hidden views current during concurrent metadata updates](issues/keep-nsfw-hidden-during-live-updates.md)
 - [ ] [Announce confirmation consequences when dialogs open](issues/announce-confirmation-consequences.md)
