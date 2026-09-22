@@ -14,6 +14,7 @@ import (
 	"imgsearch/internal/search"
 	"imgsearch/internal/settings"
 	"imgsearch/internal/stats"
+	"imgsearch/internal/thumbnails"
 	"imgsearch/internal/transcribe"
 	"imgsearch/internal/upload"
 	"imgsearch/internal/vectorindex"
@@ -128,6 +129,8 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 	}
 
 	mux := http.NewServeMux()
+	mux.Handle(thumbnails.URLPrefix, thumbnails.NewHandler(opts.Data.DB, opts.DataDir))
+	mux.Handle("/media/images/thumbnails", http.NotFoundHandler())
 	mux.Handle("/api/upload", upload.NewHandler(uploadSvc))
 	imageHandler := images.NewHandler(&images.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, DataDir: opts.DataDir})
 	videoHandler := videos.NewHandler(&videos.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, DataDir: opts.DataDir})

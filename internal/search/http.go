@@ -18,6 +18,7 @@ import (
 	"imgsearch/internal/httputil"
 	"imgsearch/internal/nsfwsql"
 	"imgsearch/internal/tagutil"
+	"imgsearch/internal/thumbnails"
 	"imgsearch/internal/vectorindex"
 )
 
@@ -45,6 +46,7 @@ type SearchResult struct {
 	Distance         float64  `json:"distance"`
 	OriginalName     string   `json:"original_name"`
 	StoragePath      string   `json:"storage_path"`
+	ThumbnailPath    string   `json:"thumbnail_path,omitempty"`
 	Title            string   `json:"title,omitempty"`
 	Summary          string   `json:"summary,omitempty"`
 	Description      string   `json:"description,omitempty"`
@@ -916,6 +918,7 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 	SELECT i.id,
 	       i.original_name,
 	       i.storage_path,
+	       COALESCE(i.thumbnail_path, ''),
 	       i.mime_type,
 	       i.width,
 	       i.height,
@@ -964,6 +967,7 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 		imageID             int64
 		originalName        string
 		storagePath         string
+		thumbnailPath       string
 		mimeType            string
 		width               int
 		height              int
@@ -995,6 +999,7 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 			&row.imageID,
 			&row.originalName,
 			&row.storagePath,
+			&row.thumbnailPath,
 			&row.mimeType,
 			&row.width,
 			&row.height,
@@ -1059,6 +1064,7 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 				Distance:        hit.Distance,
 				OriginalName:    row.originalName,
 				StoragePath:     filepath.ToSlash(row.storagePath),
+				ThumbnailPath:   thumbnails.Path(hit.ImageID, row.thumbnailPath),
 				Width:           row.width,
 				Height:          row.height,
 				Title:           text.Title,
@@ -1069,6 +1075,7 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 			}
 			if row.videoID.Valid {
 				result.MediaType = "video"
+				result.ThumbnailPath = ""
 				result.VideoID = row.videoID.Int64
 				result.OriginalName = row.videoOriginalName.String
 				result.StoragePath = filepath.ToSlash(row.videoStoragePath.String)
@@ -1192,6 +1199,7 @@ WITH requested_tags(tag) AS (
     i.id AS image_id,
     i.original_name AS image_original_name,
     i.storage_path AS image_storage_path,
+    COALESCE(i.thumbnail_path, '') AS image_thumbnail_path,
     i.mime_type AS image_mime_type,
     i.width AS image_width,
     i.height AS image_height,
@@ -1234,6 +1242,7 @@ SELECT media_type,
        image_id,
        image_original_name,
        image_storage_path,
+       image_thumbnail_path,
        image_mime_type,
        image_width,
        image_height,
@@ -1274,6 +1283,7 @@ OFFSET ?
 		var mediaType string
 		var unitID int64
 		var imageStoragePath string
+		var imageThumbnailPath string
 		var imageTitle string
 		var imageSummary string
 		var imageDescription string
@@ -1299,6 +1309,7 @@ OFFSET ?
 			&result.ImageID,
 			&result.OriginalName,
 			&imageStoragePath,
+			&imageThumbnailPath,
 			&result.MimeType,
 			&result.Width,
 			&result.Height,
@@ -1372,6 +1383,7 @@ OFFSET ?
 		}
 		if mediaType == "image" {
 			result.ImageID = unitID
+			result.ThumbnailPath = thumbnails.Path(unitID, imageThumbnailPath)
 		}
 		results = append(results, result)
 	}

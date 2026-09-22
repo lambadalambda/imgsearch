@@ -14,6 +14,7 @@ import (
 	"imgsearch/internal/mediaops"
 	"imgsearch/internal/nsfwsql"
 	"imgsearch/internal/tagutil"
+	"imgsearch/internal/thumbnails"
 )
 
 type Handler struct {
@@ -196,9 +197,7 @@ func scanImageItem(row rowScanner) (ImageItem, error) {
 	item.Summary = text.Summary
 	item.Description = text.Description
 	item.FullDescription = text.FullDescription
-	if thumb.Valid {
-		item.ThumbnailPath = thumb.String
-	}
+	item.ThumbnailPath = thumbnails.Path(item.ImageID, thumb.String)
 	return item, nil
 }
 
