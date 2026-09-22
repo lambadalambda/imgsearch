@@ -105,6 +105,8 @@ export interface QueueStats {
 }
 
 export interface JobKindStats {
+  waiting?: number;
+  processing?: number;
   tracked: number;
   runnable: number;
   pending: number;
@@ -132,7 +134,11 @@ export interface BuildInfo {
   date: string;
 }
 
+export type CapabilityState = "configured" | "disabled" | "unconfigured" | "unknown";
+
 export interface StatsResponse {
+  capabilities?: { worker: "local" | "unknown"; annotations: CapabilityState; transcription: CapabilityState };
+  video_transcription_empty?: number;
   build?: BuildInfo;
   images_total: number;
   standalone_images_total: number;

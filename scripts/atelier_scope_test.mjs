@@ -146,7 +146,7 @@ export async function replacementScopeChecks(browser, baseURL) {
       await waitFor(failed.completed.promise);
       await page
         .locator("[data-results-meta]")
-        .filter({ hasText: "Scope replacement failed" })
+        .filter({ hasText: "The library couldn’t complete this request. Try again in a moment." })
         .waitFor();
       assert.equal(
         await page.locator("[data-pin]").count(),
@@ -169,7 +169,7 @@ export async function replacementScopeChecks(browser, baseURL) {
         if (failSafe)
           await page
             .locator("[data-results-meta]")
-            .filter({ hasText: "Scope replacement failed" })
+            .filter({ hasText: "The library couldn’t complete this request. Try again in a moment." })
             .waitFor();
         else await safe.waitFor();
         late.release.resolve();
@@ -234,7 +234,8 @@ export async function replacementScopeChecks(browser, baseURL) {
         await page.locator('[data-pin-key="image:9100"]').waitFor();
         for (const fail of [true, false]) {
           const append = holdNext(fail);
-          await page.locator("[data-load-more]").click();
+          if (fail) await page.locator("[data-load-more]").click();
+          else await page.getByRole("button", { name: "Retry", exact: true }).click();
           await waitFor(append.started.promise);
           assert.equal(
             await page.locator("[data-pin]").count(),
@@ -250,7 +251,7 @@ export async function replacementScopeChecks(browser, baseURL) {
           if (fail)
             await page
               .locator("[data-results-meta]")
-              .filter({ hasText: "Scope replacement failed" })
+              .filter({ hasText: "The library couldn’t complete this request. Try again in a moment." })
               .waitFor();
           else await page.locator('[data-pin-key="image:9148"]').waitFor();
           assert.equal(

@@ -10,7 +10,7 @@ User approved the remaining recommended UX work and a deployment after completio
 - [x] UX-03/04: [Navigation/mobile chrome](simplify-atelier-navigation-and-mobile-chrome.md) and [search/filter scope](clarify-search-filter-scope-and-match-labels.md).
 - [x] UX-05: [Protect Settings drafts](protect-unsaved-atelier-settings-edits.md).
 - [x] UX-06: [Lightbox viewing/editing actions](simplify-lightbox-actions-and-edit-mode.md).
-- [ ] UX-08: [Actionable status and error recovery](clarify-library-health-and-error-recovery.md).
+- [x] UX-08: [Actionable status and error recovery](clarify-library-health-and-error-recovery.md).
 - [x] UX-10: [Feed return and media states](make-feed-exit-destination-and-loading-state-explicit.md).
 - [ ] Deploy tested combined release to NAS CT107 and verify it.
 
@@ -34,3 +34,5 @@ User approved the remaining recommended UX work and a deployment after completio
 - `6be6b6d`: transactional manual duplicate consolidation, metadata conflict checks, selectable keeper and honest visual-hash comparison; independent review + integrated checks/race tests passed.
 - Inherited concurrent NSFW classification/display races and shared-dialog announcement improvements remain separately tracked; no unbounded follow-up expansion.
 - UX10 integrated with mobile More navigation; full Go/frontend/script/browser suites and Svelte check passed, with independent integration review. Physical-device gestures remain outside this change.
+- `9214642` plus UX08 UI: honest capability/status metadata, strictly bounded failed-job recovery and scope-preserving request Retry; independent feature/integration reviews, full suite/check and focused race tests passed.
+- Final release seam review found no blockers. Optional integrated local MP4 playback check passed in Chromium; physical-device playback/gestures remain unverified. No database migrations, native dependency pin or Go dependency changes relative to outgoing `cc0aab4`.

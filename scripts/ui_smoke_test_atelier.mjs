@@ -33,6 +33,7 @@ const repoRoot = join(here, "..");
 const distRoot = process.env.ATELIER_DIST || join(repoRoot, "internal", "webui", "atelier", "dist");
 
 await validateAtelierBuild(distRoot);
+const { healthChecks } = await import("./atelier_health_test.mjs");
 const { settingsDraftChecks } = await import("./settings_draft_smoke.mjs");
 const { navigationChecks } = await import("./atelier_navigation_test.mjs");
 const { replacementScopeChecks } = await import("./atelier_scope_test.mjs");
@@ -842,6 +843,7 @@ try {
     }
     await navigationChecks(browser, baseURL);
   }
+  await healthChecks(browser, baseURL);
   await replacementScopeChecks(browser, baseURL);
 } finally {
   if (browser) await browser.close();
@@ -996,13 +998,13 @@ async function smokeChecks(browser) {
     "18",
     "video frames",
     "Image embedding",
-    "72 / 162 processed",
+    "72 / 162 Complete",
     "Image annotation",
-    "85 / 144 processed",
+    "85 / 144 Complete",
     "Video annotation",
-    "4 / 7 processed",
+    "4 / 7 Complete",
     "Video transcription",
-    "3 / 7 processed",
+    "3 / 7 Complete",
     "Recent failures",
     "broken-decode.jpg",
     "silent-track.mp4",
@@ -1018,7 +1020,7 @@ async function smokeChecks(browser) {
   // pending count on every /api/stats fetch, so the rendered number must
   // change without a reload (meta/issues/081).
   const queuedBefore = await statsPane.evaluate((el) => {
-    const match = (el.textContent || "").match(/(\d+) queued/);
+    const match = (el.textContent || "").match(/(\d+) Waiting/);
     return match ? Number(match[1]) : -1;
   });
   if (queuedBefore < 0) {
@@ -1027,7 +1029,7 @@ async function smokeChecks(browser) {
   await page.waitForFunction(
     (before) => {
       const pane = document.querySelector("[data-stats-pane]");
-      const match = (pane?.textContent || "").match(/(\d+) queued/);
+      const match = (pane?.textContent || "").match(/(\d+) Waiting/);
       return match ? Number(match[1]) > before : false;
     },
     queuedBefore,
@@ -2776,7 +2778,7 @@ async function collectionChecks(browser) {
   // Detail list failure is explicit rather than an empty success.
   collectionFailure = `/api/collections/${paged.id}/items`;
   await page.reload({ waitUntil: "networkidle" });
-  await page.locator("[data-results-meta]").filter({ hasText: "Collection service unavailable" }).waitFor();
+  await page.locator("[data-results-meta]").filter({ hasText: "The library couldn’t complete this request. Try again in a moment." }).waitFor();
   assert(await page.locator("[data-pin]").count() === 0, "failed detail must not retain stale results");
   await page.reload({ waitUntil: "networkidle" });
   await page.locator('[data-pin-key="image:1010"]').waitFor();
@@ -3051,7 +3053,7 @@ async function collectionUX07Checks(browser) {
         assert.equal(await unsafe.count(), 0, 'unsafe media removed while replacement is pending');
         release();
         await waitForRace(done, `${view} replacement completion`);
-        await page.getByText('Filter replacement failed', { exact: true }).first().waitFor();
+        await page.getByText(view === 'collections' ? 'Filter replacement failed' : 'The library couldn’t complete this request. Try again in a moment.', { exact: true }).first().waitFor();
         assert.equal(await unsafe.count(), 0, 'failed replacement never restores stale content');
         assert.equal(await page.getByRole('button', { name: 'Browse library', exact: true }).count(), 0, 'error is not a true-empty CTA');
       } finally {
@@ -3083,7 +3085,7 @@ async function collectionUX07Checks(browser) {
           await page.locator('[data-nsfw-toggle]').check();
           await waitForRace(lateRequest, `${view} late request (failSafe=${failSafe})`);
           await page.locator('[data-nsfw-toggle]').uncheck();
-          if (failSafe) await page.getByText('Late-race safe request failed', { exact: true }).first().waitFor();
+          if (failSafe) await page.getByText(view === 'collections' ? 'Late-race safe request failed' : 'The library couldn’t complete this request. Try again in a moment.', { exact: true }).first().waitFor();
           else if (view === 'collections') await browse('Mixed').waitFor();
           else {
             await page.locator('[data-pin-key="image:1130"]').waitFor();

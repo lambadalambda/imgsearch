@@ -32,6 +32,11 @@ The Atelier Rail Feed button can silently do nothing when there are no videos, n
 - [ ] Consider disabling the Rail Feed button when stats report zero videos.
 - [ ] Consider a broader or deterministic fallback scan after random attempts fail.
 
+## UX sweep progress (2026-09-22)
+
+- `6de4a1e` adds tested dismissible feedback for empty/failed Rail launches and explicit loading/unplayable feedback inside Feed. The current launcher no longer filters sampled records by `canPlayMime`; it opens the selected record and reports a media error in context.
+- Keep this issue open for the broader launcher/fallback and real-device playback questions, not as a claim that launches still fail silently. UX10's Chromium fixture and optional local MP4 checks do not certify physical-mobile playback.
+
 ## Related Files
 
 - `frontend/src/components/Rail.svelte`

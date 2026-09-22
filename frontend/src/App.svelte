@@ -37,7 +37,6 @@
     setLibrary,
   } from "./lib/stores";
   import {
-    ApiError,
     getCollection,
     listCollectionItems,
     listImages,
@@ -48,6 +47,7 @@
     searchTags,
     searchText,
   } from "./lib/api";
+  import { requestErrorMessage } from "./lib/requestError";
   import { refreshStats } from "./lib/stats";
   import { appendUniquePins, pinFromImage, pinFromSearchResult, pinFromVideo } from "./lib/utils";
   import { hasSearchChrome, resultsCountLabel } from "./lib/searchPresentation";
@@ -65,6 +65,13 @@
 
   // Poll annotation progress for the pins on screen (meta/issues/121).
   onMount(() => startAnnotationWatch());
+
+  let retryAttempt = $state(0);
+  let lastRetryAttempt = 0;
+  let failedRequest = $state<{ scope: string; appending: boolean } | null>(null);
+  function retryRequest() {
+    if (failedRequest?.scope === requestScope) retryAttempt += 1;
+  }
 
   let currentRequestToken = 0;
   let currentOffset = 0;
@@ -126,6 +133,9 @@
   });
 
   $effect(() => {
+    const isRetry = retryAttempt > lastRetryAttempt;
+    lastRetryAttempt = retryAttempt;
+    const retry = untrack(() => failedRequest);
     const state = $mode;
     const detailScope = state.mode === "collection" ? collectionScope : "";
     const includeNsfw = $includeNSFW;
@@ -145,6 +155,7 @@
       lightboxPin.set(null);
       loadedResultsScope = "";
       resultsMeta.set({ total: 0, loading: false });
+      failedRequest = null;
       lastDataKey = "";
       return;
     }
@@ -153,12 +164,15 @@
     // calls bumpPage(); only a new bump on the same key appends.
     let appending = false;
     untrack(() => {
-      if (bump > lastPageBump && dataKey === lastDataKey) {
+      if (isRetry && retry?.scope === dataKey) {
+        appending = retry.appending;
+      } else if (bump > lastPageBump && dataKey === lastDataKey) {
         appending = true;
       } else {
         currentOffset = 0;
         libraryRandomSeed = newLibrarySeed();
       }
+      failedRequest = null;
       lastPageBump = bump;
       lastDataKey = dataKey;
       const previous = get(resultsMeta);
@@ -312,8 +326,8 @@
         if (!current()) return;
         loadedResultsScope = dataKey;
         if (state.mode === "collection") loadedCollectionScope = detailScope;
-        const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Search failed";
-        resultsMeta.set({ total: 0, loading: false, error: message });
+        failedRequest = { scope: dataKey, appending };
+        resultsMeta.set({ total: appending ? get(resultsMeta).total : 0, loading: false, error: requestErrorMessage(err) });
         if (!appending) {
           pins.set([]);
           currentOffset = 0;
@@ -344,7 +358,6 @@
   });
 
   const emptyMessage = $derived.by(() => {
-    if ($resultsMeta.error) return `Couldn't load: ${$resultsMeta.error}`;
     const indexingSuffix = embeddingBacklog
       ? ` The library is still indexing (${embeddingBacklog.done.toLocaleString()} of ${embeddingBacklog.expected.toLocaleString()} images embedded), so results will improve as it completes.`
       : "";
@@ -405,7 +418,8 @@
         {#if !resultsCurrent || $resultsMeta.loading}
           <span>Loading…</span>
         {:else if $resultsMeta.error}
-          <span class="text-bad">{$resultsMeta.error}</span>
+          <span data-request-error class="text-bad">{$resultsMeta.error}</span>
+          <button type="button" class="px-4 min-h-11 border border-line rounded-lg text-ink cursor-pointer" onclick={retryRequest}>Retry</button>
         {:else}
           <span>
             {resultsCountLabel($mode.mode, $pins.length, $resultsMeta.total)}
@@ -431,7 +445,7 @@
             <button class="px-4 py-2 bg-ink text-white rounded-lg cursor-pointer" onclick={() => includeNSFW.set(true)}>Show hidden items</button>
           {/if}
         </section>
-      {:else}
+      {:else if !resultsCurrent || !$resultsMeta.error || $pins.length > 0}
         {#if $mode.mode === "collection" && collectionCurrent && !$resultsMeta.loading && !$resultsMeta.error && collectionCopy.action === "show"}
           <p class="px-5 sm:px-9 my-2 text-sm text-muted">{collectionCopy.message} Enable the global NSFW setting to show them.</p>
         {/if}
@@ -439,7 +453,7 @@
           pins={resultsCurrent ? $pins : []}
           loading={!resultsCurrent || $resultsMeta.loading}
           {emptyMessage}
-          canLoadMore={resultsCurrent && canLoadMore}
+          canLoadMore={resultsCurrent && !$resultsMeta.error && canLoadMore}
           {loadingMore}
           onLoadMore={loadMore}
         />

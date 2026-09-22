@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(ui): explain library health with Waiting/Processing/Complete/Failed states, explicit media/frame denominators, capability guidance and bounded recovery; replace duplicate raw request errors with a single Retry that preserves search/filter/pagination context.
 - feat(jobs): expose consistent runtime capability and lease-aware health metadata in HTTP/live snapshots, and add kind-scoped failed-job retry that never backfills missing jobs or resets completed work; reject malformed recovery queries before mutation.
 - fix(feed): label exits Close feed, preserve the underlying page and launcher focus, distinguish loading/unplayable/empty states, hide unavailable transport, wrap mobile titles and surface failed or empty launches.
 - feat(lightbox): separate Save changes/Cancel editing from viewing actions, keep core controls reachable outside long scrolling metadata, move advanced actions into More and filenames into File details, and use explicit relative match scores.

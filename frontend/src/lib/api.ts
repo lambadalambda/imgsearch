@@ -499,3 +499,9 @@ export function consolidateDuplicates(request: DuplicateConsolidationRequest): P
     body: JSON.stringify(request),
   });
 }
+
+/** Bounded recovery: only existing failed jobs of this kind/current model.
+ * Never calls the legacy unfiltered endpoint, which also backfills missing work. */
+export async function retryFailedKind(kind: "embed_image" | "annotate_image" | "annotate_video" | "transcribe_video"): Promise<{ retried: number; enqueued_missing: number }> {
+  return getJSON(`/api/jobs/retry-failed?kind=${encodeURIComponent(kind)}`, { method: "POST" });
+}
