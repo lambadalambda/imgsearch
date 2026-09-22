@@ -106,32 +106,51 @@ func VideoFrameUserPrompt(originalName string, knownTags []string) string {
 // VideoUserPrompt builds the text-only user turn that summarizes a video from
 // its sampled frame annotations and optional transcript.
 func VideoUserPrompt(input embedder.VideoAnnotationInput) (string, error) {
+	return videoUserPrompt(input, false)
+}
+
+func videoUserPrompt(input embedder.VideoAnnotationInput, direct bool) (string, error) {
 	if len(input.Frames) == 0 {
 		return "", fmt.Errorf("video annotation requires at least one frame")
 	}
-	entries := make([]videoFramePromptEntry, 0, len(input.Frames))
-	for _, frame := range input.Frames {
-		description := strings.TrimSpace(frame.Description)
-		if description == "" {
-			continue
+	var framesJSON []byte
+	if direct {
+		for _, frame := range input.Frames {
+			if strings.TrimSpace(frame.Path) == "" {
+				return "", fmt.Errorf("video frame %d has no image path", frame.FrameIndex)
+			}
 		}
-		entries = append(entries, videoFramePromptEntry{
-			FrameIndex:  frame.FrameIndex,
-			TimestampMS: frame.TimestampMS,
-			Description: description,
-			Tags:        NormalizeUniqueTags(frame.Tags),
-		})
-	}
-	if len(entries) == 0 {
-		return "", fmt.Errorf("video annotation requires at least one frame description")
-	}
-	framesJSON, err := json.Marshal(entries)
-	if err != nil {
-		return "", fmt.Errorf("marshal frame annotations: %w", err)
+	} else {
+		entries := make([]videoFramePromptEntry, 0, len(input.Frames))
+		for _, frame := range input.Frames {
+			description := strings.TrimSpace(frame.Description)
+			if description == "" {
+				continue
+			}
+			entries = append(entries, videoFramePromptEntry{
+				FrameIndex:  frame.FrameIndex,
+				TimestampMS: frame.TimestampMS,
+				Description: description,
+				Tags:        NormalizeUniqueTags(frame.Tags),
+			})
+		}
+		if len(entries) == 0 {
+			return "", fmt.Errorf("video annotation requires at least one frame description")
+		}
+		var err error
+		framesJSON, err = json.Marshal(entries)
+		if err != nil {
+			return "", fmt.Errorf("marshal frame annotations: %w", err)
+		}
 	}
 
 	var b bytes.Buffer
-	b.WriteString("You are given sampled frame annotations from one video. Return JSON with exactly this shape: {\"title\": string, \"summary\": string, \"full_description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
+	if direct {
+		b.WriteString("You are given chronological sampled frame images from one video, each labelled with its frame index and timestamp in milliseconds. ")
+	} else {
+		b.WriteString("You are given sampled frame annotations from one video. ")
+	}
+	b.WriteString("Return JSON with exactly this shape: {\"title\": string, \"summary\": string, \"full_description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
 	b.WriteString("Write title as a short concrete card title, summary as a 1 to 2 sentence overview, and full_description as one paragraph that is as detailed as needed for search, up to about 500 words. Keep all fields shorter when the evidence is simple. ")
 	b.WriteString("Synthesize recurring content across frames into a single video-level description. Mention progression only when supported by frame evidence. ")
 	b.WriteString("If people are the focus, include concrete visible details such as perceived age range, perceived ethnicity, body shape/build, facial features, hairstyle, clothing, accessories, posture, and activity. ")
@@ -139,13 +158,18 @@ func VideoUserPrompt(input embedder.VideoAnnotationInput) (string, error) {
 	b.WriteString("Use transcript as supporting context only when it matches visual evidence. ")
 	b.WriteString("When a filename looks meaningful, feel free to infer likely media type or source context from it (for example a meme, a music video, or a clip from a show) as long as it does not conflict with frame evidence. ")
 	b.WriteString("Return 5 to 12 unique lowercase tags that capture persistent high-signal content. Include nsfw if and only if is_nsfw is true. ")
+	if direct {
+		b.WriteString("Set is_nsfw to true if clearly NSFW content is visible in any sampled frame, even if other frames are safe. Describe visible NSFW content directly; do not average it away. ")
+	}
 	writeKnownTagsHint(&b, input.KnownTags)
 	b.WriteString("Avoid unsupported specifics and avoid one-off details that are not central. Output JSON only.\n")
 	writeFilenameHint(&b, input.OriginalName, "\"\n")
 	fmt.Fprintf(&b, "Duration (ms): %d\n", input.DurationMS)
-	b.WriteString("Sampled frame annotations (chronological):\n")
-	b.Write(framesJSON)
-	b.WriteString("\n")
+	if !direct {
+		b.WriteString("Sampled frame annotations (chronological):\n")
+		b.Write(framesJSON)
+		b.WriteString("\n")
+	}
 	transcript := strings.TrimSpace(input.TranscriptText)
 	if len(transcript) > transcriptSnippetMaxLen {
 		transcript = strings.TrimSpace(transcript[:transcriptSnippetMaxLen])

@@ -26,6 +26,7 @@ func annotationSettingsFromConfig(cfg runtimeConfig) settings.AnnotationSettings
 // config, reusing the native annotator's image size and libvips resizing.
 func openAIConfigFromSettings(s settings.AnnotationSettings, imageMaxSide int, logf func(string, ...any)) openaicompat.Config {
 	return openaicompat.Config{
+		VideoMode:    s.VideoMode,
 		BaseURL:      s.OpenAI.BaseURL,
 		APIKey:       s.OpenAI.APIKey,
 		Model:        s.OpenAI.Model,

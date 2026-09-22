@@ -51,6 +51,8 @@ type VideoFrameAnnotator interface {
 }
 
 type VideoFrameAnnotation struct {
+	// Path is the stored sample image; duplicate references remain separate samples.
+	Path        string
 	FrameIndex  int
 	TimestampMS int64
 	Description string
@@ -84,4 +86,23 @@ type VideoAnnotator interface {
 type Embedder interface {
 	TextEmbedder
 	ImageEmbedder
+}
+
+// VideoInputMode is optional; only remote backends opt into direct frame input.
+type VideoInputMode interface {
+	VideoMode() string
+}
+
+// VideoJobAnnotator pins preparation and summarization to one backend and mode.
+type VideoJobAnnotator interface {
+	ImageAnnotator
+	VideoFrameAnnotator
+	VideoAnnotator
+	VideoInputMode
+}
+
+// VideoAnnotatorAcquirer holds backend admission for the entire video job.
+// Callers must release after preparation and the final annotation call finish.
+type VideoAnnotatorAcquirer interface {
+	AcquireVideoAnnotator(ctx context.Context) (VideoJobAnnotator, func(), error)
 }

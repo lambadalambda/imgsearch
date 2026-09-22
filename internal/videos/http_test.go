@@ -410,14 +410,14 @@ WHERE id = 1
 `).Scan(&description, &tagsJSON, &annotationUpdatedAt); err != nil {
 		t.Fatalf("load video annotations: %v", err)
 	}
-	if description != "" {
-		t.Fatalf("expected video description cleared, got %q", description)
+	if description != "A vocalist performs on stage while a crowd gathers near the front." {
+		t.Fatalf("expected previous video description retained, got %q", description)
 	}
-	if tagsJSON != "[]" {
-		t.Fatalf("expected video tags_json reset to [], got %q", tagsJSON)
+	if tagsJSON != `["concert","music","stage"]` {
+		t.Fatalf("expected previous video tags retained, got %q", tagsJSON)
 	}
-	if annotationUpdatedAt.Valid {
-		t.Fatalf("expected annotation_updated_at cleared, got %q", annotationUpdatedAt.String)
+	if !annotationUpdatedAt.Valid {
+		t.Fatal("expected previous annotation_updated_at retained")
 	}
 }
 

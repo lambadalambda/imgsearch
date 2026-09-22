@@ -70,3 +70,21 @@ func (r Request) WithOutputTokens(b embedder.AnnotationTokenBudget) Request {
 	}
 	return r
 }
+
+// DirectVideoRequest uses the full video schema with image rather than cached
+// description evidence. The compact retry retains all original context.
+func DirectVideoRequest(input embedder.VideoAnnotationInput) (Request, error) {
+	prompt, err := videoUserPrompt(input, true)
+	if err != nil {
+		return Request{}, err
+	}
+	return Request{
+		SystemPrompt:      "You are annotating a private video collection for high-recall search from sampled frame images. Return exactly one valid JSON object and nothing else. Stay grounded in visible frame evidence.",
+		UserPrompt:        prompt,
+		JSONSchema:        FullJSONSchema,
+		MaxTokens:         VideoMaxTokens,
+		RetrySystemPrompt: VideoRetrySystemPrompt,
+		RetryUserPrompt:   prompt + "\n" + VideoRetryUserPrompt,
+		RetryMaxTokens:    VideoRetryMaxTokens,
+	}.WithOutputTokens(input.OutputTokens), nil
+}

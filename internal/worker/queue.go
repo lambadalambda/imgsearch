@@ -670,7 +670,23 @@ func (q *Queue) handleAnnotateVideoJob(ctx context.Context, job claimedJob) jobH
 	if q.Annotator == nil || !ok {
 		return jobHandlerResult{}
 	}
-	videoInput, needsVideoAnnotations, err := q.loadVideoAnnotationTaskData(ctx, job.VideoID)
+	// Acquire before loading evidence: preparation and the final call must use
+	// the same backend/mode even if settings change partway through a video.
+	annotator := q.Annotator
+	if acquirer, ok := annotator.(embedder.VideoAnnotatorAcquirer); ok {
+		pinned, release, err := acquirer.AcquireVideoAnnotator(ctx)
+		if err != nil {
+			_ = q.failOrRetry(ctx, job, err)
+			return jobHandlerResult{processed: true, skipCompletion: true, err: err}
+		}
+		defer release()
+		annotator, videoAnnotator = pinned, pinned
+	}
+	direct := false
+	if mode, ok := annotator.(embedder.VideoInputMode); ok {
+		direct = mode.VideoMode() == "direct_frames"
+	}
+	videoInput, needsVideoAnnotations, err := q.loadVideoAnnotationTaskData(ctx, job.VideoID, annotator, direct)
 	if err != nil {
 		_ = q.failOrRetry(ctx, job, err)
 		return jobHandlerResult{processed: true, skipCompletion: true, err: err}
@@ -787,15 +803,18 @@ func (q *Queue) annotateImage(ctx context.Context, imagePath string, originalNam
 	return q.Annotator.AnnotateImage(ctx, imagePath)
 }
 
-func (q *Queue) annotateVideoFrame(ctx context.Context, imagePath string, originalName string, reannotateRequested bool) (embedder.ImageAnnotation, error) {
+func (q *Queue) annotateVideoFrame(ctx context.Context, annotator embedder.ImageAnnotator, imagePath string, originalName string, reannotateRequested bool) (embedder.ImageAnnotation, error) {
 	opts := embedder.ImageAnnotationOptions{OriginalName: originalName, KnownTags: q.knownTags(ctx)}
 	if reannotateRequested {
 		opts.ImageMaxSideMultiplier = reannotateImageMaxSideMultiplier
 	}
-	if frameAnnotator, ok := q.Annotator.(embedder.VideoFrameAnnotator); ok {
+	if frameAnnotator, ok := annotator.(embedder.VideoFrameAnnotator); ok {
 		return frameAnnotator.AnnotateVideoFrame(ctx, imagePath, opts)
 	}
-	return q.annotateImage(ctx, imagePath, originalName, reannotateRequested)
+	if withOptions, ok := annotator.(embedder.ImageAnnotatorWithOptions); ok {
+		return withOptions.AnnotateImageWithOptions(ctx, imagePath, opts)
+	}
+	return annotator.AnnotateImage(ctx, imagePath)
 }
 
 func formatImageProgress(action string, imageID int64, task imageTaskData) string {
@@ -866,7 +885,7 @@ WHERE id = ?
 	return videoID, originalName, storagePath, nil
 }
 
-func (q *Queue) loadVideoAnnotationTaskData(ctx context.Context, videoID int64) (embedder.VideoAnnotationInput, bool, error) {
+func (q *Queue) loadVideoAnnotationTaskData(ctx context.Context, videoID int64, annotator embedder.ImageAnnotator, direct bool) (embedder.VideoAnnotationInput, bool, error) {
 	if videoID <= 0 {
 		return embedder.VideoAnnotationInput{}, false, fmt.Errorf("invalid video id")
 	}
@@ -924,7 +943,7 @@ SELECT i.id,
 FROM video_frames vf
 JOIN images i ON i.id = vf.image_id
 WHERE vf.video_id = ?
-ORDER BY vf.frame_index ASC
+ORDER BY vf.timestamp_ms ASC, vf.frame_index ASC
 `, videoID)
 	if err != nil {
 		return embedder.VideoAnnotationInput{}, false, fmt.Errorf("query video frames for annotation %d: %w", videoID, err)
@@ -963,9 +982,9 @@ ORDER BY vf.frame_index ASC
 		if cached, ok := frameEvidenceByImageID[row.imageID]; ok {
 			frameDescription = cached.description
 			frameTags = cached.tags
-		} else if needsVideoAnnotations && annotationMissing(frameDescription, frameTags) {
+		} else if !direct && needsVideoAnnotations && annotationMissing(frameDescription, frameTags) {
 			log.Printf("worker annotating image %d/%d of video id=%d file=%q (image_id=%d)", i+1, len(frameRows), videoID, strings.TrimSpace(input.OriginalName), row.imageID)
-			generated, err := q.annotateVideoFrame(ctx, row.absolutePath, row.originalName, input.ImageMaxSideMultiplier > 1)
+			generated, err := q.annotateVideoFrame(ctx, annotator, row.absolutePath, row.originalName, input.ImageMaxSideMultiplier > 1)
 			if err != nil {
 				return embedder.VideoAnnotationInput{}, false, fmt.Errorf("annotate frame image %d for video %d: %w", row.imageID, videoID, err)
 			}
@@ -980,6 +999,7 @@ ORDER BY vf.frame_index ASC
 		}
 
 		input.Frames = append(input.Frames, embedder.VideoFrameAnnotation{
+			Path:        row.absolutePath,
 			FrameIndex:  row.frameIndex,
 			TimestampMS: row.timestampMS,
 			Description: frameDescription,

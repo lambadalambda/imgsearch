@@ -34,6 +34,7 @@ type annotatorResolverOptions struct {
 }
 
 type resolvedAnnotator struct {
+	videoMode    string
 	outputTokens annotation.OutputTokens
 	key          string
 	annotator    embedder.ImageAnnotator
@@ -178,7 +179,7 @@ func (r *annotatorResolver) build(ctx context.Context, s settings.AnnotationSett
 		if err != nil {
 			return nil, err
 		}
-		return &resolvedAnnotator{annotator: a, status: status, owned: true, concurrency: max(1, min(s.OpenAI.Concurrency, settings.MaxOpenAIConcurrency))}, nil
+		return &resolvedAnnotator{annotator: a, status: status, owned: true, videoMode: s.VideoMode, concurrency: max(1, min(s.OpenAI.Concurrency, settings.MaxOpenAIConcurrency))}, nil
 	default:
 		if r.opts.BuildNative == nil {
 			return nil, fmt.Errorf("native annotation backend is unavailable in this process")
@@ -195,7 +196,7 @@ func (r *annotatorResolver) build(ctx context.Context, s settings.AnnotationSett
 // settings saves do not trigger a rebuild.
 func annotationBackendKey(s settings.AnnotationSettings) string {
 	if s.Backend == settings.BackendOpenAI {
-		return fmt.Sprintf("openai|%s|%s|%s|%d|%d", s.OpenAI.BaseURL, s.OpenAI.Model, s.OpenAI.APIKey, s.OpenAI.TimeoutSeconds, s.OpenAI.Concurrency)
+		return fmt.Sprintf("openai|%s|%s|%s|%d|%d|%s", s.OpenAI.BaseURL, s.OpenAI.Model, s.OpenAI.APIKey, s.OpenAI.TimeoutSeconds, s.OpenAI.Concurrency, s.VideoMode)
 	}
 	return "native|" + s.NativeVariant
 }
@@ -317,6 +318,10 @@ func (r *annotatorResolver) AnnotateVideoFrame(ctx context.Context, path string,
 		return embedder.ImageAnnotation{}, err
 	}
 	defer r.release()
+	return current.AnnotateVideoFrame(ctx, path, opts)
+}
+
+func (current *resolvedAnnotator) AnnotateVideoFrame(ctx context.Context, path string, opts embedder.ImageAnnotationOptions) (embedder.ImageAnnotation, error) {
 	opts.OutputTokens = current.outputTokens.VideoFrameBudget()
 	if frameAnnotator, ok := current.annotator.(embedder.VideoFrameAnnotator); ok {
 		return frameAnnotator.AnnotateVideoFrame(ctx, path, opts)
@@ -333,10 +338,40 @@ func (r *annotatorResolver) AnnotateVideo(ctx context.Context, input embedder.Vi
 		return embedder.VideoAnnotation{}, err
 	}
 	defer r.release()
+	return current.AnnotateVideo(ctx, input)
+}
+
+func (current *resolvedAnnotator) AnnotateVideo(ctx context.Context, input embedder.VideoAnnotationInput) (embedder.VideoAnnotation, error) {
 	input.OutputTokens = current.outputTokens.VideoBudget()
 	videoAnnotator, ok := current.annotator.(embedder.VideoAnnotator)
 	if !ok {
 		return embedder.VideoAnnotation{}, fmt.Errorf("configured annotation backend does not support video annotation")
 	}
 	return videoAnnotator.AnnotateVideo(ctx, input)
+}
+
+// AcquireVideoAnnotator pins backend, mode and token budgets through frame
+// preparation and summarization, without nested resolver acquisitions.
+func (r *annotatorResolver) AcquireVideoAnnotator(ctx context.Context) (embedder.VideoJobAnnotator, func(), error) {
+	current, err := r.acquire(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, ok := current.annotator.(embedder.VideoAnnotator); !ok {
+		r.release()
+		return nil, nil, fmt.Errorf("configured annotation backend does not support video annotation")
+	}
+	var once sync.Once
+	return current, func() { once.Do(r.release) }, nil
+}
+
+func (current *resolvedAnnotator) VideoMode() string {
+	if current.videoMode == "direct_frames" {
+		return "direct_frames"
+	}
+	return "frame_descriptions"
+}
+
+func (current *resolvedAnnotator) AnnotateImage(ctx context.Context, path string) (embedder.ImageAnnotation, error) {
+	return current.annotator.AnnotateImage(ctx, path)
 }

@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,6 +42,7 @@ type ImagePreparer func(ctx context.Context, path string, maxSide int) ([]byte, 
 
 // Config configures a remote annotator.
 type Config struct {
+	VideoMode    string
 	BaseURL      string
 	APIKey       string
 	Model        string
@@ -145,7 +147,12 @@ func (a *Annotator) AnnotateVideoFrame(ctx context.Context, path string, opts em
 	return resp.ImageAnnotation(), nil
 }
 
+func (a *Annotator) VideoMode() string { return a.cfg.VideoMode }
+
 func (a *Annotator) AnnotateVideo(ctx context.Context, input embedder.VideoAnnotationInput) (embedder.VideoAnnotation, error) {
+	if a.VideoMode() == "direct_frames" {
+		return a.annotateDirectVideo(ctx, input)
+	}
 	framePath := strings.TrimSpace(input.RepresentativeFramePath)
 	if framePath == "" {
 		return embedder.VideoAnnotation{}, fmt.Errorf("representative frame path is required")
@@ -164,20 +171,59 @@ func (a *Annotator) AnnotateVideo(ctx context.Context, input embedder.VideoAnnot
 // annotate runs the primary request and, if the answer does not parse, one
 // compact retry, mirroring the native backend.
 func (a *Annotator) annotate(ctx context.Context, imagePath string, maxSideMultiplier int, req annotation.Request) (annotation.Response, error) {
-	if err := ctx.Err(); err != nil {
+	evidence, err := a.prepareImage(ctx, imagePath, maxSideMultiplier)
+	if err != nil {
 		return annotation.Response{}, err
 	}
-	maxSide := a.cfg.ImageMaxSide
-	if maxSideMultiplier > 1 {
-		maxSide *= maxSideMultiplier
-	}
-	imageBytes, mime, err := a.cfg.PrepareImage(ctx, imagePath, maxSide)
-	if err != nil {
-		return annotation.Response{}, fmt.Errorf("prepare image for remote annotation: %w", err)
-	}
-	dataURL := "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(imageBytes)
+	return a.annotateEvidence(ctx, []contentPart{evidence}, req)
+}
 
-	raw, err := a.complete(ctx, req.SystemPrompt, req.UserPrompt, dataURL, req.MaxTokens)
+func (a *Annotator) prepareImage(ctx context.Context, path string, multiplier int) (contentPart, error) {
+	if err := ctx.Err(); err != nil {
+		return contentPart{}, err
+	}
+	maxSide := a.cfg.ImageMaxSide
+	if multiplier > 1 {
+		maxSide *= multiplier
+	}
+	data, mime, err := a.cfg.PrepareImage(ctx, path, maxSide)
+	if err != nil {
+		return contentPart{}, fmt.Errorf("prepare image for remote annotation: %w", err)
+	}
+	return contentPart{Type: "image_url", ImageURL: &imageURL{URL: "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)}}, nil
+}
+
+func (a *Annotator) annotateDirectVideo(ctx context.Context, input embedder.VideoAnnotationInput) (embedder.VideoAnnotation, error) {
+	// Sort a copy: callers may retain their input, and duplicate image references
+	// are distinct temporal evidence, not candidates for deduplication.
+	input.Frames = append([]embedder.VideoFrameAnnotation(nil), input.Frames...)
+	sort.SliceStable(input.Frames, func(i, j int) bool {
+		if input.Frames[i].TimestampMS == input.Frames[j].TimestampMS {
+			return input.Frames[i].FrameIndex < input.Frames[j].FrameIndex
+		}
+		return input.Frames[i].TimestampMS < input.Frames[j].TimestampMS
+	})
+	req, err := annotation.DirectVideoRequest(input)
+	if err != nil {
+		return embedder.VideoAnnotation{}, err
+	}
+	evidence := make([]contentPart, 0, 2*len(input.Frames))
+	for _, frame := range input.Frames {
+		image, err := a.prepareImage(ctx, frame.Path, input.ImageMaxSideMultiplier)
+		if err != nil {
+			return embedder.VideoAnnotation{}, fmt.Errorf("video frame %d at %dms: %w", frame.FrameIndex, frame.TimestampMS, err)
+		}
+		evidence = append(evidence, contentPart{Type: "text", Text: fmt.Sprintf("frame_index=%d timestamp_ms=%d", frame.FrameIndex, frame.TimestampMS)}, image)
+	}
+	resp, err := a.annotateEvidence(ctx, evidence, req)
+	if err != nil {
+		return embedder.VideoAnnotation{}, err
+	}
+	return resp.VideoAnnotation(), nil
+}
+
+func (a *Annotator) annotateEvidence(ctx context.Context, evidence []contentPart, req annotation.Request) (annotation.Response, error) {
+	raw, err := a.complete(ctx, req.SystemPrompt, req.UserPrompt, evidence, req.MaxTokens)
 	if err != nil {
 		return annotation.Response{}, err
 	}
@@ -186,7 +232,7 @@ func (a *Annotator) annotate(ctx context.Context, imagePath string, maxSideMulti
 		return resp, nil
 	}
 	a.cfg.Logf("remote annotation output did not parse, retrying compact: %v", parseErr)
-	retryRaw, err := a.complete(ctx, req.RetrySystemPrompt, req.RetryUserPrompt, dataURL, req.RetryMaxTokens)
+	retryRaw, err := a.complete(ctx, req.RetrySystemPrompt, req.RetryUserPrompt, evidence, req.RetryMaxTokens)
 	if err != nil {
 		return annotation.Response{}, fmt.Errorf("%v; retry failed: %w", parseErr, err)
 	}
@@ -241,7 +287,7 @@ type apiError struct {
 // response_format fallback. The concurrency slot is deliberately held while
 // backing off: a 429 means the server wants less load, so the slot must not
 // be handed to another job in the meantime.
-func (a *Annotator) complete(ctx context.Context, systemPrompt, userPrompt, imageDataURL string, maxTokens int) (string, error) {
+func (a *Annotator) complete(ctx context.Context, systemPrompt, userPrompt string, evidence []contentPart, maxTokens int) (string, error) {
 	select {
 	case a.sem <- struct{}{}:
 		defer func() { <-a.sem }()
@@ -253,10 +299,7 @@ func (a *Annotator) complete(ctx context.Context, systemPrompt, userPrompt, imag
 		Model: a.cfg.Model,
 		Messages: []chatMessage{
 			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: []contentPart{
-				{Type: "text", Text: userPrompt},
-				{Type: "image_url", ImageURL: &imageURL{URL: imageDataURL}},
-			}},
+			{Role: "user", Content: append([]contentPart{{Type: "text", Text: userPrompt}}, evidence...)},
 		},
 		MaxTokens:   maxTokens,
 		Temperature: a.cfg.Temperature,

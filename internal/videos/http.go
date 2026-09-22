@@ -454,13 +454,15 @@ func Reannotate(ctx context.Context, db *sql.DB, modelID int64, videoID int64) e
 		_ = tx.Rollback()
 		return err
 	}
+	// Keep previous annotations (including a video-only NSFW flag) visible
+	// while the replacement is pending or failed, just like bulk reannotation.
 	if _, err := tx.ExecContext(ctx, `
 UPDATE videos
-SET title = user_title, summary = '', description = '', tags_json = user_tags_json, annotation_updated_at = NULL, reannotate_requested = 1
+SET reannotate_requested = 1
 WHERE id = ?
 `, videoID); err != nil {
 		_ = tx.Rollback()
-		return fmt.Errorf("clear video annotations: %w", err)
+		return fmt.Errorf("request video reannotation: %w", err)
 	}
 
 	if err := mediaops.RequestReannotationJob(ctx, tx, mediaops.ReannotationTarget{Kind: jobkind.AnnotateVideo, VideoID: videoID, ModelID: modelID}); err != nil {
