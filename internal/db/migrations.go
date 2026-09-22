@@ -296,6 +296,14 @@ UPDATE videos SET annotator_tags_json = COALESCE(tags_json, '[]'), annotator_tit
 ALTER TABLE images ADD COLUMN phash INTEGER;
 `,
 	},
+	{
+		// When the image's annotation text last changed, so the UI can
+		// refresh a card in place (videos already have the column).
+		version: 15,
+		sql: `
+ALTER TABLE images ADD COLUMN annotation_updated_at TEXT;
+`,
+	},
 }
 
 func LatestVersion() int {

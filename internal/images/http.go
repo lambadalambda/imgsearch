@@ -32,13 +32,16 @@ type ImageItem struct {
 	IndexState   string `json:"index_state"`
 	CreatedAt    string `json:"created_at"`
 	// CapturedAt is the EXIF capture time when known, else the upload time.
-	CapturedAt      string   `json:"captured_at"`
-	Title           string   `json:"title,omitempty"`
-	Summary         string   `json:"summary,omitempty"`
-	Description     string   `json:"description,omitempty"`
-	FullDescription string   `json:"full_description,omitempty"`
-	Tags            []string `json:"tags,omitempty"`
-	ThumbnailPath   string   `json:"thumbnail_path,omitempty"`
+	CapturedAt string `json:"captured_at"`
+	// AnnotationState is one of queued, annotating, failed, done, none.
+	AnnotationState     string   `json:"annotation_state"`
+	AnnotationUpdatedAt string   `json:"annotation_updated_at"`
+	Title               string   `json:"title,omitempty"`
+	Summary             string   `json:"summary,omitempty"`
+	Description         string   `json:"description,omitempty"`
+	FullDescription     string   `json:"full_description,omitempty"`
+	Tags                []string `json:"tags,omitempty"`
+	ThumbnailPath       string   `json:"thumbnail_path,omitempty"`
 }
 
 type ListResponse struct {
@@ -71,7 +74,7 @@ func listWithOrder(ctx context.Context, db *sql.DB, modelID int64, limit int, of
 	includeNSFWInt := boolToInt(includeNSFW)
 	imageHasNSFWExpr := nsfwsql.TagsJSONHasNSFW("i.tags_json", "tag")
 	orderClause := "i.id DESC"
-	args := []any{modelID, jobkind.EmbedImage, includeNSFWInt}
+	args := []any{modelID, jobkind.EmbedImage, modelID, jobkind.AnnotateImage, includeNSFWInt}
 	if order == listOrderCaptured {
 		orderClause = capturedAtExpr + " DESC, i.id DESC"
 	}
@@ -127,18 +130,26 @@ LIMIT ? OFFSET ?
 }
 
 // imageItemSelect lists the columns scanImageItem expects; it takes the
-// model id and embed job kind as its two arguments.
+// model id and embed job kind, then the model id and annotate job kind, as
+// its four arguments.
 const imageItemSelect = `
 SELECT i.id, i.original_name, i.storage_path, i.thumbnail_path, i.mime_type, i.width, i.height,
 	COALESCE(i.title, ''), COALESCE(i.summary, ''), COALESCE(i.description, ''), COALESCE(i.tags_json, '[]'),
 	COALESCE(j.state, 'pending') AS state,
 	i.created_at,
-	COALESCE(NULLIF(i.captured_at, ''), i.created_at) AS captured_at
+	COALESCE(NULLIF(i.captured_at, ''), i.created_at) AS captured_at,
+	COALESCE(a.state, ''),
+	i.reannotate_requested,
+	COALESCE(i.annotation_updated_at, '')
 FROM images i
 LEFT JOIN index_jobs j
 	ON j.image_id = i.id
 	AND j.model_id = ?
-	AND j.kind = ?`
+	AND j.kind = ?
+LEFT JOIN index_jobs a
+	ON a.image_id = i.id
+	AND a.model_id = ?
+	AND a.kind = ?`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -151,6 +162,8 @@ func scanImageItem(row rowScanner) (ImageItem, error) {
 	var title string
 	var summary string
 	var fullDescription string
+	var annotationJobState string
+	var reannotateRequested bool
 	if err := row.Scan(
 		&item.ImageID,
 		&item.OriginalName,
@@ -166,9 +179,13 @@ func scanImageItem(row rowScanner) (ImageItem, error) {
 		&item.IndexState,
 		&item.CreatedAt,
 		&item.CapturedAt,
+		&annotationJobState,
+		&reannotateRequested,
+		&item.AnnotationUpdatedAt,
 	); err != nil {
 		return ImageItem{}, fmt.Errorf("decode image row: %w", err)
 	}
+	item.AnnotationState = mediaops.AnnotationState(annotationJobState, strings.TrimSpace(fullDescription) != "", reannotateRequested)
 	tags, err := tagutil.DecodeJSON(tagsJSON)
 	if err != nil {
 		return ImageItem{}, fmt.Errorf("decode image tags: %w", err)
@@ -192,7 +209,7 @@ func GetItem(ctx context.Context, db *sql.DB, modelID int64, imageID int64) (Ima
 		return ImageItem{}, fmt.Errorf("images database unavailable")
 	}
 	row := db.QueryRowContext(ctx, imageItemSelect+`
-WHERE i.id = ?`, modelID, jobkind.EmbedImage, imageID)
+WHERE i.id = ?`, modelID, jobkind.EmbedImage, modelID, jobkind.AnnotateImage, imageID)
 	item, err := scanImageItem(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

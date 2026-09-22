@@ -46,6 +46,9 @@ type VideoItem struct {
 	CreatedAt       string   `json:"created_at"`
 	// CapturedAt mirrors CreatedAt: videos carry no capture metadata yet.
 	CapturedAt string `json:"captured_at"`
+	// AnnotationState is one of queued, annotating, failed, done, none.
+	AnnotationState     string `json:"annotation_state"`
+	AnnotationUpdatedAt string `json:"annotation_updated_at"`
 }
 
 type ListResponse struct {
@@ -202,7 +205,15 @@ SELECT v.id,
             AND (COALESCE(aj.total_jobs, 0) = 0 OR COALESCE(aj.done_jobs, 0) = COALESCE(aj.total_jobs, 0)) THEN 'done'
           ELSE 'pending'
         END AS index_state,
-        v.created_at
+        v.created_at,
+        CASE
+          WHEN COALESCE(aj.leased_jobs, 0) > 0 THEN 'leased'
+          WHEN COALESCE(aj.failed_jobs, 0) > 0 THEN 'failed'
+          WHEN COALESCE(aj.total_jobs, 0) > COALESCE(aj.done_jobs, 0) THEN 'pending'
+          ELSE ''
+        END AS annotation_job_state,
+        v.reannotate_requested,
+        COALESCE(v.annotation_updated_at, '')
 FROM videos v
 LEFT JOIN frame_jobs f ON f.video_id = v.id
 LEFT JOIN transcript_jobs tj ON tj.video_id = v.id
@@ -225,6 +236,8 @@ LIMIT ? OFFSET ?
 		var title string
 		var summary string
 		var fullDescription string
+		var annotationJobState string
+		var reannotateRequested bool
 		if err := rows.Scan(
 			&item.VideoID,
 			&item.OriginalName,
@@ -245,10 +258,14 @@ LIMIT ? OFFSET ?
 			&item.PreviewHeight,
 			&item.IndexState,
 			&item.CreatedAt,
+			&annotationJobState,
+			&reannotateRequested,
+			&item.AnnotationUpdatedAt,
 		); err != nil {
 			return ListResponse{}, fmt.Errorf("decode video row: %w", err)
 		}
 		item.CapturedAt = item.CreatedAt
+		item.AnnotationState = mediaops.AnnotationState(annotationJobState, strings.TrimSpace(fullDescription) != "", reannotateRequested)
 		tags, err := tagutil.DecodeJSON(tagsJSON)
 		if err != nil {
 			return ListResponse{}, fmt.Errorf("decode video %d tags: %w", item.VideoID, err)

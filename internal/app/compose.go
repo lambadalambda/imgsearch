@@ -10,6 +10,7 @@ import (
 	"imgsearch/internal/images"
 	"imgsearch/internal/jobs"
 	"imgsearch/internal/live"
+	"imgsearch/internal/mediastatus"
 	"imgsearch/internal/search"
 	"imgsearch/internal/settings"
 	"imgsearch/internal/stats"
@@ -135,6 +136,7 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 	mux.Handle("/api/videos", videoHandler)
 	mux.Handle("/api/videos/", videoHandler)
 	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: opts.Data.DB, ModelID: opts.ModelID}))
+	mux.Handle("/api/media/status", mediastatus.NewHandler(&mediastatus.Handler{DB: opts.Data.DB, ModelID: opts.ModelID}))
 	mux.Handle("/api/duplicates", images.NewDuplicatesHandler(&images.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, DataDir: opts.DataDir}))
 	mux.Handle("/api/live", live.NewHandler(&live.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, Interval: opts.LiveInterval, ImagesLimit: opts.LiveImagesLimit, ImagesOffset: opts.LiveImagesOffset}))
 	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: opts.Data.DB, ModelID: opts.ModelID}))

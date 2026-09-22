@@ -207,7 +207,7 @@ func loadItems(ctx context.Context, db *sql.DB, modelID int64, groups [][]int64)
 			end = len(ids)
 		}
 		part := ids[start:end]
-		args := []any{modelID, jobkind.EmbedImage}
+		args := []any{modelID, jobkind.EmbedImage, modelID, jobkind.AnnotateImage}
 		placeholders := make([]string, len(part))
 		for i, id := range part {
 			placeholders[i] = "?"

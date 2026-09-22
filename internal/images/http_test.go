@@ -944,3 +944,30 @@ WHERE id = 1`); err != nil {
 		t.Fatalf("served during re-annotation: title=%q tags=%s", title, tags)
 	}
 }
+
+func TestListImagesReportsAnnotationState(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`
+INSERT INTO index_jobs(kind, image_id, model_id, state) VALUES ('annotate_image', 1, 1, 'leased'), ('annotate_image', 2, 1, 'pending');
+UPDATE images SET description = 'Text.', annotation_updated_at = '2026-09-22 09:00:00' WHERE id = 3;
+`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	h := NewHandler(&Handler{DB: dbConn, ModelID: 1})
+	req := httptest.NewRequest(http.MethodGet, "/api/images?limit=10", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	var resp ListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v (%d %s)", err, rr.Code, rr.Body.String())
+	}
+	states := map[int64]string{}
+	updated := map[int64]string{}
+	for _, item := range resp.Images {
+		states[item.ImageID] = item.AnnotationState
+		updated[item.ImageID] = item.AnnotationUpdatedAt
+	}
+	if states[1] != "annotating" || states[2] != "queued" || states[3] != "done" || updated[3] != "2026-09-22 09:00:00" {
+		t.Fatalf("annotation states: %v updated: %v", states, updated)
+	}
+}

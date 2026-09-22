@@ -949,7 +949,7 @@ func (q *Queue) storeImageAnnotation(ctx context.Context, imageID int64, annotat
 	text := annotationtext.Build(annotation.Title, annotation.Summary, annotation.Description)
 	if _, err := tx.ExecContext(ctx, `
 UPDATE images
-SET `+mediaops.AnnotatorTitleSQL+`, summary = ?, description = ?
+SET `+mediaops.AnnotatorTitleSQL+`, summary = ?, description = ?, annotation_updated_at = datetime('now')
 WHERE id = ?
 `, text.Title, text.Summary, text.FullDescription, imageID); err != nil {
 		_ = tx.Rollback()
@@ -1007,7 +1007,7 @@ func (q *Queue) completeJob(ctx context.Context, job claimedJob, annotation *emb
 		}
 		if _, err := tx.ExecContext(ctx, `
 UPDATE images
-SET `+mediaops.AnnotatorTitleSQL+`, summary = ?, description = ?`+clearRequest+`
+SET `+mediaops.AnnotatorTitleSQL+`, summary = ?, description = ?, annotation_updated_at = datetime('now')`+clearRequest+`
 WHERE id = ?
 `, text.Title, text.Summary, text.FullDescription, job.ImageID); err != nil {
 			_ = tx.Rollback()
