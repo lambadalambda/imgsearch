@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"imgsearch/internal/annotation"
 )
 
 const (
@@ -33,9 +35,10 @@ type OpenAISettings struct {
 
 // AnnotationSettings selects where descriptions, titles, and tags are produced.
 type AnnotationSettings struct {
-	Backend       string         `json:"backend"`
-	NativeVariant string         `json:"native_variant"`
-	OpenAI        OpenAISettings `json:"openai"`
+	OutputTokens  annotation.OutputTokens `json:"output_tokens"`
+	Backend       string                  `json:"backend"`
+	NativeVariant string                  `json:"native_variant"`
+	OpenAI        OpenAISettings          `json:"openai"`
 }
 
 // OpenAIView is OpenAISettings with the key replaced by a presence flag.
@@ -49,14 +52,16 @@ type OpenAIView struct {
 
 // AnnotationView is the API-safe shape of AnnotationSettings.
 type AnnotationView struct {
-	Backend       string     `json:"backend"`
-	NativeVariant string     `json:"native_variant"`
-	OpenAI        OpenAIView `json:"openai"`
+	OutputTokens  annotation.OutputTokens `json:"output_tokens"`
+	Backend       string                  `json:"backend"`
+	NativeVariant string                  `json:"native_variant"`
+	OpenAI        OpenAIView              `json:"openai"`
 }
 
 // DefaultAnnotation is the built-in native e4b configuration.
 func DefaultAnnotation() AnnotationSettings {
 	return AnnotationSettings{
+		OutputTokens:  annotation.DefaultOutputTokens(),
 		Backend:       BackendNative,
 		NativeVariant: NativeVariantE4B,
 		OpenAI: OpenAISettings{
@@ -69,6 +74,7 @@ func DefaultAnnotation() AnnotationSettings {
 // Normalized trims and lowercases enum fields, strips a trailing slash from
 // the base URL, and fills zero-valued numeric fields with defaults.
 func (s AnnotationSettings) Normalized() AnnotationSettings {
+	s.OutputTokens = s.OutputTokens.Normalized()
 	s.Backend = strings.ToLower(strings.TrimSpace(s.Backend))
 	s.NativeVariant = strings.ToLower(strings.TrimSpace(s.NativeVariant))
 	if s.NativeVariant == "" {
@@ -88,6 +94,11 @@ func (s AnnotationSettings) Normalized() AnnotationSettings {
 
 // Validate reports the first problem with s. Call on Normalized values.
 func (s AnnotationSettings) Validate() error {
+	// Internal callers and old persisted settings may leave budgets at zero.
+	// The API validates explicit values strictly before normalization.
+	if err := s.OutputTokens.Normalized().Validate(); err != nil {
+		return err
+	}
 	switch s.Backend {
 	case BackendNative:
 		switch s.NativeVariant {
@@ -126,6 +137,7 @@ func (o OpenAISettings) validate() error {
 // View masks the API key for responses.
 func (s AnnotationSettings) View() AnnotationView {
 	return AnnotationView{
+		OutputTokens:  s.OutputTokens.Normalized(),
 		Backend:       s.Backend,
 		NativeVariant: s.NativeVariant,
 		OpenAI: OpenAIView{

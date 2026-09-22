@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"imgsearch/internal/annotation"
 	"imgsearch/internal/httputil"
 )
 
@@ -126,13 +127,13 @@ func (h *handler) load(ctx context.Context) (AnnotationSettings, int64, error) {
 }
 
 func (h *handler) update(w http.ResponseWriter, r *http.Request) {
-	req, ok := decodeUpdate(w, r)
-	if !ok {
-		return
-	}
 	current, _, err := h.load(r.Context())
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "load settings failed")
+		return
+	}
+	req, ok := decodeUpdate(w, r, current.OutputTokens)
+	if !ok {
 		return
 	}
 	next := mergeAPIKey(req, current)
@@ -218,13 +219,13 @@ func (h *handler) remoteCandidate(w http.ResponseWriter, r *http.Request) (Annot
 		httputil.WriteJSONError(w, http.StatusServiceUnavailable, "settings backend unavailable")
 		return AnnotationSettings{}, false
 	}
-	req, ok := decodeUpdate(w, r)
-	if !ok {
-		return AnnotationSettings{}, false
-	}
 	current, _, err := h.load(r.Context())
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "load settings failed")
+		return AnnotationSettings{}, false
+	}
+	req, ok := decodeUpdate(w, r, current.OutputTokens)
+	if !ok {
 		return AnnotationSettings{}, false
 	}
 	candidate := mergeAPIKey(req, current)
@@ -235,8 +236,11 @@ func (h *handler) remoteCandidate(w http.ResponseWriter, r *http.Request) (Annot
 	return candidate, true
 }
 
-func decodeUpdate(w http.ResponseWriter, r *http.Request) (updateRequest, bool) {
+func decodeUpdate(w http.ResponseWriter, r *http.Request, currentTokens annotation.OutputTokens) (updateRequest, bool) {
 	var req updateRequest
+	// Decode onto a value copy so omitted fields (including a partial nested
+	// output_tokens object) retain saved values. Explicit zero must not default.
+	req.Annotation.OutputTokens = currentTokens.Normalized()
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSettingsBodyBytes))
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusRequestEntityTooLarge, "settings body too large")
@@ -244,6 +248,10 @@ func decodeUpdate(w http.ResponseWriter, r *http.Request) (updateRequest, bool) 
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON body")
+		return req, false
+	}
+	if err := req.Annotation.OutputTokens.Validate(); err != nil {
+		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return req, false
 	}
 	return req, true

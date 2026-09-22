@@ -41,3 +41,9 @@
 - [ ] [Turn operational states into next steps](issues/clarify-library-health-and-error-recovery.md)
 - [ ] [“Back to library” should go to the Library](issues/make-feed-exit-destination-and-loading-state-explicit.md)
 - [ ] [Retire the legacy UI and require a working Atelier build](issues/retire-legacy-ui-and-require-atelier-build.md)
+
+## Annotation settings
+
+- [ ] [Clarify token-draft validation for remote annotation probes](issues/clarify-token-draft-validation-for-probes.md)
+- [ ] [Align native annotation output capacity with configurable token budgets](issues/align-native-annotation-output-capacity.md)
+- [ ] [Decide explicit null semantics for annotation token settings](issues/define-null-annotation-budget-semantics.md)

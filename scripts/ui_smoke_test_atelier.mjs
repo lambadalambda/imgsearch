@@ -23,6 +23,7 @@
  * `npm run build` does not fail CI.
  */
 
+import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { join, dirname, extname, sep } from "node:path";
@@ -238,11 +239,13 @@ let expectedFetchFailureConsoleMessages = 0;
 
 // Settings stub state (meta/issues/119). PUT merges like the real handler:
 // a blank api_key keeps the stored key, clear_api_key drops it.
+const defaultOutputTokens = { image: 1024, image_retry: 512, video_frame: 320, video_frame_retry: 256, video: 1200, video_retry: 640 };
 const settingsState = {
   version: 0,
   annotation: {
     backend: "native",
     native_variant: "e4b",
+    output_tokens: { ...defaultOutputTokens },
     openai: { base_url: "", api_key_set: false, model: "", timeout_seconds: 120, concurrency: 2 },
   },
   native_variant_locked: false,
@@ -268,6 +271,7 @@ function applySettingsUpdate(body) {
   settingsState.annotation = {
     backend: next.backend || "native",
     native_variant: next.native_variant || "e4b",
+    output_tokens: { ...settingsState.annotation.output_tokens, ...next.output_tokens },
     openai: {
       base_url: (openai.base_url || "").replace(/\/+$/, ""),
       api_key_set: body.clear_api_key ? false : openai.api_key ? true : prev.api_key_set,
@@ -715,6 +719,10 @@ const server = createServer(async (req, res) => {
       settingsPuts.push(body);
       if (body.annotation?.backend === "openai" && !body.annotation.openai?.model) {
         jsonResponse(res, 400, { error: "openai.model is required" });
+        return;
+      }
+      if (Object.values(body.annotation?.output_tokens || {}).some((value) => !Number.isInteger(value) || value < 64 || value > 32768)) {
+        jsonResponse(res, 400, { error: "output tokens must be integers from 64 to 32768" });
         return;
       }
       applySettingsUpdate(body);
@@ -2346,6 +2354,73 @@ try {
     throw new Error("expected Save to be disabled without changes");
   }
 
+  // Shared output limits: accessible groups/labels, unchanged defaults, and
+  // independent draft state. No reset button exists; reload discards drafts.
+  const outputSection = page.getByRole("region", { name: "Output token limits", exact: true });
+  await outputSection.waitFor({ state: "visible", timeout: 5000 });
+  const outputGroups = [
+    ["Images", "image", "image_retry"],
+    ["Video frames", "video_frame", "video_frame_retry"],
+    ["Video summaries", "video", "video_retry"],
+  ];
+  const outputInputs = new Map();
+  for (const [name, first, retry] of outputGroups) {
+    const group = outputSection.getByRole("group", { name, exact: true });
+    outputInputs.set(first, group.getByRole("spinbutton", { name: "First attempt", exact: true }));
+    outputInputs.set(retry, group.getByRole("spinbutton", { name: "Compact retry", exact: true }));
+  }
+  const checkOutputValues = async (expected) => {
+    assert.equal(await outputSection.count(), 1, "one shared output section");
+    assert.equal(await outputSection.getByRole("spinbutton").count(), 6);
+    for (const [key, input] of outputInputs) {
+      assert.ok(await input.isVisible(), `${key} must be visible for the selected backend`);
+      assert.equal(await input.inputValue(), String(expected[key]), `${key} value`);
+    }
+  };
+  const fillOutputValues = async (values) => {
+    for (const [key, input] of outputInputs) await input.fill(String(values[key]));
+  };
+  await checkOutputValues(defaultOutputTokens);
+  for (const [key, input] of outputInputs) {
+    assert.equal(await input.getAttribute("min"), "64", `${key} minimum`);
+    assert.equal(await input.getAttribute("max"), "32768", `${key} maximum`);
+    assert.equal(await input.getAttribute("step"), "1", `${key} integer step`);
+    assert.ok(await input.evaluate((el) => el.required), `${key} is required`);
+    const putsBefore = settingsPuts.length;
+    for (const invalid of ["", "63", "32769", "64.5"]) {
+      await input.fill(invalid);
+      assert.equal(await input.evaluate((el) => el.checkValidity()), false, `${key} rejects ${JSON.stringify(invalid)}`);
+      await page.locator("[data-settings-dirty]").waitFor({ state: "visible" });
+      await page.locator("[data-settings-save]").click();
+      // Let any accidental request finish before checking that validation blocked it.
+      await page.waitForLoadState("networkidle");
+      assert.equal(settingsPuts.length, putsBefore, "invalid draft must not be sent");
+      assert.equal(await input.inputValue(), invalid, "invalid draft must not silently reset");
+    }
+    await input.fill(String(defaultOutputTokens[key]));
+    assert.ok(await page.locator("[data-settings-save]").isDisabled(), "reverting draft restores clean state");
+  }
+  const nativeOutputTokens = { image: 2048, image_retry: 768, video_frame: 448, video_frame_retry: 384, video: 1600, video_retry: 896 };
+  await fillOutputValues(nativeOutputTokens);
+  await page.locator("[data-settings-dirty]").waitFor({ state: "visible" });
+  await page.locator("[data-settings-save]").click();
+  await page.locator("[data-settings-save-notice]").waitFor({ state: "visible" });
+  assert.deepEqual(settingsPuts.at(-1).annotation.output_tokens, nativeOutputTokens, "native save sends all six limits");
+  assert.ok(await page.locator("[data-settings-save]").isDisabled(), "saved draft is clean");
+  await fillOutputValues(defaultOutputTokens);
+  await page.locator("[data-settings-dirty]").waitFor({ state: "visible" });
+  await page.reload({ waitUntil: "networkidle" });
+  await outputSection.waitFor({ state: "visible" });
+  await checkOutputValues(nativeOutputTokens);
+  assert.ok(await page.locator("[data-settings-save]").isDisabled(), "reload discards unsaved limits");
+
+  await page.locator('[data-settings-backend="openai"]').check();
+  await checkOutputValues(nativeOutputTokens);
+  const remoteOutputTokens = { image: 32768, image_retry: 64, video_frame: 640, video_frame_retry: 512, video: 2400, video_retry: 1280 };
+  await fillOutputValues(remoteOutputTokens);
+  for (const input of outputInputs.values()) assert.ok(await input.evaluate((el) => el.checkValidity()), "inclusive bounds are valid");
+  await page.locator('[data-settings-backend="native"]').check();
+  await checkOutputValues(remoteOutputTokens);
   await page.locator('[data-settings-backend="openai"]').check();
   const concurrencyInput = page.getByRole("spinbutton", { name: "Parallel annotations", exact: true });
   await concurrencyInput.fill("1");
@@ -2373,6 +2448,7 @@ try {
   if (!lastPut || lastPut.annotation.backend !== "openai" || lastPut.annotation.openai.api_key !== "sk-smoke" || lastPut.annotation.openai.model !== "vision-a" || lastPut.annotation.openai.concurrency !== 1) {
     throw new Error(`unexpected settings PUT body ${JSON.stringify(lastPut)}`);
   }
+  assert.deepEqual(lastPut.annotation.output_tokens, remoteOutputTokens, "remote save sends all six limits");
   const savedActive = (await page.locator("[data-settings-active]").textContent()) || "";
   if (!/remote · vision-a @ http:\/\/good.example\/v1/.test(savedActive)) {
     throw new Error(`expected active line to reflect the saved remote backend, got ${JSON.stringify(savedActive)}`);
@@ -2408,6 +2484,8 @@ try {
   if ((await concurrencyInput.inputValue()) !== "2") {
     throw new Error("expected two parallel annotations to persist after reload");
   }
+  await checkOutputValues(remoteOutputTokens);
+  assert.deepEqual(settingsPuts.at(-1).annotation.output_tokens, remoteOutputTokens, "unrelated edits preserve output limits");
   // A failed probe is shown inline instead of thrown.
   await page.locator("[data-settings-base-url]").fill("http://bad.example/v1");
   await page.locator("[data-settings-test]").click();

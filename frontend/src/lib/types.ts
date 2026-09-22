@@ -218,10 +218,20 @@ export interface OpenAISettingsView {
   concurrency: number;
 }
 
+export interface AnnotationOutputTokens {
+  image: number;
+  image_retry: number;
+  video_frame: number;
+  video_frame_retry: number;
+  video: number;
+  video_retry: number;
+}
+
 export interface AnnotationSettingsView {
   backend: AnnotationBackend;
   native_variant: NativeVariant;
   openai: OpenAISettingsView;
+  output_tokens: AnnotationOutputTokens;
 }
 
 export interface ActiveAnnotation {
@@ -244,6 +254,8 @@ export interface SettingsResponse {
 /** Request body for PUT /api/settings and the remote probe endpoints. A
  *  blank api_key keeps the stored key. */
 export interface AnnotationSettingsInput {
+  /** Omitted limits preserve stored values for older clients. */
+  output_tokens?: Partial<AnnotationOutputTokens>;
   backend: AnnotationBackend;
   native_variant: NativeVariant;
   openai: {

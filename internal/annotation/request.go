@@ -56,5 +56,17 @@ func VideoRequest(input embedder.VideoAnnotationInput) (Request, error) {
 		RetrySystemPrompt: VideoRetrySystemPrompt,
 		RetryUserPrompt:   VideoRetryUserPrompt,
 		RetryMaxTokens:    VideoRetryMaxTokens,
-	}, nil
+	}.WithOutputTokens(input.OutputTokens), nil
+}
+
+// WithOutputTokens applies a request-local budget without changing prompts or
+// defaults. Omitted pair members retain the annotation kind's existing limit.
+func (r Request) WithOutputTokens(b embedder.AnnotationTokenBudget) Request {
+	if b.Primary != 0 {
+		r.MaxTokens = b.Primary
+	}
+	if b.Retry != 0 {
+		r.RetryMaxTokens = b.Retry
+	}
+	return r
 }

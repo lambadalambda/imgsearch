@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(settings): expose persisted output-token limits for image, video-frame and final-video annotation, with separate first-attempt and compact-retry budgets; native and remote backends apply saved values to subsequent requests without rebuilding models or changing in-flight requests, while preserving existing defaults.
 - feat(upload): add opt-in unattended strict near-duplicate consolidation (`-dedup-strict-images`) for incoming standalone images; keep the highest-resolution direct match, preserve collections and metadata on upgrades, retain superseded files for safety, and report replacement IDs without sweeping existing groups.
 - fix(annotations): make the saved remote “Parallel annotations” setting drive actual concurrent worker jobs independently of embedding batch size; live changes drain active requests safely, native inference stays serialized, and shutdown joins job/lease-renewal work.
 - feat(ui): add Atelier Collections management and mixed-media browsing, with save/remove pickers on cards, lightbox, and Feed; lists survive reloads and deleting them preserves original media.

@@ -131,3 +131,5 @@
 
 - [x] [Automatically consolidate strict duplicate images](issues/automatically-consolidate-strict-duplicates.md)
 - [x] [Audit Atelier UI/UX and deliver a screenshot report](issues/audit-atelier-ui-ux-with-screenshot-report.md)
+
+- [x] [Configure annotation output token budgets in Settings](issues/configure-annotation-output-token-budgets.md)

@@ -110,7 +110,7 @@ func (e *Embedder) AnnotateImageWithOptions(ctx context.Context, imagePath strin
 		e.annotationTemperature,
 		e.annotationSeed,
 		imagePath,
-		annotation.ImageRequest(opts.OriginalName, opts.KnownTags),
+		annotation.ImageRequest(opts.OriginalName, opts.KnownTags).WithOutputTokens(opts.OutputTokens),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -178,7 +178,7 @@ func (e *Embedder) AnnotateVideoFrame(ctx context.Context, imagePath string, opt
 		e.annotationTemperature,
 		e.annotationSeed,
 		imagePath,
-		annotation.VideoFrameRequest(opts.OriginalName, opts.KnownTags),
+		annotation.VideoFrameRequest(opts.OriginalName, opts.KnownTags).WithOutputTokens(opts.OutputTokens),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -305,7 +305,7 @@ func (r *nativeGemmaRuntime) AnnotateImageWithOptions(ctx context.Context, image
 		r.annotationTemperature,
 		r.annotationSeed,
 		imagePath,
-		annotation.ImageRequest(opts.OriginalName, opts.KnownTags),
+		annotation.ImageRequest(opts.OriginalName, opts.KnownTags).WithOutputTokens(opts.OutputTokens),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -380,7 +380,7 @@ func (r *nativeGemmaRuntime) AnnotateVideoFrame(ctx context.Context, imagePath s
 		r.annotationTemperature,
 		r.annotationSeed,
 		imagePath,
-		annotation.VideoFrameRequest(opts.OriginalName, opts.KnownTags),
+		annotation.VideoFrameRequest(opts.OriginalName, opts.KnownTags).WithOutputTokens(opts.OutputTokens),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -480,19 +480,29 @@ func describeAndTagImageWithHandle(
 	imagePath string,
 	req annotation.Request,
 ) (annotation.Response, string, error) {
-	raw, timing, err := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, req.SystemPrompt, req.UserPrompt, req.JSONSchema, req.MaxTokens)
+	return describeAndTagImageWithGenerator(req, func(attempt, systemPrompt, userPrompt, schema string, maxTokens int) (string, error) {
+		raw, timing, err := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, systemPrompt, userPrompt, schema, maxTokens)
+		if err == nil {
+			log.Printf("%s", formatGenerationTimingLog(kind, attempt, imagePath, timing))
+		}
+		return raw, err
+	})
+}
+
+// The request and generator are local values: retry uses the same budget
+// snapshot as the primary attempt, even if settings change during generation.
+func describeAndTagImageWithGenerator(req annotation.Request, generate func(attempt, systemPrompt, userPrompt, schema string, maxTokens int) (string, error)) (annotation.Response, string, error) {
+	raw, err := generate("primary", req.SystemPrompt, req.UserPrompt, req.JSONSchema, req.MaxTokens)
 	if err != nil {
 		return annotation.Response{}, "", err
 	}
-	log.Printf("%s", formatGenerationTimingLog(kind, "primary", imagePath, timing))
 
 	var result annotation.Response
 	if err := annotation.DecodeJSONObject(raw, &result); err != nil {
-		retryRaw, retryTiming, retryErr := generateImageJSONForHandleWithTiming(ctx, handle, imageMaxSide, annotationTemperature, annotationSeed, imagePath, req.RetrySystemPrompt, req.RetryUserPrompt, req.JSONSchema, req.RetryMaxTokens)
+		retryRaw, retryErr := generate("retry", req.RetrySystemPrompt, req.RetryUserPrompt, req.JSONSchema, req.RetryMaxTokens)
 		if retryErr != nil {
 			return annotation.Response{}, raw, fmt.Errorf("%v; retry failed: %w", err, retryErr)
 		}
-		log.Printf("%s", formatGenerationTimingLog(kind, "retry", imagePath, retryTiming))
 		var retryResult annotation.Response
 		if retryDecodeErr := annotation.DecodeJSONObject(retryRaw, &retryResult); retryDecodeErr != nil {
 			return annotation.Response{}, retryRaw, fmt.Errorf("%v; retry decode failed: %w", err, retryDecodeErr)

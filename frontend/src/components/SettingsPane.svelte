@@ -11,6 +11,7 @@
   import { formatCount } from "../lib/utils";
   import type {
     AnnotationBackend,
+    AnnotationOutputTokens,
     AnnotationSettingsInput,
     NativeVariant,
     SettingsResponse,
@@ -25,7 +26,14 @@
     model: string;
     timeoutSeconds: number;
     concurrency: number;
+    outputTokens: { [K in keyof AnnotationOutputTokens]: number | undefined };
   }
+
+  const outputTokenGroups = [
+    { label: "Images", first: "image", retry: "image_retry" },
+    { label: "Video frames", first: "video_frame", retry: "video_frame_retry" },
+    { label: "Video summaries", first: "video", retry: "video_retry" },
+  ] as const;
 
   let loaded = $state<SettingsResponse | null>(null);
   let loadError = $state("");
@@ -37,6 +45,7 @@
     model: "",
     timeoutSeconds: 120,
     concurrency: 2,
+    outputTokens: { image: 1024, image_retry: 512, video_frame: 320, video_frame_retry: 256, video: 1200, video_retry: 640 },
   });
   let clearApiKey = $state(false);
   let saving = $state(false);
@@ -62,6 +71,7 @@
       model: a.openai.model,
       timeoutSeconds: a.openai.timeout_seconds,
       concurrency: a.openai.concurrency,
+      outputTokens: { ...a.output_tokens },
     };
   }
 
@@ -69,6 +79,7 @@
     return {
       backend: state.backend,
       native_variant: state.nativeVariant,
+      output_tokens: { ...state.outputTokens },
       openai: {
         base_url: state.baseUrl,
         api_key: state.apiKey || undefined,
@@ -117,7 +128,11 @@
       form.baseUrl !== base.baseUrl ||
       form.model !== base.model ||
       Number(form.timeoutSeconds) !== base.timeoutSeconds ||
-      Number(form.concurrency) !== base.concurrency
+      Number(form.concurrency) !== base.concurrency ||
+      outputTokenGroups.some(({ first, retry }) =>
+        form.outputTokens[first] !== base.outputTokens[first] ||
+        form.outputTokens[retry] !== base.outputTokens[retry]
+      )
     );
   });
 
@@ -134,7 +149,7 @@
       form = formFromResponse(response);
       clearApiKey = false;
       testResult = null;
-      saveNotice = "Saved. The worker picks this up before its next annotation job.";
+      saveNotice = "Saved. Changes apply to subsequent annotation requests after the worker refreshes its settings.";
     } catch (err) {
       saveError = err instanceof Error ? err.message : String(err);
     } finally {
@@ -386,6 +401,41 @@
           </div>
         </article>
       {/if}
+
+      <section aria-labelledby="settings-output-title" aria-describedby="settings-output-help" class="xl:col-span-2 rounded-card border border-line bg-surface shadow-card p-4 sm:p-5 flex flex-col gap-4">
+        <h3 id="settings-output-title" class="m-0 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted-2">Output token limits</h3>
+        <p id="settings-output-help" class="m-0 text-[12.5px] text-muted-2">
+          Generation/output token limits for both native and remote annotation, not context-window sizes or visual/image tokens.
+          Higher budgets may increase runtime and do not guarantee successful generation. Requests cannot exceed the provider/model context window, which also includes input tokens.
+          Saved limits apply to subsequent requests after the worker refreshes its settings, without changing in-flight requests or retrying old failed jobs.
+          Each limit must be a whole number from 64 to 32768 tokens.
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {#each outputTokenGroups as group (group.first)}
+            <fieldset class="m-0 p-0 border-0 min-w-0">
+              <legend class="mb-3 text-[14px] font-medium text-ink">{group.label}</legend>
+              <div class="flex flex-col gap-3">
+                {#each [{ key: group.first, label: "First attempt" }, { key: group.retry, label: "Compact retry" }] as field (field.key)}
+                  <div>
+                    <label class={labelClass} for={`settings-output-${field.key}`}>{field.label}</label>
+                    <input
+                      id={`settings-output-${field.key}`}
+                      class={inputClass}
+                      type="number"
+                      min="64"
+                      max="32768"
+                      step="1"
+                      required
+                      aria-describedby="settings-output-help"
+                      bind:value={form.outputTokens[field.key]}
+                    />
+                  </div>
+                {/each}
+              </div>
+            </fieldset>
+          {/each}
+        </div>
+      </section>
 
       <div class="xl:col-span-2 flex flex-wrap items-center gap-3 px-1 sm:px-0">
         <button type="submit" class={primaryBtn} data-settings-save disabled={saving || !dirty || remoteIncomplete} aria-busy={saving ? "true" : undefined}>

@@ -21,7 +21,15 @@ type ImageAnnotation struct {
 	Tags        []string
 }
 
+// AnnotationTokenBudget is copied into each request; zero values retain the
+// annotation kind's defaults. It never changes the loaded model configuration.
+type AnnotationTokenBudget struct {
+	Primary int
+	Retry   int
+}
+
 type ImageAnnotationOptions struct {
+	OutputTokens           AnnotationTokenBudget
 	OriginalName           string
 	ImageMaxSideMultiplier int
 	// KnownTags is the library's existing tag vocabulary, most used first;
@@ -50,6 +58,7 @@ type VideoFrameAnnotation struct {
 }
 
 type VideoAnnotationInput struct {
+	OutputTokens            AnnotationTokenBudget
 	OriginalName            string
 	DurationMS              int64
 	RepresentativeFramePath string

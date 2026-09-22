@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"imgsearch/internal/annotation"
 	"imgsearch/internal/app"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/settings"
@@ -33,11 +34,12 @@ type annotatorResolverOptions struct {
 }
 
 type resolvedAnnotator struct {
-	key         string
-	annotator   embedder.ImageAnnotator
-	status      settings.ActiveAnnotation
-	concurrency int
-	owned       bool
+	outputTokens annotation.OutputTokens
+	key          string
+	annotator    embedder.ImageAnnotator
+	status       settings.ActiveAnnotation
+	concurrency  int
+	owned        bool
 }
 
 // annotatorResolver presents a stable embedder.ImageAnnotator to the worker
@@ -110,6 +112,7 @@ func (r *annotatorResolver) resolveLocked(ctx context.Context, force bool) (*res
 		// resolvedAnnotator values are immutable once published because
 		// callers read them outside the lock; swap in a copy instead.
 		refreshed := *r.current
+		refreshed.outputTokens = s.OutputTokens
 		refreshed.status.SettingsVersion = version
 		r.current = &refreshed
 		r.version = version
@@ -138,6 +141,7 @@ func (r *annotatorResolver) resolveLocked(ctx context.Context, force bool) (*res
 		return nil, err
 	}
 	next.key = key
+	next.outputTokens = s.OutputTokens
 	next.status.SettingsVersion = version
 	r.current = next
 	r.lastErr = nil
@@ -300,6 +304,7 @@ func (r *annotatorResolver) AnnotateImageWithOptions(ctx context.Context, path s
 		return embedder.ImageAnnotation{}, err
 	}
 	defer r.release()
+	opts.OutputTokens = current.outputTokens.ImageBudget()
 	if withOptions, ok := current.annotator.(embedder.ImageAnnotatorWithOptions); ok {
 		return withOptions.AnnotateImageWithOptions(ctx, path, opts)
 	}
@@ -312,6 +317,7 @@ func (r *annotatorResolver) AnnotateVideoFrame(ctx context.Context, path string,
 		return embedder.ImageAnnotation{}, err
 	}
 	defer r.release()
+	opts.OutputTokens = current.outputTokens.VideoFrameBudget()
 	if frameAnnotator, ok := current.annotator.(embedder.VideoFrameAnnotator); ok {
 		return frameAnnotator.AnnotateVideoFrame(ctx, path, opts)
 	}
@@ -327,6 +333,7 @@ func (r *annotatorResolver) AnnotateVideo(ctx context.Context, input embedder.Vi
 		return embedder.VideoAnnotation{}, err
 	}
 	defer r.release()
+	input.OutputTokens = current.outputTokens.VideoBudget()
 	videoAnnotator, ok := current.annotator.(embedder.VideoAnnotator)
 	if !ok {
 		return embedder.VideoAnnotation{}, fmt.Errorf("configured annotation backend does not support video annotation")

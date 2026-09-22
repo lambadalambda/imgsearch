@@ -51,6 +51,7 @@ type fakeSwitchAnnotator struct {
 	frameCalls     []string
 	frameOptions   []embedder.ImageAnnotationOptions
 	videoCallCount int
+	videoInputs    []embedder.VideoAnnotationInput
 }
 
 func (f *fakeSwitchAnnotator) Close() error {
@@ -69,8 +70,9 @@ func (f *fakeSwitchAnnotator) AnnotateImageWithOptions(_ context.Context, path s
 	return embedder.ImageAnnotation{Description: "desc", Tags: []string{"tag"}}, nil
 }
 
-func (f *fakeSwitchAnnotator) AnnotateVideo(_ context.Context, _ embedder.VideoAnnotationInput) (embedder.VideoAnnotation, error) {
+func (f *fakeSwitchAnnotator) AnnotateVideo(_ context.Context, input embedder.VideoAnnotationInput) (embedder.VideoAnnotation, error) {
 	f.videoCallCount++
+	f.videoInputs = append(f.videoInputs, input)
 	return embedder.VideoAnnotation{Description: "video", Tags: []string{"video-tag"}}, nil
 }
 
@@ -170,10 +172,10 @@ func TestLlamaModelSwitchboardSupportsBatchAndVideoAnnotator(t *testing.T) {
 	if !ok {
 		t.Fatalf("switching annotator should implement ImageAnnotatorWithOptions")
 	}
-	if _, err := withOpts.AnnotateImageWithOptions(ctx, "img.jpg", embedder.ImageAnnotationOptions{OriginalName: "named.jpg"}); err != nil {
+	if _, err := withOpts.AnnotateImageWithOptions(ctx, "img.jpg", embedder.ImageAnnotationOptions{OriginalName: "named.jpg", OutputTokens: embedder.AnnotationTokenBudget{Primary: 2000, Retry: 700}}); err != nil {
 		t.Fatalf("AnnotateImageWithOptions: %v", err)
 	}
-	if len(annotator.optionsCalls) != 1 || annotator.optionsCalls[0].OriginalName != "named.jpg" {
+	if len(annotator.optionsCalls) != 1 || annotator.optionsCalls[0].OriginalName != "named.jpg" || annotator.optionsCalls[0].OutputTokens != (embedder.AnnotationTokenBudget{Primary: 2000, Retry: 700}) {
 		t.Fatalf("expected options passthrough to underlying annotator")
 	}
 
@@ -181,10 +183,10 @@ func TestLlamaModelSwitchboardSupportsBatchAndVideoAnnotator(t *testing.T) {
 	if !ok {
 		t.Fatalf("switching annotator should implement VideoAnnotator when enabled")
 	}
-	if _, err := videoAnnotator.AnnotateVideo(ctx, embedder.VideoAnnotationInput{RepresentativeFramePath: "frame.jpg", Frames: []embedder.VideoFrameAnnotation{{Description: "frame"}}}); err != nil {
+	if _, err := videoAnnotator.AnnotateVideo(ctx, embedder.VideoAnnotationInput{OutputTokens: embedder.AnnotationTokenBudget{Primary: 3000, Retry: 900}, RepresentativeFramePath: "frame.jpg", Frames: []embedder.VideoFrameAnnotation{{Description: "frame"}}}); err != nil {
 		t.Fatalf("AnnotateVideo: %v", err)
 	}
-	if annotator.videoCallCount != 1 {
+	if annotator.videoCallCount != 1 || annotator.videoInputs[0].OutputTokens != (embedder.AnnotationTokenBudget{Primary: 3000, Retry: 900}) {
 		t.Fatalf("expected video annotation passthrough call count 1, got %d", annotator.videoCallCount)
 	}
 
@@ -192,13 +194,13 @@ func TestLlamaModelSwitchboardSupportsBatchAndVideoAnnotator(t *testing.T) {
 	if !ok {
 		t.Fatalf("switching annotator should implement VideoFrameAnnotator when video is enabled")
 	}
-	if _, err := frameAnnotator.AnnotateVideoFrame(ctx, "frame-1.jpg", embedder.ImageAnnotationOptions{OriginalName: "clip frame"}); err != nil {
+	if _, err := frameAnnotator.AnnotateVideoFrame(ctx, "frame-1.jpg", embedder.ImageAnnotationOptions{OriginalName: "clip frame", OutputTokens: embedder.AnnotationTokenBudget{Primary: 500, Retry: 300}}); err != nil {
 		t.Fatalf("AnnotateVideoFrame: %v", err)
 	}
 	if len(annotator.frameCalls) != 1 || annotator.frameCalls[0] != "frame-1.jpg" {
 		t.Fatalf("expected video frame annotation passthrough, got calls=%v", annotator.frameCalls)
 	}
-	if len(annotator.frameOptions) != 1 || annotator.frameOptions[0].OriginalName != "clip frame" {
+	if len(annotator.frameOptions) != 1 || annotator.frameOptions[0].OriginalName != "clip frame" || annotator.frameOptions[0].OutputTokens != (embedder.AnnotationTokenBudget{Primary: 500, Retry: 300}) {
 		t.Fatalf("expected video frame options passthrough, got %+v", annotator.frameOptions)
 	}
 }
