@@ -13,6 +13,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"imgsearch/internal/db"
+	"imgsearch/internal/stats"
 )
 
 func setupLiveDB(t *testing.T) *sql.DB {
@@ -247,5 +248,34 @@ func TestLiveHandlerRequiresDB(t *testing.T) {
 
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestLiveSnapshotsPreserveRuntimeCapabilities(t *testing.T) {
+	for _, caps := range []stats.Capabilities{stats.UnknownCapabilities(), {Worker: "local", Annotations: "disabled", Transcription: "unconfigured"}} {
+		conn := setupLiveDB(t)
+		server := httptest.NewServer(NewHandler(&Handler{DB: conn, ModelID: 1, Interval: 10 * time.Millisecond, Capabilities: caps}))
+		socket, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+		if err != nil {
+			server.Close()
+			t.Fatal(err)
+		}
+		for i := 0; i < 2; i++ {
+			_ = socket.SetReadDeadline(time.Now().Add(3 * time.Second))
+			var got Snapshot
+			if err := socket.ReadJSON(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Stats.Capabilities != caps {
+				t.Fatalf("snapshot %d: got %+v want %+v", i, got.Stats.Capabilities, caps)
+			}
+			if i == 0 {
+				if _, err := conn.Exec(`UPDATE images SET original_name='changed.jpg' WHERE id=1`); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		_ = socket.Close()
+		server.Close()
 	}
 }

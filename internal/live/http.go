@@ -29,6 +29,7 @@ const (
 )
 
 type Handler struct {
+	Capabilities stats.Capabilities
 	DB           *sql.DB
 	ModelID      int64
 	Interval     time.Duration
@@ -111,6 +112,7 @@ func NewHandler(h *Handler) http.Handler {
 		includeNSFW := httputil.ParseIncludeNSFWQuery(r)
 		h.hubOnce.Do(func() {
 			h.hub = newHub(h.DB, h.ModelID, pushInterval, imagesLimit, imagesOffset)
+			h.hub.capabilities = h.Capabilities
 		})
 
 		closed := make(chan struct{})
@@ -171,11 +173,12 @@ func NewHandler(h *Handler) http.Handler {
 // while the database fingerprint has not moved. Without it, N open tabs cost
 // N full recomputations every interval on the single SQLite connection.
 type hub struct {
-	db       *sql.DB
-	modelID  int64
-	interval time.Duration
-	limit    int
-	offset   int
+	capabilities stats.Capabilities
+	db           *sql.DB
+	modelID      int64
+	interval     time.Duration
+	limit        int
+	offset       int
 
 	mu          sync.Mutex
 	subs        map[*subscriber]struct{}
@@ -323,6 +326,9 @@ func (h *hub) build(ctx context.Context, includeNSFW bool) (*Snapshot, error) {
 	statsResp, err := stats.Collect(ctx, h.db, h.modelID)
 	if err != nil {
 		return nil, err
+	}
+	if h.capabilities.Worker != "" {
+		statsResp.Capabilities = h.capabilities
 	}
 	return &Snapshot{
 		Type:   "snapshot",

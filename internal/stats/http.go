@@ -12,8 +12,21 @@ import (
 )
 
 type Handler struct {
-	DB      *sql.DB
-	ModelID int64
+	DB           *sql.DB
+	ModelID      int64
+	Capabilities Capabilities
+}
+
+// Capabilities describe this runtime configuration, not worker liveness.
+// API-only instances cannot observe a separately configured worker.
+type Capabilities struct {
+	Worker        string `json:"worker"`
+	Annotations   string `json:"annotations"`
+	Transcription string `json:"transcription"`
+}
+
+func UnknownCapabilities() Capabilities {
+	return Capabilities{Worker: "unknown", Annotations: "unknown", Transcription: "unknown"}
 }
 
 type QueueStats struct {
@@ -30,6 +43,8 @@ type QueueStats struct {
 }
 
 type JobKindStats struct {
+	Waiting                  int64 `json:"waiting"`
+	Processing               int64 `json:"processing"`
 	Tracked                  int64 `json:"tracked"`
 	Runnable                 int64 `json:"runnable"`
 	Pending                  int64 `json:"pending"`
@@ -52,11 +67,13 @@ type FailureItem struct {
 }
 
 type Response struct {
-	ImagesTotal           int64      `json:"images_total"`
-	StandaloneImagesTotal int64      `json:"standalone_images_total"`
-	VideoFrameImagesTotal int64      `json:"video_frame_images_total"`
-	VideosTotal           int64      `json:"videos_total"`
-	Queue                 QueueStats `json:"queue"`
+	Capabilities            Capabilities `json:"capabilities"`
+	VideoTranscriptionEmpty int64        `json:"video_transcription_empty"`
+	ImagesTotal             int64        `json:"images_total"`
+	StandaloneImagesTotal   int64        `json:"standalone_images_total"`
+	VideoFrameImagesTotal   int64        `json:"video_frame_images_total"`
+	VideosTotal             int64        `json:"videos_total"`
+	Queue                   QueueStats   `json:"queue"`
 	// Expected totals and missing counts per non-embed job kind. The embed
 	// kind is reported via Queue (which already exposes total/missing).
 	ImageAnnotationExpected    int64                   `json:"image_annotation_expected"`
@@ -75,7 +92,7 @@ func Collect(ctx context.Context, db *sql.DB, modelID int64) (Response, error) {
 		return Response{}, fmt.Errorf("stats database unavailable")
 	}
 
-	resp := Response{Build: buildinfo.Current()}
+	resp := Response{Build: buildinfo.Current(), Capabilities: UnknownCapabilities()}
 
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM images`).Scan(&resp.ImagesTotal); err != nil {
 		return Response{}, fmt.Errorf("count images: %w", err)
@@ -131,6 +148,10 @@ WHERE NOT EXISTS (
 	resp.VideoAnnotationMissing = expectedMinusTracked(resp.VideoAnnotationExpected, jobKinds[jobkind.AnnotateVideo].Tracked)
 	resp.VideoTranscriptionExpected = resp.VideosTotal
 	resp.VideoTranscriptionMissing = expectedMinusTracked(resp.VideoTranscriptionExpected, jobKinds[jobkind.TranscribeVideo].Tracked)
+
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM index_jobs j JOIN videos v ON v.id=j.video_id WHERE j.model_id=? AND j.kind='transcribe_video' AND j.state='done' AND trim(COALESCE(v.transcript_text, ''))=''`, modelID).Scan(&resp.VideoTranscriptionEmpty); err != nil {
+		return Response{}, fmt.Errorf("count empty transcripts: %w", err)
+	}
 
 	rows, err := db.QueryContext(ctx, `
 SELECT j.id,
@@ -211,6 +232,8 @@ func collectJobKindStats(ctx context.Context, db *sql.DB, modelID int64) (map[st
 SELECT
   kind,
   COUNT(*) AS tracked,
+ COALESCE(SUM(CASE WHEN state='pending' OR (state='leased' AND (leased_until IS NULL OR leased_until <= datetime('now'))) THEN 1 ELSE 0 END),0) AS waiting,
+ COALESCE(SUM(CASE WHEN state='leased' AND leased_until > datetime('now') THEN 1 ELSE 0 END),0) AS processing,
   COALESCE(SUM(CASE
     WHEN (run_after IS NULL OR run_after <= datetime('now'))
       AND (
@@ -254,6 +277,8 @@ ORDER BY kind
 		if err := rows.Scan(
 			&kind,
 			&stats.Tracked,
+			&stats.Waiting,
+			&stats.Processing,
 			&stats.Runnable,
 			&stats.Pending,
 			&stats.Leased,
@@ -289,6 +314,9 @@ func NewHandler(h *Handler) http.Handler {
 			return
 		}
 
+		if h.Capabilities.Worker != "" {
+			resp.Capabilities = h.Capabilities
+		}
 		httputil.WriteJSON(w, http.StatusOK, resp)
 	})
 }

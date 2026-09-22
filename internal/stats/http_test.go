@@ -266,3 +266,67 @@ func TestStatsHandlerRejectsInvalidMethod(t *testing.T) {
 		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusMethodNotAllowed)
 	}
 }
+
+func TestHealthMetadataAndLeaseStates(t *testing.T) {
+	conn := setupStatsDB(t)
+	h := NewHandler(&Handler{DB: conn, ModelID: 1, Capabilities: Capabilities{Worker: "local", Annotations: "disabled", Transcription: "unconfigured"}})
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/api/stats", nil))
+	var got Response
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Capabilities.Annotations != "disabled" || got.Capabilities.Transcription != "unconfigured" {
+		t.Fatalf("capabilities: %+v", got.Capabilities)
+	}
+	embed := got.JobKinds["embed_image"]
+	if embed.Waiting != 2 || embed.Processing != 0 {
+		t.Fatalf("expired lease must wait, not process: %+v", embed)
+	}
+	plain, err := Collect(context.Background(), conn, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Capabilities.Worker != "unknown" || plain.Capabilities.Transcription != "unknown" {
+		t.Fatalf("bare collection cannot infer capabilities: %+v", plain.Capabilities)
+	}
+}
+
+func TestEmptyTranscriptCountIsCompletedCurrentModelOnly(t *testing.T) {
+	conn := setupStatsDB(t)
+	if _, err := conn.Exec(`
+ INSERT INTO videos(id,sha256,original_name,storage_path,mime_type,duration_ms,width,height,frame_count,transcript_text)
+ VALUES (1,'v1','empty.mp4','videos/1','video/mp4',1000,640,360,0,'  '),
+ (2,'v2','speech.mp4','videos/2','video/mp4',1000,640,360,0,'recognized speech'),
+ (3,'v3','pending.mp4','videos/3','video/mp4',1000,640,360,0,''),
+ (4,'v4','failed.mp4','videos/4','video/mp4',1000,640,360,0,'');
+ INSERT INTO index_jobs(kind,video_id,model_id,state) VALUES
+ ('transcribe_video',1,1,'done'), ('transcribe_video',2,1,'done'),
+ ('transcribe_video',3,1,'pending'), ('transcribe_video',4,1,'failed'),
+ ('transcribe_video',1,2,'done');
+ `); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Collect(context.Background(), conn, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.VideoTranscriptionEmpty != 1 || got.VideoTranscriptionExpected != 4 || got.JobKinds["transcribe_video"].Done != 2 {
+		t.Fatalf("unexpected transcription counts: %+v", got)
+	}
+}
+
+func TestHealthStatesSeparateDelayedPendingAndLiveLease(t *testing.T) {
+	conn := setupStatsDB(t)
+	if _, err := conn.Exec(`UPDATE index_jobs SET run_after=datetime('now','+10 minutes') WHERE id=12; UPDATE index_jobs SET leased_until=datetime('now','+10 minutes') WHERE id=13`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Collect(context.Background(), conn, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	embed := got.JobKinds["embed_image"]
+	if embed.Waiting != 1 || embed.Processing != 1 || embed.Runnable != 0 {
+		t.Fatalf("incorrect states %+v", embed)
+	}
+}

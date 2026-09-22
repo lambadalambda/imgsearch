@@ -374,6 +374,7 @@ func main() {
 		UploadMaxVideoBytes:        int64(cfg.MaxVideoUploadMB) << 20,
 		UploadTimeout:              cfg.UploadTimeout,
 		VideoTranscriptsOn:         videoTranscriber != nil,
+		WorkerEnabled:              mode.startsWorker(),
 		AnnotationDefaults:         annotationDefaults,
 		AnnotationConnectionTester: testAnnotationConnection(cfg.AnnotatorImageMaxSide),
 		AnnotationModelLister:      listAnnotationModels(cfg.AnnotatorImageMaxSide),

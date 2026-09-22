@@ -189,3 +189,55 @@ func TestRetryFailedHandlerRejectsInvalidMethod(t *testing.T) {
 		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusMethodNotAllowed)
 	}
 }
+
+func TestFilteredRetryOnlyExistingFailedKind(t *testing.T) {
+	for _, tc := range []struct {
+		query           string
+		blocked         bool
+		status, retried int
+	}{
+		{"?kind=embed_image", false, 200, 2},
+		{"?kind=annotate_image", false, 200, 1},
+		{"?kind=transcribe_video", true, 409, 0},
+		{"?kind=typo", false, 400, 0},
+		{"?kind=", false, 400, 0},
+		{"?kind=annotate_image%ZZ", false, 400, 0},
+		{"?kind=annotate_image;", false, 400, 0},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			conn := setupJobsDB(t)
+			h := NewRetryFailedHandler(&RetryFailedHandler{DB: conn, ModelID: 1, BlockedKinds: map[string]bool{"transcribe_video": tc.blocked}})
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, httptest.NewRequest("POST", "/api/jobs/retry-failed"+tc.query, nil))
+			if rr.Code != tc.status {
+				t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+			}
+			var count int
+			if err := conn.QueryRow(`SELECT COUNT(*) FROM index_jobs`).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 5 {
+				t.Fatalf("filtered retry inserted jobs: %d", count)
+			}
+			if err := conn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE state='pending' AND model_id=1`).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != tc.retried {
+				t.Fatalf("retried=%d want=%d", count, tc.retried)
+			}
+			if err := conn.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE id IN (13,14) AND state IN ('done','failed')`).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 2 {
+				t.Fatal("changed done or other-model job")
+			}
+			if tc.status == 200 {
+				var got RetryFailedResponse
+				_ = json.Unmarshal(rr.Body.Bytes(), &got)
+				if got.Enqueued != 0 || got.Retried != int64(tc.retried) {
+					t.Fatalf("response %+v", got)
+				}
+			}
+		})
+	}
+}

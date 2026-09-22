@@ -50,6 +50,8 @@ type RuntimeOptions struct {
 	UploadMaxVideoBytes int64
 	UploadTimeout       time.Duration
 	VideoTranscriptsOn  bool
+	// WorkerEnabled means this process is configured to run the queue. It is not a heartbeat.
+	WorkerEnabled bool
 	// AnnotationDefaults is served by /api/settings until the user saves;
 	// main seeds it from the annotator flags.
 	AnnotationDefaults settings.AnnotationSettings
@@ -131,6 +133,22 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 		Index:          opts.Index,
 	}
 
+	capabilities := stats.UnknownCapabilities()
+	if opts.WorkerEnabled {
+		capabilities.Worker = "local"
+		capability := func(enabled, configured bool) string {
+			if !enabled {
+				return "disabled"
+			}
+			if !configured {
+				return "unconfigured"
+			}
+			return "configured"
+		}
+		capabilities.Annotations = capability(!opts.AnnotationsDisabled, opts.Annotator != nil)
+		capabilities.Transcription = capability(opts.VideoTranscriptsOn, opts.Transcriber != nil)
+	}
+	blocked := func(state string) bool { return state == "disabled" || state == "unconfigured" }
 	mux := http.NewServeMux()
 	mux.Handle(thumbnails.URLPrefix, thumbnails.NewHandler(opts.Data.DB, opts.DataDir))
 	mux.Handle("/media/images/thumbnails", http.NotFoundHandler())
@@ -144,11 +162,11 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 	collectionHandler := collections.NewHandler(&collections.Handler{DB: opts.Data.DB, ModelID: opts.ModelID})
 	mux.Handle("/api/collections", collectionHandler)
 	mux.Handle("/api/collections/", collectionHandler)
-	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: opts.Data.DB, ModelID: opts.ModelID}))
+	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, Capabilities: capabilities}))
 	mux.Handle("/api/media/status", mediastatus.NewHandler(&mediastatus.Handler{DB: opts.Data.DB, ModelID: opts.ModelID}))
 	mux.Handle("/api/duplicates", images.NewDuplicatesHandler(&images.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, DataDir: opts.DataDir}))
-	mux.Handle("/api/live", live.NewHandler(&live.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, Interval: opts.LiveInterval, ImagesLimit: opts.LiveImagesLimit, ImagesOffset: opts.LiveImagesOffset}))
-	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: opts.Data.DB, ModelID: opts.ModelID}))
+	mux.Handle("/api/live", live.NewHandler(&live.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, Capabilities: capabilities, Interval: opts.LiveInterval, ImagesLimit: opts.LiveImagesLimit, ImagesOffset: opts.LiveImagesOffset}))
+	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: opts.Data.DB, ModelID: opts.ModelID, BlockedKinds: map[string]bool{"annotate_image": blocked(capabilities.Annotations), "annotate_video": blocked(capabilities.Annotations), "transcribe_video": blocked(capabilities.Transcription)}}))
 	mux.Handle("/api/jobs/reannotate-all", jobs.NewReannotateAllHandler(&jobs.ReannotateAllHandler{DB: opts.Data.DB, ModelID: opts.ModelID}))
 	settingsHandler := settings.NewHandler(&settings.Handler{
 		DB:                  opts.Data.DB,

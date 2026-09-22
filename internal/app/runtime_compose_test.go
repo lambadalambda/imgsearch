@@ -3,7 +3,12 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"imgsearch/internal/db"
+	"imgsearch/internal/embedder"
+	"imgsearch/internal/stats"
+	"imgsearch/internal/transcribe"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -119,5 +124,67 @@ func TestNewRuntimeRejectsMissingDependencies(t *testing.T) {
 	_, err := NewRuntime(RuntimeOptions{Data: &DataRuntime{}, Index: vectorindex.VectorIndex(nil)})
 	if err == nil {
 		t.Fatal("expected missing dependency error")
+	}
+}
+
+type healthAnnotator struct{}
+
+func (healthAnnotator) AnnotateImage(context.Context, string) (embedder.ImageAnnotation, error) {
+	return embedder.ImageAnnotation{}, nil
+}
+
+type healthTranscriber struct{}
+
+func (healthTranscriber) TranscribeVideo(context.Context, string) (transcribe.Transcript, error) {
+	return transcribe.Transcript{}, nil
+}
+
+func TestRuntimeHealthCapabilities(t *testing.T) {
+	for _, tc := range []struct {
+		name                                   string
+		local, off, on, transcriber, annotator bool
+		annotation, transcription, worker      string
+	}{
+		{"API cannot know worker config", false, true, false, false, false, "unknown", "unknown", "unknown"},
+		{"disabled", true, true, false, false, true, "disabled", "disabled", "local"},
+		{"unconfigured", true, false, true, false, false, "unconfigured", "unconfigured", "local"},
+		{"transcriber configured", true, false, true, true, false, "unconfigured", "configured", "local"},
+		{"annotations configured", true, false, false, false, true, "configured", "disabled", "local"},
+		{"API even with local backends", false, false, true, true, true, "unknown", "unknown", "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn := openDB(t)
+			if err := db.RunMigrations(context.Background(), conn); err != nil {
+				t.Fatal(err)
+			}
+			opts := RuntimeOptions{Data: &DataRuntime{DB: conn}, DataDir: t.TempDir(), ModelID: 1, Embedder: fakeRuntimeEmbedder{}, Index: bruteforce.NewIndex(conn), WorkerEnabled: tc.local, AnnotationsDisabled: tc.off, VideoTranscriptsOn: tc.on}
+			if tc.annotator {
+				opts.Annotator = healthAnnotator{}
+			}
+			if tc.transcriber {
+				opts.Transcriber = healthTranscriber{}
+			}
+			runtime, err := NewRuntime(opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rr := httptest.NewRecorder()
+			runtime.Mux.ServeHTTP(rr, httptest.NewRequest("GET", "/api/stats", nil))
+			var got stats.Response
+			if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			want := stats.Capabilities{Worker: tc.worker, Annotations: tc.annotation, Transcription: tc.transcription}
+			if got.Capabilities != want {
+				t.Fatalf("got %+v want %+v", got.Capabilities, want)
+			}
+			if tc.local && tc.transcription != "configured" {
+				rr = httptest.NewRecorder()
+				runtime.Mux.ServeHTTP(rr, httptest.NewRequest("POST", "/api/jobs/retry-failed?kind=transcribe_video", nil))
+				if rr.Code != 409 {
+					t.Fatalf("disabled retry status %d", rr.Code)
+				}
+			}
+		})
 	}
 }
