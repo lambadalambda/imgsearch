@@ -18,3 +18,7 @@
 *.sqlite-journal
 
 .DS_Store
+
+# Frontend is built inside the image, not copied from the host.
+**/node_modules/
+/internal/webui/atelier/dist/

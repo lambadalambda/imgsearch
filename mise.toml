@@ -25,14 +25,15 @@ run = "cd frontend && npm install --no-audit --no-fund --silent && npm run check
 
 [tasks."test:scripts"]
 description = "Run shell script regression tests"
-run = "scripts/import_fediverse_test.sh && scripts/import_images_4chan_test.sh && scripts/import_images_gif_test.sh && scripts/run_imgsearch_cuda_container_test.sh && scripts/benchmark_ingestion_container_test.sh && scripts/ensure_llama_cpp_native_build_test.sh && scripts/dockerignore_test.sh && scripts/resolve_onnxruntime_lib_test.sh && scripts/mise_serve_tasks_test.sh && scripts/release_packaging_test.sh"
+run = "scripts/atelier_build_test.sh && scripts/import_fediverse_test.sh && scripts/import_images_4chan_test.sh && scripts/import_images_gif_test.sh && scripts/run_imgsearch_cuda_container_test.sh && scripts/benchmark_ingestion_container_test.sh && scripts/ensure_llama_cpp_native_build_test.sh && scripts/dockerignore_test.sh && scripts/resolve_onnxruntime_lib_test.sh && scripts/mise_serve_tasks_test.sh && scripts/release_packaging_test.sh"
 
 [tasks."test:full"]
 description = "Run Go, script, and browser smoke tests"
 run = "mise run test && mise run test:scripts && mise run test:ui"
 
 [tasks."test:ui"]
-description = "Run browser-level UI smoke tests"
+description = "Build Atelier and run browser-level UI smoke tests"
+depends = ["build:frontend"]
 run = "npm test"
 
 [tasks.sqlite-vector-setup]

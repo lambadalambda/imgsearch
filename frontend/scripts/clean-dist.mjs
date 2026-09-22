@@ -3,7 +3,7 @@
  * Pre-build cleanup for the Atelier dist directory.
  *
  * Vite's `emptyOutDir: true` would wipe `.gitkeep`, which we keep so the Go
- * //go:embed directive in internal/webui/atelier/embed.go always has at least
+ * //go:embed directive in internal/webui/http.go always has at least
  * one file at compile time. Instead we manually delete only known build
  * artefacts (index.html and assets/) so stale chunks don't accumulate, while
  * preserving any tracked sentinel files.

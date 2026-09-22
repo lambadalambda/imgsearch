@@ -21,7 +21,7 @@ It runs as a small local web app that:
 2. Extract it.
 3. Linux: run `./run.sh`. The archive bundles `libvips`, the llama.cpp libraries, `sqlite-vector`, and the ONNX Runtime for video transcription; the wrapper sets the library path and enables transcription.
 4. macOS: install `libvips` (for example `brew install vips`), then run `./run.sh` (or `./imgsearch` without video transcription).
-5. Open `http://127.0.0.1:8080/`.
+5. Open `http://127.0.0.1:8080/` for Atelier, the only supported UI (`/legacy` URLs are retired and return 404).
 
 On first run, `imgsearch` downloads the default 2B embedding model into `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/` if it is missing, and also downloads the default Gemma `e4b` annotator files when annotations are enabled.
 
@@ -104,7 +104,7 @@ Cross-platform note:
 
 ### Podman + CUDA (Ubuntu Container)
 
-If you want to run on a CUDA host through Podman while keeping an Ubuntu userspace, use `Containerfile.cuda`.
+If you want to run on a CUDA host through Podman while keeping an Ubuntu userspace, use `Containerfile.cuda`. It builds and validates Atelier in a separate Node stage before compiling Go; no prebuilt host frontend is needed, and Node is not included in the runtime image.
 
 Quick path (host-accessible):
 

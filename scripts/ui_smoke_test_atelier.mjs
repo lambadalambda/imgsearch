@@ -18,35 +18,22 @@
  *      Delete optimistically removes the pin from the masonry.
  *   7. "Load more" pulls the next offset and appends pins.
  *
- * If the embedded Atelier build is missing (placeholder shell), the test
- * skips with exit code 0 so a fresh checkout that has not yet run
- * `npm run build` does not fail CI.
+ * Requires a real Atelier build; missing or incomplete dist is a failure.
  */
 
+import { validateAtelierBuild } from "./validate_atelier_build.mjs";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, dirname, extname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
 const distRoot = process.env.ATELIER_DIST || join(repoRoot, "internal", "webui", "atelier", "dist");
 
-async function exists(path) {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-if (!(await exists(join(distRoot, "index.html")))) {
-  console.log("atelier dist missing; skipping atelier smoke test (run `npm run build` in frontend/)");
-  process.exit(0);
-}
+await validateAtelierBuild(distRoot);
+const { chromium } = await import("playwright");
 
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -848,6 +835,8 @@ try {
   });
 
   await page.goto(`${baseURL}/`, { waitUntil: "networkidle" });
+
+  assert.equal(await page.locator('a[href^="/legacy"]').count(), 0, "no retired shell navigation");
 
   // 1. Library shell renders.
   await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 10000 });

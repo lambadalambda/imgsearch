@@ -40,7 +40,6 @@
 - [ ] [Make Collections feel like saved media](issues/improve-collection-browsing-and-empty-states.md)
 - [ ] [Turn operational states into next steps](issues/clarify-library-health-and-error-recovery.md)
 - [ ] [“Back to library” should go to the Library](issues/make-feed-exit-destination-and-loading-state-explicit.md)
-- [ ] [Retire the legacy UI and require a working Atelier build](issues/retire-legacy-ui-and-require-atelier-build.md)
 
 ## Annotation settings
 

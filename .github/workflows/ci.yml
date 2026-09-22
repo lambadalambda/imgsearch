@@ -61,6 +61,14 @@ jobs:
             exit 1
           fi
 
+      - name: Check and build the Atelier frontend
+        run: |
+          cd frontend
+          npm ci --no-audit --no-fund
+          npm run check
+          npm test
+          npm run build
+
       - name: Vet Go code
         run: go vet ./...
 
@@ -70,14 +78,6 @@ jobs:
       - name: Run Go tests with the race detector
         if: runner.os == 'Linux'
         run: go test -race ./...
-
-      - name: Check and build the Atelier frontend
-        run: |
-          cd frontend
-          npm ci --no-audit --no-fund
-          npm run check
-          npm test
-          npm run build
 
       - name: Run shell script tests
         run: |

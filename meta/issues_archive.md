@@ -135,3 +135,5 @@
 - [x] [Configure annotation output token budgets in Settings](issues/configure-annotation-output-token-budgets.md)
 
 - [x] [Deploy configurable annotation token settings](issues/deploy-configurable-annotation-token-settings.md)
+
+- [x] [Retire the legacy UI and require a working Atelier build](issues/retire-legacy-ui-and-require-atelier-build.md)

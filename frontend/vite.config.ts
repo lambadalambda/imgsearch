@@ -55,7 +55,6 @@ export default defineConfig(({ mode }) => {
         "/api": proxyConfig,
         "/media": proxyConfig,
         "/healthz": proxyConfig,
-        "/legacy": proxyConfig,
       },
     },
   };

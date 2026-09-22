@@ -26,8 +26,7 @@
   /**
    * Similar-video Feed overlay.
    *
-   * Behaviour mirrors the legacy implementation in
-   * `internal/webui/static/app.js` (see meta/issues/add-mobile-adaptive-
+   * Behaviour follows the original Feed design (see meta/issues/add-mobile-adaptive-
    * similar-video-feed-mode.md and meta/issues/add-dynamic-adaptive-
    * batching-to-similar-video-feed.md):
    *

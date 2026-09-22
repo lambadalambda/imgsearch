@@ -16,6 +16,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+node "${repo_root}/scripts/validate_atelier_build.mjs"
+
 "${repo_root}/scripts/ensure_sqlite_vector_ready.sh"
 "${repo_root}/scripts/ensure_llama_cpp_native_build.sh"
 

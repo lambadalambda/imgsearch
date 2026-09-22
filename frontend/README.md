@@ -16,11 +16,10 @@ cd frontend && npm run dev
 ```
 
 The dev server reads `IMGSEARCH_API_KEY` from the repo-root `.env` and forwards
-it on `/api/*`, `/media/*`, and `/legacy` requests so the browser session
+it on `/api/*`, `/media/*`, and `/healthz` requests so the browser session
 authenticates automatically.
 
-Open http://localhost:5173 — the legacy UI is still reachable at
-http://localhost:8081/legacy.
+Open http://localhost:5173 (development) or http://localhost:8081/ (embedded Atelier).
 
 ## Build
 
@@ -30,8 +29,8 @@ cd frontend && npm run build
 
 This builds into `internal/webui/atelier/dist/`, which is embedded by the Go
 server at compile time. After building, run `go build ./...` (or any of the
-`mise run serve*` tasks) and the new SPA is served at `/` with the legacy
-shell at `/legacy`.
+`mise run serve*` tasks) and Atelier is served at `/`. The build validates the
+index and emitted JS/CSS before succeeding. Retired `/legacy` URLs return 404.
 
 ## Layout
 
@@ -41,6 +40,9 @@ shell at `/legacy`.
   `types.ts`, `utils.ts`
 - `src/app.css` — Tailwind v4 import + Atelier design tokens via `@theme`
 
-The MVP scope covers library browse, text search, find similar, and a
-lightbox. Feed mode, upload, bulk select/delete, NSFW flagging, and the tags
-explorer still live in the legacy UI for now.
+Atelier supports library/search, lightbox and media actions, Feed, upload,
+settings and statistics. Legacy-only bulk-delete UI, tags explorer and the
+live-connection panel are retired, not pending parity work. See
+[frontend architecture](../docs/frontend.md) for feature dispositions and delivery
+gates. Browser smoke (`npm test` at the repo root) requires built assets and fails
+on missing/incomplete dist; `mise run test:ui` builds them first.

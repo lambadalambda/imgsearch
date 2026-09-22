@@ -1,12 +1,17 @@
 package webui
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"testing/fstest"
+
+	"imgsearch/internal/httputil"
 )
 
 func TestRootServesAtelierShell(t *testing.T) {
@@ -30,7 +35,7 @@ func TestRootServesAtelierShell(t *testing.T) {
 		t.Fatalf("expected imgsearch branding in atelier shell, got body=%s", body)
 	}
 	if strings.Contains(body, "id=\"upload-form\"") {
-		t.Fatalf("expected legacy upload form not to render at root; legacy lives at /legacy")
+		t.Fatalf("expected no legacy upload form at root")
 	}
 }
 
@@ -52,81 +57,109 @@ func TestAtelierAssetsRouteIsRegistered(t *testing.T) {
 	}
 }
 
-func TestLegacyShellIsAvailableAtLegacyPath(t *testing.T) {
+func TestBuiltAtelierEmittedAssets(t *testing.T) {
+	assets, err := fs.Sub(atelierFiles, "atelier/dist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, built := readAtelierIndex(assets)
+	if !built {
+		t.Skip("source-only checkout; build:frontend and CI exercise the embedded build")
+	}
+	urls := regexp.MustCompile(`(?:src|href)="(/assets/[^" ]+)"`).FindAllSubmatch(index, -1)
+	if len(urls) < 2 {
+		t.Fatalf("expected emitted JS and CSS in index: %s", index)
+	}
 	h := NewHandler(t.TempDir())
-
-	req := httptest.NewRequest(http.MethodGet, "/legacy", nil)
+	for _, match := range urls {
+		url := string(match[1])
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, url, nil))
+		if rr.Code != http.StatusOK || rr.Body.Len() == 0 {
+			t.Fatalf("asset %s: status=%d bytes=%d", url, rr.Code, rr.Body.Len())
+		}
+		ct := rr.Header().Get("Content-Type")
+		if strings.HasSuffix(url, ".js") && !strings.Contains(ct, "javascript") || strings.HasSuffix(url, ".css") && !strings.Contains(ct, "text/css") {
+			t.Fatalf("asset %s: content-type=%q", url, ct)
+		}
+	}
+	// The favicon endpoint must not fall through to the HTML shell, whether or
+	// not the current frontend supplies an icon.
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: got=%d want=%d", rr.Code, http.StatusOK)
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
+	_, err = fs.Stat(assets, "favicon.ico")
+	want := http.StatusOK
+	if err != nil {
+		want = http.StatusNotFound
 	}
-	if ct := rr.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Fatalf("expected html content type, got %q", ct)
-	}
-	body := rr.Body.String()
-	if !strings.Contains(body, "<title>imgsearch</title>") {
-		t.Fatalf("expected legacy html title, got body=%s", body)
-	}
-	if !strings.Contains(body, "id=\"upload-form\"") {
-		t.Fatalf("expected legacy upload form to render at /legacy")
-	}
-	if !strings.Contains(body, "id=\"image-lightbox\"") {
-		t.Fatalf("expected legacy lightbox to render at /legacy")
-	}
-	if !strings.Contains(body, "id=\"video-player\"") {
-		t.Fatalf("expected legacy video player to render at /legacy")
-	}
-	if !strings.Contains(body, "/legacy/assets/styles.css") || !strings.Contains(body, "/legacy/assets/app.js") {
-		t.Fatalf("expected legacy index to load assets from /legacy/assets/* so they resolve under the legacy mount")
+	if rr.Code != want {
+		t.Fatalf("favicon: got=%d want=%d", rr.Code, want)
 	}
 }
 
-func TestLegacyAssetsAreServed(t *testing.T) {
+func TestRetiredLegacyPathsReturnNotFound(t *testing.T) {
 	h := NewHandler(t.TempDir())
-
-	req := httptest.NewRequest(http.MethodGet, "/legacy/assets/app.js", nil)
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusOK, rr.Body.String())
-	}
-	body := rr.Body.String()
-	if !strings.Contains(body, "loadMediaCollection") || !strings.Contains(body, "endpoint: '/api/images'") {
-		t.Fatalf("expected legacy app.js content under /legacy/assets/")
-	}
-	if !strings.Contains(body, "openLightbox") {
-		t.Fatalf("expected legacy lightbox helper")
-	}
-	if !strings.Contains(body, "openVideoPlayer") {
-		t.Fatalf("expected legacy video player helper")
-	}
-	if !strings.Contains(body, "fetch(`/api/${kind === 'video' ? 'videos' : 'images'}/${id}`") {
-		t.Fatalf("expected legacy delete media workflow")
+	for _, path := range []string{"/legacy", "/legacy/", "/legacy/index.html", "/legacy/anything", "/legacy/assets/app.js", "/legacy/assets/styles.css", "/assets/app.js", "/assets/styles.css"} {
+		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, httptest.NewRequest(method, path, nil))
+			if rr.Code != http.StatusNotFound {
+				t.Errorf("%s %s: got=%d want=404", method, path, rr.Code)
+			}
+		}
 	}
 }
 
-func TestLegacyStylesAreServed(t *testing.T) {
-	h := NewHandler(t.TempDir())
+func TestMissingAtelierExplainsBuildWithoutLegacyLink(t *testing.T) {
+	index, built := readAtelierIndex(fstest.MapFS{})
+	if built || !strings.Contains(string(index), "mise run build:frontend") || strings.Contains(string(index), "/legacy") {
+		t.Fatalf("unexpected developer fallback: built=%v body=%s", built, index)
+	}
+}
 
-	req := httptest.NewRequest(http.MethodGet, "/legacy/assets/styles.css", nil)
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusOK, rr.Body.String())
+// Exercise the real shell/media handler with the production middleware order.
+func TestAtelierRootBootstrapsAuthenticatedMedia(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dataDir, "videos"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	body := rr.Body.String()
-	if !strings.Contains(body, "--radius-panel:") || !strings.Contains(body, "--radius-control:") {
-		t.Fatalf("expected legacy radius tokens in styles")
+	data := append([]byte("\x00\x00\x00\x18ftypisom\x00\x00\x00\x01isomiso2"), make([]byte, 600)...)
+	if err := os.WriteFile(filepath.Join(dataDir, "videos", "probe"), data, 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(body, ".tag-cloud-chip") || !strings.Contains(body, ".search-tag-suggestions") {
-		t.Fatalf("expected legacy tag cloud + suggestion styling rules")
+	mux := http.NewServeMux()
+	mux.Handle("/", NewHandler(dataDir))
+	mux.HandleFunc("/api/probe", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	h := httputil.NewAPIKeyCookieMiddleware("secret")(httputil.NewAPIAuthMiddleware("secret")(mux))
+	root := httptest.NewRecorder()
+	h.ServeHTTP(root, httptest.NewRequest(http.MethodGet, "/", nil))
+	cookies := root.Result().Cookies()
+	if root.Code != http.StatusOK || len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].Path != "/" {
+		t.Fatalf("root bootstrap failed: status=%d cookies=%v", root.Code, cookies)
 	}
-	if !strings.Contains(body, ".thumb-actions") || !strings.Contains(body, ".thumb-match-badge") {
-		t.Fatalf("expected legacy thumbnail overlay rules")
+	for _, path := range []string{"/api/probe", "/media/videos/probe"} {
+		anon := httptest.NewRecorder()
+		h.ServeHTTP(anon, httptest.NewRequest(http.MethodGet, path, nil))
+		if anon.Code != http.StatusUnauthorized || anon.Header().Get("Set-Cookie") != "" {
+			t.Fatalf("anonymous %s: %d", path, anon.Code)
+		}
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(cookies[0])
+		req.Header.Set("Range", "bytes=0-1")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if path == "/api/probe" {
+			if rr.Code != http.StatusNoContent {
+				t.Fatalf("cookie API status: %d", rr.Code)
+			}
+		} else if rr.Code != http.StatusPartialContent || !strings.HasPrefix(rr.Header().Get("Content-Type"), "video/mp4") || rr.Body.Len() != 2 {
+			t.Fatalf("cookie media range: status=%d headers=%v body=%q", rr.Code, rr.Header(), rr.Body.String())
+		}
+	}
+	retired := httptest.NewRecorder()
+	h.ServeHTTP(retired, httptest.NewRequest(http.MethodGet, "/legacy", nil))
+	if retired.Code != http.StatusNotFound {
+		t.Fatalf("retired path with auth chain: %d", retired.Code)
 	}
 }
 

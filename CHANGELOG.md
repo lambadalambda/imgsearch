@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(ui)!: retire the legacy shell; `/legacy` and its assets now return 404, and Atelier is the only supported UI. Remove legacy navigation/proxy/smoke and retire its bulk-delete UI, tags explorer and live-connection panel while retaining shared APIs, root-cookie bootstrap and protected media serving. Retry-failures improvements remain separate UX-08 work.
+- fix(build): reject missing, placeholder or incomplete Atelier assets in frontend builds, release packaging (including skip-build mode) and browser smoke; build Atelier from source inside the CUDA image and run CI Go tests after frontend build.
 - feat(settings): expose persisted output-token limits for image, video-frame and final-video annotation, with separate first-attempt and compact-retry budgets; native and remote backends apply saved values to subsequent requests without rebuilding models or changing in-flight requests, while preserving existing defaults.
 - feat(upload): add opt-in unattended strict near-duplicate consolidation (`-dedup-strict-images`) for incoming standalone images; keep the highest-resolution direct match, preserve collections and metadata on upgrades, retain superseded files for safety, and report replacement IDs without sweeping existing groups.
 - fix(annotations): make the saved remote “Parallel annotations” setting drive actual concurrent worker jobs independently of embedding batch size; live changes drain active requests safely, native inference stays serialized, and shutdown joins job/lease-renewal work.

@@ -1,17 +1,9 @@
 # Frontend architecture
 
-The web UI is in transition. Two shells coexist:
-
-- **Atelier** at `/` — the new Svelte 5 + Tailwind v4 + Vite SPA, source in
-  `frontend/`, build output embedded into the Go binary at
-  `internal/webui/atelier/dist/`.
-- **Legacy** at `/legacy` — the original `internal/webui/static/`
-  vanilla-JS shell. Kept as a fallback for unported features (bulk
-  select/delete, tags explorer, ops menu, live status) and for
-  one-click rollback if the new SPA misbehaves.
-
-Both shells share the same backend API at `/api/*` and media serving at
-`/media/*`.
+**Atelier** at `/` is the only supported shell: Svelte 5 + Tailwind v4 +
+Vite, with source in `frontend/` and build output embedded into the Go binary
+from `internal/webui/atelier/dist/`. It uses the shared `/api/*` and `/media/*`
+routes. Retired `/legacy` and `/legacy/*` URLs return **404**, not redirects.
 
 ## Atelier scope (MVP)
 
@@ -47,13 +39,18 @@ The first cut of the Atelier SPA covers:
   as `200` with `ok: false` so the browser console stays clean), and
   queues `POST /api/jobs/reannotate-all` behind the shared `ConfirmDialog`
 
-The following still live in `/legacy` for now and will be ported in
-follow-ups:
+## Legacy feature disposition
 
-- Bulk select / delete
-- Tags explorer page
-- Ops menu (retry stuck, refresh, queue stats)
-- Live update connection badge
+Retirement is not a parity project:
+
+- **Retired:** the legacy-only bulk-select/delete-all UI, dedicated tags explorer,
+  and live-connection panel/badge. Existing Atelier per-item deletion, tag chips,
+  tag search, live counts and media-status updates remain.
+- **Retained:** backend bulk-delete, tag, live-update and job-management APIs;
+  shared authentication, root browser-cookie bootstrap and protected media serving.
+- **Separate follow-up:** safe retry-failures controls and actionable health states
+  belong to [UX-08](../meta/issues/clarify-library-health-and-error-recovery.md).
+  No automatic port of the old retry-stuck/ops menu is promised here.
 
 ## Build pipeline
 
@@ -83,6 +80,28 @@ file at compile time even on a fresh checkout.
 The Go server (`internal/webui/http.go`) embeds the dist via
 `//go:embed all:atelier/dist`. If `index.html` is missing (fresh clone, no
 build) it serves a friendly placeholder explaining how to run the build.
+This fallback exists only for source-only development; it has no alternate-shell
+link. A plain `go build` is not a frontend build or a supported release recipe.
+
+`npm run build` validates its output using `scripts/validate_atelier_build.mjs`.
+The shared, dependency-free Node gate requires an app mount, emitted module JS
+and CSS, and nonempty files for every `/assets/` reference in the index. It rejects
+missing dist, the developer placeholder, the source index, and incomplete output.
+It is a structural check; Playwright still verifies that the app actually runs.
+
+Delivery paths:
+
+- CI builds/checks Atelier **before** Go tests, so tests exercise freshly embedded
+  assets, then runs the script regressions and (on Linux) browser smoke.
+- `scripts/package_release.sh` builds and validates before Go compilation.
+  `IMGSEARCH_SKIP_FRONTEND_BUILD=1` reuses a complete dist but never skips
+  validation; Node 24+ is required even with that option.
+- `Containerfile.cuda` builds Atelier in a Node 24 stage, validates it, then copies
+  it into the Go build stage. Host dist and `node_modules` are excluded from the
+  build context; Node is not present in the runtime image.
+- `mise run build:frontend` and the normal `serve*` entry points build/validate.
+  `mise run test:ui` builds first; direct `npm test` / `npm run test:atelier` require
+  an existing complete build and **fail**, rather than skip, if it is absent.
 
 ## Dev workflow
 
@@ -98,7 +117,7 @@ mise run dev:frontend              # serves at :5173, proxies /api, /media to :8
 ```
 
 The Vite dev server reads `IMGSEARCH_API_KEY` from the repo-root `.env` and
-forwards it on `/api/*`, `/media/*`, and `/legacy` requests, so the dev
+forwards it on `/api/*`, `/media/*`, and `/healthz` requests, so the dev
 session authenticates without manual cookie/header setup.
 
 ## Production-like testing
@@ -106,7 +125,7 @@ session authenticates without manual cookie/header setup.
 ```bash
 mise run build:frontend            # rebuilds dist
 # Go autoreload picks up the new embedded assets within a few seconds.
-# Open http://localhost:8081/ for Atelier; http://localhost:8081/legacy for the legacy UI.
+# Open http://localhost:8081/ for Atelier.
 ```
 
 ## Annotation parallelism
@@ -117,19 +136,16 @@ Changes apply without restarting after the next settings check and any required 
 
 ## Tests
 
-- `scripts/ui_smoke_test.mjs` — legacy SPA smoke tests, now pointed at
-  `/legacy` and serving the legacy index/assets in the same in-process node
-  server.
-- `scripts/ui_smoke_test_atelier.mjs` — minimal Atelier smoke test that
-  boots an in-process API stub and walks: library renders → text search →
-  find similar → lightbox open/close. Skips with success when
-  `internal/webui/atelier/dist/index.html` is missing so a fresh clone does
-  not fail before the first frontend build.
-- `npm test` runs both. Individual: `npm run test:legacy`,
-  `npm run test:atelier`.
-- `mise run check:frontend` runs `svelte-check` for type/lint feedback on
-  the SPA.
-- `go test ./internal/webui` covers the Atelier/legacy routing and embed.
+- `scripts/ui_smoke_test_atelier.mjs` boots an in-process API stub and exercises
+  Atelier in Playwright, including library/search, tags, Feed, media actions,
+  upload and settings. Run with `npm test`, `npm run test:ui` or
+  `npm run test:atelier` after building; `mise run test:ui` builds first.
+- `scripts/atelier_build_test.sh` covers invalid/missing dist, smoke failure,
+  release skip-build validation and delivery wiring; included in `test:scripts`.
+- `mise run check:frontend` runs `svelte-check` for type/lint feedback.
+- `go test ./internal/webui ./internal/httputil` covers retired routes, developer
+  fallback, emitted assets when built, root-cookie bootstrap, API/media auth,
+  video MIME/ranges, and media directory/path protections. CI builds first.
 
 ## Decisions
 
@@ -141,12 +157,9 @@ Changes apply without restarting after the next settings check and any required 
 - **Tailwind v4 with `@theme`** for design tokens: utility classes like
   `bg-bg`, `text-ink`, `border-line` resolve into the Atelier palette
   without a separate JS config file.
-- **Two embed declarations** rather than versioned URL prefixes: legacy and
-  Atelier ship together in the same Go binary so we can roll back to the
-  legacy UI by visiting `/legacy` without a redeploy.
-- **MVP first**: the SPA does *not* yet replicate bulk select, the tags
-  explorer, the ops menu, or the live-update connection badge. Each of
-  those is a separate follow-up issue.
+- **One embedded shell:** Atelier is the only UI. Rollbacks mean restoring a
+  previous binary, not following a legacy escape link. See the feature
+  dispositions above; removal does not remove shared backend capabilities.
 - **Upload as a modal** rather than a route: dragging files into the page
   feels lighter than a navigation, and a modal keeps the masonry context
   visible behind the dimmed backdrop. After a successful batch we bump
@@ -169,7 +182,7 @@ Changes apply without restarting after the next settings check and any required 
   frame IDs so the backend can build a temporary adapted query vector;
   stored embeddings and user profiles are never mutated. Vector feedback uses
   a capped recent-ID window rather than the tag-score decay curve; the backend
-  keeps its influence bounded with a normalized delta cap. Both shells also
-  rerank already-buffered future items after tag feedback starting at
+  keeps its influence bounded with a normalized delta cap. Atelier also
+  reranks already-buffered future items after tag feedback starting at
   `currentIndex + 2`, so the current and immediately preloaded next item stay
   stable.

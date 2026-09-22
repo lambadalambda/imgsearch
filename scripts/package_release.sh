@@ -159,6 +159,8 @@ rm -rf "${pkg_root}"
 mkdir -p "${pkg_root}/lib" "${pkg_root}/models" "${pkg_root}/tools/sqlite-vector"
 
 build_atelier_frontend
+# Skipping compilation is allowed only for an already complete build.
+node "${repo_root}/scripts/validate_atelier_build.mjs"
 
 (
   cd "${repo_root}"

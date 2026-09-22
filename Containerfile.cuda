@@ -7,6 +7,14 @@ ARG LLAMA_BUILD_JOBS=8
 ARG GCC_VERSION=12
 ARG VIPS_VERSION=8.18.0
 
+# Build from source; never rely on a host-generated dist or node_modules.
+FROM docker.io/library/node:24-bookworm-slim AS frontend
+WORKDIR /src/frontend
+COPY frontend/ ./
+COPY scripts/validate_atelier_build.mjs /src/scripts/validate_atelier_build.mjs
+RUN npm ci --no-audit --no-fund
+RUN npm run build
+
 FROM docker.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS build
 
 ARG GO_VERSION
@@ -55,6 +63,7 @@ ENV PKG_CONFIG_PATH=/usr/local/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkg
 
 WORKDIR /src
 COPY . .
+COPY --from=frontend /src/internal/webui/atelier/dist/ /src/internal/webui/atelier/dist/
 
 RUN if [ ! -f "deps/llama.cpp/CMakeLists.txt" ]; then \
       echo "missing deps/llama.cpp submodule; run: git submodule update --init --recursive deps/llama.cpp" >&2; \

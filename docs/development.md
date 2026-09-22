@@ -44,8 +44,8 @@ Frontend unit tests:
 Browser UI smoke tests:
 - `npm install` if Node dependencies are not installed yet.
 - `npm run playwright:install` if Chromium is not installed for Playwright yet.
-- `mise run "test:ui"` (or `npm test`) runs the browser smoke suite against a local mocked server.
-- Browser tests are intentionally separate from `mise run test`, which remains the fast Go test suite.
+- `mise run "test:ui"` builds Atelier and runs the browser smoke suite against a local mocked server. Direct root `npm test` runs the same smoke but requires an existing complete frontend build.
+- Browser tests are intentionally separate from `mise run test`, which runs Go and frontend unit tests.
 
 Script regression tests:
 - `mise run "test:scripts"` runs shell-script portability tests for imports, CUDA container entrypoint defaults, and ONNX Runtime library resolution.
@@ -206,4 +206,4 @@ The default UI at `/` is the Atelier SPA (Svelte 5 + Tailwind 4, embedded from `
 - statistics pane with queue, annotation, and build info; live updates over WebSocket
 - settings page for the annotation backend (native `e4b`/`26b` or an OpenAI-compatible server), actual remote-job parallelism via **Parallel annotations**, and "Re-annotate all"
 
-The legacy single-file shell stays at `/legacy` for features not yet ported (bulk select, ops menu).
+Atelier is the only supported shell; retired `/legacy` URLs return 404. Release and CUDA container builds require validated Atelier assets. Legacy-only bulk-delete UI, tags explorer and the live-connection panel are retired; retry-failures UX stays a separate follow-up. See [frontend architecture](frontend.md) for build gates and dispositions.

@@ -11,9 +11,6 @@ import (
 	"strings"
 )
 
-//go:embed static/*
-var legacyFiles embed.FS
-
 //go:embed all:atelier/dist
 var atelierFiles embed.FS
 
@@ -29,35 +26,22 @@ const atelierMissingMessage = `<!doctype html>
   h1 { font: 600 28px/1.15 "Iowan Old Style", "Source Serif Pro", Georgia, serif; margin: 0 0 12px; letter-spacing: -0.012em; }
   p { margin: 0 0 12px; color: #6c645a; }
   code { background: #fff; border: 1px solid #e7e0d2; border-radius: 6px; padding: 1px 6px; font: 13px/1 ui-monospace, "SF Mono", Menlo, monospace; }
-  a { color: #c2492a; }
 </style>
 </head>
 <body>
   <main>
     <h1>Atelier frontend not built yet</h1>
     <p>Run <code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code> (or <code>mise run build:frontend</code>) to populate <code>internal/webui/atelier/dist</code>.</p>
-    <p>The legacy UI is still available at <a href="/legacy">/legacy</a>.</p>
   </main>
 </body>
 </html>
 `
 
-// NewHandler returns the HTTP handler for the imgsearch web shell. The new
-// Atelier SPA is served at "/" (with a tiny "not built" fallback when the
-// embedded dist is empty), and the legacy single-file UI is preserved at
-// "/legacy" so unported features remain reachable while we port them.
+// NewHandler serves the Atelier SPA at "/", with a build-help placeholder
+// for source-only development when the embedded dist is empty.
 func NewHandler(dataDir string) http.Handler {
 	if dataDir == "" {
 		dataDir = "."
-	}
-
-	legacyAssets, err := fs.Sub(legacyFiles, "static")
-	if err != nil {
-		panic("webui legacy assets unavailable: " + err.Error())
-	}
-	legacyIndex, err := fs.ReadFile(legacyAssets, "index.html")
-	if err != nil {
-		panic("webui legacy index unavailable: " + err.Error())
 	}
 
 	atelierAssets, err := fs.Sub(atelierFiles, "atelier/dist")
@@ -80,11 +64,6 @@ func NewHandler(dataDir string) http.Handler {
 	mux.Handle("/media/", http.StripPrefix("/media", mediaMux))
 	mux.Handle("/media", http.NotFoundHandler())
 
-	// Legacy UI at /legacy (assets at /legacy/assets/*).
-	mux.Handle("/legacy/assets/", http.StripPrefix("/legacy/assets/", http.FileServer(http.FS(legacyAssets))))
-	mux.HandleFunc("/legacy", legacyIndexHandler(legacyIndex))
-	mux.HandleFunc("/legacy/", legacyIndexHandler(legacyIndex))
-
 	// Atelier SPA at /. Vite emits files into dist/assets/, so we serve the
 	// embedded FS at its root and let the URL path resolve to assets/* inside.
 	mux.Handle("/assets/", http.FileServer(http.FS(atelierAssets)))
@@ -106,26 +85,11 @@ func readAtelierIndex(atelierAssets fs.FS) ([]byte, bool) {
 
 func atelierIndexHandler(index []byte, _ bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.Header().Set("Allow", "GET, HEAD")
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		// Only serve index for "/" — anything else under the SPA root falls through to 404,
-		// which is fine because we use query-string routing rather than path-based history.
+		// Query-string routing needs the shell only at the exact root.
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(index)
-	}
-}
-
-func legacyIndexHandler(index []byte) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

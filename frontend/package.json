@@ -6,7 +6,7 @@
   "description": "Atelier UI for imgsearch (Svelte 5 + Tailwind v4 + Vite).",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/clean-dist.mjs && vite build",
+    "build": "node scripts/clean-dist.mjs && vite build && node ../scripts/validate_atelier_build.mjs",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run"

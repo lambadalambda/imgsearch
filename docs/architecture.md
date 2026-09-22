@@ -17,7 +17,7 @@ MVP design priorities:
 ## Components
 
 ### 1) Web Server (Go)
-- Serves the embedded Atelier SPA at `/` (and the legacy shell at `/legacy`).
+- Serves the embedded Atelier SPA at `/` as the only supported shell; retired `/legacy` URLs return 404.
 - Handles upload, list, search, stats, settings, and live WebSocket endpoints under `/api/`.
 - Serves stored media under `/media/images/` and `/media/videos/`, behind the same auth as `/api/`.
 

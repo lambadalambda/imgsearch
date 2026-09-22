@@ -1,9 +1,7 @@
 /**
  * Session-local feedback model for the similar-video Feed.
  *
- * Mirrors the legacy implementation in `internal/webui/static/app.js`
- * (classifyFeedFeedback / recordFeedFeedback / decayFeedTagScores /
- * feedPreferenceTags) so the Atelier port produces the same prefer/avoid
+ * Classifies feedback and decays tag scores to derive the prefer/avoid
  * tag list for `/api/search/similar-videos`. Vector feedback separately sends
  * recent frame IDs for session-local query adaptation; nothing is persisted.
  */

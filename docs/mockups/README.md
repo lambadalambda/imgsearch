@@ -50,6 +50,6 @@ for browsing a collection, Studio optimises for working through a selection.
 
 Each file is intentionally small (~400 lines including embedded CSS) and uses
 no build step. Tweak palettes via the `:root` custom properties at the top.
-Once a direction is picked, the next step is porting it into
-`internal/webui/static/{styles.css,index.html}` incrementally, behind the
-existing smoke test coverage in `scripts/ui_smoke_test.mjs`.
+These mockups are historical design explorations. The selected Atelier UI now
+lives in `frontend/`; iterate there with the existing browser smoke coverage in
+`scripts/ui_smoke_test_atelier.mjs`. The original vanilla-JS shell is retired.

@@ -142,14 +142,6 @@
 
   <span class="hidden sm:block flex-1"></span>
 
-  <a
-    href="/legacy"
-    class={railBtnBase}
-    title="Legacy UI"
-    aria-label="Open legacy UI"
-  >
-    <Icon name="external" class="w-[18px] h-[18px]" />
-  </a>
   <button
     type="button"
     class="{railBtnBase} {$mode.mode === 'settings' ? activeBtn : ''}"
