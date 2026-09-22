@@ -33,7 +33,6 @@
 
 - [ ] [Cleanup should preserve the places an image was saved](issues/preserve-collections-during-manual-duplicate-cleanup.md)
 - [ ] [Clarify what “Exact only” means](issues/clarify-perceptual-duplicate-safety-and-keeper-choice.md)
-- [ ] [Give mobile navigation fewer jobs](issues/simplify-atelier-navigation-and-mobile-chrome.md)
 - [ ] [Make search modes and scope explicit](issues/clarify-search-filter-scope-and-match-labels.md)
 - [ ] [Protect unsaved Settings edits](issues/protect-unsaved-atelier-settings-edits.md)
 - [ ] [Separate viewing actions from editing actions](issues/simplify-lightbox-actions-and-edit-mode.md)
@@ -47,3 +46,8 @@
 - [ ] [Decide explicit null semantics for annotation token settings](issues/define-null-annotation-budget-semantics.md)
 
 - [ ] [Measure collection summary queries at representative scale](issues/measure-collection-summary-queries.md)
+
+- [ ] [Complete and deploy the remaining recommended UX sweep](issues/complete-and-deploy-ux-sweep.md)
+
+- [ ] [Keep NSFW-hidden views current during concurrent metadata updates](issues/keep-nsfw-hidden-during-live-updates.md)
+- [ ] [Announce confirmation consequences when dialogs open](issues/announce-confirmation-consequences.md)

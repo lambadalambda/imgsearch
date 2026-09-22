@@ -1,10 +1,11 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { mode, setLibrary, setQuery, setByImage, stats } from "../lib/stores";
-  import { formatCount } from "../lib/utils";
+  import { mode, setLibrary, setQuery, setByImage } from "../lib/stores";
   import Icon from "./Icon.svelte";
 
   let value = $state($mode.mode === "search" ? ($mode.query ?? "") : "");
+  let pickerEl: HTMLInputElement;
+
   let inputEl: HTMLInputElement | undefined = $state();
 
   // Keep the input mirrored to URL-driven mode changes (back/forward) without
@@ -13,7 +14,11 @@
   $effect(() => {
     const current = $mode;
     untrack(() => {
-      if (current.mode === "search" && current.query !== undefined && current.query !== value) {
+      if (
+        current.mode === "search" &&
+        current.query !== undefined &&
+        current.query !== value
+      ) {
         value = current.query;
       } else if (current.mode !== "search" && value !== "") {
         value = "";
@@ -86,11 +91,11 @@
 </script>
 
 <div
-  class="px-5 sm:px-9 pt-3 sm:pt-6 pb-1 sticky top-0 z-20 bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/75"
+  class="px-5 sm:px-9 pt-1 sm:pt-4 pb-1 sticky top-0 z-20 bg-bg/85 backdrop-blur supports-[backdrop-filter]:bg-bg/75"
 >
   <form
     data-search-form
-    class="relative mx-auto max-w-[920px] flex items-center gap-2.5 pl-[50px] pr-4 py-2.5 bg-surface border rounded-full shadow-card transition-[border-color,box-shadow] duration-150 ease-soft focus-within:border-accent/40 focus-within:[box-shadow:0_1px_2px_rgba(40,30,18,0.05),0_0_0_3px_color-mix(in_oklab,var(--color-accent)_16%,transparent_84%)] {dragOver
+    class="relative mx-auto max-w-[920px] flex items-center gap-1 pl-10 pr-1 py-0.5 bg-surface border rounded-full shadow-card transition-[border-color,box-shadow] duration-150 ease-soft focus-within:border-accent/40 focus-within:[box-shadow:0_1px_2px_rgba(40,30,18,0.05),0_0_0_3px_color-mix(in_oklab,var(--color-accent)_16%,transparent_84%)] {dragOver
       ? 'border-accent border-dashed'
       : 'border-line-2'}"
     onsubmit={submit}
@@ -112,7 +117,7 @@
       role="searchbox"
       aria-label="Search library"
       autocomplete="off"
-      placeholder="Search by description, paste or drop an image, or open similar from a pin"
+      placeholder="Search descriptions…"
       bind:value
       onkeydown={handleKeydown}
       onpaste={handlePaste}
@@ -121,22 +126,29 @@
     {#if value}
       <button
         type="button"
-        class="inline-grid place-items-center w-7 h-7 bg-transparent border-0 text-muted rounded-full cursor-pointer transition-colors duration-100 ease-soft hover:bg-bg-2 hover:text-ink"
+        class="inline-grid place-items-center w-11 h-11 bg-transparent border-0 text-muted rounded-full cursor-pointer transition-colors duration-100 ease-soft hover:bg-bg-2 hover:text-ink"
         aria-label="Clear search"
         onclick={clear}
       >
         <Icon name="close" class="w-[14px] h-[14px]" />
       </button>
     {/if}
-    {#if $stats}
-      <div class="hidden md:inline-flex items-center gap-2 ml-2 mr-1">
-        <span class="text-[12px] font-medium leading-none px-2.5 py-[5px] rounded-full whitespace-nowrap text-muted bg-bg-2">
-          {formatCount($stats.images)} images
-        </span>
-        <span class="text-[12px] font-medium leading-none px-2.5 py-[5px] rounded-full whitespace-nowrap text-accent bg-accent-soft">
-          {formatCount($stats.videos)} videos
-        </span>
-      </div>
-    {/if}
+    <input
+      bind:this={pickerEl}
+      type="file"
+      accept="image/*"
+      aria-label="Choose image to search"
+      class="hidden"
+      onchange={() => {
+        const file = pickerEl.files?.[0];
+        if (file) setByImage(file, file.name);
+        pickerEl.value = "";
+      }}
+    />
+    <button
+      type="button"
+      class="shrink-0 min-h-11 px-3 rounded-full text-xs sm:text-sm text-accent font-semibold bg-accent-soft cursor-pointer"
+      onclick={() => pickerEl.click()}>Search by image</button
+    >
   </form>
 </div>

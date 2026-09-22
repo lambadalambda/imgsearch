@@ -139,3 +139,5 @@
 - [x] [Retire the legacy UI and require a working Atelier build](issues/retire-legacy-ui-and-require-atelier-build.md)
 
 - [x] [Make Collections feel like saved media](issues/improve-collection-browsing-and-empty-states.md)
+
+- [x] [Give mobile navigation fewer jobs](issues/simplify-atelier-navigation-and-mobile-chrome.md)

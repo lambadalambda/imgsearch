@@ -8,83 +8,102 @@
     openUpload,
     setLibrary,
     setCollections,
+    stats,
   } from "../lib/stores";
+  import { filterSummary } from "../lib/searchPresentation";
+  import { formatCount } from "../lib/utils";
 
-  function goHome(event: Event) {
-    event.preventDefault();
-    setLibrary();
-  }
+  let filtersOpen = $state(false);
+  const showFilters = $derived(
+    $mode.mode !== "settings" && $mode.mode !== "stats",
+  );
+  const scope = $derived(
+    $mode.mode === "search"
+      ? "Text search · Library"
+      : $mode.mode === "tag"
+        ? "Browse tag · Library"
+        : $mode.mode === "byimage"
+          ? "Image search · Library"
+          : $mode.mode === "similar"
+            ? "Similar media · Library"
+            : "",
+  );
+  const control =
+    "inline-flex min-h-11 items-center gap-2 px-3 border border-line-2 rounded-xl bg-surface text-ink-2 text-[13px]";
 </script>
 
-<header class="px-5 sm:px-9 pt-3 sm:pt-7 pb-2.5 sm:pb-4 border-b border-line">
-  <div class="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
-    <div class="flex-1 min-w-0 order-1">
-      <p class="m-0 text-[13px] text-muted">
-        <a href="?" class="text-muted hover:text-ink transition-colors no-underline" onclick={goHome}>Library</a>
-        <span class="mx-1.5 text-muted-2">/</span>
-        {#if $mode.mode === "library"}
-          <span>Discover</span>
-        {:else if $mode.mode === "collections"}
-          <span>Collections</span>
-        {:else if $mode.mode === "collection"}
-          <a href="?view=collections" class="text-muted hover:text-ink transition-colors no-underline" onclick={(event) => { event.preventDefault(); setCollections(); }}>Collections</a>
-          <span class="mx-1.5 text-muted-2">/</span>
-          <span>{$headline}</span>
-        {:else if $mode.mode === "search"}
-          <a href="?" class="text-muted hover:text-ink transition-colors no-underline" onclick={goHome}>Discover</a>
-          <span class="mx-1.5 text-muted-2">/</span>
-          <span>Search</span>
-        {:else if $mode.mode === "tag"}
-          <a href="?" class="text-muted hover:text-ink transition-colors no-underline" onclick={goHome}>Discover</a>
-          <span class="mx-1.5 text-muted-2">/</span>
-          <span>Tag</span>
-        {:else if $mode.mode === "stats"}
-          <span>Statistics</span>
-        {:else if $mode.mode === "settings"}
-          <span>Settings</span>
-        {:else if $mode.mode === "duplicates"}
-          <span>Duplicates</span>
-        {:else if $mode.mode === "byimage"}
-          <a href="?" class="text-muted hover:text-ink transition-colors no-underline" onclick={goHome}>Discover</a>
-          <span class="mx-1.5 text-muted-2">/</span>
-          <span>Similar to image</span>
-        {:else}
-          <a href="?" class="text-muted hover:text-ink transition-colors no-underline" onclick={goHome}>Discover</a>
-          <span class="mx-1.5 text-muted-2">/</span>
-          <span>Similar</span>
-        {/if}
-      </p>
-      <h1 class="font-display m-0 mt-1.5 text-[22px] sm:text-[30px] font-semibold leading-[1.15] text-ink">
+<header class="px-5 sm:px-9 pt-2 sm:pt-6">
+  <div class="flex items-center gap-3 min-h-11">
+    <div class="flex-1 min-w-0">
+      {#if scope}
+        <p data-search-scope class="m-0 text-xs text-muted">{scope}</p>
+      {:else if $mode.mode === "collection"}
+        <button
+          class="text-xs text-accent min-h-11 cursor-pointer"
+          onclick={setCollections}>← Collections</button
+        >
+      {/if}
+      <h1
+        class="font-display m-0 text-[22px] sm:text-[30px] font-semibold leading-tight break-words"
+      >
         {$headline}
       </h1>
     </div>
-
-    <div class="flex items-center gap-2 flex-wrap order-2">
+    <button
+      type="button"
+      data-upload-trigger
+      onclick={openUpload}
+      class="min-h-11 px-4 bg-ink text-white rounded-full text-sm cursor-pointer"
+      >Upload</button
+    >
+  </div>
+  {#if $mode.mode === "library" && $stats}
+    <p data-library-totals class="hidden sm:block mt-2 mb-0 text-xs text-muted">
+      Library totals · {formatCount($stats.images)} images · {formatCount(
+        $stats.videos,
+      )} videos
+    </p>
+  {/if}
+  {#if showFilters}
+    <div class="flex items-center gap-2 min-h-11 mt-1">
+      <button
+        type="button"
+        class="sm:hidden min-h-11 min-w-11 text-sm font-semibold text-accent cursor-pointer"
+        aria-expanded={filtersOpen}
+        aria-controls="filter-options"
+        onclick={() => (filtersOpen = !filtersOpen)}>Filters</button
+      >
+      <p data-filter-summary class="m-0 text-[12px] text-muted">
+        {filterSummary($mode.mode, $libraryMedia, $librarySort, $includeNSFW)}
+      </p>
+    </div>
+    <div
+      id="filter-options"
+      data-filter-options
+      class="filter-options flex-wrap items-center gap-2 pb-2"
+      class:expanded={filtersOpen}
+    >
       {#if $mode.mode === "library"}
-        <label
-          class="inline-flex items-center gap-2 px-[13px] py-[7px] border border-line-2 rounded-full bg-surface text-ink-2 text-[13px] font-medium leading-none transition-[background-color,border-color,color] duration-150 ease-soft hover:bg-surface-2"
-        >
-          <span class="hidden sm:inline">Media</span>
+        <label class={control}>
+          <span>Media</span>
           <select
             data-library-media
             bind:value={$libraryMedia}
             aria-label="Filter library media"
-            class="bg-transparent border-0 text-ink font-semibold text-[13px] leading-none outline-none cursor-pointer"
+            class="min-h-11 bg-transparent font-semibold cursor-pointer"
           >
             <option value="all">Images + videos</option>
             <option value="images">Images only</option>
             <option value="videos">Videos only</option>
           </select>
         </label>
-        <label
-          class="inline-flex items-center gap-2 px-[13px] py-[7px] border border-line-2 rounded-full bg-surface text-ink-2 text-[13px] font-medium leading-none transition-[background-color,border-color,color] duration-150 ease-soft hover:bg-surface-2"
-        >
-          <span class="hidden sm:inline">Sort</span>
+        <label class={control}>
+          <span>Sort</span>
           <select
             data-library-sort
             bind:value={$librarySort}
             aria-label="Sort library"
-            class="bg-transparent border-0 text-ink font-semibold text-[13px] leading-none outline-none cursor-pointer"
+            class="min-h-11 bg-transparent font-semibold cursor-pointer"
           >
             <option value="random">Random</option>
             <option value="newest">Recently added</option>
@@ -92,26 +111,38 @@
           </select>
         </label>
       {/if}
-      <label
-        class="inline-flex items-center gap-2 px-[13px] py-[7px] border border-line-2 rounded-full bg-surface text-ink-2 text-[13px] font-medium leading-none cursor-pointer transition-[background-color,border-color,color] duration-150 ease-soft hover:bg-surface-2"
-      >
+      <label class="{control} cursor-pointer">
         <input
           type="checkbox"
           data-nsfw-toggle
           bind:checked={$includeNSFW}
-          class="m-0 w-[14px] h-[14px] accent-accent"
+          class="w-4 h-4 accent-accent"
         />
         <span>{$includeNSFW ? "NSFW: Shown" : "NSFW: Hidden"}</span>
       </label>
-      <button
-        type="button"
-        data-upload-trigger
-        onclick={() => openUpload()}
-        class="inline-flex items-center gap-1.5 px-[14px] py-2 bg-ink text-[#fffdf8] border border-ink rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-[#2d2924]"
-      >
-        <span aria-hidden="true" class="text-[15px] leading-none">+</span>
-        <span>Upload</span>
-      </button>
+      {#if ["search", "tag", "similar", "byimage"].includes($mode.mode)}
+        <p class="text-xs text-muted m-0">
+          Type and sort are available in <button
+            type="button"
+            class="min-h-11 underline cursor-pointer"
+            onclick={setLibrary}>Library</button
+          > only.
+        </p>
+      {/if}
     </div>
-  </div>
+  {/if}
 </header>
+
+<style>
+  .filter-options {
+    display: none;
+  }
+  .filter-options.expanded {
+    display: flex;
+  }
+  @media (min-width: 640px) {
+    .filter-options {
+      display: flex;
+    }
+  }
+</style>

@@ -33,6 +33,8 @@ const repoRoot = join(here, "..");
 const distRoot = process.env.ATELIER_DIST || join(repoRoot, "internal", "webui", "atelier", "dist");
 
 await validateAtelierBuild(distRoot);
+const { navigationChecks } = await import("./atelier_navigation_test.mjs");
+const { replacementScopeChecks } = await import("./atelier_scope_test.mjs");
 const { chromium } = await import("playwright");
 
 const contentTypes = new Map([
@@ -815,6 +817,17 @@ async function assertThumbnailFallback(page, selector, requestedMedia) {
 let browser;
 try {
   browser = await chromium.launch();
+  if (!process.env.ATELIER_SCOPE_ONLY) {
+    if (!process.env.ATELIER_NAV_ONLY) await smokeChecks(browser);
+    await navigationChecks(browser, baseURL);
+  }
+  await replacementScopeChecks(browser, baseURL);
+} finally {
+  if (browser) await browser.close();
+  server.close();
+}
+
+async function smokeChecks(browser) {
   const page = await browser.newPage();
   const requestedMedia = new Set();
   page.on("request", (request) => {
@@ -878,9 +891,10 @@ try {
   // 1a*. The quick-row signals horizontal overflow and supports wheel
   //      scrolling, instead of clipping chips with a hidden scrollbar
   //      (meta/issues/082).
-  const quickRow = page.locator('nav[aria-label="Quick collections"]');
+  await page.setViewportSize({ width: 768, height: 720 });
+  const quickRow = page.locator('nav[aria-label="Browse tags"]');
   await page.waitForFunction(
-    () => document.querySelectorAll('nav[aria-label="Quick collections"] button').length >= 9,
+    () => document.querySelectorAll('nav[aria-label="Browse tags"] button').length >= 9,
     {},
     { timeout: 5000 },
   );
@@ -892,10 +906,12 @@ try {
   await quickRow.hover();
   await page.mouse.wheel(0, 240);
   await page.waitForFunction(
-    () => (document.querySelector('nav[aria-label="Quick collections"]')?.scrollLeft ?? 0) > 0,
+    () => (document.querySelector('nav[aria-label="Browse tags"]')?.scrollLeft ?? 0) > 0,
     {},
     { timeout: 5000 },
   );
+
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   // 1a. Results meta is a live region so assistive tech hears search/filter
   //     updates (meta/issues/088).
@@ -1304,7 +1320,7 @@ try {
       .slice(0, 4)
       .map((pin) => pin.match),
   );
-  const expectedTopRowMatches = ["95%", "91%", "90%", "86%"];
+  const expectedTopRowMatches = ["Match 95/100", "Match 91/100", "Match 90/100", "Match 86/100"];
   if (JSON.stringify(visualTopRowMatches) !== JSON.stringify(expectedTopRowMatches)) {
     throw new Error(
       `expected visual top row to preserve search rank ${JSON.stringify(expectedTopRowMatches)}, got ${JSON.stringify(visualTopRowMatches)}`,
@@ -1482,7 +1498,7 @@ try {
   //    expects to land on ?tag=portrait with no similarity badges (tag
   //    search results have search_source="tag" / distance=0).
   const searchBeforeTag = await page.evaluate(() => window.location.search);
-  await page.getByRole("button", { name: "Tag · portrait" }).click();
+  await page.getByRole("button", { name: "Browse tag portrait", exact: true }).click();
   await page.waitForFunction(
     () => /\?tag=portrait/.test(window.location.search),
     {},
@@ -1576,7 +1592,7 @@ try {
   }
 
   // Reset to library before similar/lightbox/menu checks.
-  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.locator('button[data-rail-item="library"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
   await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
 
@@ -1616,7 +1632,7 @@ try {
   }
 
   // Back to library for lightbox / menu / load-more.
-  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.locator('button[data-rail-item="library"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
   await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
 
@@ -1647,7 +1663,7 @@ try {
   // Back to library and keep the Escape-close path covered. Along the way,
   // dialogs must take focus, trap Tab, and restore focus to their opener on
   // close (meta/issues/086).
-  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.locator('button[data-rail-item="library"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
   // Wait for the full library page so the opener pin is not replaced by an
   // in-flight refetch while the dialog is open (focus must return to it).
@@ -1688,25 +1704,27 @@ try {
   //     media. The image must also be visually contained within the dark
   //     media cell, not overflowing into the description area.
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.locator('button[data-rail-item="library"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
   // 5b*. Mobile chrome stays compact: the quick-row keeps to a single
-  //      scrollable line and the first pin starts within the upper 60% of
+  //      scrollable line and the first pin starts within the top third of
   //      the viewport (meta/issues/077).
+  await page.getByRole("button", { name: "Browse tags", exact: true }).click();
   const mobileQuickRowHeight = await page
-    .locator('nav[aria-label="Quick collections"]')
+    .locator('nav[aria-label="Browse tags"]')
     .evaluate((el) => el.getBoundingClientRect().height);
   if (mobileQuickRowHeight > 60) {
     throw new Error(`expected a single-line mobile quick-row, got height ${mobileQuickRowHeight}px`);
   }
+  await page.getByRole("button", { name: "Browse tags", exact: true }).click();
   // Measure the chrome via the static results-section offset; pin positions
   // churn while the masonry re-measures and would make this flaky.
   const resultsTop = await page.evaluate(() => {
     const el = document.querySelector("[data-results]");
     return el ? el.getBoundingClientRect().top + window.scrollY : Infinity;
   });
-  if (resultsTop > 844 * 0.6) {
-    throw new Error(`expected results to start within the upper 60% of a phone viewport, got top ${resultsTop}px`);
+  if (resultsTop > 844 / 3) {
+    throw new Error(`expected results to start within the top third of a phone viewport, got top ${resultsTop}px`);
   }
 
   // image:1000 carries the deliberately long title, which the layout and
@@ -2112,7 +2130,7 @@ try {
     throw new Error(`expected Load More to grow past PAGE_SIZE, got ${pinsAfterLoadMore}`);
   }
   const tagSearchesBefore = tagSearchRequests.length;
-  await page.getByRole("button", { name: "Tag · portrait" }).click();
+  await page.getByRole("button", { name: "Browse tag portrait", exact: true }).click();
   await page.waitForFunction(
     () => /\?tag=portrait/.test(window.location.search),
     {},
@@ -2149,7 +2167,7 @@ try {
   }
   // Return to library so the rest of the smoke flow (Upload, etc.) starts
   // from a clean offset.
-  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.locator('button[data-rail-item="library"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
   await page.waitForFunction(
     (pageSize) => {
@@ -2250,7 +2268,7 @@ try {
   await page.locator("[data-upload-modal]").waitFor({ state: "hidden", timeout: 5000 });
 
   // 8. Rail "Library" returns to library mode and clears query.
-  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.locator('button[data-rail-item="library"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
   await page.locator("[data-pin]").first().waitFor({ state: "visible", timeout: 5000 });
   const libraryHeadline = (await page.locator("h1").first().textContent() || "").trim();
@@ -2275,7 +2293,7 @@ try {
       `expected empty search on a half-indexed library to mention indexing progress, got ${JSON.stringify(emptyStateText)}`,
     );
   }
-  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.locator('button[data-rail-item="library"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
 
   // 8b. Load More on an offset-paginated search de-duplicates pins by key
@@ -2295,7 +2313,7 @@ try {
   if (new Set(overlapKeys).size !== overlapKeys.length) {
     throw new Error(`expected unique pin keys after overlapping Load More, got ${overlapKeys.length} pins / ${new Set(overlapKeys).size} unique`);
   }
-  await page.locator('a[aria-label="imgsearch home"]').click();
+  await page.locator('button[data-rail-item="library"]').click();
   await page.waitForFunction(() => window.location.search === "", {}, { timeout: 5000 });
 
   // 8c. Pasting an image into the search bar runs a search-by-image
@@ -2513,11 +2531,6 @@ try {
   await collectionUX07Checks(browser);
   await collectionChecks(browser);
   console.log("atelier smoke checks passed");
-} finally {
-  if (browser) {
-    await browser.close();
-  }
-  server.close();
 }
 
 async function collectionChecks(browser) {
@@ -2822,10 +2835,11 @@ async function collectionChecks(browser) {
     hiddenImage.tags = originalTags;
   }
   await page.goto(`${baseURL}/?view=collections`, { waitUntil: "networkidle" });
-  assert((await page.locator("header p").first().innerText()).replace(/\s+/g, " ").trim() === "Library / Collections", "management breadcrumb names Collections, not Similar");
+  assert((await page.locator("header h1").innerText()).trim() === "Collections", "compact management header names Collections, not Similar");
   await page.getByRole("button", { name: "Browse Contract", exact: true }).click();
   await page.locator('[data-pin-key="image:1130"]').waitFor();
-  assert((await page.locator("header p").first().innerText()).replace(/\s+/g, " ").trim() === "Library / Collections / Contract", "detail breadcrumb identifies its collection");
+  assert((await page.locator("header h1").innerText()).trim() === "Contract", "detail header identifies its collection");
+  assert(await page.locator("header").getByRole("button", { name: "← Collections", exact: true }).isVisible(), "detail retains collection navigation");
 
   // Saving the current video must remain available at the end of a Feed or
   // when fetching similar videos fails, even with their full-screen overlays.
@@ -2973,6 +2987,7 @@ async function collectionUX07Checks(browser) {
     // replacement finishes, and ignore a late include_nsfw=true response.
     for (const view of [`collection&collection_id=${mixed.id}`, 'collections']) {
       await page.goto(`${baseURL}/?view=${view}`, { waitUntil: 'networkidle' });
+      await page.getByRole('button', { name: 'Filters', exact: true }).click();
       const unsafe = page.locator(view === 'collections' ? `[data-collection-card] img[src$="/${hidden.image_id}.webp"]` : `[data-pin-key="image:${hidden.image_id}"]`);
       await unsafe.first().waitFor();
       const pattern = view === 'collections' ? '**/api/collections?*' : `**/api/collections/${mixed.id}/items?*`;
@@ -3030,7 +3045,7 @@ async function collectionUX07Checks(browser) {
           else if (view === 'collections') await browse('Mixed').waitFor();
           else {
             await page.locator('[data-pin-key="image:1130"]').waitFor();
-            assert.match(await page.locator('[data-results-meta]').innerText(), /2 results · 3 saved items · 1 hidden/);
+            assert.match(await page.locator('[data-results-meta]').innerText(), /2 results in this scope · 3 saved items · 1 hidden/);
             await page.getByText('1 item hidden by the NSFW filter. Enable the global NSFW setting to show them.', { exact: true }).waitFor();
           }
           releaseLate();

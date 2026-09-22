@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tick } from "svelte";
+  import { hasSearchChrome } from "../lib/searchPresentation";
   import Icon from "./Icon.svelte";
   import { listVideos } from "../lib/api";
   import {
@@ -6,23 +8,48 @@
     includeNSFW,
     mode,
     openFeed,
-    openUpload,
     setLibrary,
     setCollections,
     setSettings,
     setStats,
     setDuplicates,
-    uploadOpen,
   } from "../lib/stores";
   import { pinFromVideo } from "../lib/utils";
 
   type RailItem = {
-    id: "collections" | "library" | "search" | "tags" | "stats" | "duplicates" | "feed" | "upload";
+    id:
+      | "collections"
+      | "library"
+      | "search"
+      | "stats"
+      | "duplicates"
+      | "feed"
+      | "settings";
     label: string;
     onClick?: () => void;
-    disabled?: boolean;
     activeWhen?: (state: { mode: string }) => boolean;
   };
+
+  function activate(item: RailItem) {
+    if (moreOpen) moreButton?.focus();
+    moreOpen = false;
+    item.onClick?.();
+  }
+
+  let moreOpen = $state(false);
+  let moreButton: HTMLButtonElement;
+
+  async function focusSearch() {
+    if (!hasSearchChrome($mode.mode)) setLibrary();
+    await tick();
+    document.querySelector<HTMLInputElement>("#atelier-search")?.focus();
+  }
+
+  function closeMore(event: KeyboardEvent) {
+    if (event.key !== "Escape" || !moreOpen) return;
+    moreOpen = false;
+    moreButton?.focus();
+  }
 
   let feedLoading = $state(false);
 
@@ -30,7 +57,11 @@
     if (feedLoading) return;
     feedLoading = true;
     try {
-      const firstPage = await listVideos({ limit: 1, offset: 0, includeNSFW: $includeNSFW });
+      const firstPage = await listVideos({
+        limit: 1,
+        offset: 0,
+        includeNSFW: $includeNSFW,
+      });
       const total = firstPage.total ?? firstPage.videos.length;
       if (total <= 0) return;
 
@@ -43,9 +74,10 @@
         }
         seenOffsets.add(offset);
 
-        const page = offset === 0
-          ? firstPage
-          : await listVideos({ limit: 1, offset, includeNSFW: $includeNSFW });
+        const page =
+          offset === 0
+            ? firstPage
+            : await listVideos({ limit: 1, offset, includeNSFW: $includeNSFW });
         const record = page.videos[0] ?? firstPage.videos[0];
         if (!record) continue;
 
@@ -65,16 +97,26 @@
       id: "library",
       label: "Library",
       onClick: () => setLibrary(),
-      activeWhen: (s) => s.mode === "library" || s.mode === "similar" || s.mode === "tag",
+      activeWhen: (s) => s.mode === "library" || s.mode === "tag",
     },
     {
       id: "search",
       label: "Search",
-      onClick: () => document.querySelector<HTMLInputElement>("#atelier-search")?.focus(),
-      activeWhen: (s) => s.mode === "search",
+      onClick: focusSearch,
+      activeWhen: (s) => ["search", "byimage", "similar"].includes(s.mode),
     },
-    { id: "collections", label: "Collections", onClick: setCollections, activeWhen: (s) => s.mode === "collections" || s.mode === "collection" },
-    { id: "tags", label: "Tags (soon)", disabled: true },
+    {
+      id: "collections",
+      label: "Collections",
+      onClick: setCollections,
+      activeWhen: (s) => s.mode === "collections" || s.mode === "collection",
+    },
+    {
+      id: "settings",
+      label: "Settings",
+      onClick: setSettings,
+      activeWhen: (s) => s.mode === "settings",
+    },
     {
       id: "stats",
       label: "Statistics",
@@ -89,67 +131,139 @@
     },
     {
       id: "feed",
-      label: "Feed — random video",
+      label: "Feed",
       onClick: openRandomFeed,
       activeWhen: () => $feedSeed !== null,
-    },
-    {
-      id: "upload",
-      label: "Upload",
-      onClick: () => openUpload(),
-      activeWhen: () => $uploadOpen,
     },
   ];
 
   const railBtnBase =
-    "grid place-items-center w-10 h-10 border-0 rounded-[10px] cursor-pointer text-muted bg-transparent transition-[background-color,color] duration-150 ease-soft hover:bg-black/[0.04] hover:text-ink disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-muted";
-  const activeBtn =
-    "bg-surface text-accent shadow-[0_1px_2px_rgba(40,30,18,0.06)] hover:bg-surface hover:text-accent";
+    "flex items-center gap-3 min-h-11 min-w-11 px-3 rounded-xl cursor-pointer text-muted hover:bg-surface hover:text-ink text-sm";
+  const activeBtn = "bg-surface text-accent shadow-sm";
 </script>
 
-<aside
-  class="row-start-1 col-start-1 sm:row-span-3 sm:col-span-1 sm:h-screen sm:sticky sm:top-0 flex sm:flex-col items-center gap-1 px-3 sm:px-0 py-2 sm:py-4 bg-bg-2 border-b sm:border-b-0 sm:border-r border-line z-30"
-  aria-label="Primary navigation"
->
+<svelte:window
+  onkeydown={closeMore}
+  onclick={(event) => {
+    if (
+      moreOpen &&
+      event.target instanceof Element &&
+      !event.target.closest("[data-navigation]")
+    )
+      moreOpen = false;
+  }}
+/>
+
+<nav data-navigation aria-label="Primary navigation" class="rail">
   <a
     href="?"
     aria-label="imgsearch home"
-    class="flex-none grid place-items-center w-8 h-8 mr-2 sm:mr-0 sm:mb-3 rounded-[9px] bg-gradient-to-br from-accent to-accent-strong text-white text-[13px] font-bold leading-none shadow-[0_4px_12px_rgba(160,60,30,0.28)] no-underline"
+    class="hidden sm:flex items-center min-h-11 px-3 mb-4 text-accent font-bold"
     onclick={(event) => {
       event.preventDefault();
       setLibrary();
-    }}
+    }}>imgsearch</a
   >
-    i
-  </a>
-
-  {#each items as item (item.id)}
-    {@const isActive = item.activeWhen?.($mode) ?? false}
+  <div class="grid grid-cols-4 sm:flex sm:flex-col gap-1">
+    {#each items.slice(0, 3) as item (item.id)}
+      {@const isActive = item.activeWhen?.($mode) ?? false}
+      <button
+        type="button"
+        class="{railBtnBase} flex-col sm:flex-row justify-center sm:justify-start gap-1 sm:gap-3 py-1 {isActive
+          ? activeBtn
+          : ''}"
+        aria-label={item.label}
+        aria-current={isActive ? "page" : undefined}
+        data-rail-item={item.id}
+        onclick={() => activate(item)}
+      >
+        <Icon name={item.id} class="w-5 h-5 shrink-0" />
+        <span class="text-xs sm:text-sm">{item.label}</span>
+      </button>
+    {/each}
     <button
+      bind:this={moreButton}
       type="button"
-      class="{railBtnBase} {isActive ? activeBtn : ''}"
-      disabled={item.disabled || (item.id === "feed" && feedLoading)}
-      title={item.label}
-      aria-label={item.label}
-      aria-busy={item.id === "feed" && feedLoading ? "true" : undefined}
-      data-rail-item={item.id}
-      data-upload-trigger={item.id === "upload" ? "" : undefined}
-      onclick={() => item.onClick?.()}
+      class="{railBtnBase} sm:hidden flex-col justify-center gap-1 py-1 {moreOpen ||
+      ['settings', 'stats', 'duplicates'].includes($mode.mode)
+        ? activeBtn
+        : ''}"
+      aria-expanded={moreOpen}
+      aria-controls="rail-secondary"
+      onclick={() => (moreOpen = !moreOpen)}
     >
-      <Icon name={item.id} class="w-[19px] h-[19px]" />
+      <span aria-hidden="true" class="h-5 leading-4 text-xl">···</span>
+      <span class="text-xs">More</span>
     </button>
-  {/each}
+  </div>
+  <div id="rail-secondary" class="secondary" class:expanded={moreOpen}>
+    {#each items.slice(3) as item (item.id)}
+      {@const isActive = item.activeWhen?.($mode) ?? false}
+      <button
+        type="button"
+        class="{railBtnBase} {isActive ? activeBtn : ''}"
+        disabled={item.id === "feed" && feedLoading}
+        aria-busy={item.id === "feed" && feedLoading ? "true" : undefined}
+        aria-current={isActive ? "page" : undefined}
+        aria-label={item.label}
+        title={item.id === "feed" ? "Feed — random video" : item.label}
+        data-rail-item={item.id}
+        onclick={() => activate(item)}
+      >
+        <Icon name={item.id} class="w-5 h-5 shrink-0" />
+        <span>{item.label}</span>
+      </button>
+    {/each}
+  </div>
+</nav>
 
-  <span class="hidden sm:block flex-1"></span>
-
-  <button
-    type="button"
-    class="{railBtnBase} {$mode.mode === 'settings' ? activeBtn : ''}"
-    aria-label="Settings"
-    title="Settings"
-    data-rail-item="settings"
-    onclick={() => setSettings()}
-  >
-    <Icon name="settings" class="w-[19px] h-[19px]" />
-  </button>
-</aside>
+<style>
+  .rail {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 6px 8px max(6px, env(safe-area-inset-bottom));
+    background: var(--color-bg-2);
+    border-top: 1px solid var(--color-line);
+    z-index: 30;
+  }
+  .secondary {
+    display: none;
+  }
+  .secondary.expanded {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    bottom: 100%;
+    right: 8px;
+    min-width: 180px;
+    padding: 8px;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    background: var(--color-bg-2);
+    box-shadow: var(--shadow-elev);
+  }
+  @media (min-width: 640px) {
+    .rail {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 16px 8px;
+      border-top: 0;
+      border-right: 1px solid var(--color-line);
+    }
+    .secondary,
+    .secondary.expanded {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: static;
+      min-width: 0;
+      padding: 0;
+      margin-top: 12px;
+      border: 0;
+      box-shadow: none;
+    }
+  }
+</style>

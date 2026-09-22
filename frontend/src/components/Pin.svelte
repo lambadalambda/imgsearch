@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Pin } from "../lib/types";
-  import { fallbackToOriginal, formatDuration, formatPercent, tagTone } from "../lib/utils";
+  import { relativeMatchLabel } from "../lib/searchPresentation";
+  import { fallbackToOriginal, formatDuration, tagTone } from "../lib/utils";
   import { setSimilar, setTagSearch, lightboxPin, openFeed, openCollectionPicker } from "../lib/stores";
   import { createMediaActions } from "../lib/mediaActions";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -79,7 +80,7 @@
 
   // Derived helpers
   const aspectRatio = $derived(pin.width && pin.height ? pin.width / pin.height : 4 / 3);
-  const matchLabel = $derived(formatPercent(pin.matchScore));
+  const matchLabel = $derived(relativeMatchLabel(pin.matchScore));
   const durationLabel = $derived(formatDuration(pin.durationMs));
   const tagsToShow = $derived(pin.tags.slice(0, 5));
   const hiddenTagCount = $derived(Math.max(0, pin.tags.length - tagsToShow.length));
@@ -149,9 +150,7 @@
         <span
           data-pin-match
           class="absolute bottom-2 left-2 text-[11px] font-semibold leading-none text-ink bg-[rgba(255,253,249,0.92)] backdrop-blur-sm px-2 py-1 rounded-full tabular-nums"
-          title={pin.matchTimestampMs
-            ? `Match at ${formatDuration(pin.matchTimestampMs)}`
-            : undefined}
+          title={`Relative match score, not a probability.${pin.matchTimestampMs ? ` Match at ${formatDuration(pin.matchTimestampMs)}.` : ""}`}
         >
           {matchLabel}
         </span>
@@ -328,7 +327,8 @@
                     ? 'tone-gold'
                     : ''}"
               onclick={() => handleTagClick(tag)}
-              title={`Search "${tag}"`}
+              aria-label={`Browse tag ${tag} — replaces current query`}
+              title="Browse tag — replaces current query"
             >
               {tag}
             </button>

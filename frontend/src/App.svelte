@@ -22,7 +22,6 @@
     collectionName,
     lightboxPin,
     collectionPickerTarget,
-    setCollections,
     pins,
     resultsMeta,
     includeNSFW,
@@ -51,6 +50,7 @@
   } from "./lib/api";
   import { refreshStats } from "./lib/stats";
   import { appendUniquePins, pinFromImage, pinFromSearchResult, pinFromVideo } from "./lib/utils";
+  import { hasSearchChrome, resultsCountLabel } from "./lib/searchPresentation";
   import { collectionPresentation } from "./lib/collectionPresentation";
   import { combineLibraryPins, newLibrarySeed } from "./lib/library";
   import type { Pin } from "./lib/types";
@@ -79,6 +79,24 @@
   let loadedCollectionScope = $state("");
   const collectionScope = $derived(`${$mode.collectionId}:${$includeNSFW}:${$collectionEpoch}:${$dataEpoch}`);
   const collectionCurrent = $derived($mode.mode !== "collection" || loadedCollectionScope === collectionScope);
+  // Rendering follows the requested scope immediately, before the fetch effect
+  // runs. An append keeps this key and the loaded cards; replacements cannot.
+  const requestScope = $derived([
+    $mode.mode,
+    $mode.collectionId ?? "",
+    $mode.mode === "collection" ? $collectionEpoch : "",
+    $mode.mode === "byimage" ? String($queryImage?.id ?? "") : "",
+    $mode.query ?? "",
+    $mode.similarTo ?? "",
+    $mode.tags?.join("\u0000") ?? "",
+    $mode.tagMode ?? "",
+    $mode.mode === "library" ? $libraryMedia : "",
+    $mode.mode === "library" ? $librarySort : "",
+    $includeNSFW ? "1" : "0",
+    $dataEpoch,
+  ].join("\u0001"));
+  let loadedResultsScope = $state("");
+  const resultsCurrent = $derived(collectionCurrent && (!hasSearchChrome($mode.mode) || loadedResultsScope === requestScope));
   const collectionCopy = $derived(collectionPresentation(collectionItemCount, $resultsMeta.total));
 
   function scrollSimilarResultsToTop(): void {
@@ -114,33 +132,18 @@
     const media = $libraryMedia;
     const sort = $librarySort;
     const bump = $pageBump;
-    // Subscribe to dataEpoch so successful uploads (or other refresh events)
-    // can force a fresh, replacing fetch without changing mode.
-    const epoch = $dataEpoch;
-    const collectionsRefresh = state.mode === "collection" ? $collectionEpoch : 0;
     const image = $queryImage;
     if (state.mode === "byimage" && !image) {
       // Nothing to search with (for example after a reload): back to the library.
       setLibrary();
       return;
     }
-    const dataKey = [
-      state.mode,
-      state.collectionId ?? "",
-      state.mode === "collection" ? collectionsRefresh : "",
-      state.mode === "byimage" ? String(image?.id ?? "") : "",
-      state.query ?? "",
-      state.similarTo ?? "",
-      state.tags?.join("\u0000") ?? "",
-      state.tagMode ?? "",
-      state.mode === "library" ? media : "",
-      state.mode === "library" ? sort : "",
-      includeNsfw ? "1" : "0",
-      epoch,
-    ].join("\u0001");
+    const dataKey = requestScope;
     const token = ++currentRequestToken;
-    if (state.mode === "collections") {
+    if (["collections", "settings", "stats", "duplicates"].includes(state.mode)) {
       pins.set([]);
+      lightboxPin.set(null);
+      loadedResultsScope = "";
       resultsMeta.set({ total: 0, loading: false });
       lastDataKey = "";
       return;
@@ -165,9 +168,10 @@
       loadingMore = true;
     } else {
       canLoadMore = false;
+      pins.set([]);
+      lightboxPin.set(null);
+      loadedResultsScope = "";
       if (state.mode === "collection") {
-        pins.set([]);
-        lightboxPin.set(null);
         collectionItemCount = 0;
         loadedCollectionScope = "";
       }
@@ -175,7 +179,7 @@
 
     const start = performance.now();
     const ac = new AbortController();
-    const current = () => token === currentRequestToken && !ac.signal.aborted
+    const current = () => token === currentRequestToken && !ac.signal.aborted && dataKey === requestScope
       && includeNsfw === get(includeNSFW)
       && (state.mode !== "collection" || (get(mode).mode === "collection"
         && detailScope === `${get(mode).collectionId}:${get(includeNSFW)}:${get(collectionEpoch)}:${get(dataEpoch)}`));
@@ -292,6 +296,7 @@
             scrollSimilarResultsToTop();
           }
         }
+        loadedResultsScope = dataKey;
         canLoadMore = nextPins.length === PAGE_SIZE && currentOffset < total;
         resultsMeta.set({ total, durationMs: performance.now() - start, loading: false });
         // An empty search may just mean indexing hasn't caught up; refresh
@@ -305,6 +310,7 @@
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
         if (!current()) return;
+        loadedResultsScope = dataKey;
         if (state.mode === "collection") loadedCollectionScope = detailScope;
         const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Search failed";
         resultsMeta.set({ total: 0, loading: false, error: message });
@@ -354,12 +360,14 @@
   });
 </script>
 
-<div inert={$collectionPickerTarget !== null} class="grid grid-cols-1 sm:grid-cols-[64px_1fr] min-h-screen">
+<div inert={$collectionPickerTarget !== null} class="grid grid-cols-1 sm:grid-cols-[160px_minmax(0,1fr)] min-h-screen pb-20 sm:pb-0">
   <Rail />
   <div class="min-w-0 flex flex-col">
     <Header />
-    <SearchBar />
-    <QuickRow />
+    {#if hasSearchChrome($mode.mode)}
+      <SearchBar />
+      <QuickRow />
+    {/if}
 
     {#if $mode.mode === "stats"}
       <StatisticsPane />
@@ -370,14 +378,11 @@
     {:else if $mode.mode === "collections"}
       <CollectionsPane />
     {:else}
-      {#if $mode.mode === "collection"}
-        <div class="px-5 sm:px-9 mt-3"><button class="text-accent cursor-pointer" onclick={setCollections}>← All collections</button></div>
-      {/if}
       <div
         data-results-meta
         role="status"
         aria-live="polite"
-        class="px-5 sm:px-9 mt-3 mb-1 text-[12.5px] text-muted-2 flex flex-wrap gap-2 items-center"
+        class="px-5 sm:px-9 mt-1 sm:mt-3 mb-1 text-[12.5px] text-muted-2 flex flex-wrap gap-2 items-center"
       >
         {#if $mode.mode === "byimage" && $queryImage}
           <span data-query-image class="inline-flex items-center gap-2 pr-1 mr-1 border-r border-line">
@@ -391,24 +396,27 @@
                 clearQueryImage();
                 setLibrary();
               }}
-              class="inline-grid place-items-center w-5 h-5 bg-transparent border-0 text-muted rounded-full cursor-pointer hover:bg-bg-2 hover:text-ink"
+              class="inline-grid place-items-center w-11 h-11 bg-transparent border-0 text-muted rounded-full cursor-pointer hover:bg-bg-2 hover:text-ink"
             >
               ×
             </button>
           </span>
         {/if}
-        {#if $resultsMeta.loading}
+        {#if !resultsCurrent || $resultsMeta.loading}
           <span>Loading…</span>
         {:else if $resultsMeta.error}
           <span class="text-bad">{$resultsMeta.error}</span>
         {:else}
           <span>
-            {$resultsMeta.total.toLocaleString()} {$resultsMeta.total === 1 ? "result" : "results"}
+            {resultsCountLabel($mode.mode, $pins.length, $resultsMeta.total)}
             {#if $mode.mode === "collection" && collectionCurrent} · {collectionCopy.count}{/if}
             {#if $resultsMeta.durationMs && $mode.mode !== "library"}
               · in {Math.round($resultsMeta.durationMs)} ms
             {/if}
           </span>
+          {#if ["search", "similar", "byimage"].includes($mode.mode)}
+            <span>Match scores are relative, not probabilities.</span>
+          {/if}
         {/if}
       </div>
 
@@ -428,10 +436,10 @@
           <p class="px-5 sm:px-9 my-2 text-sm text-muted">{collectionCopy.message} Enable the global NSFW setting to show them.</p>
         {/if}
         <Masonry
-          pins={collectionCurrent ? $pins : []}
-          loading={!collectionCurrent || $resultsMeta.loading}
+          pins={resultsCurrent ? $pins : []}
+          loading={!resultsCurrent || $resultsMeta.loading}
           {emptyMessage}
-          canLoadMore={collectionCurrent && canLoadMore}
+          canLoadMore={resultsCurrent && canLoadMore}
           {loadingMore}
           onLoadMore={loadMore}
         />
@@ -440,7 +448,7 @@
   </div>
 </div>
 
-{#if collectionCurrent}<Lightbox />{/if}
+{#if resultsCurrent}<Lightbox />{/if}
 <Upload />
 <Feed />
 {#if $collectionPickerTarget}

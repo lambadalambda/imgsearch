@@ -186,3 +186,7 @@ Changes apply without restarting after the next settings check and any required 
   reranks already-buffered future items after tag feedback starting at
   `currentIndex + 2`, so the current and immediately preloaded next item stay
   stable.
+
+## Navigation and search scope
+
+Mobile uses labelled Library, Search, Collections and More destinations with 44px core targets; desktop keeps persistent labels. Utility views omit library search/tag chrome. Library-only media/sort filters are explicitly described rather than pretending the ranked-search API supports them. Browse tags replaces the query (not additive filtering), keeping current backend semantics explicit. Ranked results report a capped, non-exhaustive returned batch and relative Match scores, not confidence. One request key gates rendered cards/lightbox during scope changes; pagination retains same-scope results.
