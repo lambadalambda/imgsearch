@@ -6,10 +6,10 @@ User approved the remaining recommended UX work and a deployment after completio
 
 ## Scope / subissues
 
-- [ ] UX-01/02: [Safe duplicate consolidation](preserve-collections-during-manual-duplicate-cleanup.md) and [honest match/keeper controls](clarify-perceptual-duplicate-safety-and-keeper-choice.md).
-- [ ] UX-03/04: [Navigation/mobile chrome](simplify-atelier-navigation-and-mobile-chrome.md) and [search/filter scope](clarify-search-filter-scope-and-match-labels.md).
-- [ ] UX-05: [Protect Settings drafts](protect-unsaved-atelier-settings-edits.md).
-- [ ] UX-06: [Lightbox viewing/editing actions](simplify-lightbox-actions-and-edit-mode.md).
+- [x] UX-01/02: [Safe duplicate consolidation](preserve-collections-during-manual-duplicate-cleanup.md) and [honest match/keeper controls](clarify-perceptual-duplicate-safety-and-keeper-choice.md).
+- [x] UX-03/04: [Navigation/mobile chrome](simplify-atelier-navigation-and-mobile-chrome.md) and [search/filter scope](clarify-search-filter-scope-and-match-labels.md).
+- [x] UX-05: [Protect Settings drafts](protect-unsaved-atelier-settings-edits.md).
+- [x] UX-06: [Lightbox viewing/editing actions](simplify-lightbox-actions-and-edit-mode.md).
 - [ ] UX-08: [Actionable status and error recovery](clarify-library-health-and-error-recovery.md).
 - [ ] UX-10: [Feed return and media states](make-feed-exit-destination-and-loading-state-explicit.md).
 - [ ] Deploy tested combined release to NAS CT107 and verify it.
@@ -26,3 +26,10 @@ User approved the remaining recommended UX work and a deployment after completio
 - Scoped subissues completed with regression coverage and desktop/mobile checks.
 - Production serves the final reviewed build and matching assets; existing data/settings preserved and worker/service health verified.
 - Record deployment/rollback details; archive completed issues without deleting their notes.
+
+## Progress
+
+- `65708ee`: mobile/desktop navigation, explicit search scope and stale-result guards; independent review + full checks passed. UX04 final Lightbox score wording is coordinated with UX06.
+- `de1f264`: memory-only Settings draft retention, explicit save/discard and unload warning; independent review + integrated checks passed.
+- `6be6b6d`: transactional manual duplicate consolidation, metadata conflict checks, selectable keeper and honest visual-hash comparison; independent review + integrated checks/race tests passed.
+- Inherited concurrent NSFW classification/display races and shared-dialog announcement improvements remain separately tracked; no unbounded follow-up expansion.

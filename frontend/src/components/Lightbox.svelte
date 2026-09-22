@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { lightboxPin, pins, collectionPickerTarget, openCollectionPicker, setSimilar, setTagSearch } from "../lib/stores";
-  import { formatDuration, formatPercent } from "../lib/utils";
+  import { formatDuration } from "../lib/utils";
+  import { relativeMatchLabel } from "../lib/searchPresentation";
   import { focusTrap } from "../lib/focus";
   import { createMediaActions } from "../lib/mediaActions";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -31,22 +33,31 @@
 
   // Manual title and tag editing (meta/issues/110).
   let editing = $state(false);
+  let moreOpen = $state(false);
+  let titleInputEl: HTMLInputElement | undefined = $state();
+  let editButtonEl: HTMLButtonElement | undefined = $state();
+  let moreButtonEl: HTMLButtonElement | undefined = $state();
   let draftTitle = $state("");
   let draftTags = $state<string[]>([]);
   let newTag = $state("");
   let tagInputEl: HTMLInputElement | undefined = $state();
 
-  function startEdit() {
+  async function startEdit() {
     const pin = $lightboxPin;
     if (!pin) return;
     draftTitle = pin.title;
     draftTags = [...pin.tags];
     newTag = "";
+    moreOpen = false;
     editing = true;
+    await tick();
+    titleInputEl?.focus();
   }
 
-  function cancelEdit() {
+  async function cancelEdit() {
     editing = false;
+    await tick();
+    editButtonEl?.focus();
   }
 
   function addDraftTag() {
@@ -74,13 +85,15 @@
     if (!pin) return;
     addDraftTag();
     const ok = await actions.edit(pin, { title: draftTitle.trim(), tags: draftTags });
-    if (ok) editing = false;
+    if (ok && $lightboxPin?.key === pin.key) await cancelEdit();
   }
 
   // Leaving the pin (prev/next/close) drops an unsaved draft.
+  const pinKey = $derived($lightboxPin?.key);
   $effect(() => {
-    void $lightboxPin?.key;
+    void pinKey;
     editing = false;
+    moreOpen = false;
   });
 
   // Position of the open pin within the current results, for prev/next
@@ -128,6 +141,11 @@
     const onVideo = target?.tagName === "VIDEO";
     const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
     if (event.key === "Escape") {
+      if (moreOpen) {
+        moreOpen = false;
+        moreButtonEl?.focus();
+        return;
+      }
       if (editing) {
         cancelEdit();
         return;
@@ -221,7 +239,8 @@
         {/if}
       </div>
 
-      <div class="p-[18px_22px_22px] overflow-auto overscroll-contain">
+      <div class="flex flex-col min-h-0 min-w-0">
+      <div data-lightbox-content class="p-[18px_22px_22px] overflow-auto overscroll-contain min-h-0 flex-1">
         <!-- Derived titles can be a full sentence; clamp so a long one cannot
              balloon into a screen-high headline (full text repeats in the
              description below). -->
@@ -229,6 +248,7 @@
           <label class="block pr-12">
             <span class="sr-only">Title</span>
             <input
+              bind:this={titleInputEl}
               data-lightbox-title-input
               type="text"
               bind:value={draftTitle}
@@ -245,7 +265,6 @@
             {pin.title}
           </h2>
         {/if}
-        <p class="text-sm text-muted mt-1 break-all m-0">{pin.filename}</p>
 
         {#if pin.summary && pin.summary !== pin.title && pin.summary !== pin.fullDescription}
           <p class="mt-4 mb-0 text-[14px] leading-relaxed text-ink-2">
@@ -267,9 +286,10 @@
         <div class="flex flex-wrap items-center gap-2 mt-[14px]">
           {#if pin.matchScore !== undefined}
             <span
+              title="Relative similarity, not a confidence percentage"
               class="text-[12px] font-medium leading-none bg-bg-2 text-ink px-[9px] py-[5px] rounded-full tabular-nums"
             >
-              {formatPercent(pin.matchScore)} match{pin.matchTimestampMs
+              {relativeMatchLabel(pin.matchScore)}{pin.matchTimestampMs
                 ? ` at ${formatDuration(pin.matchTimestampMs)}`
                 : ""}
             </span>
@@ -330,46 +350,35 @@
           {/if}
         </div>
 
-        <div class="mt-[18px] flex flex-wrap gap-2">
-          <button type="button" data-lightbox-action="save" class="px-3 py-2 border border-line rounded-full cursor-pointer" onclick={() => openCollectionPicker(pin)}>Save to collection</button>
+        <details class="mt-4 text-[12px] text-muted">
+          <summary tabindex="0" class="cursor-pointer py-2">File details</summary>
+          <p class="break-all m-0 py-2">{pin.filename}</p>
+        </details>
+      </div>
+      <!-- Outside the scrolling description: always reachable in the mobile sheet. -->
+      <div data-lightbox-actions class="relative shrink-0 border-t border-line bg-surface p-3">
+        <div class="flex items-center gap-1.5 text-[12px]">
           {#if editing}
-            <button
-              type="button"
-              data-lightbox-edit-save
-              disabled={$actionPending}
-              onclick={saveEdit}
-              class="px-[14px] py-[9px] bg-ink text-[#fffdf8] border border-ink rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-[#2d2924] disabled:opacity-50 disabled:cursor-default"
-            >
-              Save
+            <button type="button" data-lightbox-edit-save disabled={$actionPending} onclick={saveEdit}
+              class="min-h-11 px-4 bg-ink text-[#fffdf8] rounded-full font-semibold cursor-pointer disabled:opacity-50">
+              {$actionPending ? "Saving…" : "Save changes"}
             </button>
-            <button
-              type="button"
-              data-lightbox-edit-cancel
-              onclick={cancelEdit}
-              class="px-[14px] py-[9px] bg-surface text-ink-2 border border-line-2 rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-surface-2"
-            >
-              Cancel
-            </button>
+            <button type="button" data-lightbox-edit-cancel onclick={cancelEdit}
+              class="min-h-11 px-4 border border-line-2 rounded-full cursor-pointer">Cancel</button>
           {:else}
-            <button
-              type="button"
-              data-lightbox-action="edit"
-              onclick={startEdit}
-              class="px-[14px] py-[9px] bg-surface text-ink-2 border border-line-2 rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-surface-2"
-            >
-              Edit
-            </button>
+            <button type="button" data-lightbox-action="save" onclick={() => openCollectionPicker(pin)}
+              class="min-h-11 px-3 bg-ink text-[#fffdf8] rounded-full font-medium cursor-pointer">Save to collection</button>
+            <button type="button" onclick={() => { setSimilar(pin.imageId); close(); }}
+              class="min-h-11 px-2 border border-line-2 rounded-full cursor-pointer">Similar</button>
+            <button type="button" bind:this={moreButtonEl} data-lightbox-more aria-expanded={moreOpen} aria-controls="lightbox-more"
+              onclick={() => (moreOpen = !moreOpen)}
+              class="min-h-11 px-2 border border-line-2 rounded-full cursor-pointer">More</button>
+            <button type="button" bind:this={editButtonEl} data-lightbox-action="edit" onclick={startEdit}
+              class="min-h-11 px-2 border border-line-2 rounded-full cursor-pointer">Edit</button>
           {/if}
-          <button
-            type="button"
-            class="px-[14px] py-[9px] bg-ink text-[#fffdf8] border border-ink rounded-full text-[13.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-[#2d2924]"
-            onclick={() => {
-              setSimilar(pin.imageId);
-              close();
-            }}
-          >
-            Find similar
-          </button>
+        </div>
+        {#if moreOpen && !editing}
+          <div id="lightbox-more" class="absolute bottom-full inset-x-0 grid grid-cols-2 gap-2 p-3 bg-surface border border-line rounded-t-xl shadow-lg max-h-[40vh] overflow-auto">
           <a
             href={pin.mediaUrl}
             target="_blank"
@@ -405,12 +414,14 @@
           >
             Delete…
           </button>
-        </div>
+          </div>
+        {/if}
         {#if $actionError}
           <p role="alert" class="mt-3 mb-0 px-3 py-2 rounded-[10px] bg-bad/10 text-bad text-[13px]">
             {$actionError}
           </p>
         {/if}
+      </div>
       </div>
     </div>
   </div>

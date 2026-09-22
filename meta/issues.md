@@ -31,8 +31,6 @@
 
 ## UI/UX audit 2026-09-22
 
-- [ ] [Make search modes and scope explicit](issues/clarify-search-filter-scope-and-match-labels.md)
-- [ ] [Separate viewing actions from editing actions](issues/simplify-lightbox-actions-and-edit-mode.md)
 - [ ] [Turn operational states into next steps](issues/clarify-library-health-and-error-recovery.md)
 - [ ] [“Back to library” should go to the Library](issues/make-feed-exit-destination-and-loading-state-explicit.md)
 
@@ -48,3 +46,5 @@
 
 - [ ] [Keep NSFW-hidden views current during concurrent metadata updates](issues/keep-nsfw-hidden-during-live-updates.md)
 - [ ] [Announce confirmation consequences when dialogs open](issues/announce-confirmation-consequences.md)
+
+- [ ] [Scope Lightbox action feedback to the current item](issues/scope-lightbox-feedback-to-current-item.md)

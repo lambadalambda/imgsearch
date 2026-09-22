@@ -47,7 +47,11 @@ A control visually attached to a search box is likely to be read as a filter on 
 - Review correction: the existing request key is also an eager render-scope guard. Library/text/tag/similar/image replacement requests clear previous cards and close/gate stale Lightbox content; current-scope append requests keep cards/Lightbox. Pending/failed replacements and ignored-abort late responses are covered for all five modes, plus same-NSFW query/order/image changes and failed/successful append retention. Collection race protections remain intact.
 - Review red→green: old Library cards remained during a held safe replacement (`1 !== 0`); mobile tag navigation left focus hidden; the ranked-count helper test failed before implementation. All now pass. Focused browser commands: `ATELIER_SCOPE_ONLY=1 npm test` and `ATELIER_NAV_ONLY=1 npm test` after building.
 - Validation: `mise run test:full` (Go, 53 frontend unit tests, script suite, built-asset validation, all smoke tests including UX07 races), `mise run check:frontend` (zero warnings/errors), formatting and `git diff --check`. Local fixture screenshots are under `/tmp/ux03-04/`; no production browser used.
-- [ ] Parent follow-up, explicitly outside this change: inherited `annotationWatch` live-update NSFW filtering can differ from replacement-request filtering. Track/review that separately; this fix does not redesign annotation live updates.
+- [x] Parent follow-up, explicitly outside this change: inherited `annotationWatch` live-update NSFW filtering can differ from replacement-request filtering. Track/review that separately; this fix does not redesign annotation live updates.
 - [HTML report, UX-04](../../docs/reviews/2026-09-22-atelier-ux-audit.html#UX-04) contains embedded screenshot evidence.
 
 - Main nav/search implementation independently approved and full tests passed. Lightbox score consistency will be completed with UX06 before this issue is archived.
+
+## Completion
+
+Independent review approved; parent integrated with navigation/Settings/duplicate changes and full repository/browser/frontend checks passed. Lightbox now uses the shared relative Match score helper. Desktop/mobile320/390px and reduced-height fixture screenshots inspected; no real-device keyboard certification. Archived. Existing cross-item action feedback is separately tracked.

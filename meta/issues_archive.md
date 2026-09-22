@@ -147,3 +147,7 @@
 - [x] [Cleanup should preserve the places an image was saved](issues/preserve-collections-during-manual-duplicate-cleanup.md)
 
 - [x] [Clarify what “Exact only” means](issues/clarify-perceptual-duplicate-safety-and-keeper-choice.md)
+
+- [x] [Separate viewing actions from editing actions](issues/simplify-lightbox-actions-and-edit-mode.md)
+
+- [x] [Make search modes and scope explicit](issues/clarify-search-filter-scope-and-match-labels.md)

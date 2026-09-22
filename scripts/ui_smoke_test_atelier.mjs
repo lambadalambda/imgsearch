@@ -37,6 +37,7 @@ const { settingsDraftChecks } = await import("./settings_draft_smoke.mjs");
 const { navigationChecks } = await import("./atelier_navigation_test.mjs");
 const { replacementScopeChecks } = await import("./atelier_scope_test.mjs");
 const { chromium } = await import("playwright");
+const { lightboxChecks } = await import("./atelier_lightbox_test.mjs");
 
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -806,12 +807,14 @@ async function assertImageThumbnail(page, container, image, requestedMedia, orig
   await container.getByRole("button", { name: `Open ${image.original_name}`, exact: true }).click();
   const lightbox = page.locator("[data-lightbox]");
   await lightbox.waitFor({ state: "visible", timeout: 5000 });
+  await lightbox.locator("[data-lightbox-more]").click();
   if ((await lightbox.locator("img").getAttribute("src")) !== original ||
       (await lightbox.getByRole("link", { name: "Open original" }).getAttribute("href")) !== original) {
     throw new Error(`lightbox and Open original must use ${original}`);
   }
   await page.waitForFunction((src) => [...document.querySelectorAll("[data-lightbox] img")].some((img) => img.getAttribute("src") === src && img.complete && img.naturalWidth > 0), original);
   if (!requestedMedia.has(original)) throw new Error(`lightbox did not request original ${original}`);
+  await page.keyboard.press("Escape"); // More
   await page.keyboard.press("Escape");
   await lightbox.waitFor({ state: "hidden", timeout: 5000 });
 }
@@ -1929,6 +1932,7 @@ async function smokeChecks(browser) {
   await page.locator('[data-pin][data-pin-key="image:1002"]').waitFor({ state: "attached", timeout: 5000 });
   await page.locator('[data-pin][data-pin-key="image:1002"] [data-pin-media]').click();
   await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-lightbox-more]").click();
   const nsfwBefore = nsfwToggleCount;
   await page.locator('[data-lightbox-action="nsfw"]').click();
   const nsfwDeadline = Date.now() + 5000;
@@ -1947,6 +1951,7 @@ async function smokeChecks(browser) {
   if (reannotateCount !== reannotateBefore + 1) {
     throw new Error(`expected lightbox re-annotate to POST, got ${reannotateCount - reannotateBefore}`);
   }
+  await page.keyboard.press("Escape"); // More
   await page.keyboard.press("Escape");
   await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
   const cardNSFW = await page
@@ -1958,6 +1963,7 @@ async function smokeChecks(browser) {
   const countBeforeLightboxDelete = await page.locator("[data-pin]").count();
   await page.locator('[data-pin][data-pin-key="image:1003"] [data-pin-media]').click();
   await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-lightbox-more]").click();
   await page.locator('[data-lightbox-action="delete"]').click();
   await page.locator("[data-confirm-dialog]").waitFor({ state: "visible", timeout: 5000 });
   await page.locator("[data-confirm-accept]").click();
@@ -1986,6 +1992,7 @@ async function smokeChecks(browser) {
   );
   await sharedPin.locator("[data-pin-media]").click();
   await page.locator("[data-lightbox]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator("[data-lightbox-more]").click();
   const lightboxNsfwLabel = (await page.locator('[data-lightbox-action="nsfw"]').textContent() || "").trim();
   if (lightboxNsfwLabel !== "Unflag NSFW") {
     throw new Error(`expected the lightbox to show the card's NSFW flag, got ${JSON.stringify(lightboxNsfwLabel)}`);
@@ -1999,6 +2006,7 @@ async function smokeChecks(browser) {
   if (nsfwToggleCount !== nsfwBeforeCard + 2) {
     throw new Error(`expected two NSFW toggle POSTs (card, then lightbox), got ${nsfwToggleCount - nsfwBeforeCard}`);
   }
+  await page.keyboard.press("Escape"); // More
   await page.keyboard.press("Escape");
   await page.locator("[data-lightbox]").waitFor({ state: "hidden", timeout: 5000 });
 
@@ -2545,6 +2553,7 @@ async function smokeChecks(browser) {
 
   await collectionUX07Checks(browser);
   await collectionChecks(browser);
+  await lightboxChecks(browser, baseURL, sampleImages);
   console.log("atelier smoke checks passed");
 }
 
