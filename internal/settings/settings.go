@@ -17,6 +17,11 @@ const (
 	NativeVariantE4B = "e4b"
 	NativeVariant26B = "26b"
 
+	DefaultVideoFrameCount     = 5
+	MaxVideoFrameCount         = 32
+	VideoModeFrameDescriptions = "frame_descriptions"
+	VideoModeDirectFrames      = "direct_frames"
+
 	DefaultOpenAITimeoutSeconds = 120
 	DefaultOpenAIConcurrency    = 2
 	MaxOpenAITimeoutSeconds     = 3600
@@ -35,10 +40,12 @@ type OpenAISettings struct {
 
 // AnnotationSettings selects where descriptions, titles, and tags are produced.
 type AnnotationSettings struct {
-	OutputTokens  annotation.OutputTokens `json:"output_tokens"`
-	Backend       string                  `json:"backend"`
-	NativeVariant string                  `json:"native_variant"`
-	OpenAI        OpenAISettings          `json:"openai"`
+	VideoMode       string                  `json:"video_mode"`
+	VideoFrameCount int                     `json:"video_frame_count"`
+	OutputTokens    annotation.OutputTokens `json:"output_tokens"`
+	Backend         string                  `json:"backend"`
+	NativeVariant   string                  `json:"native_variant"`
+	OpenAI          OpenAISettings          `json:"openai"`
 }
 
 // OpenAIView is OpenAISettings with the key replaced by a presence flag.
@@ -52,18 +59,22 @@ type OpenAIView struct {
 
 // AnnotationView is the API-safe shape of AnnotationSettings.
 type AnnotationView struct {
-	OutputTokens  annotation.OutputTokens `json:"output_tokens"`
-	Backend       string                  `json:"backend"`
-	NativeVariant string                  `json:"native_variant"`
-	OpenAI        OpenAIView              `json:"openai"`
+	VideoMode       string                  `json:"video_mode"`
+	VideoFrameCount int                     `json:"video_frame_count"`
+	OutputTokens    annotation.OutputTokens `json:"output_tokens"`
+	Backend         string                  `json:"backend"`
+	NativeVariant   string                  `json:"native_variant"`
+	OpenAI          OpenAIView              `json:"openai"`
 }
 
 // DefaultAnnotation is the built-in native e4b configuration.
 func DefaultAnnotation() AnnotationSettings {
 	return AnnotationSettings{
-		OutputTokens:  annotation.DefaultOutputTokens(),
-		Backend:       BackendNative,
-		NativeVariant: NativeVariantE4B,
+		OutputTokens:    annotation.DefaultOutputTokens(),
+		VideoMode:       VideoModeFrameDescriptions,
+		VideoFrameCount: DefaultVideoFrameCount,
+		Backend:         BackendNative,
+		NativeVariant:   NativeVariantE4B,
 		OpenAI: OpenAISettings{
 			TimeoutSeconds: DefaultOpenAITimeoutSeconds,
 			Concurrency:    DefaultOpenAIConcurrency,
@@ -75,6 +86,13 @@ func DefaultAnnotation() AnnotationSettings {
 // the base URL, and fills zero-valued numeric fields with defaults.
 func (s AnnotationSettings) Normalized() AnnotationSettings {
 	s.OutputTokens = s.OutputTokens.Normalized()
+	s.VideoMode = strings.ToLower(strings.TrimSpace(s.VideoMode))
+	if s.VideoMode == "" {
+		s.VideoMode = VideoModeFrameDescriptions
+	}
+	if s.VideoFrameCount == 0 {
+		s.VideoFrameCount = DefaultVideoFrameCount
+	}
 	s.Backend = strings.ToLower(strings.TrimSpace(s.Backend))
 	s.NativeVariant = strings.ToLower(strings.TrimSpace(s.NativeVariant))
 	if s.NativeVariant == "" {
@@ -99,6 +117,9 @@ func (s AnnotationSettings) Validate() error {
 	if err := s.OutputTokens.Normalized().Validate(); err != nil {
 		return err
 	}
+	if err := s.Normalized().validateVideo(); err != nil {
+		return err
+	}
 	switch s.Backend {
 	case BackendNative:
 		switch s.NativeVariant {
@@ -111,6 +132,18 @@ func (s AnnotationSettings) Validate() error {
 		return s.OpenAI.validate()
 	default:
 		return fmt.Errorf("backend must be %q or %q", BackendNative, BackendOpenAI)
+	}
+}
+
+func (s AnnotationSettings) validateVideo() error {
+	if s.VideoFrameCount < 1 || s.VideoFrameCount > MaxVideoFrameCount {
+		return fmt.Errorf("video_frame_count must be between 1 and %d", MaxVideoFrameCount)
+	}
+	switch s.VideoMode {
+	case VideoModeFrameDescriptions, VideoModeDirectFrames:
+		return nil
+	default:
+		return fmt.Errorf("video_mode must be %q or %q", VideoModeFrameDescriptions, VideoModeDirectFrames)
 	}
 }
 
@@ -137,9 +170,11 @@ func (o OpenAISettings) validate() error {
 // View masks the API key for responses.
 func (s AnnotationSettings) View() AnnotationView {
 	return AnnotationView{
-		OutputTokens:  s.OutputTokens.Normalized(),
-		Backend:       s.Backend,
-		NativeVariant: s.NativeVariant,
+		OutputTokens:    s.OutputTokens.Normalized(),
+		VideoMode:       s.Normalized().VideoMode,
+		VideoFrameCount: s.Normalized().VideoFrameCount,
+		Backend:         s.Backend,
+		NativeVariant:   s.NativeVariant,
 		OpenAI: OpenAIView{
 			BaseURL:        s.OpenAI.BaseURL,
 			APIKeySet:      s.OpenAI.APIKey != "",

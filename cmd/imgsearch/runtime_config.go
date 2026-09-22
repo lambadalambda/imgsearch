@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"imgsearch/internal/settings"
 	"imgsearch/internal/upload"
 )
 
@@ -76,7 +77,7 @@ type runtimeConfig struct {
 	SQLiteVectorPath string
 }
 
-const defaultVideoFrameCount = 5
+const defaultVideoFrameCount = settings.DefaultVideoFrameCount
 
 func defaultRuntimeConfig(getenv func(string) string) runtimeConfig {
 	parakeetBundleDefault := strings.TrimSpace(getenv("PARAKEET_ONNX_BUNDLE_DIR"))
@@ -203,8 +204,8 @@ func (cfg *runtimeConfig) Resolve() error {
 	if cfg.LlamaNativeDimensions <= 0 {
 		return fmt.Errorf("configure embedder dimensions: llama-cpp-native dimensions must be positive")
 	}
-	if cfg.VideoFrameCount <= 0 {
-		return fmt.Errorf("configure video sampling: video frame count must be positive")
+	if cfg.VideoFrameCount <= 0 || cfg.VideoFrameCount > settings.MaxVideoFrameCount {
+		return fmt.Errorf("configure video sampling: video frame count must be between 1 and %d", settings.MaxVideoFrameCount)
 	}
 	if cfg.MaxImageUploadMB <= 0 || cfg.MaxVideoUploadMB <= 0 || cfg.UploadTimeout <= 0 {
 		return fmt.Errorf("configure uploads: upload limits and timeout must be positive")

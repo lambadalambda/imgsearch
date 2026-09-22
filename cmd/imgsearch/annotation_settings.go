@@ -18,6 +18,7 @@ import (
 func annotationSettingsFromConfig(cfg runtimeConfig) settings.AnnotationSettings {
 	s := settings.DefaultAnnotation()
 	s.NativeVariant = cfg.AnnotatorVariant
+	s.VideoFrameCount = cfg.VideoFrameCount
 	return s.Normalized()
 }
 

@@ -559,3 +559,52 @@ func TestStoreComputesPerceptualHash(t *testing.T) {
 		t.Fatalf("jpeg/webp distance %d, want <= 6", d)
 	}
 }
+
+func TestVideoSamplingUsesCurrentSettingOncePerNewUpload(t *testing.T) {
+	svc, conn := setupService(t)
+	sampler := &fakeVideoSampler{durationMS: 12000, width: 640, height: 480, frames: 32}
+	svc.VideoSampler = sampler
+	count, calls := 10, 0
+	svc.VideoFrameCountForUpload = func(context.Context) (int, error) { calls++; return count, nil }
+	first, err := svc.Store(context.Background(), "first.mp4", bytes.NewReader(mp4Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sampler.requestedFrameCount != 10 || calls != 1 {
+		t.Fatalf("first count=%d calls=%d", sampler.requestedFrameCount, calls)
+	}
+	count = 3
+	duplicate, err := svc.Store(context.Background(), "duplicate.mp4", bytes.NewReader(mp4Bytes()))
+	if err != nil || !duplicate.Duplicate || calls != 1 {
+		t.Fatalf("duplicate resampled: %+v %v calls%d", duplicate, err, calls)
+	}
+	_, err = svc.Store(context.Background(), "second.mp4", bytes.NewReader(append(mp4Bytes(), byte(1))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sampler.requestedFrameCount != 3 || calls != 2 {
+		t.Fatalf("second count=%d calls=%d", sampler.requestedFrameCount, calls)
+	}
+	var stored int
+	if err := conn.QueryRow(`SELECT frame_count FROM videos WHERE id=?`, first.VideoID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != 10 {
+		t.Fatalf("existing video resampled: %d", stored)
+	}
+}
+
+func TestVideoSamplingSettingErrorDoesNotStoreVideo(t *testing.T) {
+	svc, conn := setupService(t)
+	svc.VideoFrameCountForUpload = func(context.Context) (int, error) { return 0, context.Canceled }
+	if _, err := svc.Store(context.Background(), "clip.mp4", bytes.NewReader(mp4Bytes())); err == nil {
+		t.Fatal("wanted error")
+	}
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM videos`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("stored video after settings error")
+	}
+}

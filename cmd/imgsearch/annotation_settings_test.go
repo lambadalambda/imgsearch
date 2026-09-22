@@ -11,9 +11,9 @@ import (
 )
 
 func TestAnnotationSettingsFromConfigSeedsNativeVariant(t *testing.T) {
-	cfg := runtimeConfig{AnnotatorVariant: " 26B "}
+	cfg := runtimeConfig{AnnotatorVariant: " 26B ", VideoFrameCount: 10}
 	got := annotationSettingsFromConfig(cfg)
-	if got.Backend != settings.BackendNative || got.NativeVariant != settings.NativeVariant26B {
+	if got.Backend != settings.BackendNative || got.NativeVariant != settings.NativeVariant26B || got.VideoFrameCount != 10 {
 		t.Fatalf("unexpected seeded settings: %+v", got)
 	}
 	if err := got.Validate(); err != nil {

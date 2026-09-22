@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(settings): persist video input preferences and a 1–32 sampled-frame count (default5); new video uploads use saved sampling settings without a restart, while duplicates/existing videos keep their stored frames. Unsaved/legacy settings inherit the startup frame-count flag.
 - feat(ui): explain library health with Waiting/Processing/Complete/Failed states, explicit media/frame denominators, capability guidance and bounded recovery; replace duplicate raw request errors with a single Retry that preserves search/filter/pagination context.
 - feat(jobs): expose consistent runtime capability and lease-aware health metadata in HTTP/live snapshots, and add kind-scoped failed-job retry that never backfills missing jobs or resets completed work; reject malformed recovery queries before mutation.
 - fix(feed): label exits Close feed, preserve the underlying page and launcher focus, distinguish loading/unplayable/empty states, hide unavailable transport, wrap mobile titles and surface failed or empty launches.

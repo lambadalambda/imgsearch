@@ -45,3 +45,5 @@
 - [ ] [Announce confirmation consequences when dialogs open](issues/announce-confirmation-consequences.md)
 
 - [ ] [Scope Lightbox action feedback to the current item](issues/scope-lightbox-feedback-to-current-item.md)
+
+- [ ] [Optional direct multi-frame video summaries for external APIs](issues/optional-direct-multiframe-video-summaries.md)

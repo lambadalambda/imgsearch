@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 
-	"imgsearch/internal/annotation"
 	"imgsearch/internal/httputil"
 )
 
@@ -132,7 +131,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "load settings failed")
 		return
 	}
-	req, ok := decodeUpdate(w, r, current.OutputTokens)
+	req, ok := decodeUpdate(w, r, current)
 	if !ok {
 		return
 	}
@@ -224,7 +223,7 @@ func (h *handler) remoteCandidate(w http.ResponseWriter, r *http.Request) (Annot
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "load settings failed")
 		return AnnotationSettings{}, false
 	}
-	req, ok := decodeUpdate(w, r, current.OutputTokens)
+	req, ok := decodeUpdate(w, r, current)
 	if !ok {
 		return AnnotationSettings{}, false
 	}
@@ -236,11 +235,14 @@ func (h *handler) remoteCandidate(w http.ResponseWriter, r *http.Request) (Annot
 	return candidate, true
 }
 
-func decodeUpdate(w http.ResponseWriter, r *http.Request, currentTokens annotation.OutputTokens) (updateRequest, bool) {
+func decodeUpdate(w http.ResponseWriter, r *http.Request, current AnnotationSettings) (updateRequest, bool) {
 	var req updateRequest
 	// Decode onto a value copy so omitted fields (including a partial nested
 	// output_tokens object) retain saved values. Explicit zero must not default.
-	req.Annotation.OutputTokens = currentTokens.Normalized()
+	current = current.Normalized()
+	req.Annotation.OutputTokens = current.OutputTokens
+	req.Annotation.VideoMode = current.VideoMode
+	req.Annotation.VideoFrameCount = current.VideoFrameCount
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSettingsBodyBytes))
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusRequestEntityTooLarge, "settings body too large")
@@ -248,6 +250,10 @@ func decodeUpdate(w http.ResponseWriter, r *http.Request, currentTokens annotati
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON body")
+		return req, false
+	}
+	if err := req.Annotation.validateVideo(); err != nil {
+		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return req, false
 	}
 	if err := req.Annotation.OutputTokens.Validate(); err != nil {

@@ -19,6 +19,10 @@ type querier interface {
 
 // LoadAnnotation reads the persisted annotation settings.
 func LoadAnnotation(ctx context.Context, q querier) (AnnotationSettings, error) {
+	return loadAnnotation(ctx, q, DefaultVideoFrameCount)
+}
+
+func loadAnnotation(ctx context.Context, q querier, fallbackFrameCount int) (AnnotationSettings, error) {
 	var raw string
 	err := q.QueryRowContext(ctx, `SELECT value_json FROM settings WHERE key = ?`, annotationKey).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -27,7 +31,8 @@ func LoadAnnotation(ctx context.Context, q querier) (AnnotationSettings, error) 
 	if err != nil {
 		return AnnotationSettings{}, fmt.Errorf("load annotation settings: %w", err)
 	}
-	var s AnnotationSettings
+	// Old saved rows did not own sampling configuration; keep their flag default.
+	s := AnnotationSettings{VideoFrameCount: fallbackFrameCount}
 	if err := json.Unmarshal([]byte(raw), &s); err != nil {
 		return AnnotationSettings{}, fmt.Errorf("decode annotation settings: %w", err)
 	}
@@ -37,7 +42,7 @@ func LoadAnnotation(ctx context.Context, q querier) (AnnotationSettings, error) 
 // LoadAnnotationOrDefault returns the persisted settings or fallback when
 // nothing has been saved.
 func LoadAnnotationOrDefault(ctx context.Context, q querier, fallback AnnotationSettings) (AnnotationSettings, error) {
-	s, err := LoadAnnotation(ctx, q)
+	s, err := loadAnnotation(ctx, q, fallback.Normalized().VideoFrameCount)
 	if errors.Is(err, ErrNotFound) {
 		return fallback.Normalized(), nil
 	}

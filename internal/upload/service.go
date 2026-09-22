@@ -175,12 +175,15 @@ const (
 )
 
 type Service struct {
-	DB                     *sql.DB
-	DataDir                string
-	ModelID                int64
-	VideoFrameCount        int
-	VideoSampler           VideoSampler
-	EnableVideoTranscripts bool
+	DB              *sql.DB
+	DataDir         string
+	ModelID         int64
+	VideoFrameCount int
+	// VideoFrameCountForUpload snapshots saved sampling settings for each new video.
+	// Nil preserves the static flag/default path; duplicates never resample.
+	VideoFrameCountForUpload func(context.Context) (int, error)
+	VideoSampler             VideoSampler
+	EnableVideoTranscripts   bool
 	// DeduplicateStrict opts into unattended, lossy dHash matching of incoming
 	// standalone images. It never sweeps existing duplicate groups.
 	DeduplicateStrict bool
@@ -413,6 +416,13 @@ func (s *Service) storeVideo(ctx context.Context, originalName string, tmpDir st
 	}
 
 	frameCount := s.VideoFrameCount
+	if s.VideoFrameCountForUpload != nil {
+		var err error
+		frameCount, err = s.VideoFrameCountForUpload(ctx)
+		if err != nil {
+			return StoreResult{}, fmt.Errorf("load video sampling settings: %w", err)
+		}
+	}
 	if frameCount <= 0 {
 		frameCount = defaultVideoFrameCount
 	}

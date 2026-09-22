@@ -160,3 +160,9 @@ func TestStrictImportDeduplicationIsOptIn(t *testing.T) {
 		}
 	}
 }
+
+func TestParseRuntimeConfigRejectsExcessiveVideoSamples(t *testing.T) {
+	if _, err := parseRuntimeConfig([]string{"-video-frame-count", "33"}, func(string) string { return "" }); err == nil {
+		t.Fatal("accepted more than32 frames")
+	}
+}

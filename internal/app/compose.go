@@ -108,11 +108,25 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 		opts.AnnotationDefaults = settings.DefaultAnnotation()
 	}
 
+	if opts.VideoFrameCount > 0 {
+		opts.AnnotationDefaults.VideoFrameCount = opts.VideoFrameCount
+	}
+
 	uploadSvc := &upload.Service{
-		DB:                     opts.Data.DB,
-		DataDir:                opts.DataDir,
-		ModelID:                opts.ModelID,
-		VideoFrameCount:        opts.VideoFrameCount,
+		DB:              opts.Data.DB,
+		DataDir:         opts.DataDir,
+		ModelID:         opts.ModelID,
+		VideoFrameCount: opts.VideoFrameCount,
+		VideoFrameCountForUpload: func(ctx context.Context) (int, error) {
+			current, err := settings.LoadAnnotationOrDefault(ctx, opts.Data.DB, opts.AnnotationDefaults)
+			if err != nil {
+				return 0, err
+			}
+			if current.VideoFrameCount < 1 || current.VideoFrameCount > settings.MaxVideoFrameCount {
+				return 0, fmt.Errorf("video_frame_count must be between 1 and %d", settings.MaxVideoFrameCount)
+			}
+			return current.VideoFrameCount, nil
+		},
 		VideoSampler:           opts.VideoSampler,
 		DeduplicateStrict:      opts.DeduplicateStrict,
 		EnableVideoTranscripts: opts.VideoTranscriptsOn,

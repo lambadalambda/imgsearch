@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/settings"
 	"imgsearch/internal/stats"
 	"imgsearch/internal/transcribe"
 	"net/http"
@@ -186,5 +187,32 @@ func TestRuntimeHealthCapabilities(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestUploadFrameCountFollowsSavedSettingsWithoutRestart(t *testing.T) {
+	conn := openDB(t)
+	if err := db.RunMigrations(context.Background(), conn); err != nil {
+		t.Fatal(err)
+	}
+	data := &DataRuntime{DB: conn, Index: bruteforce.NewIndex(conn)}
+	runtime, err := NewRuntime(RuntimeOptions{Data: data, DataDir: t.TempDir(), ModelID: 1, Embedder: fakeRuntimeEmbedder{}, Index: data.Index, VideoFrameCount: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := runtime.UploadService.VideoFrameCountForUpload
+	if get == nil {
+		t.Fatal("missing dynamic sampling settings")
+	}
+	if n, err := get(context.Background()); err != nil || n != 10 {
+		t.Fatalf("flag default: %d %v", n, err)
+	}
+	saved := settings.DefaultAnnotation()
+	saved.VideoFrameCount = 3
+	if _, err := settings.SaveAnnotation(context.Background(), conn, saved); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := get(context.Background()); err != nil || n != 3 {
+		t.Fatalf("saved override: %d %v", n, err)
 	}
 }
