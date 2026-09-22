@@ -34,6 +34,7 @@ type fakeServer struct {
 	// replyHeaders are added to every chat reply.
 	replyHeaders http.Header
 	models       []string
+	modelLabels  map[string][]string
 	srv          *httptest.Server
 }
 
@@ -47,7 +48,11 @@ func newFakeServer(t *testing.T, respond func(n int, req map[string]any) (int, s
 			f.mu.Unlock()
 			data := make([]map[string]any, 0, len(f.models))
 			for _, m := range f.models {
-				data = append(data, map[string]any{"id": m})
+				entry := map[string]any{"id": m}
+				if labels, ok := f.modelLabels[m]; ok {
+					entry["labels"] = labels
+				}
+				data = append(data, entry)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
 			return
@@ -576,5 +581,30 @@ func TestTestConnectionToleratesServersWithoutModelsEndpoint(t *testing.T) {
 	cfg := Config{BaseURL: srv.URL + "/v1", Model: "m", Timeout: time.Second}
 	if err := TestConnection(context.Background(), cfg); err != nil {
 		t.Fatalf("expected chat fallback to succeed: %v", err)
+	}
+}
+
+// Lemonade labels every model; only chat-capable ones are offered, with
+// vision models first so the auto-filled default can see images
+// (meta/issues/120).
+func TestListModelsFiltersLabelledNonChatModels(t *testing.T) {
+	f := newFakeServer(t, func(int, map[string]any) (int, string) { return 200, chatReply(goodImageJSON) })
+	f.mu.Lock()
+	f.models = []string{"Dark-Beast-Krea2", "Whisper-Large", "chat-only", "vision-a", "plain", "LSDIR-4x"}
+	f.modelLabels = map[string][]string{
+		"Dark-Beast-Krea2": {"custom", "image"},
+		"Whisper-Large":    {"transcription", "realtime-transcription"},
+		"chat-only":        {"chat", "reasoning"},
+		"vision-a":         {"chat", "vision", "tool-calling"},
+		"LSDIR-4x":         {"upscaling", "image"},
+	}
+	f.mu.Unlock()
+	cfg := Config{BaseURL: f.srv.URL + "/v1", APIKey: "sk-test", Model: "vision-a", Timeout: time.Second}
+	models, err := ListModels(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(models, ",") != "vision-a,chat-only,plain" {
+		t.Fatalf("unexpected models: %v", models)
 	}
 }

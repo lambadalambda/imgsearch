@@ -116,3 +116,4 @@
 - [x] [Add manual tag and title editing](issues/110-add-manual-tag-and-title-editing.md)
 - [x] [Add a near-duplicate finder](issues/111-add-near-duplicate-finder.md)
 - [x] [Search by an uploaded or pasted image](issues/112-search-by-uploaded-image.md)
+- [x] [Filter the remote model list to chat-capable models](issues/120-filter-remote-model-list-to-chat-models.md)

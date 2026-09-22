@@ -353,7 +353,7 @@
             {#if modelsError}
               <p class="m-0 mt-1.5 text-[12.5px] text-bad" data-settings-models-error>{modelsError}</p>
             {:else if models.length > 0}
-              <p class="m-0 mt-1.5 text-[12.5px] text-muted-2" data-settings-models-count>{models.length} models available; start typing to pick one.</p>
+              <p class="m-0 mt-1.5 text-[12.5px] text-muted-2" data-settings-models-count>{models.length} chat-capable models available; clear the field to see all of them, or start typing to narrow the list.</p>
             {/if}
           </div>
           <div class="grid grid-cols-2 gap-3">

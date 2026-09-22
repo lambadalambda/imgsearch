@@ -483,19 +483,67 @@ func ListModels(ctx context.Context, cfg Config) ([]string, error) {
 	}
 	var parsed struct {
 		Data []struct {
-			ID string `json:"id"`
+			ID     string   `json:"id"`
+			Labels []string `json:"labels"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rb.bytes, &parsed); err != nil {
 		return nil, fmt.Errorf("decode /models: %w", err)
 	}
-	ids := make([]string, 0, len(parsed.Data))
+	// Servers such as Lemonade label every model; keep the ones that can
+	// answer a chat completion and put vision-capable ones first, since the
+	// annotator sends images. Unlabelled entries pass through unchanged.
+	var vision, other []string
 	for _, m := range parsed.Data {
-		if id := strings.TrimSpace(m.ID); id != "" {
-			ids = append(ids, id)
+		id := strings.TrimSpace(m.ID)
+		if id == "" {
+			continue
+		}
+		switch classifyModelLabels(m.Labels) {
+		case modelVision:
+			vision = append(vision, id)
+		case modelChat:
+			other = append(other, id)
 		}
 	}
-	return ids, nil
+	return append(vision, other...), nil
+}
+
+type modelClass int
+
+const (
+	modelChat modelClass = iota
+	modelVision
+	modelOther
+)
+
+// classifyModelLabels maps a server's labels to what the annotator can use.
+// No labels means "unknown, assume chat".
+func classifyModelLabels(labels []string) modelClass {
+	if len(labels) == 0 {
+		return modelChat
+	}
+	chat, vision, excluded := false, false, false
+	for _, label := range labels {
+		switch strings.ToLower(strings.TrimSpace(label)) {
+		case "chat":
+			chat = true
+		case "vision":
+			vision = true
+		case "image", "upscaling", "transcription", "realtime-transcription", "embedding", "embeddings", "reranking", "audio", "tts":
+			excluded = true
+		}
+	}
+	switch {
+	case vision:
+		return modelVision
+	case chat:
+		return modelChat
+	case excluded:
+		return modelOther
+	default:
+		return modelChat
+	}
 }
 
 // TestConnection verifies the server is reachable and knows the configured

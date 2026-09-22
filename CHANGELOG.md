@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(settings): "Fetch models" now drops models a labelled server (Lemonade) marks as image generation, upscaling, transcription, or embedding, lists vision-capable chat models first, and the hint explains that clearing the field shows every fetched model (issue 120).
 - feat(search): search by an uploaded or pasted image: `POST /api/search/by-image` embeds a multipart image in-process without storing it and returns the `similar` result shape (same size limit and NSFW filtering as other searches); pasting or dropping a picture onto the Atelier search bar switches to a "Similar to your image" mode with a preview of the query in the results line (issue 112).
 - feat(duplicates): compute a 64-bit perceptual hash (dHash) for every standalone image at upload (JPEG, PNG, GIF, WEBP; backfilled at startup for existing files), add `GET /api/duplicates?distance=N` that groups near-identical pictures within a Hamming distance, and add a Duplicates view in the Atelier Rail listing the groups side by side with per-item delete and a "Keep largest" shortcut (issue 111).
 - feat(ui): manual title and tag editing: `PATCH /api/images/{id}` and `PATCH /api/videos/{id}` accept `title` and a full `tags` list, `GET` returns a single item, the lightbox gains an Edit mode with a title field and tag chips (add/remove), and re-annotation merges fresh annotator tags with user additions and removals instead of clobbering them (issue 110).
