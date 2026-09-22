@@ -17,3 +17,5 @@ Settings Save uses native form validation for all six output-token limits, but t
 ## Notes
 
 - Nonblocking UI review follow-up from configurable token budgets. Save validation and persistence are already covered; no production configuration changed.
+- UX05 review also found stale connection-probe feedback: unlike model fetching, an in-flight test response can reappear after the URL/model is edited or discarded. Guard probe responses by current draft/mount identity and add a deferred-response test when addressing this issue.
+- The UX05 isolated smoke fixture simplifies stored-key preservation (`api_key_set` from the current request only). Correct that fixture before expanding credential-save tests; current retention cases do not exercise a subsequent blank-key save.

@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(settings): retain unsaved annotation drafts in memory across navigation, warn before reload while dirty, and offer explicit Save changes/Discard changes without persisting entered API keys in browser storage; in-flight save results survive pane unmount.
 - feat(ui): simplify mobile navigation to Library/Search/Collections/More, label desktop destinations, compact utility headers and mobile filters, expose image search, clarify replacing tag shortcuts and relative match scores, and invalidate stale results when search/filter scope changes.
 - feat(ui): make Collections browse-first with safe thumbnail mosaics, saved/hidden counts, accessible management disclosures, and distinct empty/NSFW-filtered guidance; preserve saved order and picker feedback, and clear stale covers/detail content when visibility changes.
 - feat(collections): add opt-in, filter-aware collection summaries with saved/visible counts and at most four safe thumbnail covers; expose total saved count on item pages while preserving visible pagination totals, stable saved order and lightweight picker APIs.

@@ -141,3 +141,5 @@
 - [x] [Make Collections feel like saved media](issues/improve-collection-browsing-and-empty-states.md)
 
 - [x] [Give mobile navigation fewer jobs](issues/simplify-atelier-navigation-and-mobile-chrome.md)
+
+- [x] [Protect unsaved Settings edits](issues/protect-unsaved-atelier-settings-edits.md)

@@ -190,3 +190,5 @@ Changes apply without restarting after the next settings check and any required 
 ## Navigation and search scope
 
 Mobile uses labelled Library, Search, Collections and More destinations with 44px core targets; desktop keeps persistent labels. Utility views omit library search/tag chrome. Library-only media/sort filters are explicitly described rather than pretending the ranked-search API supports them. Browse tags replaces the query (not additive filtering), keeping current backend semantics explicit. Ranked results report a capped, non-exhaustive returned batch and relative Match scores, not confidence. One request key gates rendered cards/lightbox during scope changes; pagination retains same-scope results.
+
+Settings drafts live only in a page-lifetime store, so internal navigation does not discard edits and entered credentials are not written to browser storage. Dirty drafts arm beforeunload; browsers may not deliver it during mobile process termination. Save/discard reset the baseline; worker-active status remains separate from unsaved inputs.

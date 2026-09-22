@@ -33,6 +33,7 @@ const repoRoot = join(here, "..");
 const distRoot = process.env.ATELIER_DIST || join(repoRoot, "internal", "webui", "atelier", "dist");
 
 await validateAtelierBuild(distRoot);
+const { settingsDraftChecks } = await import("./settings_draft_smoke.mjs");
 const { navigationChecks } = await import("./atelier_navigation_test.mjs");
 const { replacementScopeChecks } = await import("./atelier_scope_test.mjs");
 const { chromium } = await import("playwright");
@@ -818,7 +819,10 @@ let browser;
 try {
   browser = await chromium.launch();
   if (!process.env.ATELIER_SCOPE_ONLY) {
-    if (!process.env.ATELIER_NAV_ONLY) await smokeChecks(browser);
+    if (!process.env.ATELIER_NAV_ONLY) {
+      await settingsDraftChecks(browser, baseURL, settingsState);
+      await smokeChecks(browser);
+    }
     await navigationChecks(browser, baseURL);
   }
   await replacementScopeChecks(browser, baseURL);
@@ -2373,7 +2377,7 @@ async function smokeChecks(browser) {
   }
 
   // Shared output limits: accessible groups/labels, unchanged defaults, and
-  // independent draft state. No reset button exists; reload discards drafts.
+  // independent draft state. Confirming reload discards in-memory drafts.
   const outputSection = page.getByRole("region", { name: "Output token limits", exact: true });
   await outputSection.waitFor({ state: "visible", timeout: 5000 });
   const outputGroups = [
@@ -2427,6 +2431,10 @@ async function smokeChecks(browser) {
   assert.ok(await page.locator("[data-settings-save]").isDisabled(), "saved draft is clean");
   await fillOutputValues(defaultOutputTokens);
   await page.locator("[data-settings-dirty]").waitFor({ state: "visible" });
+  page.once("dialog", async dialog => {
+    assert.equal(dialog.type(), "beforeunload");
+    await dialog.accept();
+  });
   await page.reload({ waitUntil: "networkidle" });
   await outputSection.waitFor({ state: "visible" });
   await checkOutputValues(nativeOutputTokens);

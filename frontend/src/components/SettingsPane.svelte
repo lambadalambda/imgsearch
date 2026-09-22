@@ -9,25 +9,7 @@
     updateSettings,
   } from "../lib/api";
   import { formatCount } from "../lib/utils";
-  import type {
-    AnnotationBackend,
-    AnnotationOutputTokens,
-    AnnotationSettingsInput,
-    NativeVariant,
-    SettingsResponse,
-    SettingsUpdateRequest,
-  } from "../lib/types";
-
-  interface FormState {
-    backend: AnnotationBackend;
-    nativeVariant: NativeVariant;
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    timeoutSeconds: number;
-    concurrency: number;
-    outputTokens: { [K in keyof AnnotationOutputTokens]: number | undefined };
-  }
+  import { isSettingsDirty, settingsDraft, settingsRequest } from "../lib/settingsDraft";
 
   const outputTokenGroups = [
     { label: "Images", first: "image", retry: "image_retry" },
@@ -35,22 +17,11 @@
     { label: "Video summaries", first: "video", retry: "video_retry" },
   ] as const;
 
-  let loaded = $state<SettingsResponse | null>(null);
-  let loadError = $state("");
-  let form = $state<FormState>({
-    backend: "native",
-    nativeVariant: "e4b",
-    baseUrl: "",
-    apiKey: "",
-    model: "",
-    timeoutSeconds: 120,
-    concurrency: 2,
-    outputTokens: { image: 1024, image_retry: 512, video_frame: 320, video_frame_retry: 256, video: 1200, video_retry: 640 },
-  });
-  let clearApiKey = $state(false);
-  let saving = $state(false);
-  let saveError = $state("");
-  let saveNotice = $state("");
+  const loaded = $derived($settingsDraft.loaded);
+  const saving = $derived($settingsDraft.saving);
+  const loadError = $derived($settingsDraft.loadError);
+  const saveError = $derived($settingsDraft.saveError);
+  const saveNotice = $derived($settingsDraft.saveNotice);
   let testing = $state(false);
   let testResult = $state<{ ok: boolean; error?: string } | null>(null);
   let fetchingModels = $state(false);
@@ -61,104 +32,48 @@
   let reannotateNotice = $state("");
   let reannotateError = $state("");
 
-  function formFromResponse(response: SettingsResponse): FormState {
-    const a = response.annotation;
-    return {
-      backend: a.backend,
-      nativeVariant: a.native_variant,
-      baseUrl: a.openai.base_url,
-      apiKey: "",
-      model: a.openai.model,
-      timeoutSeconds: a.openai.timeout_seconds,
-      concurrency: a.openai.concurrency,
-      outputTokens: { ...a.output_tokens },
-    };
-  }
-
-  function toInput(state: FormState): AnnotationSettingsInput {
-    return {
-      backend: state.backend,
-      native_variant: state.nativeVariant,
-      output_tokens: { ...state.outputTokens },
-      openai: {
-        base_url: state.baseUrl,
-        api_key: state.apiKey || undefined,
-        model: state.model,
-        timeout_seconds: Number(state.timeoutSeconds) || 0,
-        concurrency: Number(state.concurrency) || 0,
-      },
-    };
-  }
-
-  function toRequest(): SettingsUpdateRequest {
-    return { annotation: toInput(form), clear_api_key: clearApiKey || undefined };
-  }
-
-  async function load() {
-    loadError = "";
-    try {
-      const response = await getSettings();
-      loaded = response;
-      form = formFromResponse(response);
-      clearApiKey = false;
-    } catch (err) {
-      loadError = err instanceof Error ? err.message : String(err);
-    }
-  }
-
+  let mounted = false;
+  let editVersion = 0;
   onMount(() => {
-    void load();
+    mounted = true;
+    void settingsDraft.load(getSettings);
+    return () => { mounted = false; };
   });
+
+  function toRequest() {
+    return settingsRequest($settingsDraft);
+  }
 
   /** Any edit invalidates feedback from the previous probe or save. */
-  function onEdit() {
+  function onEdit(event?: Event) {
+    // Checked/group bindings settle on change, after input. Notifying the store
+    // during input would re-render the checkbox with its previous value.
+    if (event?.type === "input" && event.target instanceof HTMLInputElement &&
+      (event.target.type === "checkbox" || event.target.type === "radio")) return;
+    editVersion += 1;
     testResult = null;
-    saveNotice = "";
-    saveError = "";
+    $settingsDraft.saveNotice = "";
+    $settingsDraft.saveError = "";
   }
 
-  const dirty = $derived.by(() => {
-    if (!loaded) return false;
-    const base = formFromResponse(loaded);
-    return (
-      clearApiKey ||
-      form.apiKey !== "" ||
-      form.backend !== base.backend ||
-      form.nativeVariant !== base.nativeVariant ||
-      form.baseUrl !== base.baseUrl ||
-      form.model !== base.model ||
-      Number(form.timeoutSeconds) !== base.timeoutSeconds ||
-      Number(form.concurrency) !== base.concurrency ||
-      outputTokenGroups.some(({ first, retry }) =>
-        form.outputTokens[first] !== base.outputTokens[first] ||
-        form.outputTokens[retry] !== base.outputTokens[retry]
-      )
-    );
-  });
+  function discard() {
+    settingsDraft.discard();
+    onEdit();
+    models = [];
+    modelsError = "";
+  }
 
-  const remoteIncomplete = $derived(form.backend === "openai" && (!form.baseUrl.trim() || !form.model.trim()));
+  const dirty = $derived(isSettingsDirty($settingsDraft));
+  const remoteIncomplete = $derived($settingsDraft.form.backend === "openai" && (!$settingsDraft.form.baseUrl.trim() || !$settingsDraft.form.model.trim()));
 
   async function save() {
-    if (saving || !dirty || remoteIncomplete) return;
-    saving = true;
-    saveError = "";
-    saveNotice = "";
-    try {
-      const response = await updateSettings(toRequest());
-      loaded = response;
-      form = formFromResponse(response);
-      clearApiKey = false;
-      testResult = null;
-      saveNotice = "Saved. Changes apply to subsequent annotation requests after the worker refreshes its settings.";
-    } catch (err) {
-      saveError = err instanceof Error ? err.message : String(err);
-    } finally {
-      saving = false;
-    }
+    if (remoteIncomplete) return;
+    testResult = null;
+    await settingsDraft.save(updateSettings);
   }
 
   async function runTest() {
-    if (testing) return;
+    if (testing || saving) return;
     testing = true;
     testResult = null;
     try {
@@ -169,18 +84,20 @@
   }
 
   async function fetchModels() {
-    if (fetchingModels) return;
+    if (fetchingModels || saving) return;
+    const version = editVersion;
     fetchingModels = true;
     modelsError = "";
     try {
       const result = await listAnnotationModels(toRequest());
+      if (!mounted || saving || version !== editVersion) return;
       models = result.models;
       if (result.error) {
         modelsError = result.error;
       } else if (models.length === 0) {
         modelsError = "The server returned no models.";
-      } else if (!form.model) {
-        form.model = models[0];
+      } else if (!$settingsDraft.form.model) {
+        $settingsDraft.form.model = models[0];
       }
     } finally {
       fetchingModels = false;
@@ -243,15 +160,16 @@
 
   {#if loadError}
     <p class="m-0 text-[13px] text-bad" role="alert">Couldn't load settings: {loadError}</p>
-  {:else if !loaded}
-    <p class="m-0 text-[13px] text-muted-2">Loading…</p>
+  {/if}
+  {#if !loaded}
+    <p class="m-0 text-[13px] text-muted-2">{loadError ? "Settings unavailable." : "Loading…"}</p>
   {:else}
     <p data-settings-active class="m-0 px-1 sm:px-0 text-[12.5px] {loaded.active_error ? 'text-bad' : 'text-muted'}">
-      <span class="font-semibold text-ink-2">Active backend:</span> {activeLabel}
+      <span class="font-semibold text-ink-2">Active worker configuration:</span> {activeLabel}
     </p>
 
     <form
-      class="grid grid-cols-1 xl:grid-cols-2 gap-4"
+      class="flex flex-col gap-4"
       oninput={onEdit}
       onchange={onEdit}
       onsubmit={(event) => {
@@ -259,19 +177,41 @@
         void save();
       }}
     >
+      <div data-settings-actions class="sticky top-2 z-10 flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface shadow-card p-3" aria-live="polite">
+        <span class="text-[12.5px] font-semibold text-ink-2" data-settings-dirty={dirty ? "" : undefined}>
+          {dirty ? "Unsaved changes" : "Saved"}
+        </span>
+        <button type="submit" class={primaryBtn} data-settings-save disabled={saving || !dirty || remoteIncomplete} aria-busy={saving ? "true" : undefined}>
+          {saving ? "Saving…" : "Save changes"}
+        </button>
+        <button type="button" class={secondaryBtn} data-settings-discard disabled={saving || !dirty} onclick={discard}>Discard changes</button>
+        {#if dirty}
+          <span class="text-[12.5px] text-muted-2">Draft kept while browsing this tab. Not applied to the worker.</span>
+        {/if}
+        {#if remoteIncomplete}
+          <span class="text-[12.5px] text-muted-2">Base URL and model are required before saving.</span>
+        {/if}
+        {#if saveError}
+          <span class="text-[12.5px] text-bad" role="alert" data-settings-save-error>{saveError}</span>
+        {:else if saveNotice}
+          <span class="text-[12.5px] text-good" role="status" data-settings-save-notice>{saveNotice}</span>
+        {/if}
+      </div>
+      <fieldset disabled={saving} class="m-0 min-w-0 p-0 border-0 grid grid-cols-1 xl:grid-cols-2 items-start gap-4">
+        <legend class="sr-only">Annotation settings</legend>
       <article class="rounded-card border border-line bg-surface shadow-card p-4 sm:p-5 flex flex-col gap-4">
         <p class="m-0 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted-2">Annotation backend</p>
         <fieldset class="m-0 p-0 border-0 flex flex-col gap-2">
           <legend class="sr-only">Backend</legend>
           <label class="flex items-start gap-3 min-h-[44px] cursor-pointer">
-            <input type="radio" name="backend" value="native" bind:group={form.backend} data-settings-backend="native" class="mt-1 accent-accent" />
+            <input type="radio" name="backend" value="native" bind:group={$settingsDraft.form.backend} data-settings-backend="native" class="mt-1 accent-accent" />
             <span>
               <span class="block text-[14px] font-medium text-ink">Native (in-process)</span>
               <span class="block text-[12.5px] text-muted-2">Runs the bundled Gemma model locally. Uses GPU or CPU memory on this machine.</span>
             </span>
           </label>
           <label class="flex items-start gap-3 min-h-[44px] cursor-pointer">
-            <input type="radio" name="backend" value="openai" bind:group={form.backend} data-settings-backend="openai" class="mt-1 accent-accent" />
+            <input type="radio" name="backend" value="openai" bind:group={$settingsDraft.form.backend} data-settings-backend="openai" class="mt-1 accent-accent" />
             <span>
               <span class="block text-[14px] font-medium text-ink">Remote server (OpenAI-compatible)</span>
               <span class="block text-[12.5px] text-muted-2">llama-server, Ollama, LM Studio, vLLM, OpenAI, OpenRouter, and similar.</span>
@@ -279,14 +219,14 @@
           </label>
         </fieldset>
 
-        {#if form.backend === "native"}
+        {#if $settingsDraft.form.backend === "native"}
           <div>
             <label class={labelClass} for="settings-native-variant">Model variant</label>
             <select
               id="settings-native-variant"
               data-settings-native-variant
               class={inputClass}
-              bind:value={form.nativeVariant}
+              bind:value={$settingsDraft.form.nativeVariant}
               disabled={loaded.native_variant_locked}
             >
               <option value="e4b">e4b — default, lower memory</option>
@@ -301,7 +241,7 @@
         {/if}
       </article>
 
-      {#if form.backend === "openai"}
+      {#if $settingsDraft.form.backend === "openai"}
         <article class="rounded-card border border-line bg-surface shadow-card p-4 sm:p-5 flex flex-col gap-4">
           <p class="m-0 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted-2">Remote server</p>
           <div>
@@ -312,7 +252,7 @@
               class={inputClass}
               type="url"
               placeholder="http://127.0.0.1:11434/v1"
-              bind:value={form.baseUrl}
+              bind:value={$settingsDraft.form.baseUrl}
               autocomplete="off"
               spellcheck="false"
             />
@@ -324,13 +264,13 @@
               data-settings-api-key
               class={inputClass}
               type="password"
-              placeholder={loaded.annotation.openai.api_key_set && !clearApiKey ? "Key is set — leave blank to keep it" : "Optional for local servers"}
-              bind:value={form.apiKey}
+              placeholder={loaded.annotation.openai.api_key_set && !$settingsDraft.clearApiKey ? "Key is set — leave blank to keep it" : "Optional for local servers"}
+              bind:value={$settingsDraft.form.apiKey}
               autocomplete="off"
             />
             {#if loaded.annotation.openai.api_key_set}
               <label class="mt-1.5 flex items-center gap-2 min-h-[44px] sm:min-h-0 text-[12.5px] text-muted-2 cursor-pointer">
-                <input type="checkbox" bind:checked={clearApiKey} data-settings-clear-key class="accent-accent" />
+                <input type="checkbox" bind:checked={$settingsDraft.clearApiKey} data-settings-clear-key class="accent-accent" />
                 Clear the stored key
               </label>
             {/if}
@@ -345,7 +285,7 @@
                 type="text"
                 list="settings-model-options"
                 placeholder="e.g. llava, qwen2.5-vl, gpt-4o-mini"
-                bind:value={form.model}
+                bind:value={$settingsDraft.form.model}
                 autocomplete="off"
                 spellcheck="false"
               />
@@ -358,7 +298,7 @@
                 type="button"
                 class="{secondaryBtn} whitespace-nowrap"
                 data-settings-fetch-models
-                disabled={fetchingModels || !form.baseUrl.trim()}
+                disabled={fetchingModels || !$settingsDraft.form.baseUrl.trim()}
                 aria-busy={fetchingModels ? "true" : undefined}
                 onclick={() => void fetchModels()}
               >
@@ -374,11 +314,11 @@
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class={labelClass} for="settings-timeout">Timeout (seconds)</label>
-              <input id="settings-timeout" data-settings-timeout class={inputClass} type="number" min="1" max="3600" bind:value={form.timeoutSeconds} />
+              <input id="settings-timeout" data-settings-timeout class={inputClass} type="number" min="1" max="3600" bind:value={$settingsDraft.form.timeoutSeconds} />
             </div>
             <div>
               <label class={labelClass} for="settings-concurrency">Parallel annotations</label>
-              <input id="settings-concurrency" data-settings-concurrency class={inputClass} type="number" min="1" max="64" aria-describedby="settings-concurrency-help" bind:value={form.concurrency} />
+              <input id="settings-concurrency" data-settings-concurrency class={inputClass} type="number" min="1" max="64" aria-describedby="settings-concurrency-help" bind:value={$settingsDraft.form.concurrency} />
               <p id="settings-concurrency-help" class="m-0 mt-1.5 text-[12.5px] text-muted-2">Remote annotation jobs at once: 1 is serial, 2 allows two jobs to overlap. Saved changes apply without a restart after active requests finish. Native inference stays serial.</p>
             </div>
           </div>
@@ -427,7 +367,7 @@
                       step="1"
                       required
                       aria-describedby="settings-output-help"
-                      bind:value={form.outputTokens[field.key]}
+                      bind:value={$settingsDraft.form.outputTokens[field.key]}
                     />
                   </div>
                 {/each}
@@ -437,21 +377,7 @@
         </div>
       </section>
 
-      <div class="xl:col-span-2 flex flex-wrap items-center gap-3 px-1 sm:px-0">
-        <button type="submit" class={primaryBtn} data-settings-save disabled={saving || !dirty || remoteIncomplete} aria-busy={saving ? "true" : undefined}>
-          {saving ? "Saving…" : "Save settings"}
-        </button>
-        {#if dirty && !saving}
-          <span class="text-[12.5px] text-muted-2" data-settings-dirty>
-            {remoteIncomplete ? "Base URL and model are required before saving" : "Unsaved changes"}
-          </span>
-        {/if}
-        {#if saveError}
-          <span class="text-[12.5px] text-bad" role="alert" data-settings-save-error>{saveError}</span>
-        {:else if saveNotice}
-          <span class="text-[12.5px] text-good" role="status" data-settings-save-notice>{saveNotice}</span>
-        {/if}
-      </div>
+      </fieldset>
     </form>
 
     <article class="rounded-card border border-line bg-surface shadow-card p-4 sm:p-5 flex flex-col gap-3">

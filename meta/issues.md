@@ -34,7 +34,6 @@
 - [ ] [Cleanup should preserve the places an image was saved](issues/preserve-collections-during-manual-duplicate-cleanup.md)
 - [ ] [Clarify what “Exact only” means](issues/clarify-perceptual-duplicate-safety-and-keeper-choice.md)
 - [ ] [Make search modes and scope explicit](issues/clarify-search-filter-scope-and-match-labels.md)
-- [ ] [Protect unsaved Settings edits](issues/protect-unsaved-atelier-settings-edits.md)
 - [ ] [Separate viewing actions from editing actions](issues/simplify-lightbox-actions-and-edit-mode.md)
 - [ ] [Turn operational states into next steps](issues/clarify-library-health-and-error-recovery.md)
 - [ ] [“Back to library” should go to the Library](issues/make-feed-exit-destination-and-loading-state-explicit.md)
