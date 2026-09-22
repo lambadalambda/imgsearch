@@ -144,3 +144,19 @@ func TestParseRuntimeConfigKeepsFlagDefaults(t *testing.T) {
 		t.Fatalf("experimental n-gram speculation should default off: %+v", cfg)
 	}
 }
+
+func TestStrictImportDeduplicationIsOptIn(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		args := []string{}
+		if enabled {
+			args = append(args, "-dedup-strict-images")
+		}
+		cfg, err := parseRuntimeConfig(args, func(string) string { return "" })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.DeduplicateStrict != enabled {
+			t.Fatalf("enabled=%v got=%v", enabled, cfg.DeduplicateStrict)
+		}
+	}
+}

@@ -56,6 +56,7 @@ func TestNewRuntimeBuildsMuxUploadServiceAndQueue(t *testing.T) {
 		UploadMaxImageBytes:  1 << 20,
 		UploadMaxVideoBytes:  8 << 20,
 		UploadTimeout:        time.Minute,
+		DeduplicateStrict:    true,
 	})
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
@@ -64,7 +65,7 @@ func TestNewRuntimeBuildsMuxUploadServiceAndQueue(t *testing.T) {
 	if runtime.Mux == nil || runtime.Queue == nil || runtime.UploadService == nil {
 		t.Fatalf("expected mux, queue, and upload service: %+v", runtime)
 	}
-	if runtime.UploadService.ModelID != 7 || !runtime.UploadService.EnableVideoTranscripts || runtime.UploadService.VideoFrameCount != 3 {
+	if !runtime.UploadService.DeduplicateStrict || runtime.UploadService.ModelID != 7 || !runtime.UploadService.EnableVideoTranscripts || runtime.UploadService.VideoFrameCount != 3 {
 		t.Fatalf("unexpected upload service: %+v", runtime.UploadService)
 	}
 	if runtime.UploadService.MaxImageBytes != 1<<20 || runtime.UploadService.MaxVideoBytes != 8<<20 || runtime.UploadService.RequestTimeout != time.Minute {

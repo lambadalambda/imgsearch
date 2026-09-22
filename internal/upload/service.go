@@ -181,6 +181,9 @@ type Service struct {
 	VideoFrameCount        int
 	VideoSampler           VideoSampler
 	EnableVideoTranscripts bool
+	// DeduplicateStrict opts into unattended, lossy dHash matching of incoming
+	// standalone images. It never sweeps existing duplicate groups.
+	DeduplicateStrict bool
 	// MaxImageBytes and MaxVideoBytes are per-file upload limits; zero
 	// selects the defaults.
 	MaxImageBytes int64
@@ -218,6 +221,9 @@ type StoreResult struct {
 	StoragePath string
 	MediaType   string
 	Duplicate   bool
+	// ReplacedImageID identifies the old library entry when a larger strict
+	// match supersedes it. Its collections and metadata follow ImageID.
+	ReplacedImageID int64
 }
 
 func (s *Service) Store(ctx context.Context, originalName string, src io.Reader) (StoreResult, error) {
@@ -346,6 +352,14 @@ ON CONFLICT(sha256) DO NOTHING
 		}
 	}
 
+	if rows > 0 && s.DeduplicateStrict {
+		out, err = consolidateStrict(ctx, tx, out, perceptualHash, width, height)
+		if err != nil {
+			_ = tx.Rollback()
+			return StoreResult{}, fmt.Errorf("consolidate strict duplicate: %w", err)
+		}
+	}
+
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO index_jobs(kind, image_id, model_id, state)
 VALUES(?, ?, ?, 'pending')
@@ -363,6 +377,7 @@ WHERE i.id = ?
     trim(COALESCE(i.description, '')) = ''
     OR COALESCE(i.tags_json, '') = ''
     OR COALESCE(i.tags_json, '[]') = '[]'
+    OR i.reannotate_requested = 1
   )
 ON CONFLICT DO NOTHING
 `, jobkind.AnnotateImage, s.ModelID, out.ImageID); err != nil {
@@ -370,7 +385,7 @@ ON CONFLICT DO NOTHING
 		return StoreResult{}, fmt.Errorf("insert annotation job: %w", err)
 	}
 
-	if !out.Duplicate {
+	if !out.Duplicate || out.ReplacedImageID != 0 {
 		if err := moveFile(tmpPath, storageAbs); err != nil {
 			_ = tx.Rollback()
 			return StoreResult{}, fmt.Errorf("move upload to storage: %w", err)

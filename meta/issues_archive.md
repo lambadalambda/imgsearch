@@ -128,3 +128,5 @@
 - [x] [Save images and videos to named collections](issues/save-media-to-named-collections.md)
 - [x] [Use configured remote annotation concurrency in worker](issues/use-configured-remote-annotation-concurrency.md)
 - [x] [Deploy collections and annotation parallelism to home instance](issues/deploy-collections-and-annotation-parallelism.md)
+
+- [x] [Automatically consolidate strict duplicate images](issues/automatically-consolidate-strict-duplicates.md)

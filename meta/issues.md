@@ -27,3 +27,4 @@
 - [ ] [Investigate Atelier visual search-rank smoke failure](issues/investigate-atelier-visual-search-rank-smoke-failure.md)
 - [ ] [Bound collection video hydration work](issues/bound-collection-video-hydration-work.md)
 - [ ] [Avoid duplicate shared-frame annotation across video jobs](issues/avoid-duplicate-shared-frame-annotation.md)
+- [ ] [Expand strict import deduplication integration coverage](issues/expand-strict-import-deduplication-integration-coverage.md)

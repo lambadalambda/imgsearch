@@ -369,6 +369,7 @@ func main() {
 		LiveImagesLimit:            120,
 		LiveImagesOffset:           0,
 		VideoFrameCount:            cfg.VideoFrameCount,
+		DeduplicateStrict:          cfg.DeduplicateStrict,
 		UploadMaxImageBytes:        int64(cfg.MaxImageUploadMB) << 20,
 		UploadMaxVideoBytes:        int64(cfg.MaxVideoUploadMB) << 20,
 		UploadTimeout:              cfg.UploadTimeout,
@@ -389,6 +390,9 @@ func main() {
 	log.Printf("imgsearch initialized with database %s", dataRuntime.DBPath)
 	log.Printf("using vector backend %s", dataRuntime.VectorBackend)
 	log.Printf("running in %s mode", mode)
+	if mode.startsHTTP() && cfg.DeduplicateStrict {
+		log.Printf("strict image import deduplication enabled: lossy distance <=2, keep largest; superseded original files are retained")
+	}
 
 	var workerDone chan struct{}
 	if mode.startsWorker() {

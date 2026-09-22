@@ -44,6 +44,7 @@ type RuntimeOptions struct {
 	LiveImagesOffset     int
 	VideoFrameCount      int
 	VideoSampler         upload.VideoSampler
+	DeduplicateStrict    bool
 	// Upload limits and deadline; zero selects the upload package defaults.
 	UploadMaxImageBytes int64
 	UploadMaxVideoBytes int64
@@ -111,6 +112,7 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 		ModelID:                opts.ModelID,
 		VideoFrameCount:        opts.VideoFrameCount,
 		VideoSampler:           opts.VideoSampler,
+		DeduplicateStrict:      opts.DeduplicateStrict,
 		EnableVideoTranscripts: opts.VideoTranscriptsOn,
 		MaxImageBytes:          opts.UploadMaxImageBytes,
 		MaxVideoBytes:          opts.UploadMaxVideoBytes,

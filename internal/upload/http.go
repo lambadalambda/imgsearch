@@ -28,13 +28,14 @@ type UploadLimitError struct {
 }
 
 type UploadResponse struct {
-	Filename  string `json:"filename,omitempty"`
-	Error     string `json:"error,omitempty"`
-	MediaType string `json:"media_type,omitempty"`
-	ImageID   int64  `json:"image_id,omitempty"`
-	VideoID   int64  `json:"video_id,omitempty"`
-	SHA256    string `json:"sha256,omitempty"`
-	Duplicate bool   `json:"duplicate,omitempty"`
+	Filename        string `json:"filename,omitempty"`
+	Error           string `json:"error,omitempty"`
+	MediaType       string `json:"media_type,omitempty"`
+	ImageID         int64  `json:"image_id,omitempty"`
+	VideoID         int64  `json:"video_id,omitempty"`
+	SHA256          string `json:"sha256,omitempty"`
+	Duplicate       bool   `json:"duplicate,omitempty"`
+	ReplacedImageID int64  `json:"replaced_image_id,omitempty"`
 }
 
 type UploadBatchResponse struct {
@@ -152,18 +153,30 @@ func NewHandler(svc *Service) http.Handler {
 				continue
 			}
 
+			if out.ReplacedImageID != 0 {
+				log.Printf("upload: strict duplicate replaced image_id=%d with image_id=%d; superseded files retained", out.ReplacedImageID, out.ImageID)
+				// Later files can upgrade earlier survivors in this batch. Keep
+				// returned IDs/digests consistent with the final local survivor.
+				for i := range uploads {
+					if uploads[i].ImageID == out.ReplacedImageID {
+						uploads[i].ImageID = out.ImageID
+						uploads[i].SHA256 = out.SHA256
+					}
+				}
+			}
 			if out.Duplicate {
 				duplicates++
 			} else {
 				created++
 			}
 			uploads = append(uploads, UploadResponse{
-				Filename:  filename,
-				MediaType: out.MediaType,
-				ImageID:   out.ImageID,
-				VideoID:   out.VideoID,
-				SHA256:    out.SHA256,
-				Duplicate: out.Duplicate,
+				Filename:        filename,
+				MediaType:       out.MediaType,
+				ImageID:         out.ImageID,
+				VideoID:         out.VideoID,
+				SHA256:          out.SHA256,
+				Duplicate:       out.Duplicate,
+				ReplacedImageID: out.ReplacedImageID,
 			})
 		}
 

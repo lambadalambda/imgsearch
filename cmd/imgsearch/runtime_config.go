@@ -27,9 +27,10 @@ type runtimeConfig struct {
 	WorkerBatchSize int
 	VideoFrameCount int
 
-	MaxImageUploadMB int
-	MaxVideoUploadMB int
-	UploadTimeout    time.Duration
+	DeduplicateStrict bool
+	MaxImageUploadMB  int
+	MaxVideoUploadMB  int
+	UploadTimeout     time.Duration
 
 	LlamaNativeModelPath                  string
 	LlamaNativeMMProjPath                 string
@@ -143,6 +144,7 @@ func registerRuntimeFlags(fs *flag.FlagSet, cfg *runtimeConfig) {
 	fs.StringVar(&cfg.ModeFlag, "mode", cfg.ModeFlag, "process mode: all, api, or worker")
 	fs.IntVar(&cfg.WorkerBatchSize, "worker-batch-size", cfg.WorkerBatchSize, "number of jobs to claim per batch (1 disables batching)")
 	fs.IntVar(&cfg.VideoFrameCount, "video-frame-count", cfg.VideoFrameCount, "number of uniformly sampled frames to extract per uploaded video")
+	fs.BoolVar(&cfg.DeduplicateStrict, "dedup-strict-images", cfg.DeduplicateStrict, "automatically consolidate incoming standalone strict near-duplicates (lossy dHash distance <=2), keeping largest and retaining superseded files")
 	fs.IntVar(&cfg.MaxImageUploadMB, "max-image-upload-mb", cfg.MaxImageUploadMB, "per-file upload limit for images in MiB")
 	fs.IntVar(&cfg.MaxVideoUploadMB, "max-video-upload-mb", cfg.MaxVideoUploadMB, "per-file upload limit for videos in MiB")
 	fs.DurationVar(&cfg.UploadTimeout, "upload-timeout", cfg.UploadTimeout, "deadline for one multipart upload request (body transfer and response), overriding the server-wide read/write timeouts")

@@ -639,3 +639,40 @@ func TestUploadHandlerRejectsNonMultipartContentType(t *testing.T) {
 		t.Fatalf("status: got=%d want=%d body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
 	}
 }
+
+func TestStrictUploadBatchReportsReplacementAndSurvivingIDs(t *testing.T) {
+	svc, db := setupService(t)
+	svc.DeduplicateStrict = true
+	body, contentType := multipartBodyWithFiles(t, []struct {
+		filename string
+		content  []byte
+	}{
+		{"small.png", strictCopyPNG(t, 1)},
+		{"medium.png", strictCopyPNG(t, 2)},
+		{"large.png", strictCopyPNG(t, 4)},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	rr := httptest.NewRecorder()
+	NewHandler(svc).ServeHTTP(rr, req)
+	var resp UploadBatchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if rr.Code != http.StatusCreated || resp.Created != 1 || resp.Duplicates != 2 || len(resp.Uploads) != 3 {
+		t.Fatalf("response %d: %s", rr.Code, rr.Body.String())
+	}
+	last := resp.Uploads[2]
+	if last.ReplacedImageID == 0 || !last.Duplicate {
+		t.Fatalf("replacement not reported: %+v", last)
+	}
+	for _, out := range resp.Uploads {
+		if out.ImageID != last.ImageID || out.SHA256 != last.SHA256 {
+			t.Fatalf("stale batch result %+v, survivor %+v", out, last)
+		}
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM images WHERE id=?`, out.ImageID).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("missing survivor: %d %v", count, err)
+		}
+	}
+}

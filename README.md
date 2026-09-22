@@ -41,6 +41,8 @@ Or any other folder:
 
 The import script uploads supported images to the local app and indexing continues in the background.
 
+For unattended near-duplicate handling, start the server with `-dedup-strict-images`. Incoming standalone images are directly matched at the Strict threshold; the highest-resolution copy wins and collections/edits follow an upgrade. This is opt-in and lossy, does not sweep the existing library, and retains superseded files on disk. See [import deduplication](docs/import-deduplication.md) for safety limits and API behavior.
+
 You can also import full-size pictures and webms from a 4chan thread URL:
 
 ```bash
