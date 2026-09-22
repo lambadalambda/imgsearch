@@ -11,7 +11,8 @@
   import Upload from "./components/Upload.svelte";
   import Feed from "./components/Feed.svelte";
 
-  import { tick, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
+  import { startAnnotationWatch } from "./lib/annotationWatch";
   import { get } from "svelte/store";
   import {
     mode,
@@ -51,6 +52,9 @@
   void refreshStats().catch((err) => {
     console.warn("stats bootstrap failed", err);
   });
+
+  // Poll annotation progress for the pins on screen (meta/issues/121).
+  onMount(() => startAnnotationWatch());
 
   let currentRequestToken = 0;
   let currentOffset = 0;

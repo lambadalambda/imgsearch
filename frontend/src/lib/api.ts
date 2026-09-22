@@ -1,4 +1,4 @@
-import type { ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse } from "./types";
+import type { ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse, MediaStatusResponse } from "./types";
 
 class ApiError extends Error {
   constructor(
@@ -429,4 +429,19 @@ export async function listDuplicates(opts: { distance?: number; includeNSFW?: bo
   if (opts.includeNSFW) params.set("include_nsfw", "1");
   const query = params.toString();
   return getJSON<DuplicatesResponse>(`/api/duplicates${query ? `?${query}` : ""}`);
+}
+
+export async function fetchMediaStatus(opts: { images: number[]; videos: number[]; signal?: AbortSignal }): Promise<MediaStatusResponse> {
+  const params = new URLSearchParams();
+  if (opts.images.length) params.set("images", opts.images.join(","));
+  if (opts.videos.length) params.set("videos", opts.videos.join(","));
+  return getJSON<MediaStatusResponse>(`/api/media/status?${params.toString()}`, { signal: opts.signal });
+}
+
+export async function getImage(id: number, signal?: AbortSignal): Promise<ImageRecord> {
+  return getJSON<ImageRecord>(`/api/images/${id}`, { signal });
+}
+
+export async function getVideo(id: number, signal?: AbortSignal): Promise<VideoRecord> {
+  return getJSON<VideoRecord>(`/api/videos/${id}`, { signal });
 }

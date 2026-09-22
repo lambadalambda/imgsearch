@@ -76,6 +76,8 @@ export function pinFromImage(record: ImageRecord): Pin {
     isNSFW: tagsIncludeNSFW(tags),
     createdAt: record.created_at,
     capturedAt: record.captured_at,
+    annotationState: record.annotation_state,
+    annotationUpdatedAt: record.annotation_updated_at,
   };
 }
 
@@ -100,6 +102,8 @@ export function pinFromVideo(record: VideoRecord): Pin {
     mimeType: record.mime_type,
     createdAt: record.created_at,
     capturedAt: record.captured_at,
+    annotationState: record.annotation_state,
+    annotationUpdatedAt: record.annotation_updated_at,
   };
 }
 

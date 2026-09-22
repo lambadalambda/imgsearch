@@ -1,5 +1,7 @@
 export type MediaType = "image" | "video";
 
+export type AnnotationState = "queued" | "annotating" | "failed" | "done" | "none";
+
 export interface ImageRecord {
   image_id: number;
   original_name: string;
@@ -11,6 +13,8 @@ export interface ImageRecord {
   created_at?: string;
   /** EXIF capture time when known, else the upload time. */
   captured_at?: string;
+  annotation_state?: AnnotationState;
+  annotation_updated_at?: string;
   title?: string;
   summary?: string;
   description?: string;
@@ -188,6 +192,9 @@ export interface Pin {
   /** ISO-ish backend creation timestamp. Used for client-side mixed-media sorting. */
   createdAt?: string;
   capturedAt?: string;
+  /** Annotation progress for the badge; undefined when unknown (search results). */
+  annotationState?: AnnotationState;
+  annotationUpdatedAt?: string;
   /** Whether this is the anchor of a similar-search. */
   isAnchor?: boolean;
   /** Whether this pin is currently flagged as NSFW (best-effort, derived from tags). */
@@ -276,4 +283,9 @@ export interface DuplicatesResponse {
   max_distance: number;
   scanned: number;
   unhashed: number;
+}
+
+export interface MediaStatusResponse {
+  images: Array<{ image_id: number; index_state: string; annotation_state: AnnotationState; annotation_updated_at: string }>;
+  videos: Array<{ video_id: number; annotation_state: AnnotationState; annotation_updated_at: string }>;
 }

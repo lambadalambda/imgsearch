@@ -84,6 +84,19 @@
   const tagsToShow = $derived(pin.tags.slice(0, 5));
   const hiddenTagCount = $derived(Math.max(0, pin.tags.length - tagsToShow.length));
   const nsfwFlagged = $derived(pin.isNSFW ?? false);
+  // Annotation progress badge (meta/issues/121); "done"/"none"/unknown show nothing.
+  const annotationBadge = $derived.by(() => {
+    switch (pin.annotationState) {
+      case "queued":
+        return { label: "Queued", tone: "bg-[rgba(255,253,249,0.92)] text-muted border-line" };
+      case "annotating":
+        return { label: "Annotating…", tone: "bg-[rgba(255,253,249,0.94)] text-accent-strong border-accent/40" };
+      case "failed":
+        return { label: "Annotation failed", tone: "bg-[rgba(255,253,249,0.94)] text-bad border-bad/40" };
+      default:
+        return null;
+    }
+  });
   // Feed only needs a video seed id. Do not gate it on canPlayType(): mobile
   // browsers can return false negatives for playable WebM/extensionless media.
   const canFeed = $derived(pin.mediaType === "video" && pin.videoId !== undefined);
@@ -140,6 +153,18 @@
             : undefined}
         >
           {matchLabel}
+        </span>
+      {/if}
+      {#if annotationBadge}
+        <span
+          data-pin-annotation={pin.annotationState}
+          class="absolute top-2 right-2 z-[2] inline-flex items-center gap-1.5 text-[10.5px] font-semibold leading-none uppercase tracking-[0.04em] border px-[9px] py-1 rounded-full backdrop-blur-sm {annotationBadge.tone}"
+          aria-label={annotationBadge.label}
+        >
+          {#if pin.annotationState === "annotating"}
+            <span class="w-1.5 h-1.5 rounded-full bg-accent-strong animate-pulse" aria-hidden="true"></span>
+          {/if}
+          {annotationBadge.label}
         </span>
       {/if}
       {#if pin.mediaType === "video" && durationLabel}

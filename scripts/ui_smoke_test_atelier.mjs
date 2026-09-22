@@ -216,6 +216,8 @@ let nsfwToggleCount = 0;
 const metadataPatches = [];
 const duplicateRequests = [];
 const byImageRequests = [];
+let statusPolls = 0;
+let annotationPhase = "queued";
 const deletedImageIds = new Set();
 let statsServed = 0;
 let reannotateCount = 0;
@@ -399,7 +401,11 @@ const server = createServer(async (req, res) => {
       const seed = url.searchParams.get("seed") || "";
       imagesRequests.push({ limit, offset, order, seed });
       jsonResponse(res, 200, {
-        images: sampleImages.slice(offset, offset + limit),
+        images: sampleImages.slice(offset, offset + limit).map((image) => ({
+          ...image,
+          annotation_state: image.image_id === 1007 ? "queued" : "done",
+          annotation_updated_at: image.image_id === 1007 ? "" : "2026-01-01 00:00:00",
+        })),
         total: sampleImages.length,
       });
       return;
@@ -517,6 +523,33 @@ const server = createServer(async (req, res) => {
         })),
         total: 12,
       });
+      return;
+    }
+    if (url.pathname === "/api/media/status") {
+      statusPolls += 1;
+      const ids = (url.searchParams.get("images") || "").split(",").filter(Boolean).map(Number);
+      // Image 1007 progresses queued -> annotating -> done with fresh text.
+      const phase = annotationPhase;
+      const images = ids.map((id) => {
+        if (id === 1007) {
+          if (phase === "annotating") return { image_id: id, index_state: "done", annotation_state: "annotating", annotation_updated_at: "" };
+          if (phase === "done") return { image_id: id, index_state: "done", annotation_state: "done", annotation_updated_at: "2026-09-22 10:00:00" };
+          return { image_id: id, index_state: "done", annotation_state: "queued", annotation_updated_at: "" };
+        }
+        return { image_id: id, index_state: "done", annotation_state: "done", annotation_updated_at: "2026-01-01 00:00:00" };
+      });
+      jsonResponse(res, 200, { images, videos: [] });
+      return;
+    }
+    if (/^\/api\/images\/\d+$/.test(url.pathname) && req.method === "GET") {
+      const imageId = Number(url.pathname.split("/").pop());
+      const image = sampleImages.find((entry) => entry.image_id === imageId);
+      if (!image) {
+        jsonResponse(res, 404, { error: "image not found" });
+        return;
+      }
+      const fresh = imageId === 1007 && annotationPhase === "done" ? { title: "Freshly annotated cat", tags: ["fresh", "cat"], annotation_updated_at: "2026-09-22 10:00:00" } : {};
+      jsonResponse(res, 200, { ...image, index_state: "done", annotation_state: "done", ...fresh });
       return;
     }
     if (url.pathname === "/api/duplicates") {
@@ -1825,6 +1858,41 @@ try {
   const reloadedTitle = (await page.locator('[data-pin][data-pin-key="image:1006"] h3').textContent() || "").trim();
   if (reloadedTitle !== "Handpicked title") {
     throw new Error(`expected the edited title after reload, got ${JSON.stringify(reloadedTitle)}`);
+  }
+
+  // 6f. Annotation progress on cards updates live (meta/issues/121): the
+  //     queued badge turns into "Annotating…", then the card title and tags
+  //     refresh in place once the status poll reports new text.
+  // Poll fast only for this step; the default 3s cadence would otherwise
+  //     keep the network from ever going idle for later waits.
+  await page.evaluate(() => {
+    window.__imgsearchAnnotationPollMs = 200;
+  });
+  const liveCard = page.locator('[data-pin][data-pin-key="image:1007"]');
+  await liveCard.waitFor({ state: "attached", timeout: 5000 });
+  if ((await liveCard.locator("[data-pin-annotation]").getAttribute("data-pin-annotation")) !== "queued") {
+    throw new Error("expected the queued badge from the list response");
+  }
+  annotationPhase = "annotating";
+  await page.waitForFunction(
+    () => document.querySelector('[data-pin][data-pin-key="image:1007"] [data-pin-annotation]')?.getAttribute("data-pin-annotation") === "annotating",
+    {},
+    { timeout: 10000 },
+  );
+  annotationPhase = "done";
+  await page.waitForFunction(
+    () => (document.querySelector('[data-pin][data-pin-key="image:1007"] h3')?.textContent || "").trim() === "Freshly annotated cat",
+    {},
+    { timeout: 10000 },
+  );
+  await page.evaluate(() => {
+    window.__imgsearchAnnotationPollMs = 30000;
+  });
+  if ((await liveCard.locator("[data-pin-annotation]").count()) !== 0) {
+    throw new Error("expected no badge once the annotation is done");
+  }
+  if (statusPolls < 2) {
+    throw new Error(`expected repeated status polls, got ${statusPolls}`);
   }
 
   // 6e. Near-duplicate finder (meta/issues/111): groups render side by
