@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(annotations): make the saved remote “Parallel annotations” setting drive actual concurrent worker jobs independently of embedding batch size; live changes drain active requests safely, native inference stays serialized, and shutdown joins job/lease-renewal work.
 - feat(ui): add Atelier Collections management and mixed-media browsing, with save/remove pickers on cards, lightbox, and Feed; lists survive reloads and deleting them preserves original media.
 - feat(collections): add persistent named lists for images/videos with authenticated collection and membership APIs, mixed-media pagination, existing NSFW filtering, and reference-only deletion (migration 16).
 - feat(import): add `scripts/import_fediverse.py` / `mise run import-fediverse` to import a Mastodon-compatible account's public image/video attachments from the last N days, with dry-run, pagination, bounded downloads, source rate-limit retries, credential separation, and existing upload/conversion/deduplication behavior.

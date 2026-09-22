@@ -26,4 +26,4 @@
 - [ ] [Gate rolling release publication on verification](issues/gate-rolling-release-publication-on-verification.md)
 - [ ] [Investigate Atelier visual search-rank smoke failure](issues/investigate-atelier-visual-search-rank-smoke-failure.md)
 - [ ] [Bound collection video hydration work](issues/bound-collection-video-hydration-work.md)
-- [ ] [Use configured remote annotation concurrency in worker](issues/use-configured-remote-annotation-concurrency.md)
+- [ ] [Avoid duplicate shared-frame annotation across video jobs](issues/avoid-duplicate-shared-frame-annotation.md)

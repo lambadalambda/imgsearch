@@ -33,16 +33,17 @@ type annotatorResolverOptions struct {
 }
 
 type resolvedAnnotator struct {
-	key       string
-	annotator embedder.ImageAnnotator
-	status    settings.ActiveAnnotation
-	owned     bool
+	key         string
+	annotator   embedder.ImageAnnotator
+	status      settings.ActiveAnnotation
+	concurrency int
+	owned       bool
 }
 
 // annotatorResolver presents a stable embedder.ImageAnnotator to the worker
 // while swapping the backend underneath whenever the persisted annotation
-// settings change. Swaps happen at the start of an annotation call, never
-// mid-call, so a running job finishes on the backend it started with.
+// settings change. Backend/configuration changes drain existing calls before
+// rebuilding, including native loader changes made by the settings status API.
 type annotatorResolver struct {
 	opts annotatorResolverOptions
 
@@ -52,6 +53,10 @@ type annotatorResolver struct {
 	version   int64
 	current   *resolvedAnnotator
 	lastErr   error
+	active    int
+	draining  bool
+	closed    bool
+	changed   chan struct{}
 }
 
 func newAnnotatorResolver(opts annotatorResolverOptions) *annotatorResolver {
@@ -61,7 +66,7 @@ func newAnnotatorResolver(opts annotatorResolverOptions) *annotatorResolver {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &annotatorResolver{opts: opts}
+	return &annotatorResolver{opts: opts, changed: make(chan struct{})}
 }
 
 var _ embedder.ImageAnnotatorWithOptions = (*annotatorResolver)(nil)
@@ -74,9 +79,15 @@ var _ app.Closer = (*annotatorResolver)(nil)
 func (r *annotatorResolver) resolve(ctx context.Context, force bool) (*resolvedAnnotator, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.resolveLocked(ctx, force)
+}
 
+func (r *annotatorResolver) resolveLocked(ctx context.Context, force bool) (*resolvedAnnotator, error) {
+	if r.closed {
+		return nil, fmt.Errorf("annotation resolver is closed")
+	}
 	now := r.opts.Now()
-	if !force && r.checked && now.Sub(r.lastCheck) < r.opts.CheckInterval {
+	if !force && !r.draining && r.checked && now.Sub(r.lastCheck) < r.opts.CheckInterval {
 		return r.currentLocked()
 	}
 	version, err := settings.Version(ctx, r.opts.DB)
@@ -102,9 +113,18 @@ func (r *annotatorResolver) resolve(ctx context.Context, force bool) (*resolvedA
 		refreshed.status.SettingsVersion = version
 		r.current = &refreshed
 		r.version = version
+		r.draining = false
 		r.lastErr = nil
 		return r.current, nil
 	}
+
+	// Stop admission and keep reporting the genuinely active backend until all
+	// calls finish. Never unload native resources or close a remote client in use.
+	if r.active > 0 {
+		r.draining = true
+		return r.currentLocked()
+	}
+	r.draining = false
 
 	// A backend change replaces the current annotator even when the new one
 	// fails to build: serving the old backend intermittently would be more
@@ -154,7 +174,7 @@ func (r *annotatorResolver) build(ctx context.Context, s settings.AnnotationSett
 		if err != nil {
 			return nil, err
 		}
-		return &resolvedAnnotator{annotator: a, status: status, owned: true}, nil
+		return &resolvedAnnotator{annotator: a, status: status, owned: true, concurrency: max(1, min(s.OpenAI.Concurrency, settings.MaxOpenAIConcurrency))}, nil
 	default:
 		if r.opts.BuildNative == nil {
 			return nil, fmt.Errorf("native annotation backend is unavailable in this process")
@@ -163,7 +183,7 @@ func (r *annotatorResolver) build(ctx context.Context, s settings.AnnotationSett
 		if err != nil {
 			return nil, err
 		}
-		return &resolvedAnnotator{annotator: a, status: status}, nil
+		return &resolvedAnnotator{annotator: a, status: status, concurrency: 1}, nil
 	}
 }
 
@@ -195,10 +215,78 @@ func (r *annotatorResolver) Status(ctx context.Context) (settings.ActiveAnnotati
 	return status, nil
 }
 
-func (r *annotatorResolver) Close() error {
+// AnnotationConcurrency is the worker's live admission limit, not just an HTTP
+// semaphore size. A configuration change pauses claims until old calls drain.
+func (r *annotatorResolver) AnnotationConcurrency(ctx context.Context) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	current, err := r.resolveLocked(ctx, false)
+	if err != nil {
+		return 0, err
+	}
+	if r.draining {
+		return 0, nil
+	}
+	return current.concurrency, nil
+}
+
+// acquire also enforces admission here: status requests can observe a settings
+// save between the worker's claim and the actual annotation call.
+func (r *annotatorResolver) acquire(ctx context.Context) (*resolvedAnnotator, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		r.mu.Lock()
+		current, err := r.resolveLocked(ctx, false)
+		if err != nil {
+			r.mu.Unlock()
+			return nil, err
+		}
+		if !r.draining && r.active < current.concurrency {
+			r.active++
+			r.mu.Unlock()
+			return current, nil
+		}
+		changed := r.changed
+		r.mu.Unlock()
+		timer := time.NewTimer(r.opts.CheckInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-changed:
+		case <-timer.C:
+		}
+		timer.Stop()
+	}
+}
+
+func (r *annotatorResolver) release() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.active--
+	if r.closed && r.active == 0 {
+		r.dropCurrentLocked()
+	}
+	close(r.changed)
+	r.changed = make(chan struct{})
+}
+
+func (r *annotatorResolver) Close() error {
+	r.mu.Lock()
+	r.closed = true
+	// Wake callers waiting for admission so they can fail without starting work.
+	close(r.changed)
+	r.changed = make(chan struct{})
+	for r.active > 0 {
+		changed := r.changed
+		r.mu.Unlock()
+		<-changed
+		r.mu.Lock()
+	}
 	r.dropCurrentLocked()
+	r.mu.Unlock()
 	return nil
 }
 
@@ -207,10 +295,11 @@ func (r *annotatorResolver) AnnotateImage(ctx context.Context, path string) (emb
 }
 
 func (r *annotatorResolver) AnnotateImageWithOptions(ctx context.Context, path string, opts embedder.ImageAnnotationOptions) (embedder.ImageAnnotation, error) {
-	current, err := r.resolve(ctx, false)
+	current, err := r.acquire(ctx)
 	if err != nil {
 		return embedder.ImageAnnotation{}, err
 	}
+	defer r.release()
 	if withOptions, ok := current.annotator.(embedder.ImageAnnotatorWithOptions); ok {
 		return withOptions.AnnotateImageWithOptions(ctx, path, opts)
 	}
@@ -218,10 +307,11 @@ func (r *annotatorResolver) AnnotateImageWithOptions(ctx context.Context, path s
 }
 
 func (r *annotatorResolver) AnnotateVideoFrame(ctx context.Context, path string, opts embedder.ImageAnnotationOptions) (embedder.ImageAnnotation, error) {
-	current, err := r.resolve(ctx, false)
+	current, err := r.acquire(ctx)
 	if err != nil {
 		return embedder.ImageAnnotation{}, err
 	}
+	defer r.release()
 	if frameAnnotator, ok := current.annotator.(embedder.VideoFrameAnnotator); ok {
 		return frameAnnotator.AnnotateVideoFrame(ctx, path, opts)
 	}
@@ -232,10 +322,11 @@ func (r *annotatorResolver) AnnotateVideoFrame(ctx context.Context, path string,
 }
 
 func (r *annotatorResolver) AnnotateVideo(ctx context.Context, input embedder.VideoAnnotationInput) (embedder.VideoAnnotation, error) {
-	current, err := r.resolve(ctx, false)
+	current, err := r.acquire(ctx)
 	if err != nil {
 		return embedder.VideoAnnotation{}, err
 	}
+	defer r.release()
 	videoAnnotator, ok := current.annotator.(embedder.VideoAnnotator)
 	if !ok {
 		return embedder.VideoAnnotation{}, fmt.Errorf("configured annotation backend does not support video annotation")

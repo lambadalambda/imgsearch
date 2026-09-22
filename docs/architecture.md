@@ -26,8 +26,9 @@ MVP design priorities:
 - Retry policy with capped attempts and `run_after` backoff.
 - Idempotent indexing by content hash to avoid duplicate work.
 - Lease-based claiming with expiry (`leased_until`) and periodic renewal for long jobs, so crash-recovery can requeue stale jobs.
-- Single worker loop per process (optionally batched embeds) to minimize SQLite write contention; `-mode=api` / `-mode=worker` split the server and worker into separate processes.
-- The annotator can be swapped at runtime from the settings page (native Gemma `e4b`/`26b` or an OpenAI-compatible remote server).
+- Single dispatcher per process, with optionally batched embeds and bounded parallel remote annotation jobs. Native annotation, embedding batches, and transcription do not overlap annotation jobs; `-mode=api` / `-mode=worker` split the server and worker into separate processes.
+- Settings → remote backend → **Parallel annotations** controls actual remote job admission (`1` serial, `2` up to two overlapping image/video annotation jobs), separately from `worker-batch-size`. Limits are per worker process. The HTTP client also retains its request cap.
+- The annotator can be swapped at runtime from the settings page (native Gemma `e4b`/`26b` or an OpenAI-compatible remote server). Settings checks use a five-second polling throttle; changes apply after the next check and any required drain. Running embedding/transcription work can delay the check. Changed limits/backends pause admission and let active requests finish before applying; no restart is required.
 - See `docs/indexing-annotation-pipeline-notes.md` for pipeline notes.
 
 ### 3) Storage (SQLite)

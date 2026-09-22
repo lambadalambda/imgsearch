@@ -2347,6 +2347,11 @@ try {
   }
 
   await page.locator('[data-settings-backend="openai"]').check();
+  const concurrencyInput = page.getByRole("spinbutton", { name: "Parallel annotations", exact: true });
+  await concurrencyInput.fill("1");
+  if (!/1 is serial, 2 allows two jobs to overlap/.test(await page.locator("#settings-concurrency-help").textContent() || "")) {
+    throw new Error("expected settings to explain actual remote annotation parallelism");
+  }
   await page.locator("[data-settings-base-url]").fill("http://good.example/v1/");
   await page.locator("[data-settings-api-key]").fill("sk-smoke");
   await page.locator("[data-settings-fetch-models]").click();
@@ -2365,7 +2370,7 @@ try {
   await page.locator("[data-settings-save]").click();
   await page.locator("[data-settings-save-notice]").waitFor({ state: "visible", timeout: 5000 });
   const lastPut = settingsPuts[settingsPuts.length - 1];
-  if (!lastPut || lastPut.annotation.backend !== "openai" || lastPut.annotation.openai.api_key !== "sk-smoke" || lastPut.annotation.openai.model !== "vision-a") {
+  if (!lastPut || lastPut.annotation.backend !== "openai" || lastPut.annotation.openai.api_key !== "sk-smoke" || lastPut.annotation.openai.model !== "vision-a" || lastPut.annotation.openai.concurrency !== 1) {
     throw new Error(`unexpected settings PUT body ${JSON.stringify(lastPut)}`);
   }
   const savedActive = (await page.locator("[data-settings-active]").textContent()) || "";
@@ -2388,6 +2393,20 @@ try {
   const keyPlaceholder = (await page.locator("[data-settings-api-key]").getAttribute("placeholder")) || "";
   if (!/Key is set/.test(keyPlaceholder)) {
     throw new Error(`expected placeholder to say the key is set, got ${JSON.stringify(keyPlaceholder)}`);
+  }
+  if ((await concurrencyInput.inputValue()) !== "1") {
+    throw new Error("expected serial annotation limit to persist after reload");
+  }
+  await concurrencyInput.fill("2");
+  await page.locator("[data-settings-save]").click();
+  await page.locator("[data-settings-save-notice]").waitFor({ state: "visible", timeout: 5000 });
+  if (settingsPuts.at(-1)?.annotation.openai.concurrency !== 2) {
+    throw new Error("expected saving Parallel annotations = 2 to send the worker's actual concurrency setting");
+  }
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator("[data-settings-pane]").waitFor({ state: "visible", timeout: 5000 });
+  if ((await concurrencyInput.inputValue()) !== "2") {
+    throw new Error("expected two parallel annotations to persist after reload");
   }
   // A failed probe is shown inline instead of thrown.
   await page.locator("[data-settings-base-url]").fill("http://bad.example/v1");

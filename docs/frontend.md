@@ -109,6 +109,12 @@ mise run build:frontend            # rebuilds dist
 # Open http://localhost:8081/ for Atelier; http://localhost:8081/legacy for the legacy UI.
 ```
 
+## Annotation parallelism
+
+In **Settings → Annotation → OpenAI-compatible**, set **Parallel annotations** and save. `1` runs one remote annotation job at a time; `2` permits two concurrent jobs when work is available. The existing persisted `annotation.openai.concurrency` value (1–64, default 2) now controls worker admission as well as the remote client's request limit.
+
+Changes apply without restarting after the next settings check and any required drain. Checks use a five-second polling throttle; running embedding/transcription work can delay the next check. Lowering the limit does not cancel running work. Native inference remains serial; embedding/transcription work drains annotation jobs before running. Limits apply per worker process, not across multiple processes. Parallelism is capacity, not a promise of a 2× throughput improvement; provider limits and workload still matter.
+
 ## Tests
 
 - `scripts/ui_smoke_test.mjs` — legacy SPA smoke tests, now pointed at

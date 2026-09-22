@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,8 @@ import (
 	"imgsearch/internal/vectorindex"
 )
 
+// Queue configuration is immutable while a worker is running. Live annotation
+// settings belong to the synchronized resolver, not mutable Queue fields.
 type Queue struct {
 	DB      *sql.DB
 	DataDir string
@@ -83,23 +86,11 @@ type jobHandlerResult struct {
 }
 
 func (q *Queue) ProcessOne(ctx context.Context, owner string) (bool, error) {
-	if q == nil || q.DB == nil {
-		return false, fmt.Errorf("queue db is nil")
-	}
-	if q.Embedder == nil {
-		return false, fmt.Errorf("queue embedder is nil")
-	}
-	if q.Index == nil {
-		return false, fmt.Errorf("queue index is nil")
-	}
-	if q.DataDir == "" {
-		return false, fmt.Errorf("queue data dir is empty")
+	if err := q.validate(); err != nil {
+		return false, err
 	}
 	if owner == "" {
 		owner = "worker"
-	}
-	if q.LeaseDuration <= 0 {
-		q.LeaseDuration = 30 * time.Second
 	}
 
 	job, ok, err := q.claimNext(ctx, owner)
@@ -192,6 +183,22 @@ WHERE id = ?
 }
 
 func (q *Queue) claimBatch(ctx context.Context, owner string, limit int) ([]claimedJob, error) {
+	limit = max(1, limit)
+	return q.claimBatchWithLimits(ctx, owner, claimLimits{batchSize: limit, annotationSlots: limit})
+}
+
+type claimLimits struct {
+	batchSize       int
+	annotationSlots int
+	// Drain before switching job kinds (especially frames before video summaries).
+	activeKind string
+	activeIDs  map[int64]struct{}
+}
+
+// claimBatchWithLimits separates annotation slots from embedding batch size.
+// Only the dispatcher claims jobs; it never leases work to wait in a backlog.
+func (q *Queue) claimBatchWithLimits(ctx context.Context, owner string, limits claimLimits) ([]claimedJob, error) {
+	limit, annotationSlots := limits.batchSize, limits.annotationSlots
 	if limit <= 0 {
 		limit = 1
 	}
@@ -202,6 +209,20 @@ func (q *Queue) claimBatch(ctx context.Context, owner string, limit int) ([]clai
 	}
 
 	kindFilter, orderBy := q.claimableKindSQL()
+	annotationKinds := "kind IN ('annotate_image', 'annotate_video')"
+	if annotationSlots <= 0 {
+		kindFilter += " AND NOT (" + annotationKinds + ")"
+	}
+	// Requeues/expired leases must not cause this dispatcher to run a second
+	// call for a job whose old call has not returned yet.
+	if len(limits.activeIDs) > 0 {
+		ids := make([]string, 0, len(limits.activeIDs))
+		for id := range limits.activeIDs {
+			ids = append(ids, strconv.FormatInt(id, 10))
+		}
+		kindFilter += " AND id NOT IN (" + strings.Join(ids, ",") + ")"
+	}
+	queryLimit := max(limit, annotationSlots)
 
 	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`
 SELECT id, kind FROM index_jobs
@@ -213,7 +234,7 @@ WHERE %s
   )
 ORDER BY %s
 LIMIT ?
-`, kindFilter, orderBy), limit)
+`, kindFilter, orderBy), queryLimit)
 	if err != nil {
 		_ = tx.Rollback()
 		if isSQLiteLockError(err) {
@@ -249,9 +270,16 @@ LIMIT ?
 	}
 
 	chosenKind := candidates[0].kind
+	if limits.activeKind != "" && chosenKind != limits.activeKind {
+		_ = tx.Rollback()
+		return nil, nil
+	}
+	if isAnnotationKind(chosenKind) {
+		limit = annotationSlots
+	}
 	var filtered []idKind
 	for _, c := range candidates {
-		if c.kind == chosenKind {
+		if c.kind == chosenKind && len(filtered) < limit {
 			filtered = append(filtered, c)
 		}
 	}
@@ -350,26 +378,14 @@ ORDER BY created_at ASC
 }
 
 func (q *Queue) ProcessBatch(ctx context.Context, owner string, batchSize int) (int, error) {
-	if q == nil || q.DB == nil {
-		return 0, fmt.Errorf("queue db is nil")
-	}
-	if q.Embedder == nil {
-		return 0, fmt.Errorf("queue embedder is nil")
-	}
-	if q.Index == nil {
-		return 0, fmt.Errorf("queue index is nil")
-	}
-	if q.DataDir == "" {
-		return 0, fmt.Errorf("queue data dir is empty")
+	if err := q.validate(); err != nil {
+		return 0, err
 	}
 	if batchSize <= 0 {
 		batchSize = 1
 	}
 	if owner == "" {
 		owner = "worker"
-	}
-	if q.LeaseDuration <= 0 {
-		q.LeaseDuration = 30 * time.Second
 	}
 
 	jobs, err := q.claimBatch(ctx, owner, batchSize)
@@ -380,6 +396,10 @@ func (q *Queue) ProcessBatch(ctx context.Context, owner string, batchSize int) (
 		return 0, nil
 	}
 
+	return q.processClaimedBatch(ctx, jobs)
+}
+
+func (q *Queue) processClaimedBatch(ctx context.Context, jobs []claimedJob) (int, error) {
 	if len(jobs) > 1 {
 		if batcher, ok := q.Embedder.(embedder.BatchImageEmbedder); ok && allClaimedJobsAreKind(jobs, jobkind.EmbedImage) {
 			return q.processEmbedJobsBatch(ctx, batcher, jobs), nil
@@ -1302,7 +1322,9 @@ func (q *Queue) startLeaseRenewer(ctx context.Context, jobs ...claimedJob) (cont
 
 	jobCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -1328,6 +1350,7 @@ func (q *Queue) startLeaseRenewer(ctx context.Context, jobs ...claimedJob) (cont
 	return jobCtx, func() {
 		close(done)
 		cancel()
+		<-stopped
 	}
 }
 
@@ -1359,4 +1382,20 @@ func (q *Queue) claimableKindSQL() (string, string) {
 
 func quoteJobKindSQL(kind string) string {
 	return "'" + strings.ReplaceAll(kind, "'", "''") + "'"
+}
+
+func (q *Queue) validate() error {
+	if q == nil || q.DB == nil {
+		return fmt.Errorf("queue db is nil")
+	}
+	if q.Embedder == nil {
+		return fmt.Errorf("queue embedder is nil")
+	}
+	if q.Index == nil {
+		return fmt.Errorf("queue index is nil")
+	}
+	if q.DataDir == "" {
+		return fmt.Errorf("queue data dir is empty")
+	}
+	return nil
 }

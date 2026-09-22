@@ -204,6 +204,6 @@ The default UI at `/` is the Atelier SPA (Svelte 5 + Tailwind 4, embedded from `
 - similar-video Feed with keyboard and touch navigation, seeking, and session feedback
 - lightbox with prev/next, tags, full annotation text, and NSFW / re-annotate / delete actions
 - statistics pane with queue, annotation, and build info; live updates over WebSocket
-- settings page for the annotation backend (native `e4b`/`26b` or an OpenAI-compatible server) and "Re-annotate all"
+- settings page for the annotation backend (native `e4b`/`26b` or an OpenAI-compatible server), actual remote-job parallelism via **Parallel annotations**, and "Re-annotate all"
 
 The legacy single-file shell stays at `/legacy` for features not yet ported (bulk select, ops menu).

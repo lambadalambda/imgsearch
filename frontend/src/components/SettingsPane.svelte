@@ -362,8 +362,9 @@
               <input id="settings-timeout" data-settings-timeout class={inputClass} type="number" min="1" max="3600" bind:value={form.timeoutSeconds} />
             </div>
             <div>
-              <label class={labelClass} for="settings-concurrency">Parallel requests</label>
-              <input id="settings-concurrency" data-settings-concurrency class={inputClass} type="number" min="1" max="64" bind:value={form.concurrency} />
+              <label class={labelClass} for="settings-concurrency">Parallel annotations</label>
+              <input id="settings-concurrency" data-settings-concurrency class={inputClass} type="number" min="1" max="64" aria-describedby="settings-concurrency-help" bind:value={form.concurrency} />
+              <p id="settings-concurrency-help" class="m-0 mt-1.5 text-[12.5px] text-muted-2">Remote annotation jobs at once: 1 is serial, 2 allows two jobs to overlap. Saved changes apply without a restart after active requests finish. Native inference stays serial.</p>
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-2">

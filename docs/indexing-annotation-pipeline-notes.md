@@ -8,6 +8,7 @@ Status update:
 - The pipeline now uses separate `embed_image` and `annotate_image` jobs.
 - Searchability is driven by the `embed_image` job reaching `done`.
 - Annotation runs as follow-up work and can be processed later by a worker with an annotator available.
+- Remote annotation now uses bounded parallel jobs controlled by Settings → **Parallel annotations**; native inference stays serialized. Limit/backend changes drain active requests before applying; settings checks use a five-second throttle and may be delayed by running embedding/transcription work. See [architecture](architecture.md) and [frontend settings](frontend.md#annotation-parallelism) for current behavior; the bottleneck/proposal sections below describe earlier pipeline investigations.
 
 Relevant code today:
 - `internal/worker/queue.go`: `embed_image` handles embedding/indexing and `annotate_image` handles descriptions/tags.
