@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"imgsearch/internal/collections"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/images"
 	"imgsearch/internal/jobs"
@@ -138,6 +139,9 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 	mux.Handle("/api/images/", imageHandler)
 	mux.Handle("/api/videos", videoHandler)
 	mux.Handle("/api/videos/", videoHandler)
+	collectionHandler := collections.NewHandler(&collections.Handler{DB: opts.Data.DB, ModelID: opts.ModelID})
+	mux.Handle("/api/collections", collectionHandler)
+	mux.Handle("/api/collections/", collectionHandler)
 	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: opts.Data.DB, ModelID: opts.ModelID}))
 	mux.Handle("/api/media/status", mediastatus.NewHandler(&mediastatus.Handler{DB: opts.Data.DB, ModelID: opts.ModelID}))
 	mux.Handle("/api/duplicates", images.NewDuplicatesHandler(&images.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, DataDir: opts.DataDir}))

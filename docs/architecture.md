@@ -115,6 +115,11 @@ Migrations live in `internal/db/migrations.go`; this is the shape after the curr
 - Exactly one of `image_id` / `video_id` is set; unique per (`kind`, target, `model_id`).
 - Lookup indexes on (`image_id`, `model_id`, `kind`), (`video_id`, `model_id`, `kind`), and (`state`, `kind`, `run_after`, `created_at`).
 
+### `collections` / `collection_items`
+- Named instance-wide lists reference existing images/videos, with exactly one media foreign key per membership and uniqueness per collection/target.
+- Foreign-key cascades remove memberships when a collection or target is deleted; deleting collections never deletes media. Membership IDs provide newest-saved-first ordering.
+- See [saved collections](collections.md) for API and semantics.
+
 ### `settings` / `settings_version`
 - Key/value JSON settings (currently the annotation backend) plus a version counter the worker polls to hot-swap the annotator.
 

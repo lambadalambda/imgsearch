@@ -304,6 +304,28 @@ ALTER TABLE images ADD COLUMN phash INTEGER;
 ALTER TABLE images ADD COLUMN annotation_updated_at TEXT;
 `,
 	},
+	{
+		version: 16,
+		sql: `
+CREATE TABLE collections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE collection_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  image_id INTEGER REFERENCES images(id) ON DELETE CASCADE,
+  video_id INTEGER REFERENCES videos(id) ON DELETE CASCADE,
+  CHECK ((image_id IS NOT NULL) != (video_id IS NOT NULL))
+);
+CREATE UNIQUE INDEX idx_collection_items_image ON collection_items(collection_id, image_id) WHERE image_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_collection_items_video ON collection_items(collection_id, video_id) WHERE video_id IS NOT NULL;
+CREATE INDEX idx_collection_items_order ON collection_items(collection_id, id DESC);
+CREATE INDEX idx_collection_items_image_lookup ON collection_items(image_id) WHERE image_id IS NOT NULL;
+CREATE INDEX idx_collection_items_video_lookup ON collection_items(video_id) WHERE video_id IS NOT NULL;
+`,
+	},
 }
 
 func LatestVersion() int {

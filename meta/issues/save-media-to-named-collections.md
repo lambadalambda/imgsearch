@@ -23,3 +23,8 @@ Let users collect media they discover into persistent named lists, then browse t
 
 - Collections reference existing media; they do not copy files, import external URLs, or schedule synchronization.
 - Scope is the Atelier frontend, not a parallel implementation in the legacy shell.
+
+## Subissues
+
+- [Persistence and API](persist-named-collections-and-membership.md)
+- [Atelier workflows](add-atelier-saved-collection-workflows.md)

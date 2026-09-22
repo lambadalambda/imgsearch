@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(collections): add persistent named lists for images/videos with authenticated collection and membership APIs, mixed-media pagination, existing NSFW filtering, and reference-only deletion (migration 16).
 - feat(import): add `scripts/import_fediverse.py` / `mise run import-fediverse` to import a Mastodon-compatible account's public image/video attachments from the last N days, with dry-run, pagination, bounded downloads, source rate-limit retries, credential separation, and existing upload/conversion/deduplication behavior.
 - perf(ui): use thumbnail derivatives in Atelier library, search, and duplicate grids while keeping originals in the lightbox and Open original; fall back to the original if a thumbnail cannot load (issue 079).
 - feat(media): serve lazy, persistent 640px WebP image thumbnails through authenticated media URLs, expose thumbnail paths in image and search responses, and reuse the libvips resize pipeline without changing originals or requiring an eager library backfill (issue 079).
