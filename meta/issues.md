@@ -28,3 +28,4 @@
 - [ ] [Save images and videos to named collections](issues/save-media-to-named-collections.md)
 - [ ] [Bound collection video hydration work](issues/bound-collection-video-hydration-work.md)
 - [ ] [Add Atelier saved-collection workflows](issues/add-atelier-saved-collection-workflows.md)
+- [ ] [Use configured remote annotation concurrency in worker](issues/use-configured-remote-annotation-concurrency.md)
