@@ -110,7 +110,7 @@ func (e *Embedder) AnnotateImageWithOptions(ctx context.Context, imagePath strin
 		e.annotationTemperature,
 		e.annotationSeed,
 		imagePath,
-		annotation.ImageRequest(opts.OriginalName),
+		annotation.ImageRequest(opts.OriginalName, opts.KnownTags),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -178,7 +178,7 @@ func (e *Embedder) AnnotateVideoFrame(ctx context.Context, imagePath string, opt
 		e.annotationTemperature,
 		e.annotationSeed,
 		imagePath,
-		annotation.VideoFrameRequest(opts.OriginalName),
+		annotation.VideoFrameRequest(opts.OriginalName, opts.KnownTags),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -305,7 +305,7 @@ func (r *nativeGemmaRuntime) AnnotateImageWithOptions(ctx context.Context, image
 		r.annotationTemperature,
 		r.annotationSeed,
 		imagePath,
-		annotation.ImageRequest(opts.OriginalName),
+		annotation.ImageRequest(opts.OriginalName, opts.KnownTags),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err
@@ -380,7 +380,7 @@ func (r *nativeGemmaRuntime) AnnotateVideoFrame(ctx context.Context, imagePath s
 		r.annotationTemperature,
 		r.annotationSeed,
 		imagePath,
-		annotation.VideoFrameRequest(opts.OriginalName),
+		annotation.VideoFrameRequest(opts.OriginalName, opts.KnownTags),
 	)
 	if err != nil {
 		return coreembedder.ImageAnnotation{}, err

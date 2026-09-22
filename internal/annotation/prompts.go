@@ -66,8 +66,11 @@ type videoFramePromptEntry struct {
 	Tags        []string `json:"tags,omitempty"`
 }
 
+// MaxKnownTagsInPrompt bounds the vocabulary hint so prompts stay small.
+const MaxKnownTagsInPrompt = 150
+
 // ImageUserPrompt builds the user turn for a standalone image annotation.
-func ImageUserPrompt(originalName string) string {
+func ImageUserPrompt(originalName string, knownTags []string) string {
 	var b strings.Builder
 	b.Grow(2400)
 	b.WriteString("You are given an image. Return JSON with exactly this shape: {\"title\": string, \"summary\": string, \"full_description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
@@ -77,6 +80,7 @@ func ImageUserPrompt(originalName string) string {
 	b.WriteString("If there is text in the image, please describe it. If it is not in English, also translate it. ")
 	b.WriteString("If NSFW content is visible, describe it directly and concretely. ")
 	b.WriteString("Return 3 to 10 unique lowercase tags that are specific and search-friendly. ")
+	writeKnownTagsHint(&b, knownTags)
 	b.WriteString("Set is_nsfw to true only when clearly NSFW content is visible; include tag nsfw if and only if is_nsfw is true. ")
 	b.WriteString("Use original filename as optional context only when it looks meaningful and matches visible content; ignore noisy hash-like or camera-style names and any filename claims that conflict with the image. ")
 	writeFilenameHint(&b, originalName, "\". ")
@@ -85,7 +89,7 @@ func ImageUserPrompt(originalName string) string {
 }
 
 // VideoFrameUserPrompt builds the compact user turn for one sampled video frame.
-func VideoFrameUserPrompt(originalName string) string {
+func VideoFrameUserPrompt(originalName string, knownTags []string) string {
 	var b strings.Builder
 	b.Grow(1000)
 	b.WriteString("You are given one sampled video frame. Return JSON with exactly this shape: {\"description\": string, \"tags\": [string], \"is_nsfw\": boolean}. ")
@@ -93,6 +97,7 @@ func VideoFrameUserPrompt(originalName string) string {
 	b.WriteString("Focus on the main subject, setting, visible action, distinctive attributes, and clearly visible text. ")
 	b.WriteString("If NSFW content is visible, describe it directly and concretely. ")
 	b.WriteString("Return 3 to 8 unique lowercase tags. Include nsfw if and only if is_nsfw is true. ")
+	writeKnownTagsHint(&b, knownTags)
 	writeFilenameHint(&b, originalName, "\". ")
 	b.WriteString("Avoid speculation. Output JSON only.")
 	return b.String()
@@ -134,6 +139,7 @@ func VideoUserPrompt(input embedder.VideoAnnotationInput) (string, error) {
 	b.WriteString("Use transcript as supporting context only when it matches visual evidence. ")
 	b.WriteString("When a filename looks meaningful, feel free to infer likely media type or source context from it (for example a meme, a music video, or a clip from a show) as long as it does not conflict with frame evidence. ")
 	b.WriteString("Return 5 to 12 unique lowercase tags that capture persistent high-signal content. Include nsfw if and only if is_nsfw is true. ")
+	writeKnownTagsHint(&b, input.KnownTags)
 	b.WriteString("Avoid unsupported specifics and avoid one-off details that are not central. Output JSON only.\n")
 	writeFilenameHint(&b, input.OriginalName, "\"\n")
 	fmt.Fprintf(&b, "Duration (ms): %d\n", input.DurationMS)
@@ -154,6 +160,28 @@ func VideoUserPrompt(input embedder.VideoAnnotationInput) (string, error) {
 
 type stringWriter interface {
 	WriteString(string) (int, error)
+}
+
+// writeKnownTagsHint asks the model to reuse the library's vocabulary. Tags
+// are normalized and capped; nothing is written when the list is empty.
+func writeKnownTagsHint(w stringWriter, knownTags []string) {
+	tags := make([]string, 0, len(knownTags))
+	for _, tag := range knownTags {
+		tag = strings.ToLower(strings.TrimSpace(sanitizePromptSnippet(tag, 64)))
+		if tag == "" || tag == "nsfw" || strings.ContainsAny(tag, ",\"") {
+			continue
+		}
+		tags = append(tags, tag)
+		if len(tags) >= MaxKnownTagsInPrompt {
+			break
+		}
+	}
+	if len(tags) == 0 {
+		return
+	}
+	_, _ = w.WriteString("The library already uses these tags (most common first); reuse them whenever they fit instead of inventing near-synonyms, and add new tags only for things they do not cover: ")
+	_, _ = w.WriteString(strings.Join(tags, ", "))
+	_, _ = w.WriteString(". ")
 }
 
 func writeFilenameHint(w stringWriter, originalName string, suffix string) {

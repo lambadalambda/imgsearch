@@ -8,7 +8,7 @@ import (
 )
 
 func TestImageUserPromptIncludesMeaningfulFilename(t *testing.T) {
-	prompt := ImageUserPrompt("the cover of the album kid a by radiohead.jpg")
+	prompt := ImageUserPrompt("the cover of the album kid a by radiohead.jpg", nil)
 	if !strings.Contains(prompt, "Original filename") {
 		t.Fatalf("expected prompt to include original filename guidance")
 	}
@@ -25,14 +25,14 @@ func TestImageUserPromptIncludesMeaningfulFilename(t *testing.T) {
 
 func TestImageUserPromptSkipsNoisyFilename(t *testing.T) {
 	for _, name := range []string{"34254745943.jpg", "IMG_1234.jpg", "3f2a9c1e8b7d6a5f4e3d2c1b.png", "20240101_120000.jpg"} {
-		if prompt := ImageUserPrompt(name); strings.Contains(prompt, "Original filename") {
+		if prompt := ImageUserPrompt(name, nil); strings.Contains(prompt, "Original filename") {
 			t.Fatalf("expected noisy filename %q to be omitted from prompt", name)
 		}
 	}
 }
 
 func TestVideoFrameUserPromptIsCompact(t *testing.T) {
-	prompt := VideoFrameUserPrompt("concert stage clip.mp4")
+	prompt := VideoFrameUserPrompt("concert stage clip.mp4", nil)
 	if !strings.Contains(prompt, "80 words") {
 		t.Fatalf("expected compact frame prompt word budget")
 	}
@@ -107,5 +107,46 @@ func TestVideoUserPromptTruncatesTranscriptBeforeSanitizing(t *testing.T) {
 	// 1200 bytes of "ab\n" hold 400 newlines; sanitizing after the cut leaves 800 bytes.
 	if len(snippet) != 800 {
 		t.Fatalf("expected 800-byte sanitized snippet, got %d", len(snippet))
+	}
+}
+
+func TestPromptsCarryTheKnownTagVocabulary(t *testing.T) {
+	known := []string{" Cat ", "indoor", "nsfw", "bad,comma", "", "warm-tone"}
+	for name, prompt := range map[string]string{
+		"image": ImageUserPrompt("x.jpg", known),
+		"frame": VideoFrameUserPrompt("x.jpg", known),
+	} {
+		if !strings.Contains(prompt, "reuse them whenever they fit") || !strings.Contains(prompt, "cat, indoor, warm-tone. ") {
+			t.Fatalf("%s prompt lacks the vocabulary hint: %s", name, prompt)
+		}
+		if strings.Contains(prompt, "bad,comma") || strings.Contains(prompt, "nsfw, ") {
+			t.Fatalf("%s prompt should drop unusable tags: %s", name, prompt)
+		}
+	}
+	if strings.Contains(ImageUserPrompt("x.jpg", nil), "library already uses") {
+		t.Fatal("no hint expected without known tags")
+	}
+	many := make([]string, MaxKnownTagsInPrompt+20)
+	for i := range many {
+		many[i] = "t" + strings.Repeat("x", i%5) + string(rune('a'+i%26)) + strings.Repeat("y", i/26)
+	}
+	prompt := ImageUserPrompt("x.jpg", many)
+	start := strings.Index(prompt, "do not cover: ")
+	if start < 0 {
+		t.Fatalf("hint missing: %s", prompt)
+	}
+	hint := prompt[start+len("do not cover: "):]
+	hint = hint[:strings.Index(hint, ". ")]
+	if got := len(strings.Split(hint, ", ")); got != MaxKnownTagsInPrompt {
+		t.Fatalf("vocabulary hint not capped: %d tags", got)
+	}
+	video, err := VideoUserPrompt(embedder.VideoAnnotationInput{
+		OriginalName: "clip.mp4",
+		DurationMS:   1000,
+		Frames:       []embedder.VideoFrameAnnotation{{Description: "A stage."}},
+		KnownTags:    []string{"concert", "stage"},
+	})
+	if err != nil || !strings.Contains(video, "concert, stage. ") {
+		t.Fatalf("video prompt: %v %s", err, video)
 	}
 }

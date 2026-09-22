@@ -7,14 +7,14 @@ import (
 )
 
 func TestRequestConstructorsPairPromptsWithBudgets(t *testing.T) {
-	img := ImageRequest("kid a album cover.jpg")
+	img := ImageRequest("kid a album cover.jpg", nil)
 	if img.SystemPrompt != ImageSystemPrompt || img.JSONSchema != FullJSONSchema || img.MaxTokens != ImageMaxTokens || img.RetryMaxTokens != ImageRetryMaxTokens {
 		t.Fatalf("unexpected image request: %+v", img)
 	}
-	if img.UserPrompt != ImageUserPrompt("kid a album cover.jpg") {
+	if img.UserPrompt != ImageUserPrompt("kid a album cover.jpg", nil) {
 		t.Fatal("image user prompt mismatch")
 	}
-	frame := VideoFrameRequest("x.mp4")
+	frame := VideoFrameRequest("x.mp4", nil)
 	if frame.JSONSchema != CompactJSONSchema || frame.MaxTokens != VideoFrameMaxTokens || frame.RetryUserPrompt != VideoFrameRetryUserPrompt {
 		t.Fatalf("unexpected frame request: %+v", frame)
 	}

@@ -16,10 +16,10 @@ type Request struct {
 }
 
 // ImageRequest is the rich standalone-image annotation.
-func ImageRequest(originalName string) Request {
+func ImageRequest(originalName string, knownTags []string) Request {
 	return Request{
 		SystemPrompt:      ImageSystemPrompt,
-		UserPrompt:        ImageUserPrompt(originalName),
+		UserPrompt:        ImageUserPrompt(originalName, knownTags),
 		JSONSchema:        FullJSONSchema,
 		MaxTokens:         ImageMaxTokens,
 		RetrySystemPrompt: ImageRetrySystemPrompt,
@@ -29,10 +29,10 @@ func ImageRequest(originalName string) Request {
 }
 
 // VideoFrameRequest is the compact per-frame annotation.
-func VideoFrameRequest(originalName string) Request {
+func VideoFrameRequest(originalName string, knownTags []string) Request {
 	return Request{
 		SystemPrompt:      VideoFrameSystemPrompt,
-		UserPrompt:        VideoFrameUserPrompt(originalName),
+		UserPrompt:        VideoFrameUserPrompt(originalName, knownTags),
 		JSONSchema:        CompactJSONSchema,
 		MaxTokens:         VideoFrameMaxTokens,
 		RetrySystemPrompt: VideoFrameRetrySystemPrompt,

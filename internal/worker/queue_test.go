@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -2125,5 +2126,42 @@ WHERE id = 1
 	}
 	if tags != `["cat"]` {
 		t.Fatalf("expected nsfw to stay removed, got %s", tags)
+	}
+}
+
+// The annotator receives the library's most used tags so it can reuse them
+// (meta/issues/122); the list is cached between jobs.
+func TestAnnotationPassesKnownTagsToAnnotator(t *testing.T) {
+	q, sqlDB := setupQueueTest(t)
+	if _, err := sqlDB.Exec(`UPDATE index_jobs SET state = 'done' WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO images(id, sha256, original_name, storage_path, mime_type, width, height, tags_json) VALUES
+  (11, 'k1', 'k1.jpg', 'images/k1', 'image/jpeg', 1, 1, '["cat","indoor"]'),
+  (12, 'k2', 'k2.jpg', 'images/k2', 'image/jpeg', 1, 1, '["cat","outdoor"]'),
+  (13, 'k3', 'k3.jpg', 'images/k3', 'image/jpeg', 1, 1, '["cat","indoor","rare"]');
+INSERT INTO index_jobs(id, kind, image_id, model_id, state) VALUES (2, 'annotate_image', 1, 1, 'pending');
+`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	annotator := &fakeAnnotator{annotation: embedder.ImageAnnotation{Description: "Text.", Tags: []string{"cat"}}}
+	q.Annotator = annotator
+	if processed, err := q.ProcessOne(context.Background(), "worker-1"); err != nil || !processed {
+		t.Fatalf("process: %v %v", processed, err)
+	}
+	if strings.Join(annotator.lastOpts.KnownTags, ",") != "cat,indoor" {
+		t.Fatalf("known tags passed to annotator: %v", annotator.lastOpts.KnownTags)
+	}
+	// Cached: a new tag added now is not visible until the TTL passes.
+	if _, err := sqlDB.Exec(`UPDATE images SET tags_json = '["zebra","cat"]' WHERE id IN (11, 12)`); err != nil {
+		t.Fatal(err)
+	}
+	if got := q.knownTags(context.Background()); strings.Join(got, ",") != "cat,indoor" {
+		t.Fatalf("expected cached vocabulary, got %v", got)
+	}
+	q.knownTagsAt = time.Time{}
+	if got := q.knownTags(context.Background()); strings.Join(got, ",") != "cat,zebra" {
+		t.Fatalf("expected refreshed vocabulary, got %v", got)
 	}
 }

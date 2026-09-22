@@ -130,7 +130,7 @@ func (a *Annotator) AnnotateImage(ctx context.Context, path string) (embedder.Im
 }
 
 func (a *Annotator) AnnotateImageWithOptions(ctx context.Context, path string, opts embedder.ImageAnnotationOptions) (embedder.ImageAnnotation, error) {
-	resp, err := a.annotate(ctx, path, opts.ImageMaxSideMultiplier, annotation.ImageRequest(opts.OriginalName))
+	resp, err := a.annotate(ctx, path, opts.ImageMaxSideMultiplier, annotation.ImageRequest(opts.OriginalName, opts.KnownTags))
 	if err != nil {
 		return embedder.ImageAnnotation{}, err
 	}
@@ -138,7 +138,7 @@ func (a *Annotator) AnnotateImageWithOptions(ctx context.Context, path string, o
 }
 
 func (a *Annotator) AnnotateVideoFrame(ctx context.Context, path string, opts embedder.ImageAnnotationOptions) (embedder.ImageAnnotation, error) {
-	resp, err := a.annotate(ctx, path, opts.ImageMaxSideMultiplier, annotation.VideoFrameRequest(opts.OriginalName))
+	resp, err := a.annotate(ctx, path, opts.ImageMaxSideMultiplier, annotation.VideoFrameRequest(opts.OriginalName, opts.KnownTags))
 	if err != nil {
 		return embedder.ImageAnnotation{}, err
 	}

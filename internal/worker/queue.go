@@ -9,9 +9,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"imgsearch/internal/annotationtext"
+	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/jobkind"
 	"imgsearch/internal/mediaops"
@@ -21,15 +23,19 @@ import (
 )
 
 type Queue struct {
-	DB             *sql.DB
-	DataDir        string
-	LeaseDuration  time.Duration
-	RetryBaseDelay time.Duration
-	Embedder       embedder.ImageEmbedder
-	TextEmbedder   embedder.TextEmbedder
-	Annotator      embedder.ImageAnnotator
-	Transcriber    transcribe.VideoTranscriber
-	Index          vectorindex.VectorIndex
+	DB      *sql.DB
+	DataDir string
+	// Cached tag vocabulary for annotation prompts; see knownTags.
+	knownTagsMu     sync.Mutex
+	knownTagsCached []string
+	knownTagsAt     time.Time
+	LeaseDuration   time.Duration
+	RetryBaseDelay  time.Duration
+	Embedder        embedder.ImageEmbedder
+	TextEmbedder    embedder.TextEmbedder
+	Annotator       embedder.ImageAnnotator
+	Transcriber     transcribe.VideoTranscriber
+	Index           vectorindex.VectorIndex
 }
 
 const reannotateImageMaxSideMultiplier = 2
@@ -722,8 +728,36 @@ func (q *Queue) handleTranscribeVideoJob(ctx context.Context, job claimedJob) jo
 	return jobHandlerResult{processed: true, batchProcessed: true}
 }
 
+// Known-tag vocabulary passed to the annotator (meta/issues/122): the most
+// used tags, refreshed at most every knownTagsTTL so it is not recomputed
+// per job. Tags seen fewer than knownTagsMinCount times are left out.
+const (
+	knownTagsLimit    = 150
+	knownTagsMinCount = 2
+	knownTagsTTL      = 5 * time.Minute
+)
+
+func (q *Queue) knownTags(ctx context.Context) []string {
+	q.knownTagsMu.Lock()
+	defer q.knownTagsMu.Unlock()
+	if q.knownTagsCached != nil && time.Since(q.knownTagsAt) < knownTagsTTL {
+		return q.knownTagsCached
+	}
+	tags, err := db.TopTags(ctx, q.DB, knownTagsLimit, knownTagsMinCount)
+	if err != nil {
+		log.Printf("worker known tags lookup failed: %v", err)
+		return q.knownTagsCached
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	q.knownTagsCached = tags
+	q.knownTagsAt = time.Now()
+	return tags
+}
+
 func (q *Queue) annotateImage(ctx context.Context, imagePath string, originalName string, reannotateRequested bool) (embedder.ImageAnnotation, error) {
-	opts := embedder.ImageAnnotationOptions{OriginalName: originalName}
+	opts := embedder.ImageAnnotationOptions{OriginalName: originalName, KnownTags: q.knownTags(ctx)}
 	if reannotateRequested {
 		opts.ImageMaxSideMultiplier = reannotateImageMaxSideMultiplier
 	}
@@ -734,7 +768,7 @@ func (q *Queue) annotateImage(ctx context.Context, imagePath string, originalNam
 }
 
 func (q *Queue) annotateVideoFrame(ctx context.Context, imagePath string, originalName string, reannotateRequested bool) (embedder.ImageAnnotation, error) {
-	opts := embedder.ImageAnnotationOptions{OriginalName: originalName}
+	opts := embedder.ImageAnnotationOptions{OriginalName: originalName, KnownTags: q.knownTags(ctx)}
 	if reannotateRequested {
 		opts.ImageMaxSideMultiplier = reannotateImageMaxSideMultiplier
 	}
@@ -836,6 +870,7 @@ WHERE id = ?
 	if reannotateRequested == 1 {
 		input.ImageMaxSideMultiplier = reannotateImageMaxSideMultiplier
 	}
+	input.KnownTags = q.knownTags(ctx)
 
 	existingTags, err := tagutil.DecodeJSON(existingTagsJSON)
 	if err != nil {

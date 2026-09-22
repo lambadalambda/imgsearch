@@ -24,6 +24,9 @@ type ImageAnnotation struct {
 type ImageAnnotationOptions struct {
 	OriginalName           string
 	ImageMaxSideMultiplier int
+	// KnownTags is the library's existing tag vocabulary, most used first;
+	// prompts ask the model to prefer these over inventing near-synonyms.
+	KnownTags []string
 }
 
 type ImageAnnotator interface {
@@ -53,6 +56,8 @@ type VideoAnnotationInput struct {
 	ImageMaxSideMultiplier  int
 	TranscriptText          string
 	Frames                  []VideoFrameAnnotation
+	// KnownTags mirrors ImageAnnotationOptions.KnownTags.
+	KnownTags []string
 }
 
 type VideoAnnotation struct {
