@@ -133,3 +133,5 @@
 - [x] [Audit Atelier UI/UX and deliver a screenshot report](issues/audit-atelier-ui-ux-with-screenshot-report.md)
 
 - [x] [Configure annotation output token budgets in Settings](issues/configure-annotation-output-token-budgets.md)
+
+- [x] [Deploy configurable annotation token settings](issues/deploy-configurable-annotation-token-settings.md)
