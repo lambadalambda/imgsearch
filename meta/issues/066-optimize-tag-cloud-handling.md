@@ -33,6 +33,15 @@ The tag-cloud endpoint computes tag counts by scanning JSON tag arrays across th
 - [ ] Update tag cloud, tag search, and any affected stats/jobs paths to use the chosen tag model.
 - [ ] Document the tag handling model and invalidation/backfill behavior.
 
+## Review finding: video-level tags
+
+The current `tagCloud` query (`internal/search/http.go:1385–1415`) expands only `images.tags_json`, including frame tags, but not `videos.tags_json`. Tags present only on a video's own annotation/manual metadata are therefore absent from the cloud. `internal/db/tags.go:20–41` already unions video-level tags for the annotator vocabulary.
+
+- [ ] First ship a focused regression/fix for video-only tags, preserving one count per video and NSFW filtering. This need not wait for a storage migration.
+- [ ] Then benchmark the JSON query; if justified, implement the indexed/materialized representation as a separate change.
+
+Frontend bootstrap deferral already exists; distinguish that shipped mitigation from the remaining backend work.
+
 ## Related Files
 
 - `frontend/src/App.svelte`

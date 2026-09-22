@@ -23,3 +23,5 @@
 - [ ] [Ignore Feed touch gestures from chrome controls](issues/064-ignore-feed-touch-gestures-from-chrome.md)
 
 ## Review 2026-09-21
+
+- [ ] [Gate rolling release publication on verification](issues/gate-rolling-release-publication-on-verification.md)

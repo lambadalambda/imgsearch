@@ -119,3 +119,4 @@
 - [x] [Filter the remote model list to chat-capable models](issues/120-filter-remote-model-list-to-chat-models.md)
 - [x] [Show annotation progress on cards and refresh them live](issues/121-live-annotation-state-on-cards.md)
 - [x] [Give the annotator the existing tag vocabulary](issues/122-reuse-existing-tags-in-annotation-prompts.md)
+- [x] [Review repository and recommend next priorities](issues/review-repository-next-priorities.md)
