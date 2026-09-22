@@ -38,6 +38,7 @@ const { navigationChecks } = await import("./atelier_navigation_test.mjs");
 const { replacementScopeChecks } = await import("./atelier_scope_test.mjs");
 const { chromium } = await import("playwright");
 const { lightboxChecks } = await import("./atelier_lightbox_test.mjs");
+const { feedChecks, holdFeedMedia } = await import("./atelier_feed_test.mjs");
 
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -1244,10 +1245,10 @@ async function smokeChecks(browser) {
   );
   const feedInitialFocus = await page.evaluate(() => {
     const el = document.activeElement;
-    return el instanceof HTMLElement && el.hasAttribute("data-feed-playpause");
+    return el instanceof HTMLElement && el.hasAttribute("data-feed-title");
   });
   if (!feedInitialFocus) {
-    throw new Error("expected Feed initial focus on the play/pause control");
+    throw new Error("expected Feed initial focus on the title");
   }
   await page.keyboard.press("Space");
   await page.waitForTimeout(150);
@@ -1367,6 +1368,7 @@ async function smokeChecks(browser) {
   //     corner action on one opens the fullscreen overlay, kicks a
   //     /api/search/similar-videos fetch with the seed video_id, and
   //     responds to keyboard navigation + Escape close.
+  const releaseFeedMedia = await holdFeedMedia(page);
   const feedTrigger = page.locator('[data-pin-action="feed"]').first();
   await feedTrigger.waitFor({ state: "visible", timeout: 5000 });
   const baselineSimilarVideos = similarVideoRequests.length;
@@ -1423,6 +1425,8 @@ async function smokeChecks(browser) {
     const video = document.querySelector('video[data-feed-current="true"]');
     if (!video) throw new Error("current Feed video missing");
     Object.defineProperty(video, "duration", { value: 10, configurable: true });
+    // Explicit metadata success rather than an apparently usable 0:00 transport.
+    video.dispatchEvent(new Event("loadedmetadata"));
   });
   const feedTimeText = (await page.locator("[data-feed-time]").textContent() || "").trim();
   if (!/\d+:\d{2}\s*\/\s*\d+:\d{2}/.test(feedTimeText)) {
@@ -1457,8 +1461,15 @@ async function smokeChecks(browser) {
     beforeIdx,
     { timeout: 5000 },
   );
-  const firstCandidateSrc = await page.locator('video[data-feed-current="true"]').evaluate((video) => {
-    video.pause();
+  const firstCandidateSrc = await page.locator('video[data-feed-current="true"]').evaluate(async (video) => {
+    // pause() queues its event. Wait before the synthetic play below, otherwise
+    // a late native pause races and overwrites the simulated playing state.
+    if (!video.paused) {
+      await new Promise((resolve) => {
+        video.addEventListener("pause", resolve, { once: true });
+        video.pause();
+      });
+    }
     return video.getAttribute("src") || "";
   });
   if (!firstCandidateSrc.includes("/media/videos/clip-1")) {
@@ -1471,6 +1482,7 @@ async function smokeChecks(browser) {
     const video = document.querySelector('video[data-feed-current="true"]');
     if (!video) throw new Error("current Feed video missing");
     Object.defineProperty(video, "duration", { value: 1, configurable: true });
+    video.dispatchEvent(new Event("loadedmetadata"));
     video.currentTime = 0.9;
     video.dispatchEvent(new Event("play"));
   });
@@ -1513,6 +1525,8 @@ async function smokeChecks(browser) {
   }
   await page.keyboard.press("Escape");
   await page.locator("[data-feed-overlay]").waitFor({ state: "hidden", timeout: 5000 });
+
+  await releaseFeedMedia();
 
   // 3. Tag chip flow — clicks the "Tag · portrait" quick-row chip and
   //    expects to land on ?tag=portrait with no similarity badges (tag
@@ -2554,6 +2568,7 @@ async function smokeChecks(browser) {
   await collectionUX07Checks(browser);
   await collectionChecks(browser);
   await lightboxChecks(browser, baseURL, sampleImages);
+  await feedChecks(browser, baseURL, sampleVideos);
   console.log("atelier smoke checks passed");
 }
 
@@ -2562,6 +2577,9 @@ async function collectionChecks(browser) {
   page.setDefaultTimeout(5000);
   await page.addInitScript(() => {
     // Stub decoding, not Feed logic: the mock media server returns thumbnails.
+    Object.defineProperty(HTMLMediaElement.prototype, "duration", { get() { return 10; } });
+    Object.defineProperty(HTMLMediaElement.prototype, "error", { get() { return null; } });
+    document.addEventListener("error", (event) => { if (event.target instanceof HTMLVideoElement) event.stopImmediatePropagation(); }, true);
     const paused = new WeakMap();
     Object.defineProperty(HTMLMediaElement.prototype, "paused", { get() { return paused.get(this) ?? true; } });
     HTMLMediaElement.prototype.play = function () { paused.set(this, false); this.dispatchEvent(new Event("play")); return Promise.resolve(); };

@@ -63,7 +63,9 @@
   let progress = $state(0); // 0..1 for the active video
   let playing = $state(false); // whether the active video is playing
   let currentTimeS = $state(0); // elapsed seconds of the active video
+  let playbackError = $state(false);
   let durationS = $state(0); // duration seconds of the active video (0 = unknown)
+  const transportReady = $derived(durationS > 0 && !playbackError);
   let dragOffsetPx = $state(0); // mid-drag visual offset on track
 
   // The three persistent video element refs.
@@ -332,6 +334,7 @@
     playing = false;
     currentTimeS = 0;
     durationS = 0;
+    playbackError = false;
     if (idx > feedbackRecordedIndex) feedbackRecordedIndex = idx - 1;
   }
 
@@ -504,10 +507,27 @@
   // Per-element event handlers — only the active <video> drives progress.
   // ------------------------------------------------------------------------
 
+  // Metadata, not an optimistic play event, makes transport controls usable.
+  // Read again when a buffered slot becomes current (its metadata event may
+  // have fired while it was still the next/previous slot).
+  function refreshPlaybackState(): void {
+    const el = activeVideo();
+    const matches = el?.getAttribute("src") === currentItem?.mediaUrl;
+    playbackError = !!currentItem?.videoId && rejectedVideoIDs.has(currentItem.videoId);
+    if (matches && el?.error) playbackError = true;
+    durationS = matches && el && Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0;
+    currentTimeS = matches && el ? el.currentTime : 0;
+    progress = durationS > 0 ? Math.min(1, Math.max(0, currentTimeS / durationS)) : 0;
+  }
+
+  function onMetadata(slotIdx: 0 | 1 | 2): void {
+    if (slotKindOf(slotIdx) === "current") refreshPlaybackState();
+  }
+
   function onTimeUpdate(slotIdx: 0 | 1 | 2): void {
     if (slotKindOf(slotIdx) !== "current") return;
     const el = videoEls[slotIdx];
-    if (!el || !el.duration) return;
+    if (!el || !transportReady) return;
     progress = Math.min(1, Math.max(0, el.currentTime / el.duration));
     currentTimeS = el.currentTime;
     durationS = Number.isFinite(el.duration) ? el.duration : 0;
@@ -539,6 +559,7 @@
     const idx = assigned[slotIdx];
     const item = queue[idx];
     if (item?.videoId !== undefined) rejectedVideoIDs.add(item.videoId);
+    if (slotKindOf(slotIdx) === "current") playbackError = true;
     // Don't auto-advance — let the user decide. Future batches exclude this
     // video via collectSeenIds, and the next-button stays available.
   }
@@ -578,6 +599,7 @@
   }
 
   function togglePlay(): void {
+    if (!transportReady) return;
     const el = activeVideo();
     if (!el) return;
     if (el.paused) void playCurrent();
@@ -597,6 +619,7 @@
   }
 
   function seekToRatio(ratio: number): void {
+    if (!transportReady) return;
     const el = activeVideo();
     if (!el) return;
     const duration = el.duration;
@@ -730,6 +753,8 @@
   // (mobile autoplay rules let them keep buffering paused).
   $effect(() => {
     void assigned;
+    void currentItem;
+    untrack(refreshPlaybackState);
     for (let s = 0; s < 3; s += 1) {
       const el = videoEls[s];
       if (!el) continue;
@@ -760,7 +785,7 @@
     data-feed-current-index={currentIndex}
     data-feed-queue-size={queue.length}
     data-feed-exhausted={exhausted ? "true" : undefined}
-    use:focusTrap={{ initial: "[data-feed-playpause]" }}
+    use:focusTrap={{ initial: "[data-feed-title]" }}
     class="fixed inset-0 z-[1400] bg-black text-[#fffdf9] [touch-action:none] [overscroll-behavior:contain] flex flex-col"
     ontouchstart={onTouchStart}
     ontouchmove={onTouchMove}
@@ -795,6 +820,8 @@
               preload={kind === "current" ? "auto" : "metadata"}
               autoplay={kind === "current"}
               class="block max-w-full max-h-full w-auto h-auto object-contain"
+              onloadedmetadata={() => onMetadata(slotIdx as 0 | 1 | 2)}
+              ondurationchange={() => onMetadata(slotIdx as 0 | 1 | 2)}
               ontimeupdate={() => onTimeUpdate(slotIdx as 0 | 1 | 2)}
               onplay={() => onPlay(slotIdx as 0 | 1 | 2)}
               onpause={() => onPause(slotIdx as 0 | 1 | 2)}
@@ -814,12 +841,12 @@
           <p class="m-0 text-[12px] uppercase tracking-[0.08em] text-white/60">
             Similar videos
           </p>
-          <h2 class="m-0 mt-0.5 text-[15px] font-semibold leading-tight truncate">
+          <h2 data-feed-title tabindex="-1" class="m-0 mt-0.5 text-[15px] font-semibold leading-snug break-words outline-none">
             {currentItem?.title ?? seedItem?.title ?? ""}
           </h2>
         </div>
         <!-- Keep Save above the terminal/error overlay without changing the other Feed controls. -->
-        <button type="button" data-feed-save class="relative z-10 pointer-events-auto px-3 py-2 bg-white/15 rounded-full cursor-pointer" onclick={(event) => { event.stopPropagation(); if (currentItem) openCollectionPicker(currentItem); }}>Save to collection</button>
+        <button type="button" data-feed-save aria-label="Save to collection" class="relative z-10 shrink-0 pointer-events-auto px-3 min-h-11 bg-white/15 rounded-full text-[13px] font-medium cursor-pointer" onclick={(event) => { event.stopPropagation(); if (currentItem) openCollectionPicker(currentItem); }}>Save</button>
         <button
           type="button"
           data-feed-close
@@ -828,7 +855,7 @@
             e.stopPropagation();
             close();
           }}
-          class="pointer-events-auto grid place-items-center w-10 h-10 rounded-full bg-black/55 hover:bg-black/75 border-0 cursor-pointer text-[#fffdf9]"
+          class="relative z-10 shrink-0 pointer-events-auto grid place-items-center w-11 h-11 rounded-full bg-black/55 hover:bg-black/75 border-0 cursor-pointer text-[#fffdf9]"
         >
           <Icon name="close" class="w-4 h-4" />
         </button>
@@ -837,8 +864,10 @@
       <!-- Bottom bar: progress + controls -->
       <div
         data-feed-chrome
+        style:display={(fetchError !== null || exhausted) && currentIndex >= queue.length - 1 ? "none" : undefined}
         class="absolute bottom-0 inset-x-0 px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))] flex flex-col gap-3 bg-gradient-to-t from-black/70 to-transparent pointer-events-none"
       >
+        {#if transportReady}
         <div class="flex items-center gap-3 pointer-events-auto">
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
@@ -872,6 +901,12 @@
             {fmtTime(currentTimeS)} / {fmtTime(durationS)}
           </span>
         </div>
+        {:else}
+          <p data-feed-playback-status role="status" class="m-0 text-sm text-white/90">
+            <span>{playbackError ? "Cannot play this video." : "Loading video…"}</span>
+            {#if playbackError}<span class="block text-xs text-white/70 mt-1">Try the next video or close feed.</span>{/if}
+          </p>
+        {/if}
         <div class="flex items-center gap-2 pointer-events-auto">
           <button
             type="button"
@@ -889,14 +924,15 @@
           <button
             type="button"
             data-feed-playpause
+            disabled={!transportReady}
             onclick={(e) => {
               e.stopPropagation();
               togglePlay();
             }}
-            aria-label={playing ? "Pause" : "Play"}
-            class="grid place-items-center w-11 h-11 rounded-full bg-black/55 hover:bg-black/75 border-0 cursor-pointer text-[#fffdf9]"
+            aria-label={transportReady ? (playing ? "Pause" : "Play") : (playbackError ? "Cannot play video" : "Video loading")}
+            class="grid place-items-center w-11 h-11 rounded-full bg-black/55 hover:bg-black/75 disabled:opacity-40 disabled:cursor-not-allowed border-0 cursor-pointer text-[#fffdf9]"
           >
-            <Icon name={playing ? "pause" : "play"} class="w-4 h-4" />
+            <Icon name={transportReady && playing ? "pause" : "play"} class="w-4 h-4" />
           </button>
           <button
             type="button"
@@ -973,7 +1009,7 @@
                 }}
                 class="px-5 py-2 bg-white/12 text-[#fffdf9] rounded-full text-[13.5px] font-semibold border border-white/20 cursor-pointer"
               >
-                Back
+                Close feed
               </button>
             </div>
           </div>
@@ -998,7 +1034,7 @@
               }}
               class="px-5 py-2 bg-[#fffdf9] text-ink rounded-full text-[13.5px] font-semibold border-0 cursor-pointer"
             >
-              Back to library
+              Close feed
             </button>
           </div>
         </div>

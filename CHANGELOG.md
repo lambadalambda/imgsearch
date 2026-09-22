@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- fix(feed): label exits Close feed, preserve the underlying page and launcher focus, distinguish loading/unplayable/empty states, hide unavailable transport, wrap mobile titles and surface failed or empty launches.
 - feat(lightbox): separate Save changes/Cancel editing from viewing actions, keep core controls reachable outside long scrolling metadata, move advanced actions into More and filenames into File details, and use explicit relative match scores.
 - fix(duplicates): consolidate reviewed possible-match groups transactionally onto a selected keeper, preserving collection placement and compatible manual metadata; stale previews or metadata conflicts block cleanup. Original files/thumbnails are retained explicitly. Add honest visual-hash labels, keeper/tie indicators and mobile comparison controls.
 - fix(settings): retain unsaved annotation drafts in memory across navigation, warn before reload while dirty, and offer explicit Save changes/Discard changes without persisting entered API keys in browser storage; in-flight save results survive pane unmount.

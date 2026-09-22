@@ -32,7 +32,6 @@
 ## UI/UX audit 2026-09-22
 
 - [ ] [Turn operational states into next steps](issues/clarify-library-health-and-error-recovery.md)
-- [ ] [“Back to library” should go to the Library](issues/make-feed-exit-destination-and-loading-state-explicit.md)
 
 ## Annotation settings
 

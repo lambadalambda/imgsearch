@@ -151,3 +151,4 @@
 - [x] [Separate viewing actions from editing actions](issues/simplify-lightbox-actions-and-edit-mode.md)
 
 - [x] [Make search modes and scope explicit](issues/clarify-search-filter-scope-and-match-labels.md)
+- [x] [“Back to library” should go to the Library](issues/make-feed-exit-destination-and-loading-state-explicit.md)

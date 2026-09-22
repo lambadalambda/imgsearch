@@ -52,10 +52,12 @@
   }
 
   let feedLoading = $state(false);
+  let feedNotice = $state("");
 
   async function openRandomFeed() {
     if (feedLoading) return;
     feedLoading = true;
+    feedNotice = "";
     try {
       const firstPage = await listVideos({
         limit: 1,
@@ -63,7 +65,10 @@
         includeNSFW: $includeNSFW,
       });
       const total = firstPage.total ?? firstPage.videos.length;
-      if (total <= 0) return;
+      if (total <= 0) {
+        feedNotice = "No videos available for this feed. Try again after adding videos.";
+        return;
+      }
 
       const seenOffsets = new Set<number>();
       const maxAttempts = Math.min(total, 6);
@@ -85,7 +90,9 @@
         openFeed(seed);
         return;
       }
+      feedNotice = "No videos available for this feed. Try again after adding videos.";
     } catch (err) {
+      feedNotice = "Could not open feed. Please try again.";
       console.warn("random Feed launch failed", err);
     } finally {
       feedLoading = false;
@@ -202,7 +209,7 @@
       <button
         type="button"
         class="{railBtnBase} {isActive ? activeBtn : ''}"
-        disabled={item.id === "feed" && feedLoading}
+        aria-disabled={item.id === "feed" && feedLoading}
         aria-busy={item.id === "feed" && feedLoading ? "true" : undefined}
         aria-current={isActive ? "page" : undefined}
         aria-label={item.label}
@@ -216,6 +223,13 @@
     {/each}
   </div>
 </nav>
+
+{#if feedNotice}
+  <div data-feed-launch-notice class="fixed bottom-20 sm:bottom-4 right-4 left-4 sm:left-auto sm:max-w-sm z-[1500] p-4 bg-surface text-ink border border-line rounded-xl shadow-lg">
+    <p role="status" class="m-0 text-sm">{feedNotice}</p>
+    <button type="button" class="mt-2 min-h-11 px-3 border border-line rounded-full cursor-pointer" onclick={() => (feedNotice = "")}>Dismiss</button>
+  </div>
+{/if}
 
 <style>
   .rail {

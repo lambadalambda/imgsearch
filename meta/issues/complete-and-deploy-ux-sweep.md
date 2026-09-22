@@ -11,7 +11,7 @@ User approved the remaining recommended UX work and a deployment after completio
 - [x] UX-05: [Protect Settings drafts](protect-unsaved-atelier-settings-edits.md).
 - [x] UX-06: [Lightbox viewing/editing actions](simplify-lightbox-actions-and-edit-mode.md).
 - [ ] UX-08: [Actionable status and error recovery](clarify-library-health-and-error-recovery.md).
-- [ ] UX-10: [Feed return and media states](make-feed-exit-destination-and-loading-state-explicit.md).
+- [x] UX-10: [Feed return and media states](make-feed-exit-destination-and-loading-state-explicit.md).
 - [ ] Deploy tested combined release to NAS CT107 and verify it.
 
 ## Requirements
@@ -33,3 +33,4 @@ User approved the remaining recommended UX work and a deployment after completio
 - `de1f264`: memory-only Settings draft retention, explicit save/discard and unload warning; independent review + integrated checks passed.
 - `6be6b6d`: transactional manual duplicate consolidation, metadata conflict checks, selectable keeper and honest visual-hash comparison; independent review + integrated checks/race tests passed.
 - Inherited concurrent NSFW classification/display races and shared-dialog announcement improvements remain separately tracked; no unbounded follow-up expansion.
+- UX10 integrated with mobile More navigation; full Go/frontend/script/browser suites and Svelte check passed, with independent integration review. Physical-device gestures remain outside this change.
