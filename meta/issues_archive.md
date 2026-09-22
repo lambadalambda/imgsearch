@@ -127,3 +127,4 @@
 - [x] [Add Atelier saved-collection workflows](issues/add-atelier-saved-collection-workflows.md)
 - [x] [Save images and videos to named collections](issues/save-media-to-named-collections.md)
 - [x] [Use configured remote annotation concurrency in worker](issues/use-configured-remote-annotation-concurrency.md)
+- [x] [Deploy collections and annotation parallelism to home instance](issues/deploy-collections-and-annotation-parallelism.md)
