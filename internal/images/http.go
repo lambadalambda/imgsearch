@@ -43,6 +43,8 @@ type ImageItem struct {
 	FullDescription     string   `json:"full_description,omitempty"`
 	Tags                []string `json:"tags,omitempty"`
 	ThumbnailPath       string   `json:"thumbnail_path,omitempty"`
+	// FileSizeBytes is populated only by duplicate discovery when safely available.
+	FileSizeBytes *int64 `json:"file_size_bytes,omitempty"`
 }
 
 type ListResponse struct {

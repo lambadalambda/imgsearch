@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Development tooling for imgsearch.",
   "scripts": {
-    "test": "node scripts/ui_smoke_test_atelier.mjs",
+    "test": "node scripts/ui_smoke_test_atelier.mjs && node scripts/duplicates_ui_test.mjs",
     "test:ui": "node scripts/ui_smoke_test_atelier.mjs",
     "test:atelier": "node scripts/ui_smoke_test_atelier.mjs",
     "playwright:install": "playwright install chromium",

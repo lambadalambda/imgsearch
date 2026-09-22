@@ -8,6 +8,8 @@ export interface ImageRecord {
   storage_path: string;
   thumbnail_path?: string;
   mime_type: string;
+  /** Available in duplicate discovery when the stored file can be read safely. */
+  file_size_bytes?: number;
   width: number;
   height: number;
   index_state: string;
@@ -331,4 +333,22 @@ export interface CollectionItemsPage {
   items: CollectionItem[];
   total: number;
   item_count: number;
+}
+
+export interface DuplicateConsolidationRequest {
+  keeper_id: number;
+  group_ids: number[];
+  distance: number;
+  include_nsfw: boolean;
+  confirm?: boolean;
+  preview_token?: string;
+}
+
+export interface DuplicateConsolidationPreview {
+  keeper_id: number;
+  removed_ids: number[];
+  affected_collections: number;
+  file_policy: "retained";
+  conflicts: string[];
+  preview_token: string;
 }

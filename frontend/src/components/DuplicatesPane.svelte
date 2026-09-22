@@ -1,76 +1,82 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { tick, untrack } from "svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
-  import { listDuplicates, deleteMedia, ApiError } from "../lib/api";
-  import { includeNSFW, lightboxPin, bumpDataEpoch } from "../lib/stores";
-  import { fallbackToOriginal, mediaUrl, pinFromImage, formatCount } from "../lib/utils";
-  import type { DuplicatesResponse, ImageRecord } from "../lib/types";
+  import DuplicateGroup from "./DuplicateGroup.svelte";
+  import { listDuplicates, consolidateDuplicates } from "../lib/api";
+  import { includeNSFW, bumpDataEpoch, refreshCollections } from "../lib/stores";
+  import { formatCount } from "../lib/utils";
+  import type { DuplicatesResponse, ImageRecord, DuplicateConsolidationRequest, DuplicateConsolidationPreview } from "../lib/types";
 
   let loading = $state(true);
   let error = $state("");
   let distance = $state(4);
   let result = $state<DuplicatesResponse | null>(null);
-  let busyIds = $state<Set<number>>(new Set());
-  let pendingDelete = $state<{ label: string; detail: string; ids: number[] } | null>(null);
+  let busy = $state(false);
+  let conflicts = $state<string[]>([]);
+  let conflictPanel = $state<HTMLElement | null>(null);
+  let pending = $state<{ request: DuplicateConsolidationRequest; preview: DuplicateConsolidationPreview; keeper: ImageRecord } | null>(null);
+  let generation = 0;
 
-  async function load(): Promise<void> {
+  async function load(options: { distance: number; includeNSFW: boolean }): Promise<void> {
+    const current = ++generation;
     loading = true;
     error = "";
+    pending = null;
+    conflicts = [];
     try {
-      result = await listDuplicates({ distance, includeNSFW: $includeNSFW });
+      const next = await listDuplicates(options);
+      if (current === generation) result = next;
     } catch (err) {
-      error = err instanceof ApiError || err instanceof Error ? err.message : "failed to load duplicates";
+      if (current === generation) { result = null; error = err instanceof Error ? err.message : "Failed to load possible matches"; }
     } finally {
-      loading = false;
+      if (current === generation) loading = false;
     }
   }
 
-  onMount(() => {
-    void load();
+  $effect(() => {
+    const options = { distance, includeNSFW: $includeNSFW };
+    untrack(() => { void load(options); });
   });
 
-  function pixels(item: ImageRecord): number {
-    return (item.width || 0) * (item.height || 0);
-  }
-
-  function askDelete(items: ImageRecord[], label: string): void {
-    if (items.length === 0) return;
-    pendingDelete = {
-      label,
-      detail: items.length === 1 ? items[0].original_name : `${items.length} images`,
-      ids: items.map((item) => item.image_id),
-    };
-  }
-
-  async function confirmDelete(): Promise<void> {
-    const request = pendingDelete;
-    pendingDelete = null;
-    if (!request || !result) return;
-    busyIds = new Set([...busyIds, ...request.ids]);
-    const removed = new Set<number>();
+  async function review(items: ImageRecord[], keeper: ImageRecord): Promise<void> {
+    const current = generation;
+    busy = true;
+    error = "";
+    conflicts = [];
+    const request = { keeper_id: keeper.image_id, group_ids: items.map(item => item.image_id), distance: result?.max_distance ?? distance, include_nsfw: $includeNSFW };
     try {
-      for (const id of request.ids) {
-        await deleteMedia("image", id);
-        removed.add(id);
+      const preview = await consolidateDuplicates(request);
+      if (current !== generation) return;
+      conflicts = preview.conflicts;
+      if (conflicts.length === 0) pending = { request, preview, keeper };
+      else {
+        await tick();
+        conflictPanel?.focus();
       }
     } catch (err) {
-      error = err instanceof ApiError || err instanceof Error ? err.message : "delete failed";
+      if (current === generation) error = err instanceof Error ? err.message : "Preview failed";
     } finally {
-      busyIds = new Set([...busyIds].filter((id) => !request.ids.includes(id)));
-    }
-    if (removed.size > 0) {
-      result = {
-        ...result,
-        groups: result.groups
-          .map((group) => ({ items: group.items.filter((item) => !removed.has(item.image_id)) }))
-          .filter((group) => group.items.length > 1),
-      };
-      bumpDataEpoch();
+      busy = false;
     }
   }
 
-  function open(item: ImageRecord): void {
-    lightboxPin.set(pinFromImage(item));
+  async function confirm(): Promise<void> {
+    const reviewed = pending;
+    pending = null;
+    if (!reviewed) return;
+    busy = true;
+    error = "";
+    try {
+      const completed = await consolidateDuplicates({ ...reviewed.request, confirm: true, preview_token: reviewed.preview.preview_token });
+      const removed = new Set(completed.removed_ids);
+      if (result) result = { ...result, groups: result.groups.map(group => ({ items: group.items.filter(item => !removed.has(item.image_id)) })).filter(group => group.items.length > 1) };
+      bumpDataEpoch();
+      refreshCollections();
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Consolidation failed; review again";
+    } finally {
+      busy = false;
+    }
   }
 </script>
 
@@ -78,110 +84,53 @@
   <header class="px-1 sm:px-0 pt-2 flex flex-wrap items-end gap-3 justify-between">
     <div>
       <p class="m-0 text-[11px] font-semibold uppercase tracking-[0.08em] text-accent-strong">Duplicates</p>
-      <h2 id="duplicates-pane-title" class="m-0 mt-1 font-display text-[22px] leading-tight text-ink">Near-duplicate images</h2>
-      <p class="m-0 mt-1 text-[12.5px] text-muted-2">
-        {#if result}
-          {formatCount(result.groups.length)} groups across {formatCount(result.scanned)} hashed images{result.unhashed
-            ? ` · ${formatCount(result.unhashed)} not hashed yet`
-            : ""}
-        {:else}
-          Groups of pictures whose perceptual hashes are within a few bits of each other.
-        {/if}
-      </p>
+      <h2 id="duplicates-pane-title" class="m-0 mt-1 font-display text-[22px] leading-tight text-ink">Possible matches</h2>
+      <p class="m-0 mt-1 text-[13px] text-muted-2">dHash measures visual similarity, not byte or pixel equality. Colors, edits and fine detail may differ—even with an identical visual hash. Groups can include transitive matches.</p>
+      <p class="m-0 mt-1 text-[12.5px] text-muted-2">Manual cleanup only; the separate unattended-import policy is unchanged.</p>
+      {#if result}<p class="m-0 mt-1 text-[12.5px] text-muted-2">{formatCount(result.groups.length)} groups across {formatCount(result.scanned)} hashed images{result.unhashed ? ` · ${formatCount(result.unhashed)} without a usable hash` : ""}</p>{/if}
     </div>
     <label class="inline-flex items-center gap-2 text-[13px] text-ink-2">
       <span>Sensitivity</span>
-      <select
-        data-duplicates-distance
-        bind:value={distance}
-        onchange={() => void load()}
-        class="bg-surface border border-line-2 rounded-full px-3 py-1.5 text-ink font-semibold text-[13px] outline-none cursor-pointer"
-      >
-        <option value={0}>Exact only</option>
+      <select data-duplicates-distance bind:value={distance} disabled={busy || !!pending} class="bg-surface border border-line-2 rounded-full px-3 py-2 text-ink font-semibold text-[13px] cursor-pointer">
+        <option value={0}>Identical visual hash</option>
         <option value={2}>Strict</option>
         <option value={4}>Normal</option>
         <option value={7}>Loose</option>
       </select>
     </label>
   </header>
-
   {#if error}
-    <p data-duplicates-error role="alert" class="m-0 px-3 py-2 rounded-[10px] bg-bad/10 text-bad text-[13px]">{error}</p>
+    <div role="alert" data-duplicates-error class="px-3 py-2 rounded bg-bad/10 text-bad text-[13px]">
+      {error}
+      <button type="button" disabled={busy} onclick={() => void load({ distance, includeNSFW: $includeNSFW })} class="underline ml-2">Reload matches</button>
+    </div>
   {/if}
-
+  {#if conflicts.length}
+    <div bind:this={conflictPanel} tabindex="-1" data-duplicate-conflicts role="alert" class="px-3 py-2 rounded bg-bad/10 text-bad text-[13px]">
+      <strong>Resolve metadata conflicts before confirming</strong>
+      <ul>{#each conflicts as conflict}<li>{conflict}</li>{/each}</ul>
+      <p>Nothing has changed. Open the images to edit their metadata, then review consolidation again.</p>
+    </div>
+  {/if}
+  {#if busy}<p role="status" class="m-0 text-[13px] text-muted">Checking and consolidating…</p>{/if}
   {#if loading}
     <p class="m-0 text-[13px] text-muted">Scanning…</p>
   {:else if result && result.groups.length === 0}
-    <p data-duplicates-empty class="m-0 text-[13px] text-muted">No near-duplicates found at this sensitivity.</p>
+    <p data-duplicates-empty class="m-0 text-[13px] text-muted">No possible matches at this sensitivity.</p>
   {:else if result}
-    <div class="flex flex-col gap-4">
-      {#each result.groups as group, index (group.items.map((item) => item.image_id).join(","))}
-        {@const largest = group.items[0]}
-        <article
-          data-duplicate-group={index}
-          class="rounded-card border border-line bg-surface shadow-card p-4 sm:p-5 flex flex-col gap-3"
-        >
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="m-0 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted-2">
-              {group.items.length} copies
-            </p>
-            <button
-              type="button"
-              data-duplicate-keep-largest
-              disabled={group.items.some((item) => busyIds.has(item.image_id))}
-              onclick={() => askDelete(group.items.slice(1), `Keep ${largest.width}×${largest.height} and delete the rest?`)}
-              class="px-[12px] py-[7px] bg-surface text-ink-2 border border-line-2 rounded-full text-[12.5px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-surface-2 disabled:opacity-50 disabled:cursor-default"
-            >
-              Keep largest
-            </button>
-          </div>
-          <div class="flex flex-wrap gap-3">
-            {#each group.items as item (item.image_id)}
-              <figure
-                data-duplicate-item={item.image_id}
-                class="m-0 w-[180px] flex flex-col gap-1.5 {busyIds.has(item.image_id) ? 'opacity-50' : ''}"
-              >
-                <button
-                  type="button"
-                  onclick={() => open(item)}
-                  class="block p-0 border border-line rounded-[10px] overflow-hidden bg-bg-2 cursor-pointer w-full aspect-[4/3]"
-                  aria-label={`Open ${item.original_name}`}
-                >
-                  <img
-                    src={mediaUrl(item.thumbnail_path || item.storage_path)}
-                    onerror={(event) => fallbackToOriginal(event.currentTarget, mediaUrl(item.storage_path))}
-                    alt={item.title || item.original_name}
-                    loading="lazy"
-                    class="block w-full h-full object-cover"
-                  />
-                </button>
-                <figcaption class="flex flex-col gap-1.5 text-[12px] leading-snug text-ink-2 break-all">
-                  <span class="block font-medium text-ink truncate" title={item.original_name}>{item.original_name}</span>
-                  <span class="tabular-nums text-muted">{item.width}×{item.height}{item === largest ? " · largest" : ""}</span>
-                  <button
-                    type="button"
-                    data-duplicate-delete={item.image_id}
-                    disabled={busyIds.has(item.image_id)}
-                    onclick={() => askDelete([item], "Delete this image?")}
-                    class="self-start px-[10px] py-[6px] bg-surface text-bad border border-bad/40 rounded-full text-[12px] font-medium leading-none cursor-pointer transition-colors duration-150 ease-soft hover:bg-[color-mix(in_oklab,#f4d8d6_60%,white_40%)] disabled:opacity-50 disabled:cursor-default"
-                  >
-                    Delete
-                  </button>
-                </figcaption>
-              </figure>
-            {/each}
-          </div>
-        </article>
-      {/each}
-    </div>
+    {#each result.groups as group, index (group.items.map(item => item.image_id).join(","))}
+      <DuplicateGroup items={group.items} {index} disabled={busy || !!pending} onreview={review} />
+    {/each}
   {/if}
 </section>
 
-{#if pendingDelete}
+{#if pending}
   <ConfirmDialog
-    title={pendingDelete.label}
-    detail={pendingDelete.detail}
-    onconfirm={confirmDelete}
-    oncancel={() => (pendingDelete = null)}
+    title={`Keep ${pending.keeper.original_name}?`}
+    detail={`Keep ${pending.keeper.width}×${pending.keeper.height}; remove ${pending.preview.removed_ids.length} other library entries. Preserve memberships in ${pending.preview.affected_collections} affected collections.`}
+    note="Original files and thumbnails are retained on disk for safe recovery; this does not free disk space. Collection memberships and compatible manual metadata are merged. Generated annotations stay with the keeper. Library removal cannot be undone here."
+    confirmLabel="Consolidate library entries"
+    onconfirm={confirm}
+    oncancel={() => (pending = null)}
   />
 {/if}

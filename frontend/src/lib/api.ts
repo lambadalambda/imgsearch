@@ -1,4 +1,4 @@
-import type { Collection, CollectionSummary, CollectionItemsPage, ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse, MediaStatusResponse } from "./types";
+import type { Collection, CollectionSummary, CollectionItemsPage, ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse, DuplicateConsolidationRequest, DuplicateConsolidationPreview, MediaStatusResponse } from "./types";
 
 class ApiError extends Error {
   constructor(
@@ -489,4 +489,13 @@ export function listCollectionItems(id: number, opts: { limit?: number; offset?:
 
 export function setCollectionMembership(id: number, target: CollectionTarget, saved: boolean): Promise<void> {
   return getJSON(`/api/collections/${id}/items/${target.kind}/${target.id}`, { method: saved ? "PUT" : "DELETE" });
+}
+
+/** Preview by default. Confirm only with the token from the reviewed preview. */
+export function consolidateDuplicates(request: DuplicateConsolidationRequest): Promise<DuplicateConsolidationPreview> {
+  return getJSON<DuplicateConsolidationPreview>("/api/duplicates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
 }

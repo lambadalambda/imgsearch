@@ -70,10 +70,10 @@ func TestDuplicatesHandlerGroupsAndOrdersByPixelCount(t *testing.T) {
 	if err != nil || resp.MaxDistance != MaxDuplicateDistance {
 		t.Fatalf("cap: %+v err=%v", resp, err)
 	}
-	req = httptest.NewRequest(http.MethodPost, "/api/duplicates", nil)
+	req = httptest.NewRequest(http.MethodDelete, "/api/duplicates", nil)
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("post: got=%d", rr.Code)
+		t.Fatalf("delete: got=%d", rr.Code)
 	}
 }

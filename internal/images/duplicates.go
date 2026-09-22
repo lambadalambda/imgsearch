@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 
@@ -16,7 +17,7 @@ import (
 
 const (
 	// DefaultDuplicateDistance is the Hamming distance under which two dHashes
-	// count as the same picture; MaxDuplicateDistance is the largest the band
+	// are possible visual matches; MaxDuplicateDistance is the largest the band
 	// index can answer exactly (8 bands of 8 bits find every pair within 7).
 	DefaultDuplicateDistance = 4
 	MaxDuplicateDistance     = 7
@@ -25,7 +26,7 @@ const (
 
 // DuplicateGroup is a set of standalone images whose hashes are within the
 // requested distance of each other (transitively). Items are ordered by
-// pixel count, largest first, so "keep largest" is the first entry.
+// pixel count, largest first. This is a default keeper, not a quality claim.
 type DuplicateGroup struct {
 	Items []ImageItem `json:"items"`
 }
@@ -59,34 +60,11 @@ func FindDuplicates(ctx context.Context, db *sql.DB, modelID int64, maxDistance 
 	}
 	resp := DuplicatesResponse{Groups: []DuplicateGroup{}, MaxDistance: maxDistance}
 
-	nsfwExpr := nsfwsql.TagsJSONHasNSFW("i.tags_json", "tag")
-	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
-SELECT i.id, i.phash
-FROM images i
-WHERE NOT EXISTS (SELECT 1 FROM video_frames vf WHERE vf.image_id = i.id)
-  AND (? = 1 OR NOT (%s))
-ORDER BY i.id`, nsfwExpr), boolToInt(includeNSFW))
+	hashed, unhashed, err := loadDuplicateHashes(ctx, db, includeNSFW)
 	if err != nil {
-		return DuplicatesResponse{}, fmt.Errorf("query image hashes: %w", err)
-	}
-	var hashed []hashedImage
-	for rows.Next() {
-		var id int64
-		var raw sql.NullInt64
-		if err := rows.Scan(&id, &raw); err != nil {
-			_ = rows.Close()
-			return DuplicatesResponse{}, fmt.Errorf("scan image hash: %w", err)
-		}
-		if !raw.Valid || raw.Int64 == phash.Unhashable {
-			resp.Unhashed++
-			continue
-		}
-		hashed = append(hashed, hashedImage{id: id, hash: phash.FromInt64(raw.Int64)})
-	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
 		return DuplicatesResponse{}, err
 	}
+	resp.Unhashed = unhashed
 	resp.Scanned = len(hashed)
 
 	groups := groupByHash(hashed, maxDistance)
@@ -125,6 +103,45 @@ ORDER BY i.id`, nsfwExpr), boolToInt(includeNSFW))
 		return resp.Groups[a].Items[0].ImageID < resp.Groups[b].Items[0].ImageID
 	})
 	return resp, nil
+}
+
+type duplicateQuerier interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+// Shared by discovery and transactional membership validation.
+func loadDuplicateHashes(ctx context.Context, db duplicateQuerier, includeNSFW bool) ([]hashedImage, int, error) {
+	unhashed := 0
+	nsfwExpr := nsfwsql.TagsJSONHasNSFW("i.tags_json", "tag")
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
+SELECT i.id, i.phash
+FROM images i
+WHERE NOT EXISTS (SELECT 1 FROM video_frames vf WHERE vf.image_id = i.id)
+  AND (? = 1 OR NOT (%s))
+ORDER BY i.id`, nsfwExpr), boolToInt(includeNSFW))
+	if err != nil {
+		return nil, 0, fmt.Errorf("query image hashes: %w", err)
+	}
+	var hashed []hashedImage
+	for rows.Next() {
+		var id int64
+		var raw sql.NullInt64
+		if err := rows.Scan(&id, &raw); err != nil {
+			_ = rows.Close()
+			return nil, 0, fmt.Errorf("scan image hash: %w", err)
+		}
+		if !raw.Valid || raw.Int64 == phash.Unhashable {
+			unhashed++
+			continue
+		}
+		hashed = append(hashed, hashedImage{id: id, hash: phash.FromInt64(raw.Int64)})
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return hashed, unhashed, nil
+
 }
 
 // groupByHash finds connected components of images within maxDistance.
@@ -237,12 +254,16 @@ WHERE i.id IN (`+strings.Join(placeholders, ",")+`)`, args...)
 // NewDuplicatesHandler serves GET /api/duplicates?distance=N&include_nsfw=1.
 func NewDuplicatesHandler(h *Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			httputil.WriteMethodNotAllowed(w, http.MethodGet)
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			httputil.WriteMethodNotAllowed(w, http.MethodGet, http.MethodPost)
 			return
 		}
 		if h == nil || h.DB == nil {
 			httputil.WriteJSONError(w, http.StatusServiceUnavailable, "service unavailable")
+			return
+		}
+		if r.Method == http.MethodPost {
+			h.consolidateDuplicates(w, r)
 			return
 		}
 		distance := int(httputil.ParseInt64Query(r, "distance", DefaultDuplicateDistance))
@@ -251,6 +272,29 @@ func NewDuplicatesHandler(h *Handler) http.Handler {
 			httputil.WriteJSONError(w, http.StatusInternalServerError, "query failed")
 			return
 		}
+		addDuplicateFileSizes(&resp, h.DataDir)
 		httputil.WriteJSON(w, http.StatusOK, resp)
 	})
+}
+
+// Best effort, confined even across symlinks. Missing files are not an error:
+// cleanup can still repair library records and never deletes filesystem paths.
+func addDuplicateFileSizes(resp *DuplicatesResponse, dataDir string) {
+	if dataDir == "" {
+		return
+	}
+	root, err := os.OpenRoot(dataDir)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	for g := range resp.Groups {
+		for i := range resp.Groups[g].Items {
+			item := &resp.Groups[g].Items[i]
+			if info, err := root.Stat(item.StoragePath); err == nil && info.Mode().IsRegular() {
+				size := info.Size()
+				item.FileSizeBytes = &size
+			}
+		}
+	}
 }

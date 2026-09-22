@@ -143,3 +143,7 @@
 - [x] [Give mobile navigation fewer jobs](issues/simplify-atelier-navigation-and-mobile-chrome.md)
 
 - [x] [Protect unsaved Settings edits](issues/protect-unsaved-atelier-settings-edits.md)
+
+- [x] [Cleanup should preserve the places an image was saved](issues/preserve-collections-during-manual-duplicate-cleanup.md)
+
+- [x] [Clarify what “Exact only” means](issues/clarify-perceptual-duplicate-safety-and-keeper-choice.md)

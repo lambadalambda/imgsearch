@@ -209,6 +209,7 @@ async function serveDist(res, pathname) {
 let nsfwToggleCount = 0;
 const metadataPatches = [];
 const duplicateRequests = [];
+const consolidationRequests = [];
 const byImageRequests = [];
 let statusPolls = 0;
 let annotationPhase = "queued";
@@ -628,6 +629,18 @@ const server = createServer(async (req, res) => {
       }
       const fresh = imageId === 1007 && annotationPhase === "done" ? { title: "Freshly annotated cat", tags: ["fresh", "cat"], annotation_updated_at: "2026-09-22 10:00:00" } : {};
       jsonResponse(res, 200, { ...image, index_state: "done", annotation_state: "done", ...fresh });
+      return;
+    }
+    if (url.pathname === "/api/duplicates" && req.method === "POST") {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      const request = JSON.parse(raw);
+      consolidationRequests.push(request);
+      const removed = request.group_ids.filter(id => id !== request.keeper_id);
+      if (request.confirm) {
+        for (const id of removed) deletedImageIds.add(id);
+      }
+      jsonResponse(res, 200, { keeper_id: request.keeper_id, removed_ids: removed, affected_collections: 2, file_policy: "retained", conflicts: [], preview_token: "smoke-preview" });
       return;
     }
     if (url.pathname === "/api/duplicates") {
@@ -2061,35 +2074,29 @@ async function smokeChecks(browser) {
     throw new Error(`expected repeated status polls, got ${statusPolls}`);
   }
 
-  // 6e. Near-duplicate finder (meta/issues/111): groups render side by
-  //     side, per-item delete removes the copy, and "Keep largest" deletes
-  //     every smaller copy of a group.
+  // 6e. Manual cleanup previews and consolidates a selected keeper in one
+  // request, never a loop of per-image DELETEs. Detailed mobile/conflict and
+  // comparison regressions live in duplicates_ui_test.mjs.
   const deletesBeforeDuplicates = deleteCount;
   await page.locator('button[aria-label="Duplicates"]').click();
   await page.waitForURL(/view=duplicates/, { timeout: 5000 });
-  await page.locator("[data-duplicates-pane]").waitFor({ state: "visible", timeout: 5000 });
   await page.locator('[data-duplicate-group="1"]').waitFor({ state: "visible", timeout: 5000 });
   const firstDuplicate = page.locator("[data-duplicate-item]").first();
   const duplicateId = Number(await firstDuplicate.getAttribute("data-duplicate-item"));
   await assertImageThumbnail(page, firstDuplicate, sampleImages.find((image) => image.image_id === duplicateId), requestedMedia);
-  if ((await page.locator('[data-duplicate-group="0"] [data-duplicate-item]').count()) !== 3) {
-    throw new Error("expected the first duplicate group to list three copies");
-  }
   await assertThumbnailFallback(page, '[data-duplicate-item="1013"]', requestedMedia);
-  await page.locator('[data-duplicate-delete="1011"]').click();
+  await page.getByRole("radio", { name: "Keep sample-11.jpg", exact: true }).check();
+  await page.locator('[data-duplicate-group="1"] [data-duplicate-review]').click();
   await page.locator("[data-confirm-dialog]").waitFor({ state: "visible", timeout: 5000 });
+  assert.match(await page.locator("[data-confirm-dialog]").innerText(), /files.*retained/i);
   await page.locator("[data-confirm-accept]").click();
   await page.waitForFunction(() => document.querySelectorAll("[data-duplicate-group]").length === 1, {}, { timeout: 5000 });
-  if (deleteCount !== deletesBeforeDuplicates + 1) {
-    throw new Error(`expected one DELETE from the duplicates view, got ${deleteCount - deletesBeforeDuplicates}`);
-  }
-  await page.locator('[data-duplicate-group="0"] [data-duplicate-keep-largest]').click();
-  await page.locator("[data-confirm-dialog]").waitFor({ state: "visible", timeout: 5000 });
+  await page.locator('[data-duplicate-group="0"] [data-duplicate-review]').click();
   await page.locator("[data-confirm-accept]").click();
   await page.locator("[data-duplicates-empty]").waitFor({ state: "visible", timeout: 5000 });
-  if (deleteCount !== deletesBeforeDuplicates + 3) {
-    throw new Error(`expected keep-largest to delete the two smaller copies, got ${deleteCount - deletesBeforeDuplicates - 1}`);
-  }
+  assert.equal(deleteCount, deletesBeforeDuplicates, "duplicate cleanup must not use per-image DELETE");
+  assert.deepEqual(consolidationRequests.filter(r => r.confirm).map(r => r.keeper_id), [1011, 1012]);
+  assert.ok(consolidationRequests.filter(r => r.confirm).every(r => r.preview_token === "smoke-preview"));
   if (duplicateRequests.length === 0 || duplicateRequests[0].distance !== "4") {
     throw new Error(`expected the duplicates request to carry the default distance, got ${JSON.stringify(duplicateRequests)}`);
   }

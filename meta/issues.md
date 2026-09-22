@@ -31,8 +31,6 @@
 
 ## UI/UX audit 2026-09-22
 
-- [ ] [Cleanup should preserve the places an image was saved](issues/preserve-collections-during-manual-duplicate-cleanup.md)
-- [ ] [Clarify what “Exact only” means](issues/clarify-perceptual-duplicate-safety-and-keeper-choice.md)
 - [ ] [Make search modes and scope explicit](issues/clarify-search-filter-scope-and-match-labels.md)
 - [ ] [Separate viewing actions from editing actions](issues/simplify-lightbox-actions-and-edit-mode.md)
 - [ ] [Turn operational states into next steps](issues/clarify-library-health-and-error-recovery.md)
