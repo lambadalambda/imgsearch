@@ -25,6 +25,19 @@ async function setup() {
 }
 
 describe("settings draft", () => {
+  it("defaults, retains and serializes video mode and sampling count", async () => {
+    const store = await setup();
+    expect(get(store).form.videoMode).toBe("frame_descriptions");
+    expect(get(store).form.videoFrameCount).toBe(5);
+    store.update(s => ({ ...s, form: { ...s.form, videoMode: "direct_frames", videoFrameCount: 10 } }));
+    expect(isSettingsDirty(get(store))).toBe(true);
+    expect(settingsRequest(get(store)).annotation).toMatchObject({ video_mode: "direct_frames", video_frame_count: 10 });
+    await store.load(async () => baseline());
+    expect(get(store).form.videoMode).toBe("direct_frames");
+    store.discard();
+    expect(get(store).form.videoFrameCount).toBe(5);
+    expect(isSettingsDirty(get(store))).toBe(false);
+  });
   it("tracks every input including empty numeric values, key replacement and clearing", async () => {
     const store = await setup();
     expect(isSettingsDirty(get(store))).toBe(false);
@@ -32,6 +45,7 @@ describe("settings draft", () => {
       { backend: "openai" as const }, { nativeVariant: "26b" as const },
       { baseUrl: "https://remote/v1" }, { model: "other" }, { apiKey: "secret" },
       { timeoutSeconds: undefined }, { concurrency: 3 },
+      { videoFrameCount: undefined }, { videoFrameCount: 10 }, { videoMode: "direct_frames" as const },
       { outputTokens: { ...get(store).form.outputTokens, image: undefined } },
     ]) {
       store.update(s => ({ ...s, form: { ...s.form, ...patch } }));

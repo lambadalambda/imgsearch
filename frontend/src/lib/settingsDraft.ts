@@ -1,7 +1,9 @@
 import { get, writable } from "svelte/store";
-import type { AnnotationBackend, AnnotationOutputTokens, NativeVariant, SettingsResponse, SettingsUpdateRequest } from "./types";
+import type { AnnotationBackend, AnnotationOutputTokens, VideoAnnotationMode, NativeVariant, SettingsResponse, SettingsUpdateRequest } from "./types";
 
 export interface SettingsForm {
+  videoMode: VideoAnnotationMode;
+  videoFrameCount: number | undefined;
   backend: AnnotationBackend;
   nativeVariant: NativeVariant;
   baseUrl: string;
@@ -26,6 +28,7 @@ export function formFromResponse(response: SettingsResponse): SettingsForm {
   const a = response.annotation;
   return {
     backend: a.backend, nativeVariant: a.native_variant,
+    videoMode: a.video_mode ?? "frame_descriptions", videoFrameCount: a.video_frame_count ?? 5,
     baseUrl: a.openai.base_url, apiKey: "", model: a.openai.model,
     timeoutSeconds: a.openai.timeout_seconds, concurrency: a.openai.concurrency,
     outputTokens: { ...a.output_tokens },
@@ -37,6 +40,7 @@ export function settingsRequest({ form, clearApiKey }: Pick<SettingsDraft, "form
     clear_api_key: clearApiKey || undefined,
     annotation: {
       backend: form.backend, native_variant: form.nativeVariant,
+      video_mode: form.videoMode, video_frame_count: form.videoFrameCount,
       output_tokens: { ...form.outputTokens },
       openai: {
         base_url: form.baseUrl, api_key: form.apiKey || undefined, model: form.model,
@@ -68,7 +72,7 @@ export function createSettingsDraft() {
     loaded: null,
     form: {
       backend: "native", nativeVariant: "e4b", baseUrl: "", apiKey: "", model: "",
-      timeoutSeconds: 120, concurrency: 2,
+      timeoutSeconds: 120, concurrency: 2, videoMode: "frame_descriptions", videoFrameCount: 5,
       outputTokens: { image: 1024, image_retry: 512, video_frame: 320, video_frame_retry: 256, video: 1200, video_retry: 640 },
     },
     clearApiKey: false, saving: false, loadError: "", saveError: "", saveNotice: "",

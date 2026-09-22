@@ -240,6 +240,7 @@ const settingsState = {
     backend: "native",
     native_variant: "e4b",
     output_tokens: { ...defaultOutputTokens },
+    video_mode: "frame_descriptions", video_frame_count: 5,
     openai: { base_url: "", api_key_set: false, model: "", timeout_seconds: 120, concurrency: 2 },
   },
   native_variant_locked: false,
@@ -266,6 +267,8 @@ function applySettingsUpdate(body) {
     backend: next.backend || "native",
     native_variant: next.native_variant || "e4b",
     output_tokens: { ...settingsState.annotation.output_tokens, ...next.output_tokens },
+    video_mode: next.video_mode ?? settingsState.annotation.video_mode,
+    video_frame_count: next.video_frame_count ?? settingsState.annotation.video_frame_count,
     openai: {
       base_url: (openai.base_url || "").replace(/\/+$/, ""),
       api_key_set: body.clear_api_key ? false : openai.api_key ? true : prev.api_key_set,

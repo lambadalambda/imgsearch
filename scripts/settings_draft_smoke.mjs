@@ -11,6 +11,7 @@ export async function settingsDraftChecks(browser, baseURL, initialSettings) {
     };
     let baseline = structuredClone(initialSettings);
     let failSave = false;
+    let puts = 0;
     let releaseSave;
     let saveGate;
     await page.addInitScript(() => {
@@ -24,13 +25,14 @@ export async function settingsDraftChecks(browser, baseURL, initialSettings) {
     await page.route("**/api/settings", async route => {
       if (route.request().method() === "PUT") {
         const body = route.request().postDataJSON();
+        puts += 1;
         if (saveGate) await saveGate;
         if (failSave) return route.fulfill({ status: 503, json: { error: "Settings service unavailable" } });
         baseline = {
           ...baseline, version: baseline.version + 1,
           annotation: {
             ...body.annotation,
-            openai: { ...body.annotation.openai, api_key: undefined, api_key_set: Boolean(body.annotation.openai.api_key) },
+            openai: { ...body.annotation.openai, api_key: undefined, api_key_set: body.clear_api_key ? false : Boolean(body.annotation.openai.api_key) || baseline.annotation.openai.api_key_set },
           },
         };
       }
@@ -38,6 +40,24 @@ export async function settingsDraftChecks(browser, baseURL, initialSettings) {
     });
     await page.goto(`${baseURL}/?view=settings`, { waitUntil: "networkidle" });
     const variant = page.locator("[data-settings-native-variant]");
+    const videoMode = page.locator("#settings-video-mode");
+    const frameCount = page.locator("#settings-video-frame-count");
+    await frameCount.waitFor({ timeout: 5000 });
+    assert.equal(await frameCount.inputValue(), "5");
+    assert.equal(await videoMode.isDisabled(), true, "native retains the frame-description path");
+    assert.match(await page.locator("#settings-video-help").innerText(), /timestamp/i);
+    assert.match(await page.locator("#settings-frame-count-help").innerText(), /new uploads/i);
+    for (const invalid of ["0", "33", "1.5", ""]) {
+      await frameCount.fill(invalid);
+      assert.equal(await frameCount.evaluate(el => el.checkValidity()), false);
+      await page.getByRole("button", { name: "Save changes", exact: true }).click();
+      assert.equal(puts, 0, "invalid frame count must not submit settings");
+    }
+    for (const boundary of ["1", "32"]) {
+      await frameCount.fill(boundary);
+      assert.equal(await frameCount.evaluate(el => el.checkValidity()), true);
+    }
+    await frameCount.fill("5");
     const save = page.getByRole("button", { name: "Save changes", exact: true });
     const discard = page.getByRole("button", { name: "Discard changes", exact: true });
     const warningArmed = () => page.evaluate(() => {
@@ -71,7 +91,11 @@ export async function settingsDraftChecks(browser, baseURL, initialSettings) {
     await page.locator("[data-settings-model]").fill("draft-model");
     await page.locator("[data-settings-timeout]").fill("240");
     await page.locator("[data-settings-concurrency]").fill("4");
+    await videoMode.selectOption("direct_frames");
+    await frameCount.fill("10");
     await page.locator("#settings-output-image").fill("2048");
+    await page.locator("#settings-video-title").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `/tmp/imgsearch-video-settings-${width}.png` });
     const panels = page.locator("form article");
     if (width > 1000) {
       const heights = await panels.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
@@ -96,6 +120,8 @@ export async function settingsDraftChecks(browser, baseURL, initialSettings) {
       ["[data-settings-timeout]", "240"],
       ["[data-settings-concurrency]", "4"],
       ["#settings-output-image", "2048"],
+      ["#settings-video-mode", "direct_frames"],
+      ["#settings-video-frame-count", "10"],
     ]) assert.equal(await page.locator(selector).inputValue(), value, `${selector} survives navigation`);
 
     // Failure and success both complete in the store after the submitting pane unmounts.
@@ -119,6 +145,20 @@ export async function settingsDraftChecks(browser, baseURL, initialSettings) {
     assert.match(await page.locator("[data-settings-save-notice]").innerText(), /Saved/);
     assert.equal(await page.locator("[data-settings-api-key]").inputValue(), "");
     assert.equal(await warningArmed(), false, "successful save clears dirty guard");
+    assert.equal(baseline.annotation.video_mode, "direct_frames");
+    assert.equal(baseline.annotation.video_frame_count, 10);
+    await page.locator('[data-settings-backend="native"]').check();
+    assert.equal(await videoMode.isDisabled(), true);
+    saveGate = null;
+    await save.click();
+    await page.locator("[data-settings-save-notice]").waitFor();
+    await page.reload({ waitUntil: "networkidle" });
+    assert.equal(await videoMode.isDisabled(), true);
+    assert.equal(await videoMode.inputValue(), "direct_frames", "native save retains remote preference");
+    await page.locator('[data-settings-backend="openai"]').check();
+    await save.click();
+    await page.locator("[data-settings-save-notice]").waitFor();
+    assert.equal(await videoMode.inputValue(), "direct_frames", "native switch retains remote preference");
     assert.match(await page.locator("[data-settings-active]").innerText(), /native · e4b/, "worker remains distinct from saved remote config");
     await page.locator("[data-settings-model]").fill("discard-me");
     await discard.click();

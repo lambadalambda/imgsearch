@@ -217,6 +217,7 @@ export interface Pin {
 /** Shapes for /api/settings. */
 export type AnnotationBackend = "native" | "openai";
 export type NativeVariant = "e4b" | "26b";
+export type VideoAnnotationMode = "frame_descriptions" | "direct_frames";
 
 export interface OpenAISettingsView {
   base_url: string;
@@ -236,6 +237,8 @@ export interface AnnotationOutputTokens {
 }
 
 export interface AnnotationSettingsView {
+  video_mode?: VideoAnnotationMode;
+  video_frame_count?: number;
   backend: AnnotationBackend;
   native_variant: NativeVariant;
   openai: OpenAISettingsView;
@@ -262,6 +265,8 @@ export interface SettingsResponse {
 /** Request body for PUT /api/settings and the remote probe endpoints. A
  *  blank api_key keeps the stored key. */
 export interface AnnotationSettingsInput {
+  video_mode?: VideoAnnotationMode;
+  video_frame_count?: number;
   /** Omitted limits preserve stored values for older clients. */
   output_tokens?: Partial<AnnotationOutputTokens>;
   backend: AnnotationBackend;

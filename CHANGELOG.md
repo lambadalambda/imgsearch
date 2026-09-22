@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(ui): add Video summaries and sampling controls for external direct-image versus frame-description input and frames per new upload, with native-mode guidance, timestamps/resource-limit explanations, draft retention and browser validation.
 - feat(annotations): add opt-in external-API direct video summaries from every stored sampled image with chronological timestamps; skip per-frame text generation, retain evidence on all retry paths and pin backend/mode/budgets for each video job. Native/default behavior and frame embeddings stay intact; video reannotation now retains previous metadata/NSFW visibility until replacement succeeds.
 - feat(settings): persist video input preferences and a 1–32 sampled-frame count (default5); new video uploads use saved sampling settings without a restart, while duplicates/existing videos keep their stored frames. Unsaved/legacy settings inherit the startup frame-count flag.
 - feat(ui): explain library health with Waiting/Processing/Complete/Failed states, explicit media/frame denominators, capability guidance and bounded recovery; replace duplicate raw request errors with a single Retry that preserves search/filter/pagination context.

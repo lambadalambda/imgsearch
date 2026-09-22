@@ -342,6 +342,26 @@
         </article>
       {/if}
 
+      <section aria-labelledby="settings-video-title" class="xl:col-span-2 rounded-card border border-line bg-surface shadow-card p-4 sm:p-5 flex flex-col gap-4">
+        <h3 id="settings-video-title" class="m-0 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted-2">Video summaries and sampling</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class={labelClass} for="settings-video-mode">External API video input</label>
+            <select id="settings-video-mode" class={inputClass} bind:value={$settingsDraft.form.videoMode} disabled={$settingsDraft.form.backend !== "openai"} aria-describedby="settings-video-help">
+              <option value="frame_descriptions">Frame descriptions (current approach)</option>
+              <option value="direct_frames">All sampled images in one request</option>
+            </select>
+            <p id="settings-video-help" class="m-0 mt-1.5 text-[12.5px] text-muted-2">Direct mode sends every stored sampled image in order with its timestamp, skipping individual frame descriptions. Your external model/server must support multiple images; this uses more visual context and may cost more per request. Native annotation always uses frame descriptions.</p>
+          </div>
+          <div>
+            <label class={labelClass} for="settings-video-frame-count">Frames per new video</label>
+            <input id="settings-video-frame-count" class={inputClass} type="number" min="1" max="32" step="1" required bind:value={$settingsDraft.form.videoFrameCount} aria-describedby="settings-frame-count-help" />
+            <p id="settings-frame-count-help" class="m-0 mt-1.5 text-[12.5px] text-muted-2">1–32 evenly spaced samples; default 5. Applies to new uploads only, for both backends. Existing videos keep their stored samples, even when re-annotated. More frames increase embedding work and annotation cost. Frame embeddings remain enabled in either mode.</p>
+          </div>
+        </div>
+        <p class="m-0 text-[12.5px] text-muted-2">Saving does not reprocess existing videos. The video input mode applies to subsequent annotation jobs after the worker refreshes settings; frame count applies to new uploads immediately. Direct mode uses the Video summaries token limits below, not the per-frame limits. Test connection checks connectivity, not multi-image support.</p>
+      </section>
+
       <section aria-labelledby="settings-output-title" aria-describedby="settings-output-help" class="xl:col-span-2 rounded-card border border-line bg-surface shadow-card p-4 sm:p-5 flex flex-col gap-4">
         <h3 id="settings-output-title" class="m-0 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted-2">Output token limits</h3>
         <p id="settings-output-help" class="m-0 text-[12.5px] text-muted-2">

@@ -154,3 +154,4 @@
 - [x] [“Back to library” should go to the Library](issues/make-feed-exit-destination-and-loading-state-explicit.md)
 - [x] [Turn operational states into next steps](issues/clarify-library-health-and-error-recovery.md)
 - [x] [Complete and deploy the remaining recommended UX sweep](issues/complete-and-deploy-ux-sweep.md)
+- [x] [Optional direct multi-frame video summaries for external APIs](issues/optional-direct-multiframe-video-summaries.md)
