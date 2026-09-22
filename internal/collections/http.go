@@ -140,6 +140,16 @@ func (h *Handler) collectionList(w http.ResponseWriter, r *http.Request) error {
 			}
 			t = &value
 		}
+		if t == nil && q.Get("summary") == "true" {
+			list, err := h.summaries(r.Context(), httputil.ParseIncludeNSFWQuery(r))
+			if err != nil {
+				return err
+			}
+			httputil.WriteJSON(w, 200, struct {
+				Collections []CollectionSummary `json:"collections"`
+			}{list})
+			return nil
+		}
 		list, err := h.list(r.Context(), t)
 		if err != nil {
 			return err

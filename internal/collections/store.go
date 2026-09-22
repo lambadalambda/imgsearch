@@ -25,8 +25,9 @@ type Item struct {
 }
 
 type ItemPage struct {
-	Items []Item `json:"items"`
-	Total int64  `json:"total"`
+	Items     []Item `json:"items"`
+	Total     int64  `json:"total"`
+	ItemCount int64  `json:"item_count"`
 }
 
 type target struct {
@@ -158,6 +159,16 @@ func (h *Handler) membership(ctx context.Context, id int64, t target, add bool) 
 	return tx.Commit()
 }
 
+// membershipVisibleSQL uses fixed aliases m (membership), i (image), v (video).
+// Keep detail pagination and summary counts/covers on the same privacy predicate.
+func membershipVisibleSQL(includeNSFW bool) string {
+	if includeNSFW {
+		return "1"
+	}
+	return fmt.Sprintf(`((m.image_id IS NOT NULL AND NOT (%s)) OR (m.video_id IS NOT NULL AND NOT (%s)))`,
+		nsfwsql.TagsJSONHasNSFW("i.tags_json", "itag"), nsfwsql.VideoHasNSFW("v.id", "v.tags_json", "ftag", "vtag"))
+}
+
 func (h *Handler) items(ctx context.Context, id int64, limit, offset int, includeNSFW bool) (ItemPage, error) {
 	page := ItemPage{Items: []Item{}}
 	if _, err := getCollection(ctx, h.DB, id); err != nil {
@@ -169,13 +180,11 @@ func (h *Handler) items(ctx context.Context, id int64, limit, offset int, includ
  LEFT JOIN images i ON i.id=m.image_id
  LEFT JOIN videos v ON v.id=m.video_id
  WHERE m.collection_id=?`
-	if !includeNSFW {
-		from += fmt.Sprintf(` AND ((m.image_id IS NOT NULL AND NOT (%s)) OR (m.video_id IS NOT NULL AND NOT (%s)))`,
-			nsfwsql.TagsJSONHasNSFW("i.tags_json", "itag"), nsfwsql.VideoHasNSFW("v.id", "v.tags_json", "ftag", "vtag"))
-	}
-	if err := h.DB.QueryRowContext(ctx, `SELECT COUNT(*)`+from, id).Scan(&page.Total); err != nil {
+	visible := membershipVisibleSQL(includeNSFW)
+	if err := h.DB.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(CASE WHEN `+visible+` THEN 1 ELSE 0 END),0)`+from, id).Scan(&page.ItemCount, &page.Total); err != nil {
 		return page, err
 	}
+	from += ` AND ` + visible
 	rows, err := h.DB.QueryContext(ctx, `SELECT m.image_id,m.video_id`+from+` ORDER BY m.id DESC LIMIT ? OFFSET ?`, id, limit, offset)
 	if err != nil {
 		return page, err

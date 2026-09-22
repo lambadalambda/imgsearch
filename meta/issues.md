@@ -46,3 +46,5 @@
 - [ ] [Clarify token-draft validation for remote annotation probes](issues/clarify-token-draft-validation-for-probes.md)
 - [ ] [Align native annotation output capacity with configurable token budgets](issues/align-native-annotation-output-capacity.md)
 - [ ] [Decide explicit null semantics for annotation token settings](issues/define-null-annotation-budget-semantics.md)
+
+- [ ] [Measure collection summary queries at representative scale](issues/measure-collection-summary-queries.md)

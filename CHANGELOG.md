@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(collections): add opt-in, filter-aware collection summaries with saved/visible counts and at most four safe thumbnail covers; expose total saved count on item pages while preserving visible pagination totals, stable saved order and lightweight picker APIs.
 - feat(ui)!: retire the legacy shell; `/legacy` and its assets now return 404, and Atelier is the only supported UI. Remove legacy navigation/proxy/smoke and retire its bulk-delete UI, tags explorer and live-connection panel while retaining shared APIs, root-cookie bootstrap and protected media serving. Retry-failures improvements remain separate UX-08 work.
 - fix(build): reject missing, placeholder or incomplete Atelier assets in frontend builds, release packaging (including skip-build mode) and browser smoke; build Atelier from source inside the CUDA image and run CI Go tests after frontend build.
 - feat(settings): expose persisted output-token limits for image, video-frame and final-video annotation, with separate first-attempt and compact-retry budgets; native and remote backends apply saved values to subsequent requests without rebuilding models or changing in-flight requests, while preserving existing defaults.
