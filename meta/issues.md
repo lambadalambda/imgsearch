@@ -25,3 +25,6 @@
 
 - [ ] [Gate rolling release publication on verification](issues/gate-rolling-release-publication-on-verification.md)
 - [ ] [Investigate Atelier visual search-rank smoke failure](issues/investigate-atelier-visual-search-rank-smoke-failure.md)
+- [ ] [Save images and videos to named collections](issues/save-media-to-named-collections.md)
+- [ ] [Persist named collections and media membership](issues/persist-named-collections-and-membership.md)
+- [ ] [Add Atelier saved-collection workflows](issues/add-atelier-saved-collection-workflows.md)
