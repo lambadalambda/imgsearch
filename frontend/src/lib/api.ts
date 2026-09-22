@@ -1,4 +1,4 @@
-import type { ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse, MediaStatusResponse } from "./types";
+import type { Collection, CollectionItemsPage, ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse, MediaStatusResponse } from "./types";
 
 class ApiError extends Error {
   constructor(
@@ -31,6 +31,7 @@ async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(response.status, message);
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -444,4 +445,43 @@ export async function getImage(id: number, signal?: AbortSignal): Promise<ImageR
 
 export async function getVideo(id: number, signal?: AbortSignal): Promise<VideoRecord> {
   return getJSON<VideoRecord>(`/api/videos/${id}`, { signal });
+}
+
+export interface CollectionTarget { kind: MediaKind; id: number }
+
+export function listCollections(opts: { target?: CollectionTarget; signal?: AbortSignal } = {}): Promise<{ collections: Collection[] }> {
+  const params = new URLSearchParams();
+  if (opts.target) {
+    params.set("media_type", opts.target.kind);
+    params.set("media_id", String(opts.target.id));
+  }
+  return getJSON(`/api/collections${params.size ? `?${params}` : ""}`, { signal: opts.signal });
+}
+
+export function createCollection(name: string): Promise<Collection> {
+  return getJSON("/api/collections", jsonInit("POST", { name }));
+}
+
+export function getCollection(id: number, signal?: AbortSignal): Promise<Collection> {
+  return getJSON(`/api/collections/${id}`, { signal });
+}
+
+export function renameCollection(id: number, name: string): Promise<Collection> {
+  return getJSON(`/api/collections/${id}`, jsonInit("PATCH", { name }));
+}
+
+export function deleteCollection(id: number): Promise<void> {
+  return getJSON(`/api/collections/${id}`, { method: "DELETE" });
+}
+
+export function listCollectionItems(id: number, opts: { limit?: number; offset?: number; includeNSFW?: boolean; signal?: AbortSignal } = {}): Promise<CollectionItemsPage> {
+  const params = new URLSearchParams({
+    limit: String(opts.limit ?? 50), offset: String(opts.offset ?? 0),
+    include_nsfw: String(opts.includeNSFW ?? false),
+  });
+  return getJSON(`/api/collections/${id}/items?${params}`, { signal: opts.signal });
+}
+
+export function setCollectionMembership(id: number, target: CollectionTarget, saved: boolean): Promise<void> {
+  return getJSON(`/api/collections/${id}/items/${target.kind}/${target.id}`, { method: saved ? "PUT" : "DELETE" });
 }

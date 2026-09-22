@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Pin } from "../lib/types";
   import { fallbackToOriginal, formatDuration, formatPercent, tagTone } from "../lib/utils";
-  import { setSimilar, setTagSearch, lightboxPin, openFeed } from "../lib/stores";
+  import { setSimilar, setTagSearch, lightboxPin, openFeed, openCollectionPicker } from "../lib/stores";
   import { createMediaActions } from "../lib/mediaActions";
   import ConfirmDialog from "./ConfirmDialog.svelte";
 
@@ -201,6 +201,7 @@
       >
         Similar
       </button>
+      <button type="button" data-pin-action="save" class="{cornerBtn} {cornerLight}" onclick={() => openCollectionPicker(pin)} aria-label="Save to collection">Save</button>
       {#if canFeed}
         <button
           type="button"

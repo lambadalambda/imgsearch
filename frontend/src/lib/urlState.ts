@@ -1,7 +1,8 @@
-export type ViewMode = "library" | "search" | "similar" | "tag" | "stats" | "settings" | "duplicates" | "byimage";
+export type ViewMode = "library" | "search" | "similar" | "tag" | "stats" | "settings" | "duplicates" | "byimage" | "collections" | "collection";
 
 export interface AppMode {
   mode: ViewMode;
+  collectionId?: number;
   query?: string;
   similarTo?: number;
   tags?: string[];
@@ -22,6 +23,11 @@ export function parseSearch(search: string): AppMode {
   }
   // "byimage" is deliberately not restored from the URL: the query image
   // lives only in memory, so a reload lands on the library.
+  if (params.get("view") === "collections") return { mode: "collections" };
+  if (params.get("view") === "collection") {
+    const id = Number(params.get("collection_id"));
+    return Number.isSafeInteger(id) && id > 0 ? { mode: "collection", collectionId: id } : { mode: "collections" };
+  }
   const q = params.get("q");
   const similar = params.get("similar");
   const tags = params.getAll("tag").filter(Boolean);
@@ -41,7 +47,12 @@ export function parseSearch(search: string): AppMode {
 /** The search string for a view: "?..." or "" for the library. */
 export function searchFor(state: AppMode): string {
   const params = new URLSearchParams();
-  if (state.mode === "stats") {
+  if (state.mode === "collections") {
+    params.set("view", "collections");
+  } else if (state.mode === "collection" && state.collectionId !== undefined) {
+    params.set("view", "collection");
+    params.set("collection_id", String(state.collectionId));
+  } else if (state.mode === "stats") {
     params.set("view", "stats");
   } else if (state.mode === "settings") {
     params.set("view", "settings");

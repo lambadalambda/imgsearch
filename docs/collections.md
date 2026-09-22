@@ -4,6 +4,14 @@ Collections are named, persistent lists of existing images and videos. They belo
 
 Removing a membership or deleting a collection **never deletes the original media**. Deleting media from the library removes its memberships automatically. Collection names need not be unique; IDs identify collections.
 
+## In Atelier
+
+- Open **Collections** in the navigation to create and browse lists, or rename/delete an existing list.
+- Use **Save to collection** on an image/video card, in the lightbox, or in the video Feed. Select one or more existing lists, or create a list while saving.
+- Reopen the picker to remove a saved membership. This differs from the media's **Delete** action, which deletes it from the library.
+- Collections can mix images and videos and display the newest saves first. Your NSFW visibility preference still applies; hidden media remains saved.
+- Collection URLs (`?view=collections` and `?view=collection&collection_id=123`) can be bookmarked and revisited after restarting the app.
+
 ## API
 
 All routes use the existing `/api/` authentication and JSON error format (`{"error":"…"}`).

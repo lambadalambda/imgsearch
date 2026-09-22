@@ -178,7 +178,22 @@ export interface ResultsMeta {
 
 export const resultsMeta = writable<ResultsMeta>({ total: 0, loading: false });
 
-export const headline = derived(mode, ($mode) => {
+export const collectionName = writable("");
+export const collectionPickerTarget = writable<Pin | null>(null);
+export const collectionEpoch = writable(0);
+export function refreshCollections(): void { collectionEpoch.update((n) => n + 1); }
+export function setCollections(): void { mode.set({ mode: "collections" }); }
+export function setCollection(collectionId: number): void { mode.set({ mode: "collection", collectionId }); }
+// Capture before the underlying view becomes inert (which blurs its focus).
+export let collectionPickerOpener: HTMLElement | null = null;
+export function openCollectionPicker(pin: Pin): void {
+  collectionPickerOpener = typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  collectionPickerTarget.set(pin);
+}
+
+export const headline = derived([mode, collectionName], ([$mode, $collectionName]) => {
+  if ($mode.mode === "collections") return "Collections";
+  if ($mode.mode === "collection") return $collectionName || "Collection";
   if ($mode.mode === "search" && $mode.query) {
     return $mode.query;
   }

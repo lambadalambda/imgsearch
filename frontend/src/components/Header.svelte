@@ -7,6 +7,7 @@
     librarySort,
     openUpload,
     setLibrary,
+    setCollections,
   } from "../lib/stores";
 
   function goHome(event: Event) {
@@ -23,6 +24,12 @@
         <span class="mx-1.5 text-muted-2">/</span>
         {#if $mode.mode === "library"}
           <span>Discover</span>
+        {:else if $mode.mode === "collections"}
+          <span>Collections</span>
+        {:else if $mode.mode === "collection"}
+          <a href="?view=collections" class="text-muted hover:text-ink transition-colors no-underline" onclick={(event) => { event.preventDefault(); setCollections(); }}>Collections</a>
+          <span class="mx-1.5 text-muted-2">/</span>
+          <span>{$headline}</span>
         {:else if $mode.mode === "search"}
           <a href="?" class="text-muted hover:text-ink transition-colors no-underline" onclick={goHome}>Discover</a>
           <span class="mx-1.5 text-muted-2">/</span>

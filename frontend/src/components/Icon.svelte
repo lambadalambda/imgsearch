@@ -1,5 +1,6 @@
 <script lang="ts">
   type IconName =
+    | "collections"
     | "library"
     | "search"
     | "tags"
@@ -30,7 +31,7 @@
   let { name, class: className = "", title }: Props = $props();
 </script>
 
-{#if name === "library"}
+{#if name === "library" || name === "collections"}
   <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">

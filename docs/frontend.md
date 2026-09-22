@@ -29,6 +29,7 @@ The first cut of the Atelier SPA covers:
 - Per-pin actions: Find similar, Flag NSFW (optimistic), Re-annotate, Delete
 - Tag chip search via `/api/search/tags` synced to `?tag=`
 - Pagination via the `Load more` button (offset bumps in 48-pin pages)
+- Saved image/video collections (`?view=collections` / `?view=collection&collection_id=123`), with create/rename/delete, mixed-media browsing, and a shared save/remove picker from cards, lightbox, and the current Feed video. Collections reference originals rather than copying media; see [collections](collections.md).
 - Upload modal (multi-select + drag-drop) hitting `POST /api/upload` with
   per-file row states (pending → uploading → created/duplicate/failed)
 - Similar-video Feed overlay: seeded by any video pin's "Feed" corner

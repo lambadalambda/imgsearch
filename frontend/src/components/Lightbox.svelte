@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { lightboxPin, pins, setSimilar, setTagSearch } from "../lib/stores";
+  import { lightboxPin, pins, collectionPickerTarget, openCollectionPicker, setSimilar, setTagSearch } from "../lib/stores";
   import { formatDuration, formatPercent } from "../lib/utils";
   import { focusTrap } from "../lib/focus";
   import { createMediaActions } from "../lib/mediaActions";
@@ -122,7 +122,7 @@
   });
 
   function onKey(event: KeyboardEvent) {
-    if (!$lightboxPin) return;
+    if (!$lightboxPin || $collectionPickerTarget) return;
     // A focused <video controls> owns the arrow keys for seeking.
     const target = event.target instanceof HTMLElement ? event.target : null;
     const onVideo = target?.tagName === "VIDEO";
@@ -161,6 +161,7 @@
     aria-modal="true"
     aria-label={pin.title}
     tabindex="-1"
+    inert={$collectionPickerTarget !== null}
     onclick={handleBackdropClick}
   >
     <div
@@ -330,6 +331,7 @@
         </div>
 
         <div class="mt-[18px] flex flex-wrap gap-2">
+          <button type="button" data-lightbox-action="save" class="px-3 py-2 border border-line rounded-full cursor-pointer" onclick={() => openCollectionPicker(pin)}>Save to collection</button>
           {#if editing}
             <button
               type="button"

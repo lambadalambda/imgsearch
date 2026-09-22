@@ -6,6 +6,7 @@ It runs as a small local web app that:
 - indexes images into a SQLite-backed library,
 - supports text-to-image and image-to-image search,
 - keeps data on your machine,
+- saves images and videos into named [collections](docs/collections.md),
 - uses a built-in default multimodal embedding setup.
 
 ## Screenshot

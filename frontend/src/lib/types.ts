@@ -291,3 +291,18 @@ export interface MediaStatusResponse {
   images: Array<{ image_id: number; index_state: string; annotation_state: AnnotationState; annotation_updated_at: string }>;
   videos: Array<{ video_id: number; annotation_state: AnnotationState; annotation_updated_at: string }>;
 }
+
+export interface Collection {
+  id: number;
+  name: string;
+  created_at: string;
+}
+
+export type CollectionItem =
+  | { media_type: "image"; image: ImageRecord }
+  | { media_type: "video"; video: VideoRecord };
+
+export interface CollectionItemsPage {
+  items: CollectionItem[];
+  total: number;
+}

@@ -124,3 +124,5 @@
 - [x] [Deploy image thumbnails to the home instance](issues/deploy-image-thumbnails-home-instance.md)
 - [x] [Import recent media from Fediverse accounts](issues/import-recent-fediverse-account-media.md)
 - [x] [Persist named collections and media membership](issues/persist-named-collections-and-membership.md)
+- [x] [Add Atelier saved-collection workflows](issues/add-atelier-saved-collection-workflows.md)
+- [x] [Save images and videos to named collections](issues/save-media-to-named-collections.md)

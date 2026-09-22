@@ -8,6 +8,7 @@
     openFeed,
     openUpload,
     setLibrary,
+    setCollections,
     setSettings,
     setStats,
     setDuplicates,
@@ -16,7 +17,7 @@
   import { pinFromVideo } from "../lib/utils";
 
   type RailItem = {
-    id: "library" | "search" | "tags" | "stats" | "duplicates" | "feed" | "upload";
+    id: "collections" | "library" | "search" | "tags" | "stats" | "duplicates" | "feed" | "upload";
     label: string;
     onClick?: () => void;
     disabled?: boolean;
@@ -72,6 +73,7 @@
       onClick: () => document.querySelector<HTMLInputElement>("#atelier-search")?.focus(),
       activeWhen: (s) => s.mode === "search",
     },
+    { id: "collections", label: "Collections", onClick: setCollections, activeWhen: (s) => s.mode === "collections" || s.mode === "collection" },
     { id: "tags", label: "Tags (soon)", disabled: true },
     {
       id: "stats",

@@ -31,7 +31,7 @@ import { chromium } from "playwright";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..");
-const distRoot = join(repoRoot, "internal", "webui", "atelier", "dist");
+const distRoot = process.env.ATELIER_DIST || join(repoRoot, "internal", "webui", "atelier", "dist");
 
 async function exists(path) {
   try {
@@ -284,9 +284,79 @@ function applySettingsUpdate(body) {
       : { backend: "native", model: a.native_variant, settings_version: settingsState.version, source: "worker" };
 }
 
+// Stateful collection contract: membership mutations never touch media records.
+let collections = [];
+let nextCollectionId = 1;
+const memberships = new Map();
+const collectionRequests = [];
+let collectionFailure = false;
+let collectionDelayMs = 0;
+async function collectionAPI(req, res, url) {
+  collectionRequests.push({ method: req.method, path: url.pathname, query: url.search });
+  if (collectionFailure === true || collectionFailure === url.pathname) {
+    collectionFailure = false;
+    jsonResponse(res, 503, { error: "Collection service unavailable" });
+    return;
+  }
+  if (collectionDelayMs) await new Promise((resolve) => setTimeout(resolve, collectionDelayMs));
+  const parts = url.pathname.split("/").filter(Boolean);
+  const id = Number(parts[2]);
+  const readBody = async () => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    return JSON.parse(body || "{}");
+  };
+  const noContent = () => { res.writeHead(204); res.end(); };
+  if (parts.length === 2) {
+    if (req.method === "POST") {
+      const { name } = await readBody();
+      const item = { id: nextCollectionId++, name: name.trim(), created_at: new Date().toISOString() };
+      collections.unshift(item);
+      memberships.set(item.id, []);
+      jsonResponse(res, 201, item);
+    } else {
+      const kind = url.searchParams.get("media_type");
+      const mediaId = Number(url.searchParams.get("media_id"));
+      jsonResponse(res, 200, { collections: kind ? collections.filter((c) => memberships.get(c.id).some((m) => m.kind === kind && m.id === mediaId)) : collections });
+    }
+    return;
+  }
+  const collection = collections.find((c) => c.id === id);
+  if (!collection) { jsonResponse(res, 404, { error: "Collection not found" }); return; }
+  if (parts.length === 3) {
+    if (req.method === "DELETE") {
+      collections = collections.filter((c) => c.id !== id);
+      memberships.delete(id);
+      noContent();
+    } else {
+      if (req.method === "PATCH") collection.name = (await readBody()).name.trim();
+      jsonResponse(res, 200, collection);
+    }
+    return;
+  }
+  if (parts.length === 4) {
+    const includeNSFW = ["true", "1"].includes(url.searchParams.get("include_nsfw"));
+    const all = memberships.get(id).map((m) => m.kind === "image"
+      ? { media_type: "image", image: sampleImages.find((i) => i.image_id === m.id) }
+      : { media_type: "video", video: sampleVideos.find((v) => v.video_id === m.id) })
+      .filter((item) => includeNSFW || !(item.image ?? item.video).tags?.some((tag) => tag.toLowerCase() === "nsfw"));
+    const offset = Number(url.searchParams.get("offset") || 0);
+    const limit = Number(url.searchParams.get("limit") || 50);
+    jsonResponse(res, 200, { items: all.slice(offset, offset + limit), total: all.length });
+    return;
+  }
+  const kind = parts[4], mediaId = Number(parts[5]);
+  const items = memberships.get(id);
+  const remaining = items.filter((m) => m.kind !== kind || m.id !== mediaId);
+  if (req.method === "DELETE") memberships.set(id, remaining);
+  else if (remaining.length === items.length) memberships.set(id, [{ kind, id: mediaId }, ...items]);
+  noContent();
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   try {
+    if (url.pathname.startsWith("/api/collections")) { await collectionAPI(req, res, url); return; }
     if (url.pathname === "/api/stats") {
       statsServed += 1;
       jsonResponse(res, 200, {
@@ -593,6 +663,11 @@ const server = createServer(async (req, res) => {
     }
     if (/^\/api\/(images|videos)\/\d+$/.test(url.pathname) && req.method === "DELETE") {
       deleteCount += 1;
+      const kind = url.pathname.startsWith("/api/images/") ? "image" : "video";
+      const mediaId = Number(url.pathname.split("/").pop());
+      for (const [id, items] of memberships) {
+        memberships.set(id, items.filter((item) => item.kind !== kind || item.id !== mediaId));
+      }
       if (url.pathname.startsWith("/api/images/")) deletedImageIds.add(Number(url.pathname.split("/").pop()));
       res.writeHead(204);
       res.end();
@@ -2338,10 +2413,331 @@ try {
     throw new Error(`unexpected re-annotate result ${JSON.stringify(reannotateText)} calls=${reannotateAllCalls.length}`);
   }
 
+  await collectionChecks(browser);
   console.log("atelier smoke checks passed");
 } finally {
   if (browser) {
     await browser.close();
   }
   server.close();
+}
+
+async function collectionChecks(browser) {
+  const page = await browser.newPage();
+  page.setDefaultTimeout(5000);
+  await page.addInitScript(() => {
+    // Stub decoding, not Feed logic: the mock media server returns thumbnails.
+    const paused = new WeakMap();
+    Object.defineProperty(HTMLMediaElement.prototype, "paused", { get() { return paused.get(this) ?? true; } });
+    HTMLMediaElement.prototype.play = function () { paused.set(this, false); this.dispatchEvent(new Event("play")); return Promise.resolve(); };
+    HTMLMediaElement.prototype.pause = function () { paused.set(this, true); this.dispatchEvent(new Event("pause")); };
+  });
+  page.on("pageerror", (err) => { throw err; });
+  const assert = (condition, message) => { if (!condition) throw new Error(message); };
+  await page.goto(`${baseURL}/?view=collections`, { waitUntil: "networkidle" });
+  const imagesBefore = imagesRequests.length, videosBefore = videosRequests.length;
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator("[data-collections-pane]").waitFor();
+  assert(imagesRequests.length === imagesBefore && videosRequests.length === videosBefore, "management must not fetch library pages");
+  await page.getByLabel("Collection name", { exact: true }).fill(" ");
+  await page.getByRole("button", { name: "Create collection", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "1–100 characters" }).waitFor();
+  await page.getByLabel("Collection name", { exact: true }).fill("  Favorites  ");
+  collectionFailure = true;
+  await page.getByRole("button", { name: "Create collection", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Collection service unavailable" }).waitFor();
+  assert(collections.length === 0, "failed create must not insert a collection");
+  await page.getByRole("button", { name: "Create collection", exact: true }).click();
+  await page.getByRole("button", { name: "Browse Favorites", exact: true }).waitFor();
+  const id = collections[0].id;
+  const openPicker = async (key) => {
+    const pin = page.locator(`[data-pin-key="${key}"]`);
+    await pin.locator('[data-pin-action="save"]').click();
+    await page.locator("[data-collection-picker]").waitFor();
+  };
+  await page.goto(`${baseURL}/?q=cat`, { waitUntil: "networkidle" });
+  await openPicker("image:1001");
+  await page.getByRole("checkbox", { name: "Favorites", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-collection-picker] [role="status"]')?.textContent?.includes("Saved"));
+  await page.keyboard.press("Escape");
+  await page.locator("[data-collection-picker]").waitFor({ state: "detached" });
+  assert(await page.locator('[data-pin-key="image:1001"] [data-pin-action="save"]').evaluate((el) => el === document.activeElement), "picker restores card focus");
+  // Lightbox uses the same picker; its navigation must not receive picker keys.
+  await page.locator('[data-pin-key="video:200"] [data-pin-media]').click();
+  await page.locator('[data-lightbox-action="save"]').click();
+  await page.getByRole("checkbox", { name: "Favorites", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-collection-picker] [role="status"]')?.textContent?.includes("Saved"));
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Tab");
+  assert(await page.locator("[data-collection-picker]").evaluate((el) => el.contains(document.activeElement)), "picker traps focus");
+  for (const key of ["Tab", "Tab", "Tab", "Tab", "Shift+Tab", "Shift+Tab", "Shift+Tab", "Shift+Tab"]) {
+    await page.keyboard.press(key);
+    assert(await page.locator("[data-collection-picker]").evaluate((el) => el.contains(document.activeElement)), "picker keeps full Tab cycle isolated");
+  }
+  await page.keyboard.press("Escape");
+  await page.locator('[data-lightbox-action="save"]').waitFor();
+  assert(await page.locator('[data-lightbox-action="save"]').evaluate((el) => el === document.activeElement), "picker restores lightbox focus");
+  await page.keyboard.press("Escape");
+  assert(memberships.get(id).some((m) => m.kind === "video" && m.id === 200), "save must use video ID, not frame image ID");
+
+  await page.goto(`${baseURL}/?view=collection&collection_id=${id}`, { waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator('[data-pin-key="image:1001"]').waitFor();
+  await page.locator('[data-pin-key="video:200"]').waitFor();
+  assert(await page.locator("[data-pin]").count() === 2, "saved mixed collection survives reload");
+  const deletesBefore = deleteCount;
+  await openPicker("image:1001");
+  await page.getByRole("checkbox", { name: "Favorites", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-collection-picker] [role="status"]')?.textContent?.includes("Removed"));
+  await page.keyboard.press("Escape");
+  await page.locator('[data-pin-key="image:1001"]').waitFor({ state: "detached" });
+  await page.waitForFunction(() => document.querySelector("[data-results-meta]")?.textContent?.includes("1 result"));
+  assert(deleteCount === deletesBefore, "removing membership must not delete originals");
+
+  // Failures leave membership unchanged and permit retry.
+  await openPicker("video:200");
+  collectionFailure = true;
+  await page.getByRole("checkbox", { name: "Favorites", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Collection service unavailable" }).waitFor();
+  assert(await page.getByRole("checkbox", { name: "Favorites", exact: true }).isChecked(), "failed removal must retain membership");
+  await page.keyboard.press("Escape");
+
+  // Advanced Feed current item (not the original seed), isolated keys and playback.
+  await page.goto(`${baseURL}/?q=cat`, { waitUntil: "networkidle" });
+  await page.locator('[data-pin-key="video:200"] [data-pin-action="feed"]').click();
+  await page.locator("[data-feed-next]:not([disabled])").click();
+  await page.waitForFunction(() => document.querySelector("[data-feed-overlay]")?.getAttribute("data-feed-current-index") === "1");
+  const currentSrc = await page.locator('[data-feed-slot="current"] video').getAttribute("src");
+  const currentVideo = sampleVideos.find((v) => currentSrc?.endsWith(v.storage_path));
+  assert(currentVideo && currentVideo.video_id !== 200, "Feed advanced to another target");
+  await page.waitForFunction(() => !document.querySelector('[data-feed-slot="current"] video')?.paused);
+  await page.locator("[data-feed-save]").click();
+  await page.getByRole("checkbox", { name: "Favorites", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-collection-picker] [role="status"]')?.textContent?.includes("Saved"));
+  await page.getByLabel("Collection name", { exact: true }).fill("keys");
+  for (const key of ["ArrowDown", "ArrowUp", "ArrowRight", "k", " "]) await page.keyboard.press(key);
+  await page.getByLabel("Collection name", { exact: true }).fill(" ");
+  await page.keyboard.press("Enter");
+  await page.getByRole("alert").filter({ hasText: "1–100 characters" }).waitFor();
+  assert(await page.locator("[data-feed-overlay]").getAttribute("data-feed-current-index") === "1", "picker keys must not advance Feed");
+  assert(await page.locator('[data-feed-slot="current"] video').evaluate((el) => el.paused), "Feed pauses under picker");
+  await page.keyboard.press("Escape");
+  await page.locator("[data-feed-overlay]").waitFor();
+  assert(memberships.get(id).some((m) => m.kind === "video" && m.id === currentVideo.video_id), "Feed saves current video");
+  await page.waitForFunction(() => !document.querySelector('[data-feed-slot="current"] video')?.paused);
+  await page.locator("[data-feed-playpause]").click();
+  await page.locator("[data-feed-save]").click();
+  await page.getByLabel("Collection name", { exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  assert(await page.locator('[data-feed-slot="current"] video').evaluate((el) => el.paused), "closing picker must not resume already-paused Feed");
+  await page.keyboard.press("Escape");
+
+  await page.goto(`${baseURL}/?view=collections`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Rename Favorites", exact: true }).click();
+  await page.getByLabel("New collection name", { exact: true }).fill("Keepers");
+  collectionFailure = true;
+  await page.getByRole("button", { name: "Save name", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Collection service unavailable" }).waitFor();
+  assert(collections.find((c) => c.id === id).name === "Favorites", "failed rename preserves old name");
+  await page.getByRole("button", { name: "Save name", exact: true }).click();
+  await page.getByRole("button", { name: "Browse Keepers", exact: true }).waitFor();
+  await page.reload({ waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Delete Keepers", exact: true }).click();
+  await page.locator("[data-confirm-cancel]").click();
+  await page.getByRole("button", { name: "Browse Keepers", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Delete Keepers", exact: true }).click();
+  collectionFailure = true;
+  await page.locator("[data-confirm-accept]").click();
+  await page.getByRole("alert").filter({ hasText: "Collection service unavailable" }).waitFor();
+  await page.getByRole("button", { name: "Browse Keepers", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Delete Keepers", exact: true }).click();
+  await page.locator("[data-confirm-accept]").click();
+  await page.getByRole("button", { name: "Browse Keepers", exact: true }).waitFor({ state: "detached" });
+  assert(deleteCount === deletesBefore, "deleting collection must preserve originals");
+  await page.goto(`${baseURL}/?q=cat`, { waitUntil: "networkidle" });
+  await page.locator('[data-pin-key="image:1001"]').waitFor();
+  await page.locator('[data-pin-key="video:200"]').waitFor();
+  collectionFailure = true;
+  await openPicker("image:1001");
+  await page.getByRole("alert").filter({ hasText: "Collection service unavailable" }).waitFor();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.getByLabel("Collection name", { exact: true }).fill("From picker");
+  await page.getByRole("button", { name: "Create collection", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-collection-picker] [role="status"]')?.textContent?.includes("Saved"));
+  const pickerId = collections[0].id;
+  assert(memberships.get(pickerId).some((m) => m.kind === "image" && m.id === 1001), "create in picker saves the target");
+  await page.keyboard.press("Escape");
+
+  // More than one page, newest membership order, removal resets pagination,
+  // and changing detail IDs never reuses the previous collection's data.
+  const paged = { id: nextCollectionId++, name: "Paged", created_at: new Date().toISOString() };
+  collections.unshift(paged);
+  memberships.set(paged.id, sampleImages.slice(10, 65).map((image) => ({ kind: "image", id: image.image_id })));
+  await page.goto(`${baseURL}/?view=collection&collection_id=${paged.id}`, { waitUntil: "networkidle" });
+  assert(await page.locator("[data-pin]").count() === 48, "collection first page uses existing masonry page size");
+  await page.getByRole("button", { name: /Load more/ }).click();
+  await page.locator('[data-pin-key="image:1064"]').waitFor();
+  assert(await page.locator("[data-pin]").count() === 55, "collection appends second page");
+  const pageRequest = collectionRequests.find((r) => r.path === `/api/collections/${paged.id}/items` && r.query.includes("offset=48"));
+  assert(pageRequest, "collection items must paginate using API offset");
+  await openPicker("image:1064");
+  await page.getByRole("checkbox", { name: "Paged", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-collection-picker] [role="status"]')?.textContent?.includes("Removed"));
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelector("[data-results-meta]")?.textContent?.includes("54 results"));
+  await page.getByRole("button", { name: /Load more/ }).click();
+  await page.locator('[data-pin-key="image:1063"]').waitFor();
+  assert(await page.locator("[data-pin]").count() === 54, "removal refresh resets offset and does not skip items");
+  await page.locator('[data-rail-item="collections"]').click();
+  await page.getByRole("button", { name: "Browse From picker", exact: true }).click();
+  await page.locator('[data-pin-key="image:1001"]').waitFor();
+  assert(await page.locator("[data-pin]").count() === 1, "different collection ID replaces results");
+
+  // A late detail response must not overwrite navigation away from it.
+  await page.locator('[data-rail-item="collections"]').click();
+  await page.getByRole("button", { name: "Browse Paged", exact: true }).waitFor();
+  collectionDelayMs = 250;
+  await page.getByRole("button", { name: "Browse Paged", exact: true }).click();
+  await page.locator('[data-rail-item="collections"]').click();
+  await page.locator("[data-collections-pane]").waitFor();
+  await page.waitForTimeout(350);
+  collectionDelayMs = 0;
+  assert(await page.locator("h1").textContent() === "Collections", "late detail does not replace management view");
+  assert(await page.locator("[data-pin]").count() === 0, "late detail does not leak pins into management");
+  await page.getByRole("button", { name: "Browse Paged", exact: true }).click();
+  await page.locator('[data-pin-key="image:1010"]').waitFor();
+
+  // Detail list failure is explicit rather than an empty success.
+  collectionFailure = `/api/collections/${paged.id}/items`;
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator("[data-results-meta]").filter({ hasText: "Collection service unavailable" }).waitFor();
+  assert(await page.locator("[data-pin]").count() === 0, "failed detail must not retain stale results");
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator('[data-pin-key="image:1010"]').waitFor();
+  // Review regression: management remains mounted under Rail Feed. Creating
+  // through the picker must invalidate that already-visible collection list.
+  await page.goto(`${baseURL}/?view=collections`, { waitUntil: "networkidle" });
+  await page.locator('[data-rail-item="feed"]').click();
+  await page.locator("[data-feed-save]").click();
+  await page.locator("[data-collection-picker]").getByLabel("Collection name", { exact: true }).fill("Created above management");
+  await page.locator("[data-collection-picker]").getByRole("button", { name: "Create collection", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-collection-picker] [role="status"]')?.textContent?.includes("Saved"));
+  await page.keyboard.press("Escape");
+  await page.locator("[data-collection-picker]").waitFor({ state: "detached" });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Browse Created above management", exact: true }).waitFor();
+
+  // Review regression: actual media deletion cascades membership on the API.
+  // With 49 saved items, deleting a first-page item must not skip the last one.
+  const deletePaged = { id: nextCollectionId++, name: "Delete pagination", created_at: new Date().toISOString() };
+  collections.unshift(deletePaged);
+  memberships.set(deletePaged.id, sampleImages.slice(70, 119).map((image) => ({ kind: "image", id: image.image_id })));
+  await page.goto(`${baseURL}/?view=collection&collection_id=${deletePaged.id}`, { waitUntil: "networkidle" });
+  assert(await page.locator("[data-pin]").count() === 48, "media delete fixture starts with 48 of 49 items");
+  const beforeMediaDelete = deleteCount;
+  const deletePin = page.locator('[data-pin-key="image:1070"]');
+  await deletePin.locator('[data-pin-action="more"]').click();
+  await deletePin.locator('[data-pin-menu="delete"]').click();
+  await page.locator("[data-confirm-accept]").click();
+  await deletePin.waitFor({ state: "detached" });
+  await page.locator('[data-pin-key="image:1118"]').waitFor();
+  await page.waitForFunction(() => document.querySelector("[data-results-meta]")?.textContent?.includes("48 results"));
+  assert(deleteCount === beforeMediaDelete + 1, "regression must perform media Delete, not membership removal");
+  assert(await page.locator("[data-pin]").count() === 48, "deleting media refills first page without skipping final item");
+  assert(await page.getByRole("button", { name: /Load more/ }).count() === 0, "media deletion updates pagination boundary");
+
+  // Review regression: hold a tail refill, request Next, then open the picker.
+  // Resolving the already-started Next must not advance beneath the picker.
+  let releaseRefill;
+  const refillGate = new Promise((resolve) => { releaseRefill = resolve; });
+  let refillStarted;
+  const refillRequest = new Promise((resolve) => { refillStarted = resolve; });
+  let feedRequests = 0;
+  await page.route("**/api/search/similar-videos?*", async (route) => {
+    feedRequests += 1;
+    const number = feedRequests;
+    if (number === 2) { refillStarted(); await refillGate; }
+    const results = number <= 2 ? similarVideoResults([]).filter((v) => v.video_id === 200 + number) : [];
+    await route.fulfill({ json: { results, total: results.length } });
+  });
+  try {
+    await page.goto(`${baseURL}/?q=cat`, { waitUntil: "networkidle" });
+    await page.locator('[data-pin-key="video:200"] [data-pin-action="feed"]').click();
+    await page.locator("[data-feed-next]:not([disabled])").click();
+    await page.waitForFunction(() => document.querySelector("[data-feed-overlay]")?.getAttribute("data-feed-current-index") === "1");
+    await refillRequest;
+    await page.locator("[data-feed-next]").click();
+    await page.locator("[data-feed-save]").click();
+    await page.locator("[data-collection-picker]").waitFor();
+    const savedTarget = await page.locator('[data-feed-slot="current"] video').getAttribute("src");
+    releaseRefill();
+    await page.waitForFunction(() => document.querySelector("[data-feed-overlay]")?.getAttribute("data-feed-queue-size") === "3");
+    assert(await page.locator("[data-feed-overlay]").getAttribute("data-feed-current-index") === "1", "pending tail Next must not advance underneath picker");
+    assert(await page.locator('[data-feed-slot="current"] video').getAttribute("src") === savedTarget, "pending tail Next preserves picker target");
+    await page.keyboard.press("Escape");
+    await page.locator("[data-feed-next]").click();
+    await page.waitForFunction(() => document.querySelector("[data-feed-overlay]")?.getAttribute("data-feed-current-index") === "2");
+    await page.keyboard.press("Escape");
+  } finally {
+    releaseRefill();
+    await page.unroute("**/api/search/similar-videos?*");
+  }
+
+  // Keep the mock faithful: a repeated PUT does not reorder memberships,
+  // and hidden NSFW media affects both items and total before pagination.
+  const contractCollection = { id: nextCollectionId++, name: "Contract", created_at: new Date().toISOString() };
+  collections.unshift(contractCollection);
+  memberships.set(contractCollection.id, [{ kind: "image", id: 1131 }, { kind: "image", id: 1130 }]);
+  const contractPath = `${baseURL}/api/collections/${contractCollection.id}/items`;
+  await page.request.put(`${contractPath}/image/1130`);
+  const unchangedOrder = await (await page.request.get(`${contractPath}?include_nsfw=true`)).json();
+  assert(unchangedOrder.items.map((item) => item.image.image_id).join(",") === "1131,1130", "idempotent PUT preserves membership order");
+  const hiddenImage = sampleImages.find((image) => image.image_id === 1131);
+  const originalTags = hiddenImage.tags;
+  hiddenImage.tags = [...originalTags, "nsfw"];
+  try {
+    const hidden = await (await page.request.get(`${contractPath}?limit=1&include_nsfw=false`)).json();
+    assert(hidden.total === 1 && hidden.items[0].image.image_id === 1130, "mock filters NSFW before limit and total");
+    const included = await (await page.request.get(`${contractPath}?include_nsfw=true`)).json();
+    assert(included.total === 2, "mock includes NSFW when requested");
+    await page.goto(`${baseURL}/?view=collection&collection_id=${contractCollection.id}`, { waitUntil: "networkidle" });
+    await page.locator('[data-pin-key="image:1130"]').waitFor();
+    assert(await page.locator("[data-pin]").count() === 1, "collection hides NSFW by default");
+    await page.locator("[data-nsfw-toggle]").check();
+    await page.locator('[data-pin-key="image:1131"]').waitFor();
+    await page.locator("[data-nsfw-toggle]").uncheck();
+    await page.locator('[data-pin-key="image:1131"]').waitFor({ state: "detached" });
+  } finally {
+    hiddenImage.tags = originalTags;
+  }
+  await page.goto(`${baseURL}/?view=collections`, { waitUntil: "networkidle" });
+  assert((await page.locator("header p").first().innerText()).replace(/\s+/g, " ").trim() === "Library / Collections", "management breadcrumb names Collections, not Similar");
+  await page.getByRole("button", { name: "Browse Contract", exact: true }).click();
+  await page.locator('[data-pin-key="image:1130"]').waitFor();
+  assert((await page.locator("header p").first().innerText()).replace(/\s+/g, " ").trim() === "Library / Collections / Contract", "detail breadcrumb identifies its collection");
+
+  // Saving the current video must remain available at the end of a Feed or
+  // when fetching similar videos fails, even with their full-screen overlays.
+  for (const failed of [false, true]) {
+    await page.route("**/api/search/similar-videos?*", (route) => route.fulfill(failed
+      ? { status: 503, json: { error: "similar videos unavailable" } }
+      : { json: { results: [], total: 0 } }));
+    await page.goto(`${baseURL}/?q=cat`, { waitUntil: "networkidle" });
+    await page.locator('[data-pin-key="video:200"] [data-pin-action="feed"]').click();
+    await page.locator(failed ? "[data-feed-error]" : "[data-feed-end]").waitFor();
+    await page.locator("[data-feed-save]").click();
+    await page.locator("[data-collection-picker]").waitFor();
+    const saved = page.getByRole("checkbox", { name: "Contract", exact: true });
+    await saved.waitFor();
+    if (!(await saved.isChecked())) {
+      await saved.click();
+      await page.waitForFunction(() => document.querySelector('[data-collection-picker] [role="status"]')?.textContent?.includes("Saved"));
+    }
+    assert(memberships.get(contractCollection.id).some((m) => m.kind === "video" && m.id === 200), "terminal Feed saves current original video");
+    await page.keyboard.press("Escape");
+    await page.locator(failed ? "[data-feed-error]" : "[data-feed-end]").waitFor();
+    await page.keyboard.press("Escape");
+    await page.unroute("**/api/search/similar-videos?*");
+  }
+  await page.close();
 }

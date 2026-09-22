@@ -1,6 +1,6 @@
 import { writable, type Readable } from "svelte/store";
 import { ApiError, deleteMedia, reannotate as reannotateApi, toggleNSFW, updateMedia, type MediaMetadataPatch } from "./api";
-import { lightboxPin, pins } from "./stores";
+import { lightboxPin, pins, refreshCollections } from "./stores";
 import type { Pin } from "./types";
 import { deriveTitle } from "./utils";
 
@@ -91,7 +91,12 @@ export function createMediaActions(): MediaActions {
     async remove(pin) {
       const { kind, id } = actionTarget(pin);
       const ok = await run("delete", () => deleteMedia(kind, id));
-      if (ok) removePin(pin.key);
+      if (ok) {
+        removePin(pin.key);
+        // Media deletion cascades collection memberships. Refresh rather than
+        // retaining an offset into the now-shorter collection item list.
+        refreshCollections();
+      }
       return ok;
     },
     async edit(pin, patch) {

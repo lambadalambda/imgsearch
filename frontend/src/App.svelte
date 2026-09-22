@@ -9,6 +9,8 @@
   import Masonry from "./components/Masonry.svelte";
   import Lightbox from "./components/Lightbox.svelte";
   import Upload from "./components/Upload.svelte";
+  import CollectionsPane from "./components/CollectionsPane.svelte";
+  import CollectionPicker from "./components/CollectionPicker.svelte";
   import Feed from "./components/Feed.svelte";
 
   import { onMount, tick, untrack } from "svelte";
@@ -16,6 +18,10 @@
   import { get } from "svelte/store";
   import {
     mode,
+    collectionEpoch,
+    collectionName,
+    collectionPickerTarget,
+    setCollections,
     pins,
     resultsMeta,
     includeNSFW,
@@ -32,6 +38,8 @@
   } from "./lib/stores";
   import {
     ApiError,
+    getCollection,
+    listCollectionItems,
     listImages,
     listTagCloud,
     listVideos,
@@ -101,6 +109,7 @@
     // Subscribe to dataEpoch so successful uploads (or other refresh events)
     // can force a fresh, replacing fetch without changing mode.
     const epoch = $dataEpoch;
+    const collectionsRefresh = state.mode === "collection" ? $collectionEpoch : 0;
     const image = $queryImage;
     if (state.mode === "byimage" && !image) {
       // Nothing to search with (for example after a reload): back to the library.
@@ -109,6 +118,8 @@
     }
     const dataKey = [
       state.mode,
+      state.collectionId ?? "",
+      state.mode === "collection" ? collectionsRefresh : "",
       state.mode === "byimage" ? String(image?.id ?? "") : "",
       state.query ?? "",
       state.similarTo ?? "",
@@ -120,6 +131,12 @@
       epoch,
     ].join("\u0001");
     const token = ++currentRequestToken;
+    if (state.mode === "collections") {
+      pins.set([]);
+      resultsMeta.set({ total: 0, loading: false });
+      lastDataKey = "";
+      return;
+    }
 
     // First request for a data key starts at offset 0 and replaces. "Load more"
     // calls bumpPage(); only a new bump on the same key appends.
@@ -149,7 +166,17 @@
         let nextPins: Pin[] = [];
         let total = 0;
 
-        if (state.mode === "search" && state.query) {
+        if (state.mode === "collection" && state.collectionId !== undefined) {
+          if (!appending) collectionName.set("");
+          const [collection, response] = await Promise.all([
+            getCollection(state.collectionId, ac.signal),
+            listCollectionItems(state.collectionId, { limit: PAGE_SIZE, offset: currentOffset, includeNSFW: includeNsfw, signal: ac.signal }),
+          ]);
+          if (token !== currentRequestToken) return;
+          collectionName.set(collection.name);
+          nextPins = response.items.map((item) => item.media_type === "image" ? pinFromImage(item.image) : pinFromVideo(item.video));
+          total = response.total;
+        } else if (state.mode === "search" && state.query) {
           const response = await searchText({
             query: state.query,
             limit: PAGE_SIZE,
@@ -266,7 +293,7 @@
           canLoadMore = false;
         }
       } finally {
-        loadingMore = false;
+        if (token === currentRequestToken) loadingMore = false;
       }
     })();
 
@@ -299,13 +326,14 @@
     if ($mode.mode === "tag" && $mode.tags?.length) {
       return `No items tagged ${$mode.tags.join(", ")}.`;
     }
+    if ($mode.mode === "collection") return "No saved items visible. Save media from cards, the lightbox, or Feed. NSFW items may be hidden.";
     if ($libraryMedia === "images") return "No images yet. Click Upload to add some media.";
     if ($libraryMedia === "videos") return "No videos yet. Click Upload to add some media.";
     return "Library is empty. Click Upload to add some media.";
   });
 </script>
 
-<div class="grid grid-cols-1 sm:grid-cols-[64px_1fr] min-h-screen">
+<div inert={$collectionPickerTarget !== null} class="grid grid-cols-1 sm:grid-cols-[64px_1fr] min-h-screen">
   <Rail />
   <div class="min-w-0 flex flex-col">
     <Header />
@@ -318,7 +346,12 @@
       <SettingsPane />
     {:else if $mode.mode === "duplicates"}
       <DuplicatesPane />
+    {:else if $mode.mode === "collections"}
+      <CollectionsPane />
     {:else}
+      {#if $mode.mode === "collection"}
+        <div class="px-5 sm:px-9 mt-3"><button class="text-accent cursor-pointer" onclick={setCollections}>← All collections</button></div>
+      {/if}
       <div
         data-results-meta
         role="status"
@@ -372,3 +405,8 @@
 <Lightbox />
 <Upload />
 <Feed />
+{#if $collectionPickerTarget}
+  {#key $collectionPickerTarget}
+    <CollectionPicker pin={$collectionPickerTarget} />
+  {/key}
+{/if}

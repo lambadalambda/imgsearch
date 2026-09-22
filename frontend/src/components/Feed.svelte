@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { closeFeed, feedSeed, includeNSFW } from "../lib/stores";
+  import { untrack } from "svelte";
+  import { closeFeed, feedSeed, includeNSFW, collectionPickerTarget, openCollectionPicker } from "../lib/stores";
   import {
     ApiError,
     searchSimilarVideos,
@@ -105,6 +106,23 @@
   const remainingAhead = $derived(queue.length - currentIndex - 1);
   const seedItem = $derived(queue[0]);
   const isOpen = $derived($feedSeed !== null);
+  // A nested picker pauses playback without changing the Feed position. Only
+  // resume the same item if it was actually playing when the picker opened.
+  let resumeAfterPicker: Pin | null = null;
+  let session = 0;
+  $effect(() => {
+    const picker = $collectionPickerTarget;
+    untrack(() => {
+      if (picker) {
+        resumeAfterPicker = isOpen && activeVideo() && !activeVideo()!.paused ? currentItem : null;
+        if (isOpen) pauseAll();
+      } else {
+        const resume = resumeAfterPicker;
+        resumeAfterPicker = null;
+        if (resume && isOpen && currentItem === resume) void playCurrent();
+      }
+    });
+  });
 
   // ------------------------------------------------------------------------
   // Open / close lifecycle.
@@ -128,6 +146,7 @@
   });
 
   async function start(seed: Pin): Promise<void> {
+    session += 1;
     candidateRequestToken += 1;
     queue = [seed];
     currentIndex = 0;
@@ -154,6 +173,7 @@
   }
 
   function close(): void {
+    session += 1;
     candidateRequestToken += 1;
     lookaheadPromise = null;
     closeFeed();
@@ -243,7 +263,7 @@
 
   async function playCurrent(): Promise<void> {
     const el = activeVideo();
-    if (!el) return;
+    if (!el || $collectionPickerTarget) return;
     el.muted = muted;
     try {
       await el.play();
@@ -267,14 +287,20 @@
   // ------------------------------------------------------------------------
 
   async function advance(action: "next" | "ended"): Promise<void> {
-    if (loading) return;
+    if (loading || $collectionPickerTarget) return;
     if (currentIndex >= queue.length - 1) {
+      const requestedSession = session;
+      const requestedItem = currentItem;
+      const requestedIndex = currentIndex;
       recordFeedbackForCurrent(action);
       // We're at the tail — try to refill before bailing so a single tap
       // on the Next button feels responsive even when the lookahead has
       // not started yet. Feedback is recorded first so the refill can use
       // the item the user just watched or skipped.
       await ensureLookahead();
+      // A picker, retreat, or close/reopen may have happened during the fetch.
+      // Never apply this old Next intent to another target or beneath a picker.
+      if ($collectionPickerTarget || !isOpen || session !== requestedSession || currentItem !== requestedItem || currentIndex !== requestedIndex) return;
       if (currentIndex >= queue.length - 1) {
         return;
       }
@@ -490,6 +516,7 @@
 
   function onPlay(slotIdx: 0 | 1 | 2): void {
     if (slotKindOf(slotIdx) !== "current") return;
+    if ($collectionPickerTarget) { videoEls[slotIdx]?.pause(); return; }
     playbackStarted = true;
     playing = true;
     if (watchStartedAt === 0) watchStartedAt = performance.now();
@@ -522,7 +549,7 @@
   // ------------------------------------------------------------------------
 
   function onKey(event: KeyboardEvent): void {
-    if (!isOpen) return;
+    if (!isOpen || $collectionPickerTarget) return;
     if (event.key === "Escape") {
       event.preventDefault();
       close();
@@ -725,6 +752,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    inert={$collectionPickerTarget !== null}
     data-feed-overlay
     role="dialog"
     aria-modal="true"
@@ -791,6 +819,8 @@
             {currentItem?.title ?? seedItem?.title ?? ""}
           </h2>
         </div>
+        <!-- Keep Save above the terminal/error overlay without changing the other Feed controls. -->
+        <button type="button" data-feed-save class="relative z-10 pointer-events-auto px-3 py-2 bg-white/15 rounded-full cursor-pointer" onclick={(event) => { event.stopPropagation(); if (currentItem) openCollectionPicker(currentItem); }}>Save to collection</button>
         <button
           type="button"
           data-feed-close
