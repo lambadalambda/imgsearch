@@ -37,3 +37,11 @@ The Upload modal's file picker uses accepted MIME/extensions, but drag-and-drop 
 - `frontend/src/components/Upload.svelte`
 - `frontend/src/lib/api.ts`
 - `scripts/ui_smoke_test_atelier.mjs`
+
+## UI/UX audit 2026-09-22
+
+Browser file-input automation supplied a .txt file alongside a valid WebM. Both entered the pending queue. The server then rejected the .txt and accepted the video, with clear per-file outcomes. This bypassed the native chooser's accept filter; it is not proof the normal chooser lists unsupported files.
+
+Additional recommendation: Offer Retry failed for transient failures and a correction/remove action for unsupported formats; preserve successful rows.
+
+See [HTML report, UX-09](../../docs/reviews/2026-09-22-atelier-ux-audit.html#UX-09).

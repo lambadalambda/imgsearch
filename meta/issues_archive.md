@@ -130,3 +130,4 @@
 - [x] [Deploy collections and annotation parallelism to home instance](issues/deploy-collections-and-annotation-parallelism.md)
 
 - [x] [Automatically consolidate strict duplicate images](issues/automatically-consolidate-strict-duplicates.md)
+- [x] [Audit Atelier UI/UX and deliver a screenshot report](issues/audit-atelier-ui-ux-with-screenshot-report.md)
