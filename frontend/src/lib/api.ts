@@ -1,4 +1,4 @@
-import type { Collection, CollectionItemsPage, ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse, MediaStatusResponse } from "./types";
+import type { Collection, CollectionSummary, CollectionItemsPage, ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse, MediaStatusResponse } from "./types";
 
 class ApiError extends Error {
   constructor(
@@ -456,6 +456,11 @@ export function listCollections(opts: { target?: CollectionTarget; signal?: Abor
     params.set("media_id", String(opts.target.id));
   }
   return getJSON(`/api/collections${params.size ? `?${params}` : ""}`, { signal: opts.signal });
+}
+
+export function listCollectionSummaries(opts: { includeNSFW?: boolean; signal?: AbortSignal } = {}): Promise<{ collections: CollectionSummary[] }> {
+  const params = new URLSearchParams({ summary: "true", include_nsfw: String(opts.includeNSFW ?? false) });
+  return getJSON(`/api/collections?${params}`, { signal: opts.signal });
 }
 
 export function createCollection(name: string): Promise<Collection> {

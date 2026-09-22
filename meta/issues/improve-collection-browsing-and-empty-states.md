@@ -30,8 +30,8 @@ Collections are a visual recall tool. Without a cover or count, users must remem
 
 ## Acceptance Criteria
 
-- [ ] A user can distinguish populated/empty/filtered collections at a glance and reach the next useful action directly.
-- [ ] Add red→green coverage for behavior changes; verify desktop and mobile UI.
+- [x] A user can distinguish populated/empty/filtered collections at a glance and reach the next useful action directly.
+- [x] Add red→green coverage for behavior changes; verify desktop and mobile UI.
 
 ## Implementation plan
 
@@ -52,3 +52,13 @@ Collections are a visual recall tool. Without a cover or count, users must remem
 - Added opt-in filter-aware summaries and detail saved counts without migrations or changes to ordinary/picker list shapes. One set-based summary query limits cover output to four visible members and avoids full media hydration; work still scales with memberships.
 - TDD: summary/detail field tests failed before implementation, then passed. Regression fixtures cover count meanings, hidden images/video tags/non-preview NSFW frames, image/video identity collisions, frameless videos, derivative paths, ordering and API compatibility. Targeted tests/race and the combined full repository suite passed.
 - Independent backend review found no blockers. Representative query-plan/scale measurement and a shared-video multi-collection fixture are tracked separately; do not imply a measured performance regression.
+
+## Frontend completion
+
+- Added browse cards with safe lazy thumbnail mosaics, saved/hidden counts and neutral unavailable previews; sibling labelled management disclosures preserve confirmation and keyboard focus. Shared pure presentation helpers distinguish empty/filtered/partially filtered states without treating errors as empty.
+- True-empty details offer Browse library; fully filtered details explain and offer the global Show hidden items preference. Existing picker success-only live notices and stable saved order remain covered.
+- Scope guards clear stale index/detail/lightbox content immediately on visibility changes and reject late responses, including failed replacements and requests that ignore abort.
+- TDD: missing summary API/helper tests and summary-request smoke failed first; implementation passed. Independent review found inaccessible summary text beneath browse aria-labels; a new Chromium accessible-description assertion failed, then passed after adding unique aria-describedby targets. New race-test waits are bounded and cleaned up. Follow-up review approved with no blockers.
+- Verified fresh frontend build/asset gate, 49 unit tests, full Go/script/browser suite, frontend check (zero errors/warnings), focused collection race tests, formatting and whitespace. Browser smoke covers counts/states/CTAs, menu keyboard/focus/cancellation, picker feedback, saved order, and delayed/failed filtering.
+- Desktop1280x900 and mobile390px screenshots inspected; overflow assertions passed. Evidence is local mock-server/synthetic-media QA, not real-photo aesthetics or a production data test. Open-lightbox preference changes have a source gate but no dedicated browser regression in this pass.
+- Archived after implementation/review. No deployment or push; production still runs token-settings release `cc0aab4`.

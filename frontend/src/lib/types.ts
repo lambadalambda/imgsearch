@@ -310,6 +310,19 @@ export interface Collection {
   created_at: string;
 }
 
+export interface CollectionCover {
+  media_type: "image" | "video";
+  media_id: number;
+  thumbnail_path?: string;
+}
+
+/** Index-only summary; picker and CRUD continue to use basic Collection. */
+export interface CollectionSummary extends Collection {
+  item_count: number;
+  visible_count: number;
+  covers: CollectionCover[];
+}
+
 export type CollectionItem =
   | { media_type: "image"; image: ImageRecord }
   | { media_type: "video"; video: VideoRecord };
@@ -317,4 +330,5 @@ export type CollectionItem =
 export interface CollectionItemsPage {
   items: CollectionItem[];
   total: number;
+  item_count: number;
 }

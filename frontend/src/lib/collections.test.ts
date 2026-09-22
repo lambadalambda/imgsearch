@@ -18,6 +18,14 @@ describe("collection URLs", () => {
 });
 
 describe("collection API", () => {
+  it.each([false, true])("requests all summaries in one call with includeNSFW=%s", async (includeNSFW) => {
+    const collections = [{ id: 2, name: "Newest", item_count: 3, visible_count: 1, covers: [] }, { id: 1, name: "Empty", item_count: 0, visible_count: 0, covers: [] }];
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ collections })));
+    vi.stubGlobal("fetch", fetch);
+    const signal = new AbortController().signal;
+    expect(await api.listCollectionSummaries({ includeNSFW, signal })).toEqual({ collections });
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(`/api/collections?summary=true&include_nsfw=${includeNSFW}`, expect.objectContaining({ signal }));
+  });
   it("lists all or only memberships and paginates mixed media", async () => {
     const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ collections: [] }))));
     vi.stubGlobal("fetch", fetch);

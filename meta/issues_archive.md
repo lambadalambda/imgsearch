@@ -137,3 +137,5 @@
 - [x] [Deploy configurable annotation token settings](issues/deploy-configurable-annotation-token-settings.md)
 
 - [x] [Retire the legacy UI and require a working Atelier build](issues/retire-legacy-ui-and-require-atelier-build.md)
+
+- [x] [Make Collections feel like saved media](issues/improve-collection-browsing-and-empty-states.md)

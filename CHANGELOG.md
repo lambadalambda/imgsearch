@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(ui): make Collections browse-first with safe thumbnail mosaics, saved/hidden counts, accessible management disclosures, and distinct empty/NSFW-filtered guidance; preserve saved order and picker feedback, and clear stale covers/detail content when visibility changes.
 - feat(collections): add opt-in, filter-aware collection summaries with saved/visible counts and at most four safe thumbnail covers; expose total saved count on item pages while preserving visible pagination totals, stable saved order and lightweight picker APIs.
 - feat(ui)!: retire the legacy shell; `/legacy` and its assets now return 404, and Atelier is the only supported UI. Remove legacy navigation/proxy/smoke and retire its bulk-delete UI, tags explorer and live-connection panel while retaining shared APIs, root-cookie bootstrap and protected media serving. Retry-failures improvements remain separate UX-08 work.
 - fix(build): reject missing, placeholder or incomplete Atelier assets in frontend builds, release packaging (including skip-build mode) and browser smoke; build Atelier from source inside the CUDA image and run CI Go tests after frontend build.

@@ -6,9 +6,10 @@ Removing a membership or deleting a collection **never deletes the original medi
 
 ## In Atelier
 
-- Open **Collections** in the navigation to create and browse lists, or rename/delete an existing list.
+- Open **Collections** in the navigation to create and browse lists. Each card shows up to four safe thumbnail covers plus saved/hidden counts; select its main surface to browse. Use **Manage [collection name]** for Rename/Delete. Deletion still requires confirmation and retains the original media.
+- Empty collections offer **Browse library**. When all saved items are hidden by the NSFW filter, **Show hidden items** enables the global NSFW preference, with that effect explained next to the action. Failed/loading requests are not presented as empty collections.
 - Use **Save to collection** on an image/video card, in the lightbox, or in the video Feed. Select one or more existing lists, or create a list while saving.
-- Reopen the picker to remove a saved membership. This differs from the media's **Delete** action, which deletes it from the library.
+- Reopen the picker to remove a saved membership. A short live confirmation appears only after a successful add/remove. This differs from the media's **Delete** action, which deletes it from the library.
 - Collections can mix images and videos and display the newest saves first. Your NSFW visibility preference still applies; hidden media remains saved.
 - Collection URLs (`?view=collections` and `?view=collection&collection_id=123`) can be bookmarked and revisited after restarting the app.
 

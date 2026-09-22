@@ -24,7 +24,7 @@
 import { validateAtelierBuild } from "./validate_atelier_build.mjs";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join, dirname, extname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -282,6 +282,12 @@ const memberships = new Map();
 const collectionRequests = [];
 let collectionFailure = false;
 let collectionDelayMs = 0;
+function visibleMemberships(id, includeNSFW) {
+  return memberships.get(id).map((m) => m.kind === "image"
+    ? { media_type: "image", image: sampleImages.find((i) => i.image_id === m.id) }
+    : { media_type: "video", video: sampleVideos.find((v) => v.video_id === m.id) })
+    .filter((item) => includeNSFW || !(item.image ?? item.video).tags?.some((tag) => tag.toLowerCase() === "nsfw"));
+}
 async function collectionAPI(req, res, url) {
   collectionRequests.push({ method: req.method, path: url.pathname, query: url.search });
   if (collectionFailure === true || collectionFailure === url.pathname) {
@@ -308,7 +314,15 @@ async function collectionAPI(req, res, url) {
     } else {
       const kind = url.searchParams.get("media_type");
       const mediaId = Number(url.searchParams.get("media_id"));
-      jsonResponse(res, 200, { collections: kind ? collections.filter((c) => memberships.get(c.id).some((m) => m.kind === kind && m.id === mediaId)) : collections });
+      const summary = url.searchParams.get("summary") === "true";
+      const includeNSFW = url.searchParams.get("include_nsfw") === "true";
+      jsonResponse(res, 200, { collections: summary ? collections.map((c) => {
+        const visible = visibleMemberships(c.id, includeNSFW);
+        return { ...c, item_count: memberships.get(c.id).length, visible_count: visible.length,
+          covers: visible.slice(0, 4).map((item) => ({ media_type: item.media_type,
+            media_id: item.image?.image_id ?? item.video.video_id,
+            thumbnail_path: (item.image ?? item.video).thumbnail_path })) };
+      }) : kind ? collections.filter((c) => memberships.get(c.id).some((m) => m.kind === kind && m.id === mediaId)) : collections });
     }
     return;
   }
@@ -327,13 +341,10 @@ async function collectionAPI(req, res, url) {
   }
   if (parts.length === 4) {
     const includeNSFW = ["true", "1"].includes(url.searchParams.get("include_nsfw"));
-    const all = memberships.get(id).map((m) => m.kind === "image"
-      ? { media_type: "image", image: sampleImages.find((i) => i.image_id === m.id) }
-      : { media_type: "video", video: sampleVideos.find((v) => v.video_id === m.id) })
-      .filter((item) => includeNSFW || !(item.image ?? item.video).tags?.some((tag) => tag.toLowerCase() === "nsfw"));
+    const all = visibleMemberships(id, includeNSFW);
     const offset = Number(url.searchParams.get("offset") || 0);
     const limit = Number(url.searchParams.get("limit") || 50);
-    jsonResponse(res, 200, { items: all.slice(offset, offset + limit), total: all.length });
+    jsonResponse(res, 200, { items: all.slice(offset, offset + limit), total: all.length, item_count: memberships.get(id).length });
     return;
   }
   const kind = parts[4], mediaId = Number(parts[5]);
@@ -2499,6 +2510,7 @@ try {
     throw new Error(`unexpected re-annotate result ${JSON.stringify(reannotateText)} calls=${reannotateAllCalls.length}`);
   }
 
+  await collectionUX07Checks(browser);
   await collectionChecks(browser);
   console.log("atelier smoke checks passed");
 } finally {
@@ -2586,6 +2598,7 @@ async function collectionChecks(browser) {
   await page.getByRole("checkbox", { name: "Favorites", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "Collection service unavailable" }).waitFor();
   assert(await page.getByRole("checkbox", { name: "Favorites", exact: true }).isChecked(), "failed removal must retain membership");
+  assert((await page.locator('[data-collection-picker] [role="status"]').textContent()).trim() === "", "failed membership must not announce success");
   await page.keyboard.press("Escape");
 
   // Advanced Feed current item (not the original seed), isolated keys and playback.
@@ -2619,6 +2632,13 @@ async function collectionChecks(browser) {
   await page.keyboard.press("Escape");
 
   await page.goto(`${baseURL}/?view=collections`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Manage Favorites", exact: true }).click();
+  await page.getByRole("button", { name: "Rename Favorites", exact: true }).click();
+  await page.getByLabel("New collection name", { exact: true }).waitFor();
+  assert(await page.getByLabel("New collection name", { exact: true }).evaluate((el) => el === document.activeElement), "rename focuses name input");
+  await page.getByRole("button", { name: "Cancel rename", exact: true }).click();
+  assert(await page.getByRole("button", { name: "Manage Favorites", exact: true }).evaluate((el) => el === document.activeElement), "cancel rename restores disclosure focus");
+  await page.getByRole("button", { name: "Manage Favorites", exact: true }).click();
   await page.getByRole("button", { name: "Rename Favorites", exact: true }).click();
   await page.getByLabel("New collection name", { exact: true }).fill("Keepers");
   collectionFailure = true;
@@ -2627,19 +2647,24 @@ async function collectionChecks(browser) {
   assert(collections.find((c) => c.id === id).name === "Favorites", "failed rename preserves old name");
   await page.getByRole("button", { name: "Save name", exact: true }).click();
   await page.getByRole("button", { name: "Browse Keepers", exact: true }).waitFor();
+  assert(await page.getByRole("button", { name: "Manage Keepers", exact: true }).evaluate((el) => el === document.activeElement), "successful rename restores disclosure focus");
   await page.reload({ waitUntil: "networkidle" });
+  await page.getByRole("button", { name: "Manage Keepers", exact: true }).click();
   await page.getByRole("button", { name: "Delete Keepers", exact: true }).click();
   await page.locator("[data-confirm-cancel]").click();
   await page.getByRole("button", { name: "Browse Keepers", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Manage Keepers", exact: true }).click();
   await page.getByRole("button", { name: "Delete Keepers", exact: true }).click();
   collectionFailure = true;
   await page.locator("[data-confirm-accept]").click();
   await page.getByRole("alert").filter({ hasText: "Collection service unavailable" }).waitFor();
   await page.getByRole("button", { name: "Browse Keepers", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Manage Keepers", exact: true }).click();
   await page.getByRole("button", { name: "Delete Keepers", exact: true }).click();
   await page.locator("[data-confirm-accept]").click();
   await page.getByRole("button", { name: "Browse Keepers", exact: true }).waitFor({ state: "detached" });
   assert(deleteCount === deletesBefore, "deleting collection must preserve originals");
+  await page.waitForFunction(() => document.querySelector('[aria-label="Collection name"]') === document.activeElement);
   await page.goto(`${baseURL}/?q=cat`, { waitUntil: "networkidle" });
   await page.locator('[data-pin-key="image:1001"]').waitFor();
   await page.locator('[data-pin-key="video:200"]').waitFor();
@@ -2826,4 +2851,210 @@ async function collectionChecks(browser) {
     await page.unroute("**/api/search/similar-videos?*");
   }
   await page.close();
+}
+
+async function collectionUX07Checks(browser) {
+  async function waitForRace(promise, label) {
+    let timer;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`UX07 timed out waiting for ${label}`)), 5000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.setDefaultTimeout(5000);
+  // Deliberately ignore aborts: late responses must be rejected by identity too.
+  await page.addInitScript(() => {
+    const fetch = window.fetch;
+    window.fetch = (input, init) => fetch(input, String(input).includes('/api/collections') ? { ...init, signal: undefined } : init);
+  });
+  const fixture = (name, items) => {
+    const c = { id: nextCollectionId++, name, created_at: new Date().toISOString() };
+    collections.unshift(c);
+    memberships.set(c.id, items);
+    return c;
+  };
+  const hidden = sampleImages[132];
+  const oldTags = hidden.tags;
+  hidden.tags = ['nsfw'];
+  const empty = fixture('Empty', []);
+  const filtered = fixture('Hidden', [{ kind: 'image', id: hidden.image_id }]);
+  const mixed = fixture('Mixed', [{ kind: 'image', id: hidden.image_id }, { kind: 'video', id: 200 }, { kind: 'image', id: 1130 }]);
+  const populated = fixture('Populated', [131, 130, 129, 128, 127].map((i) => ({ kind: 'image', id: 1000 + i })));
+  const card = (name) => page.locator('[data-collection-card]').filter({ has: page.getByRole('button', { name: `Browse ${name}`, exact: true }) });
+  const browse = (name) => page.getByRole('button', { name: `Browse ${name}`, exact: true });
+  try {
+    const before = collectionRequests.length;
+    await page.goto(`${baseURL}/?view=collections`, { waitUntil: 'networkidle' });
+    assert.deepEqual(collectionRequests.slice(before).map((r) => r.path + r.query), ['/api/collections?summary=true&include_nsfw=false'], 'index uses one summary request, not N detail requests');
+    assert.match(await card('Empty').innerText(), /0 saved items[\s\S]*No saved items yet/);
+    assert.match(await card('Hidden').innerText(), /1 saved item · 1 hidden[\s\S]*All saved items are hidden/);
+    assert.match(await card('Mixed').innerText(), /3 saved items · 1 hidden/);
+    const accessibility = await page.context().newCDPSession(page);
+    try {
+      const { root } = await accessibility.send('DOM.getDocument');
+      for (const [collection, description] of [
+        [empty, '0 saved items No saved items yet.'],
+        [filtered, '1 saved item · 1 hidden All saved items are hidden by the NSFW filter.'],
+        [mixed, '3 saved items · 1 hidden 1 item hidden by the NSFW filter.'],
+        [populated, '5 saved items'],
+      ]) {
+        const { nodeId } = await accessibility.send('DOM.querySelector', {
+          nodeId: root.nodeId, selector: `[data-collection-card="${collection.id}"] button`,
+        });
+        const { nodes } = await accessibility.send('Accessibility.getPartialAXTree', { nodeId, fetchRelatives: false });
+        assert.equal(nodes[0].name?.value, `Browse ${collection.name}`);
+        assert.equal(nodes[0].description?.value, description, `${collection.name} browse button describes its count and state`);
+      }
+    } finally {
+      await accessibility.detach();
+    }
+    assert.equal(await card('Populated').locator('img').count(), 4, 'at most four covers');
+    assert.equal(await card('Mixed').locator('[data-cover-placeholder]').count(), 3, 'missing video derivative and unused tiles are neutral');
+    for (const img of await page.locator('[data-collection-card] img').all()) {
+      assert.match(await img.getAttribute('src'), /^\/media\/images\/thumbnails\//);
+      assert.equal(await img.getAttribute('loading'), 'lazy');
+    }
+    assert.deepEqual(await page.locator('[data-collection-card]').evaluateAll((els) => els.map((el) => el.getAttribute('data-collection-card'))), [populated, mixed, filtered, empty].map((c) => String(c.id)), 'summary order is preserved');
+    const manage = page.getByRole('button', { name: 'Manage Mixed', exact: true });
+    await manage.focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await manage.getAttribute('aria-expanded'), 'true');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.getByRole('button', { name: 'Rename Mixed', exact: true }).evaluate((el) => el === document.activeElement), true);
+    await page.keyboard.press('Escape');
+    assert.equal(await manage.getAttribute('aria-expanded'), 'false');
+    assert.equal(await manage.evaluate((el) => el === document.activeElement), true);
+    await manage.click();
+    await page.getByRole('button', { name: 'Delete Mixed', exact: true }).click();
+    await page.getByRole('alertdialog').getByText(/Original images and videos stay/).waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByRole('alertdialog').waitFor({ state: 'detached' });
+    assert.equal(await manage.evaluate((el) => el === document.activeElement), true, 'delete cancel restores disclosure focus');
+    assert.equal(memberships.get(mixed.id).length, 3);
+    await mkdir('/private/tmp/ux07', { recursive: true });
+    for (const [label, width, height] of [['desktop', 1280, 900], ['mobile', 390, 844]]) {
+      await page.setViewportSize({ width, height });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${label} has no horizontal overflow`);
+      await page.screenshot({ path: `/private/tmp/ux07/collections-${label}.png`, fullPage: true });
+    }
+    // A failed derivative becomes neutral; it must never fetch an original.
+    const mediaRequests = [];
+    const recordMedia = (request) => { if (request.url().includes('/media/')) mediaRequests.push(request.url()); };
+    page.on('request', recordMedia);
+    await card('Populated').locator('img').first().dispatchEvent('error');
+    await card('Populated').locator('[data-cover-placeholder]').waitFor();
+    await page.waitForTimeout(50);
+    assert.equal(await card('Populated').locator('img').count(), 3);
+    assert.deepEqual(mediaRequests, [], 'thumbnail failure must not request original media');
+    page.off('request', recordMedia);
+    await browse('Empty').click();
+    await page.locator('[data-results-empty]').filter({ hasText: 'No saved items yet.' }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Show hidden items', exact: true }).count(), 0);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'empty detail has no mobile overflow');
+    await page.screenshot({ path: '/private/tmp/ux07/empty-mobile.png', fullPage: true });
+    await page.getByRole('button', { name: 'Browse library', exact: true }).click();
+    await page.waitForURL((url) => !url.searchParams.has('view'));
+    await page.goto(`${baseURL}/?view=collection&collection_id=${filtered.id}`, { waitUntil: 'networkidle' });
+    await page.locator('[data-results-empty]').filter({ hasText: 'All saved items are hidden' }).waitFor();
+    await page.getByText(/global NSFW setting/).waitFor();
+    await page.screenshot({ path: '/private/tmp/ux07/hidden-mobile.png', fullPage: true });
+    await page.getByRole('button', { name: 'Show hidden items', exact: true }).click();
+    await page.locator(`[data-pin-key="image:${hidden.image_id}"]`).waitFor();
+    assert.equal(await page.locator('[data-nsfw-toggle]').isChecked(), true);
+
+    // Both detail and index must hide unsafe content before a delayed or failed
+    // replacement finishes, and ignore a late include_nsfw=true response.
+    for (const view of [`collection&collection_id=${mixed.id}`, 'collections']) {
+      await page.goto(`${baseURL}/?view=${view}`, { waitUntil: 'networkidle' });
+      const unsafe = page.locator(view === 'collections' ? `[data-collection-card] img[src$="/${hidden.image_id}.webp"]` : `[data-pin-key="image:${hidden.image_id}"]`);
+      await unsafe.first().waitFor();
+      const pattern = view === 'collections' ? '**/api/collections?*' : `**/api/collections/${mixed.id}/items?*`;
+      let release;
+      let started;
+      let completed;
+      const gate = new Promise((resolve) => { release = resolve; });
+      const request = new Promise((resolve) => { started = resolve; });
+      const done = new Promise((resolve) => { completed = resolve; });
+      try {
+        await page.route(pattern, async (route) => {
+          started();
+          await gate;
+          await route.fulfill({ status: 503, json: { error: 'Filter replacement failed' } });
+          completed();
+        });
+        await page.locator('[data-nsfw-toggle]').uncheck();
+        await waitForRace(request, `${view} replacement request`);
+        assert.equal(await unsafe.count(), 0, 'unsafe media removed while replacement is pending');
+        release();
+        await waitForRace(done, `${view} replacement completion`);
+        await page.getByText('Filter replacement failed', { exact: true }).first().waitFor();
+        assert.equal(await unsafe.count(), 0, 'failed replacement never restores stale content');
+        assert.equal(await page.getByRole('button', { name: 'Browse library', exact: true }).count(), 0, 'error is not a true-empty CTA');
+      } finally {
+        release();
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
+      }
+
+      // Start an unsafe request, toggle off, let the safe response finish first.
+      for (const failSafe of [false, true]) {
+        let releaseLate;
+        let lateStarted;
+        let lateCompleted;
+        const lateGate = new Promise((resolve) => { releaseLate = resolve; });
+        const lateRequest = new Promise((resolve) => { lateStarted = resolve; });
+        const lateDone = new Promise((resolve) => { lateCompleted = resolve; });
+        try {
+          await page.route(pattern, async (route) => {
+            if (!route.request().url().includes('include_nsfw=true')) {
+              return failSafe
+                ? route.fulfill({ status: 503, json: { error: 'Late-race safe request failed' } })
+                : route.continue();
+            }
+            const response = await route.fetch();
+            lateStarted();
+            await lateGate;
+            await route.fulfill({ response });
+            lateCompleted();
+          });
+          await page.locator('[data-nsfw-toggle]').check();
+          await waitForRace(lateRequest, `${view} late request (failSafe=${failSafe})`);
+          await page.locator('[data-nsfw-toggle]').uncheck();
+          if (failSafe) await page.getByText('Late-race safe request failed', { exact: true }).first().waitFor();
+          else if (view === 'collections') await browse('Mixed').waitFor();
+          else {
+            await page.locator('[data-pin-key="image:1130"]').waitFor();
+            assert.match(await page.locator('[data-results-meta]').innerText(), /2 results · 3 saved items · 1 hidden/);
+            await page.getByText('1 item hidden by the NSFW filter. Enable the global NSFW setting to show them.', { exact: true }).waitFor();
+          }
+          releaseLate();
+          await waitForRace(lateDone, `${view} late completion (failSafe=${failSafe})`);
+          await page.waitForTimeout(100);
+          assert.equal(await unsafe.count(), 0, 'late unsafe response cannot overwrite safe response');
+        } finally {
+          releaseLate();
+          await page.unrouteAll({ behavior: 'ignoreErrors' });
+        }
+      }
+      await page.locator('[data-nsfw-toggle]').check();
+      await unsafe.first().waitFor();
+    }
+    await page.goto(`${baseURL}/?view=collection&collection_id=${populated.id}`, { waitUntil: 'networkidle' });
+    const order = () => page.locator('[data-pin]').evaluateAll((els) => els.map((el) => el.getAttribute('data-pin-key')));
+    assert.deepEqual(await order(), [1131, 1130, 1129, 1128, 1127].map((id) => `image:${id}`));
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.deepEqual(await order(), [1131, 1130, 1129, 1128, 1127].map((id) => `image:${id}`));
+    console.log('UX07 collection cards, guidance, keyboard, order and filter-race checks passed');
+  } finally {
+    hidden.tags = oldTags;
+    collections = [];
+    memberships.clear();
+    await page.close();
+  }
 }

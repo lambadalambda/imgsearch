@@ -20,6 +20,7 @@
     mode,
     collectionEpoch,
     collectionName,
+    lightboxPin,
     collectionPickerTarget,
     setCollections,
     pins,
@@ -50,6 +51,7 @@
   } from "./lib/api";
   import { refreshStats } from "./lib/stats";
   import { appendUniquePins, pinFromImage, pinFromSearchResult, pinFromVideo } from "./lib/utils";
+  import { collectionPresentation } from "./lib/collectionPresentation";
   import { combineLibraryPins, newLibrarySeed } from "./lib/library";
   import type { Pin } from "./lib/types";
 
@@ -73,6 +75,11 @@
   let firstPageLoaded = $state(false);
   let tagCloudStarted = false;
   let libraryRandomSeed = newLibrarySeed();
+  let collectionItemCount = $state(0);
+  let loadedCollectionScope = $state("");
+  const collectionScope = $derived(`${$mode.collectionId}:${$includeNSFW}:${$collectionEpoch}:${$dataEpoch}`);
+  const collectionCurrent = $derived($mode.mode !== "collection" || loadedCollectionScope === collectionScope);
+  const collectionCopy = $derived(collectionPresentation(collectionItemCount, $resultsMeta.total));
 
   function scrollSimilarResultsToTop(): void {
     if (typeof document === "undefined") return;
@@ -102,6 +109,7 @@
 
   $effect(() => {
     const state = $mode;
+    const detailScope = state.mode === "collection" ? collectionScope : "";
     const includeNsfw = $includeNSFW;
     const media = $libraryMedia;
     const sort = $librarySort;
@@ -157,10 +165,20 @@
       loadingMore = true;
     } else {
       canLoadMore = false;
+      if (state.mode === "collection") {
+        pins.set([]);
+        lightboxPin.set(null);
+        collectionItemCount = 0;
+        loadedCollectionScope = "";
+      }
     }
 
     const start = performance.now();
     const ac = new AbortController();
+    const current = () => token === currentRequestToken && !ac.signal.aborted
+      && includeNsfw === get(includeNSFW)
+      && (state.mode !== "collection" || (get(mode).mode === "collection"
+        && detailScope === `${get(mode).collectionId}:${get(includeNSFW)}:${get(collectionEpoch)}:${get(dataEpoch)}`));
     void (async () => {
       try {
         let nextPins: Pin[] = [];
@@ -172,8 +190,10 @@
             getCollection(state.collectionId, ac.signal),
             listCollectionItems(state.collectionId, { limit: PAGE_SIZE, offset: currentOffset, includeNSFW: includeNsfw, signal: ac.signal }),
           ]);
-          if (token !== currentRequestToken) return;
+          if (!current()) return;
           collectionName.set(collection.name);
+          collectionItemCount = response.item_count;
+          loadedCollectionScope = detailScope;
           nextPins = response.items.map((item) => item.media_type === "image" ? pinFromImage(item.image) : pinFromVideo(item.video));
           total = response.total;
         } else if (state.mode === "search" && state.query) {
@@ -258,7 +278,7 @@
           }
         }
 
-        if (token !== currentRequestToken) return;
+        if (!current()) return;
 
         if (appending) {
           // Advance by what the server returned, not by what we kept, so a
@@ -284,7 +304,8 @@
         }
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
-        if (token !== currentRequestToken) return;
+        if (!current()) return;
+        if (state.mode === "collection") loadedCollectionScope = detailScope;
         const message = err instanceof ApiError ? err.message : err instanceof Error ? err.message : "Search failed";
         resultsMeta.set({ total: 0, loading: false, error: message });
         if (!appending) {
@@ -326,7 +347,7 @@
     if ($mode.mode === "tag" && $mode.tags?.length) {
       return `No items tagged ${$mode.tags.join(", ")}.`;
     }
-    if ($mode.mode === "collection") return "No saved items visible. Save media from cards, the lightbox, or Feed. NSFW items may be hidden.";
+    if ($mode.mode === "collection") return collectionCopy.message;
     if ($libraryMedia === "images") return "No images yet. Click Upload to add some media.";
     if ($libraryMedia === "videos") return "No videos yet. Click Upload to add some media.";
     return "Library is empty. Click Upload to add some media.";
@@ -383,6 +404,7 @@
         {:else}
           <span>
             {$resultsMeta.total.toLocaleString()} {$resultsMeta.total === 1 ? "result" : "results"}
+            {#if $mode.mode === "collection" && collectionCurrent} · {collectionCopy.count}{/if}
             {#if $resultsMeta.durationMs && $mode.mode !== "library"}
               · in {Math.round($resultsMeta.durationMs)} ms
             {/if}
@@ -390,19 +412,35 @@
         {/if}
       </div>
 
-      <Masonry
-        pins={$pins}
-        loading={$resultsMeta.loading}
-        {emptyMessage}
-        {canLoadMore}
-        {loadingMore}
-        onLoadMore={loadMore}
-      />
+      {#if $mode.mode === "collection" && collectionCurrent && !$resultsMeta.loading && !$resultsMeta.error && $pins.length === 0}
+        <section data-results class="px-5 sm:px-9 pb-16 pt-4" aria-label="Results">
+          <p data-results-empty class="text-muted mb-3">{emptyMessage}</p>
+          {#if collectionCopy.action === "browse"}
+            <p class="text-sm text-muted mb-3">Save media from cards, the lightbox, or Feed.</p>
+            <button class="px-4 py-2 bg-ink text-white rounded-lg cursor-pointer" onclick={setLibrary}>Browse library</button>
+          {:else if collectionCopy.action === "show"}
+            <p class="text-sm text-muted mb-3">This turns on the global NSFW setting, showing hidden items throughout the library.</p>
+            <button class="px-4 py-2 bg-ink text-white rounded-lg cursor-pointer" onclick={() => includeNSFW.set(true)}>Show hidden items</button>
+          {/if}
+        </section>
+      {:else}
+        {#if $mode.mode === "collection" && collectionCurrent && !$resultsMeta.loading && !$resultsMeta.error && collectionCopy.action === "show"}
+          <p class="px-5 sm:px-9 my-2 text-sm text-muted">{collectionCopy.message} Enable the global NSFW setting to show them.</p>
+        {/if}
+        <Masonry
+          pins={collectionCurrent ? $pins : []}
+          loading={!collectionCurrent || $resultsMeta.loading}
+          {emptyMessage}
+          canLoadMore={collectionCurrent && canLoadMore}
+          {loadingMore}
+          onLoadMore={loadMore}
+        />
+      {/if}
     {/if}
   </div>
 </div>
 
-<Lightbox />
+{#if collectionCurrent}<Lightbox />{/if}
 <Upload />
 <Feed />
 {#if $collectionPickerTarget}
