@@ -49,5 +49,5 @@
 ## Embedding model evaluation
 
 - [ ] [Evaluate WeMM-Embedding-2B as the native embedder](issues/evaluate-wemm-embedding-2b.md)
-- [ ] [Add text-to-image retrieval benchmark](issues/add-text-to-image-retrieval-benchmark.md)
 - [ ] [Watch Ovis-Embedding-Omni-3B for audio embeddings](issues/watch-ovis-omni-audio-embeddings.md)
+- [ ] [Investigate mtmd vision embedding gap against transformers](issues/investigate-mtmd-vision-reference-gap.md)
