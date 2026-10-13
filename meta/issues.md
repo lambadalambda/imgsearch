@@ -52,4 +52,3 @@
 - [ ] [Watch Ovis-Embedding-Omni-3B for audio embeddings](issues/watch-ovis-omni-audio-embeddings.md)
 - [ ] [Investigate mtmd vision embedding gap against transformers](issues/investigate-mtmd-vision-reference-gap.md)
 - [ ] [Make WeMM-Embedding-2B Q4_K_M the default embedding model](issues/make-wemm-default-embedding-model.md)
-- [ ] [Deploy WeMM-Embedding-2B Q4_K_M to the home instance](issues/deploy-wemm-embedder-home-instance.md)

@@ -158,3 +158,4 @@
 - [x] [Optional direct multi-frame video summaries for external APIs](issues/optional-direct-multiframe-video-summaries.md)
 - [x] [Add text-to-image retrieval benchmark](issues/add-text-to-image-retrieval-benchmark.md)
 - [x] [Bump llama.cpp for embedding speed](issues/bump-llama-cpp-october-2026.md)
+- [x] [Deploy WeMM-Embedding-2B Q4_K_M to the home instance](issues/deploy-wemm-embedder-home-instance.md)
