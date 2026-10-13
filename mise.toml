@@ -97,6 +97,10 @@ run = "scripts/ensure_llama_cpp_native_build.sh"
 description = "Run imgsearch with explicit native llama.cpp setup"
 run = "mise run serve"
 
+[tasks."bench:retrieval"]
+description = "Score native embedder Recall@K on a Flickr-style captioned set (see docs/embedding-model-evaluation.md)"
+run = "scripts/ensure_llama_cpp_native_build.sh && go run ./cmd/retrievalbench"
+
 [tasks.llama-cpp-native-test]
 description = "Run llama.cpp native semantic integration test"
 run = "scripts/ensure_llama_cpp_native_build.sh; RUN_LLAMACPP_NATIVE_INTEGRATION=1 LLAMA_NATIVE_MODEL_PATH=\"${LLAMA_NATIVE_MODEL_PATH:-$(pwd)/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf}\" LLAMA_NATIVE_MMPROJ_PATH=\"${LLAMA_NATIVE_MMPROJ_PATH:-$(pwd)/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf}\" LLAMA_NATIVE_DIMS=\"${LLAMA_NATIVE_DIMS:-2048}\" LLAMA_NATIVE_GPU_LAYERS=\"${LLAMA_NATIVE_GPU_LAYERS:-99}\" LLAMA_NATIVE_USE_GPU=\"${LLAMA_NATIVE_USE_GPU:-true}\" LLAMA_NATIVE_CONTEXT_SIZE=\"${LLAMA_NATIVE_CONTEXT_SIZE:-8192}\" LLAMA_NATIVE_BATCH_SIZE=\"${LLAMA_NATIVE_BATCH_SIZE:-512}\" LLAMA_NATIVE_THREADS=\"${LLAMA_NATIVE_THREADS:-0}\" LLAMA_NATIVE_IMAGE_MAX_SIDE=\"${LLAMA_NATIVE_IMAGE_MAX_SIDE:-384}\" LLAMA_NATIVE_IMAGE_MAX_TOKENS=\"${LLAMA_NATIVE_IMAGE_MAX_TOKENS:-0}\" go test ./internal/embedder/llamacppnative -run NativeEmbeddingsAreSemanticallyReasonable -v"
