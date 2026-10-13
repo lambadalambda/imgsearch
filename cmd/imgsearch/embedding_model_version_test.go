@@ -74,7 +74,12 @@ func TestLlamaNativeModelVersionPromptFormat(t *testing.T) {
 	if got := llamaNativeModelVersion("/m/a.gguf", "/m/b.gguf", 2048, 384, 0, "q", "p", ""); got != legacy {
 		t.Fatalf("empty prompt format must match qwen3vl: got %q", got)
 	}
-	if got := llamaNativeModelVersion("/m/a.gguf", "/m/b.gguf", 2048, 384, 0, "q", "p", "wemm"); got != legacy+"-fwemm" {
-		t.Fatalf("expected wemm format suffix, got %q", got)
+	// WeMM ignores instructions, so they must not trigger a re-embed.
+	wemm := "native-v5-chatml-vipsjpeg-a.gguf-b.gguf-d2048-s384-t0-q" + instructionVersionToken("") + "-p" + instructionVersionToken("") + "-fwemm"
+	if got := llamaNativeModelVersion("/m/a.gguf", "/m/b.gguf", 2048, 384, 0, "q", "p", "wemm"); got != wemm {
+		t.Fatalf("wemm version = %q, want %q", got, wemm)
+	}
+	if got := llamaNativeModelVersion("/m/a.gguf", "/m/b.gguf", 2048, 384, 0, "other q", "other p", "wemm"); got != wemm {
+		t.Fatalf("wemm version must not depend on instructions, got %q", got)
 	}
 }
