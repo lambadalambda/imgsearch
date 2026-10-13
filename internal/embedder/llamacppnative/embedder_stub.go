@@ -27,6 +27,7 @@ type Config struct {
 	AnnotationNGramSpeculation bool
 	QueryInstruction           string
 	PassageInstruction         string
+	PromptFormat               PromptFormat
 	FlashAttnType              int
 	CacheTypeK                 int
 	CacheTypeV                 int

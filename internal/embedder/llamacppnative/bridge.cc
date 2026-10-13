@@ -214,22 +214,6 @@ std::string trim(const char * in) {
     return s.substr(start, end - start + 1);
 }
 
-std::string compose_prompt(const char * instruction, const char * content) {
-    const std::string inst = trim(instruction);
-    const std::string body = trim(content);
-
-    const std::string system_message = inst.empty() ? "Represent the user's input." : inst;
-
-    std::string prompt;
-    prompt.reserve(system_message.size() + body.size() + 96);
-    prompt += "<|im_start|>system\n";
-    prompt += system_message;
-    prompt += "<|im_end|>\n<|im_start|>user\n";
-    prompt += body;
-    prompt += "<|im_end|>\n<|im_start|>assistant\n";
-    return prompt;
-}
-
 void normalize_l2(float * out, int32_t n) {
     if (out == nullptr || n <= 0) {
         return;
@@ -1055,6 +1039,10 @@ void imgsearch_llama_free(imgsearch_llama_handle * handle) {
     delete handle;
 }
 
+const char * imgsearch_llama_media_marker(void) {
+    return mtmd_default_marker();
+}
+
 int32_t imgsearch_llama_dims(const imgsearch_llama_handle * handle) {
     if (handle == nullptr) {
         return 0;
@@ -1064,11 +1052,10 @@ int32_t imgsearch_llama_dims(const imgsearch_llama_handle * handle) {
 
 int32_t imgsearch_llama_embed_text(
     imgsearch_llama_handle * handle,
-    const char * text,
-    const char * instruction,
+    const char * prompt_text,
     float * out,
     int32_t out_len) {
-    const std::string prompt = compose_prompt(instruction, text);
+    const std::string prompt = prompt_text == nullptr ? "" : prompt_text;
     if (prompt.empty()) {
         return set_error(handle, "text embedding prompt is empty");
     }
@@ -1078,7 +1065,7 @@ int32_t imgsearch_llama_embed_text(
 int32_t imgsearch_llama_embed_image(
     imgsearch_llama_handle * handle,
     const char * image_path,
-    const char * instruction,
+    const char * prompt_text,
     float * out,
     int32_t out_len) {
     if (handle == nullptr) {
@@ -1100,7 +1087,7 @@ int32_t imgsearch_llama_embed_image(
         return -1;
     }
 
-    const std::string prompt = compose_prompt(instruction, mtmd_default_marker());
+    const std::string prompt = prompt_text == nullptr ? "" : prompt_text;
     const mtmd_bitmap * bitmaps[] = {bitmap};
     int32_t res = eval_prompt(handle, prompt, bitmaps, 1, 0, out, out_len);
 
@@ -1111,7 +1098,7 @@ int32_t imgsearch_llama_embed_image(
 int32_t imgsearch_llama_inspect_embed_image(
     imgsearch_llama_handle * handle,
     const char * image_path,
-    const char * instruction,
+    const char * prompt_text,
     imgsearch_llama_embed_inspect * out) {
     const std::string image = trim(image_path);
     if (image.empty()) {
@@ -1128,7 +1115,7 @@ int32_t imgsearch_llama_inspect_embed_image(
         return -1;
     }
 
-    const std::string prompt = compose_prompt(instruction, mtmd_default_marker());
+    const std::string prompt = prompt_text == nullptr ? "" : prompt_text;
     const mtmd_bitmap * bitmaps[] = {bitmap};
     int32_t res = inspect_prompt(handle, prompt, bitmaps, 1, out);
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"imgsearch/internal/embedder/llamacppnative"
 	"imgsearch/internal/settings"
 	"imgsearch/internal/upload"
 )
@@ -54,6 +55,7 @@ type runtimeConfig struct {
 	LlamaNativeAnnotationNGramSpeculation bool
 	LlamaNativeQueryInstruction           string
 	LlamaNativePassageInstruction         string
+	LlamaNativePromptFormat               string
 
 	ParakeetONNXBundleDir   string
 	ParakeetONNXRuntimeLib  string
@@ -168,6 +170,7 @@ func registerRuntimeFlags(fs *flag.FlagSet, cfg *runtimeConfig) {
 	fs.BoolVar(&cfg.LlamaNativeAnnotationNGramSpeculation, "llama-native-annotation-ngram-speculation", cfg.LlamaNativeAnnotationNGramSpeculation, "experimental: enable llama.cpp n-gram speculative decoding for annotation generation")
 	fs.StringVar(&cfg.LlamaNativeQueryInstruction, "llama-native-query-instruction", cfg.LlamaNativeQueryInstruction, "instruction used for llama-cpp-native text query embeddings")
 	fs.StringVar(&cfg.LlamaNativePassageInstruction, "llama-native-passage-instruction", cfg.LlamaNativePassageInstruction, "instruction used for llama-cpp-native image/document embeddings")
+	fs.StringVar(&cfg.LlamaNativePromptFormat, "llama-native-prompt-format", cfg.LlamaNativePromptFormat, "embedding prompt format: qwen3vl (default) or wemm; wemm ignores instructions")
 	fs.StringVar(&cfg.ParakeetONNXBundleDir, "parakeet-onnx-bundle-dir", cfg.ParakeetONNXBundleDir, "directory containing the Parakeet ONNX bundle for video transcription")
 	fs.StringVar(&cfg.ParakeetONNXRuntimeLib, "parakeet-onnxruntime-lib", cfg.ParakeetONNXRuntimeLib, "path to the ONNX Runtime shared library used for Parakeet video transcription")
 	fs.BoolVar(&cfg.ParakeetONNXCoreML, "parakeet-onnx-coreml", cfg.ParakeetONNXCoreML, "whether to request the CoreML execution provider for Parakeet ONNX video transcription")
@@ -210,6 +213,11 @@ func (cfg *runtimeConfig) Resolve() error {
 	if cfg.MaxImageUploadMB <= 0 || cfg.MaxVideoUploadMB <= 0 || cfg.UploadTimeout <= 0 {
 		return fmt.Errorf("configure uploads: upload limits and timeout must be positive")
 	}
+	promptFormat, err := llamacppnative.ParsePromptFormat(cfg.LlamaNativePromptFormat)
+	if err != nil {
+		return fmt.Errorf("configure llama-cpp-native options: %w", err)
+	}
+	cfg.LlamaNativePromptFormat = string(promptFormat)
 	cfg.ResolvedLlamaNativeImageMaxSide, cfg.ResolvedLlamaNativeImageMaxTokens, err = resolveLlamaCPPNativeImageLimits(cfg.LlamaNativeImageMaxSide, cfg.LlamaNativeImageMaxTokens)
 	if err != nil {
 		return fmt.Errorf("configure llama-cpp-native options: %w", err)

@@ -8,14 +8,21 @@ import (
 	"strings"
 )
 
-func llamaNativeModelVersion(modelPath string, visionModelPath string, dimensions int, imageMaxSide int, imageMaxTokens int, queryInstruction string, passageInstruction string) string {
+func llamaNativeModelVersion(modelPath string, visionModelPath string, dimensions int, imageMaxSide int, imageMaxTokens int, queryInstruction string, passageInstruction string, promptFormat string) string {
 	modelToken := sanitizeModelVersionToken(filepath.Base(strings.TrimSpace(modelPath)))
 	visionToken := sanitizeModelVersionToken(filepath.Base(strings.TrimSpace(visionModelPath)))
 	queryToken := instructionVersionToken(queryInstruction)
 	passageToken := instructionVersionToken(passageInstruction)
 
+	// Qwen3-VL keeps the original version string so existing libraries are not
+	// re-embedded. promptFormat is canonical (validated in runtimeConfig.Resolve).
+	formatSuffix := ""
+	if promptFormat != "" && promptFormat != "qwen3vl" {
+		formatSuffix = "-f" + sanitizeModelVersionToken(promptFormat)
+	}
+
 	return fmt.Sprintf(
-		"native-v5-chatml-vipsjpeg-%s-%s-d%d-s%d-t%d-q%s-p%s",
+		"native-v5-chatml-vipsjpeg-%s-%s-d%d-s%d-t%d-q%s-p%s%s",
 		modelToken,
 		visionToken,
 		dimensions,
@@ -23,6 +30,7 @@ func llamaNativeModelVersion(modelPath string, visionModelPath string, dimension
 		imageMaxTokens,
 		queryToken,
 		passageToken,
+		formatSuffix,
 	)
 }
 

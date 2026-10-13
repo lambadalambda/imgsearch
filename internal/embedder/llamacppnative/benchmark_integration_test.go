@@ -177,6 +177,7 @@ func newNativeEmbedderForBenchmarkWithMaxSequences(b *testing.B, maxSequences in
 		ImageMaxTokens:     envIntOrDefaultBenchmark("LLAMA_NATIVE_IMAGE_MAX_TOKENS", 0),
 		QueryInstruction:   envOr("LLAMA_NATIVE_QUERY_INSTRUCTION", defaultQueryInstruction),
 		PassageInstruction: envOr("LLAMA_NATIVE_PASSAGE_INSTRUCTION", defaultPassageInstruction),
+		PromptFormat:       PromptFormat(os.Getenv("LLAMA_NATIVE_PROMPT_FORMAT")),
 	})
 	if err != nil {
 		b.Fatalf("new llama-cpp-native embedder: %v", err)

@@ -27,6 +27,7 @@ type llamaCPPNativeEmbedderOptions struct {
 	AnnotationNGramSpeculation bool
 	QueryInstruction           string
 	PassageInstruction         string
+	PromptFormat               string
 	FlashAttnType              int
 	CacheTypeK                 int
 	CacheTypeV                 int
@@ -115,6 +116,7 @@ func newLlamaCPPNativeEmbedder(opts llamaCPPNativeEmbedderOptions) (embedder.Emb
 		AnnotationNGramSpeculation: opts.AnnotationNGramSpeculation,
 		QueryInstruction:           strings.TrimSpace(opts.QueryInstruction),
 		PassageInstruction:         strings.TrimSpace(opts.PassageInstruction),
+		PromptFormat:               llamacppnative.PromptFormat(opts.PromptFormat),
 		FlashAttnType:              opts.FlashAttnType,
 		CacheTypeK:                 opts.CacheTypeK,
 		CacheTypeV:                 opts.CacheTypeV,

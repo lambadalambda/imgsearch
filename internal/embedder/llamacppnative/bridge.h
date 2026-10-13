@@ -56,24 +56,25 @@ void imgsearch_llama_free(imgsearch_llama_handle * handle);
 
 int32_t imgsearch_llama_dims(const imgsearch_llama_handle * handle);
 
+const char * imgsearch_llama_media_marker(void);
+
 int32_t imgsearch_llama_embed_text(
     imgsearch_llama_handle * handle,
-    const char * text,
-    const char * instruction,
+    const char * prompt,
     float * out,
     int32_t out_len);
 
 int32_t imgsearch_llama_embed_image(
     imgsearch_llama_handle * handle,
     const char * image_path,
-    const char * instruction,
+    const char * prompt,
     float * out,
     int32_t out_len);
 
 int32_t imgsearch_llama_inspect_embed_image(
     imgsearch_llama_handle * handle,
     const char * image_path,
-    const char * instruction,
+    const char * prompt,
     imgsearch_llama_embed_inspect * out);
 
 int32_t imgsearch_llama_generate_image(

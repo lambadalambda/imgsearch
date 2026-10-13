@@ -3,6 +3,7 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(embedder): add `-llama-native-prompt-format` (`qwen3vl` default, `wemm`) so WeMM-Embedding GGUFs embed with their reference prompt; unknown values fail at startup before any embeddings are purged. Qwen3-VL prompts and model versions are unchanged, so existing libraries are not re-embedded.
 - feat(ui): add Video summaries and sampling controls for external direct-image versus frame-description input and frames per new upload, with native-mode guidance, timestamps/resource-limit explanations, draft retention and browser validation.
 - feat(annotations): add opt-in external-API direct video summaries from every stored sampled image with chronological timestamps; skip per-frame text generation, retain evidence on all retry paths and pin backend/mode/budgets for each video job. Native/default behavior and frame embeddings stay intact; video reannotation now retains previous metadata/NSFW visibility until replacement succeeds.
 - feat(settings): persist video input preferences and a 1–32 sampled-frame count (default5); new video uploads use saved sampling settings without a restart, while duplicates/existing videos keep their stored frames. Unsaved/legacy settings inherit the startup frame-count flag.

@@ -146,6 +146,7 @@ func main() {
 		resolvedLlamaNativeImageMaxTokens,
 		cfg.LlamaNativeQueryInstruction,
 		cfg.LlamaNativePassageInstruction,
+		cfg.LlamaNativePromptFormat,
 	)
 
 	modelID, err := db.EnsureEmbeddingModel(rootCtx, sqlDB, modelSpec)
@@ -245,6 +246,7 @@ func main() {
 		AnnotationNGramSpeculation: cfg.LlamaNativeAnnotationNGramSpeculation,
 		QueryInstruction:           cfg.LlamaNativeQueryInstruction,
 		PassageInstruction:         cfg.LlamaNativePassageInstruction,
+		PromptFormat:               cfg.LlamaNativePromptFormat,
 		FlashAttnType:              cfg.LlamaNativeFlashAttnType,
 		CacheTypeK:                 cfg.LlamaNativeCacheTypeK,
 		CacheTypeV:                 cfg.LlamaNativeCacheTypeV,

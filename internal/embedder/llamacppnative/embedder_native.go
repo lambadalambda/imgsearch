@@ -52,6 +52,7 @@ type Config struct {
 	AnnotationNGramSpeculation bool
 	QueryInstruction           string
 	PassageInstruction         string
+	PromptFormat               PromptFormat
 	FlashAttnType              int
 	CacheTypeK                 int
 	CacheTypeV                 int
@@ -66,8 +67,9 @@ type Embedder struct {
 	annotationImageMaxSide int
 	annotationTemperature  float32
 	annotationSeed         int64
+	promptFormat           PromptFormat
 	queryInstruction       string
-	passageInstruction     string
+	imagePrompt            string
 }
 
 type EmbedInspect struct {
@@ -147,6 +149,11 @@ func New(cfg Config) (*Embedder, error) {
 		passageInstruction = defaultPassageInstruction
 	}
 
+	promptFormat, err := ParsePromptFormat(string(cfg.PromptFormat))
+	if err != nil {
+		return nil, err
+	}
+
 	annotationTemperature, annotationSeed, err := normalizeAnnotationSampling(cfg.AnnotationTemperature, cfg.AnnotationSeed)
 	if err != nil {
 		return nil, err
@@ -222,8 +229,9 @@ func New(cfg Config) (*Embedder, error) {
 		annotationImageMaxSide: annotationImageMaxSide,
 		annotationTemperature:  annotationTemperature,
 		annotationSeed:         annotationSeed,
+		promptFormat:           promptFormat,
 		queryInstruction:       queryInstruction,
-		passageInstruction:     passageInstruction,
+		imagePrompt:            imagePrompt(promptFormat, passageInstruction, C.GoString(C.imgsearch_llama_media_marker())),
 	}, nil
 }
 
@@ -253,15 +261,12 @@ func (e *Embedder) EmbedText(ctx context.Context, text string) ([]float32, error
 	}
 
 	out := make([]float32, e.dimensions)
-	cText := C.CString(text)
-	defer C.free(unsafe.Pointer(cText))
-	cInstruction := C.CString(e.queryInstruction)
-	defer C.free(unsafe.Pointer(cInstruction))
+	cPrompt := C.CString(textPrompt(e.promptFormat, e.queryInstruction, text))
+	defer C.free(unsafe.Pointer(cPrompt))
 
 	if C.imgsearch_llama_embed_text(
 		e.handle,
-		cText,
-		cInstruction,
+		cPrompt,
 		(*C.float)(unsafe.Pointer(&out[0])),
 		C.int32_t(len(out)),
 	) != 0 {
@@ -527,11 +532,11 @@ func (e *Embedder) InspectImageEmbedding(ctx context.Context, path string) (Embe
 
 	cPath := C.CString(prepared.path)
 	defer C.free(unsafe.Pointer(cPath))
-	cInstruction := C.CString(e.passageInstruction)
-	defer C.free(unsafe.Pointer(cInstruction))
+	cPrompt := C.CString(e.imagePrompt)
+	defer C.free(unsafe.Pointer(cPrompt))
 
 	var nativeOut C.imgsearch_llama_embed_inspect
-	if C.imgsearch_llama_inspect_embed_image(e.handle, cPath, cInstruction, &nativeOut) != 0 {
+	if C.imgsearch_llama_inspect_embed_image(e.handle, cPath, cPrompt, &nativeOut) != 0 {
 		return out, e.lastErrorLocked()
 	}
 
@@ -557,13 +562,13 @@ func (e *Embedder) InspectImageEmbedding(ctx context.Context, path string) (Embe
 func (e *Embedder) embedImagePathLocked(path string, out []float32) error {
 	cPath := C.CString(path)
 	defer C.free(unsafe.Pointer(cPath))
-	cInstruction := C.CString(e.passageInstruction)
-	defer C.free(unsafe.Pointer(cInstruction))
+	cPrompt := C.CString(e.imagePrompt)
+	defer C.free(unsafe.Pointer(cPrompt))
 
 	if C.imgsearch_llama_embed_image(
 		e.handle,
 		cPath,
-		cInstruction,
+		cPrompt,
 		(*C.float)(unsafe.Pointer(&out[0])),
 		C.int32_t(len(out)),
 	) != 0 {

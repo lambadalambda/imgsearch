@@ -166,3 +166,21 @@ func TestParseRuntimeConfigRejectsExcessiveVideoSamples(t *testing.T) {
 		t.Fatal("accepted more than32 frames")
 	}
 }
+
+func TestParseRuntimeConfigCanonicalizesPromptFormat(t *testing.T) {
+	cfg, err := parseRuntimeConfig([]string{"-llama-native-prompt-format", " WeMM "}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if cfg.LlamaNativePromptFormat != "wemm" {
+		t.Fatalf("prompt format: got=%q want=wemm", cfg.LlamaNativePromptFormat)
+	}
+}
+
+func TestParseRuntimeConfigRejectsUnknownPromptFormat(t *testing.T) {
+	// Must fail before the model version is derived, or a typo purges stored embeddings.
+	_, err := parseRuntimeConfig([]string{"-llama-native-prompt-format", "wem"}, func(string) string { return "" })
+	if err == nil || !strings.Contains(err.Error(), "prompt format") {
+		t.Fatalf("expected prompt format error, got %v", err)
+	}
+}
