@@ -45,3 +45,9 @@
 - [ ] [Announce confirmation consequences when dialogs open](issues/announce-confirmation-consequences.md)
 
 - [ ] [Scope Lightbox action feedback to the current item](issues/scope-lightbox-feedback-to-current-item.md)
+
+## Embedding model evaluation
+
+- [ ] [Evaluate WeMM-Embedding-2B as the native embedder](issues/evaluate-wemm-embedding-2b.md)
+- [ ] [Add text-to-image retrieval benchmark](issues/add-text-to-image-retrieval-benchmark.md)
+- [ ] [Watch Ovis-Embedding-Omni-3B for audio embeddings](issues/watch-ovis-omni-audio-embeddings.md)
