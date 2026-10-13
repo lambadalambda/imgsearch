@@ -50,6 +50,20 @@ Findings:
 
 Caveats: these are captioned photos only. We did not measure video frames, memes, screenshots or text-heavy images on our own library.
 
+### NAS (production hardware)
+
+CT107, AMD Radeon 780M iGPU (Vulkan, `KHR_coopmat`), commit `924c9bb`, reusing the deployed llama.cpp build. The production service was not changed.
+
+| Model | Quant | Images | T2I@1 | I2T@1 | ms/image | ms/caption |
+|---|---|---|---|---|---|---|
+| WeMM-Embedding-2B | Q4_K_M | 1000 | 84.1 | 95.0 | 421 | 69 |
+| WeMM-Embedding-2B | Q4_K_M | first 100 | 96.6 | 100.0 | 430 | 70 |
+| Qwen3-VL-Embedding-8B (production) | Q4_K_M | first 100 | 94.8 | 98.0 | 1095 | 325 |
+
+- Q4_K_M loses nothing against Q6_K (84.1 vs 84.2 T2I@1), so it is the better choice for the NAS.
+- Against the production 8B, WeMM Q4_K_M is 2.5× faster per image and 4.7× faster per text query. The 8B was timed on 100 images only; its 1k quality is known from the Mac run (81.1).
+- Rough re-embed cost for the current library (about 4,900 images plus about 2,300 sampled video frames): about 50 minutes with WeMM Q4_K_M against more than 2 hours with the 8B.
+
 ## Converting WeMM-Embedding to GGUF
 
 No official GGUF exists. The vendored converter works with two adjustments:
