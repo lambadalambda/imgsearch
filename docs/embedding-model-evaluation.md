@@ -64,6 +64,21 @@ CT107, AMD Radeon 780M iGPU (Vulkan, `KHR_coopmat`), commit `924c9bb`, reusing t
 - Against the production 8B, WeMM Q4_K_M is 2.5× faster per image and 4.7× faster per text query. The 8B was timed on 100 images only; its 1k quality is known from the Mac run (81.1).
 - Rough re-embed cost for the current library (about 4,900 images plus about 2,300 sampled video frames): about 50 minutes with WeMM Q4_K_M against more than 2 hours with the 8B.
 
+### llama.cpp bump check (2026-10-13)
+
+We tried upstream llama.cpp `45451c3` (2,066 commits after our pin `5343f45`) with WeMM-Embedding-2B. The port is on branch `chore/llama-cpp-bump`. It was **not adopted**.
+
+| Setup | llama.cpp | T2I@1 | I2T@1 | ms/image | ms/caption |
+|---|---|---|---|---|---|
+| Mac, Q4_K_M | old / new | 83.9 / 83.2 | 94.6 / 93.7 | 236 / 217 | 43 / 36.5 |
+| Mac, Q6_K | old / new | 84.2 / 83.5 | 94.7 / 94.0 | 202 / 201.5 | 39 / 37 |
+| NAS 780M, Q4_K_M | old / new | 84.1 / 82.9 | 95.0 / 93.7 | 421 / 411 | 68.5 / 66.4 |
+
+- Retrieval drops by 0.7 (Mac) to 1.2 (NAS) T2I@1 points, for at most a 3% speed gain on the NAS. The RDNA3 int8 coopmat matmul path is not used on the 780M (RADV reports `int dot: 0`).
+- The drop comes from the vision tower. Token grids are identical, and text embeddings are unchanged. The new image embeddings are *closer* to the transformers reference (cosine 0.985–0.988 vs 0.946–0.970 at Q4_K_M), yet they rank worse on Flickr.
+- Gemma E4B annotation works on the new version with the same speed and output quality.
+- Porting notes for a later attempt: `mtmd_input_text` gained `text_len` (without it every prompt is silently empty); `mtmd_helper_bitmap_init_from_file` returns a wrapper struct; `common_batch_add/clear` for `llama_batch` were removed; `json_schema_to_grammar` takes `common_json`.
+
 ## Converting WeMM-Embedding to GGUF
 
 No official GGUF exists. The vendored converter works with two adjustments:

@@ -20,3 +20,7 @@ The vendored llama.cpp is pinned at `5343f45` (2026-06-06); upstream has about 2
 
 - Annotation uses the same libraries; a regression there blocks the bump.
 - The NAS needs a Vulkan rebuild inside CT107 (`-DGGML_VULKAN=ON`, `-j2`).
+
+## Outcome — 2026-10-13
+
+Not adopted. Upstream `45451c3` lowered WeMM retrieval by 0.7–1.2 T2I@1 points and was at most 3% faster on the NAS, because the RDNA3 int8 matmul path is not used on the 780M. Gemma annotation showed no regression. The numbers and porting notes are in `docs/embedding-model-evaluation.md`; the port stays on branch `chore/llama-cpp-bump` (`ce4bc76`) for a later attempt.

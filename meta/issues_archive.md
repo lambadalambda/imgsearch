@@ -157,3 +157,4 @@
 - [x] [Complete and deploy the remaining recommended UX sweep](issues/complete-and-deploy-ux-sweep.md)
 - [x] [Optional direct multi-frame video summaries for external APIs](issues/optional-direct-multiframe-video-summaries.md)
 - [x] [Add text-to-image retrieval benchmark](issues/add-text-to-image-retrieval-benchmark.md)
+- [x] [Bump llama.cpp for embedding speed](issues/bump-llama-cpp-october-2026.md)

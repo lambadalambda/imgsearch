@@ -17,5 +17,5 @@ WeMM-Embedding-2B beats Qwen3-VL-Embedding-2B and 8B on retrieval and is faster 
 
 ## Notes
 
-- Depends on [the llama.cpp bump](bump-llama-cpp-october-2026.md) if conversion or the GGUF format changes.
+- [The llama.cpp bump](bump-llama-cpp-october-2026.md) was evaluated and not adopted; ship on the current pin.
 - With `wemm`, query/passage instructions are unused but still part of the model version string; drop them from the version for `wemm` before this ships.
