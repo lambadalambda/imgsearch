@@ -27,7 +27,7 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential cmake curl meson ninja-build pkg-config \
-          libexpat1-dev libglib2.0-dev libheif-dev libimagequant-dev libjpeg-dev libpng-dev libwebp-dev \
+          libexif-dev libexpat1-dev libglib2.0-dev libheif-dev libimagequant-dev libjpeg-dev libpng-dev libwebp-dev \
           ${{ inputs.extra-linux-packages }}
 
     - name: Restore libvips 8.18 build
@@ -36,7 +36,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: /tmp/vips-stage
-        key: vips-8.18.0-${{ runner.os }}-${{ runner.arch }}-v1
+        key: vips-8.18.0-${{ runner.os }}-${{ runner.arch }}-v2
 
     - name: Build libvips 8.18
       if: runner.os == 'Linux' && steps.vips-cache.outputs.cache-hit != 'true'
@@ -48,7 +48,8 @@ runs:
           --buildtype=release \
           --prefix=/usr/local \
           -Dintrospection=disabled \
-          -Dmodules=disabled
+          -Dmodules=disabled \
+          -Dexif=enabled
         meson compile -C /tmp/vips-8.18.0/build
         DESTDIR=/tmp/vips-stage meson install -C /tmp/vips-8.18.0/build
 
