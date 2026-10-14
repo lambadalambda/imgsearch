@@ -28,3 +28,7 @@ Sub-issues:
 - Model card: https://huggingface.co/tencent/WeMM-Embedding-2B; report: https://arxiv.org/pdf/2608.24053.
 - Switching models needs a full re-embed and touches [mixed-model search](050-sqlite-vector-quantized-mixed-models.md).
 - Related candidates: Ovis-VL-Embedding-2B (weights not confirmed public), Ovis-Embedding-Omni-3B (audio; see [audio embedding watch](watch-ovis-omni-audio-embeddings.md)).
+
+## Outcome — 2026-10-14
+
+Adopted as the default search model (ADR-014) and deployed to the home instance. Results, conversion recipe and the not-adopted llama.cpp bump are in `docs/embedding-model-evaluation.md`. The mtmd vision gap is tracked separately.

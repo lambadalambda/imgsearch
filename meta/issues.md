@@ -48,7 +48,5 @@
 
 ## Embedding model evaluation
 
-- [ ] [Evaluate WeMM-Embedding-2B as the native embedder](issues/evaluate-wemm-embedding-2b.md)
 - [ ] [Watch Ovis-Embedding-Omni-3B for audio embeddings](issues/watch-ovis-omni-audio-embeddings.md)
 - [ ] [Investigate mtmd vision embedding gap against transformers](issues/investigate-mtmd-vision-reference-gap.md)
-- [ ] [Make WeMM-Embedding-2B Q4_K_M the default embedding model](issues/make-wemm-default-embedding-model.md)

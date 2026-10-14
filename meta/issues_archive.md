@@ -159,3 +159,5 @@
 - [x] [Add text-to-image retrieval benchmark](issues/add-text-to-image-retrieval-benchmark.md)
 - [x] [Bump llama.cpp for embedding speed](issues/bump-llama-cpp-october-2026.md)
 - [x] [Deploy WeMM-Embedding-2B Q4_K_M to the home instance](issues/deploy-wemm-embedder-home-instance.md)
+- [x] [Evaluate WeMM-Embedding-2B as the native embedder](issues/evaluate-wemm-embedding-2b.md)
+- [x] [Make WeMM-Embedding-2B Q4_K_M the default embedding model](issues/make-wemm-default-embedding-model.md)
