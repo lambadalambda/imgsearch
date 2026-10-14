@@ -24,6 +24,7 @@
 ## Review 2026-09-21
 
 - [ ] [Gate rolling release publication on verification](issues/gate-rolling-release-publication-on-verification.md)
+- [ ] [Build libvips with EXIF support in CI and Linux releases](issues/build-libvips-with-exif-in-ci-and-releases.md)
 - [ ] [Investigate Atelier visual search-rank smoke failure](issues/investigate-atelier-visual-search-rank-smoke-failure.md)
 - [ ] [Bound collection video hydration work](issues/bound-collection-video-hydration-work.md)
 - [ ] [Avoid duplicate shared-frame annotation across video jobs](issues/avoid-duplicate-shared-frame-annotation.md)
