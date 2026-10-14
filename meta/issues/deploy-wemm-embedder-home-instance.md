@@ -17,7 +17,7 @@ Switch CT107 production from Qwen3-VL-Embedding-8B Q4_K_M to WeMM-Embedding-2B Q
 
 ## Notes
 
-- Eval artifacts on CT107: `/opt/imgsearch/eval/wemm-924c9bb` (model files with verified SHA-256).
+- The eval artifacts on CT107 (`/opt/imgsearch/eval/wemm-924c9bb`) were removed after the rollout; the installed model files are in `/models/tencent/WeMM-Embedding-2B-GGUF/`.
 - Production had 2 failed index jobs before this work (2026-10-13), not caused by it.
 
 ## Outcome — 2026-10-13

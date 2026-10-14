@@ -18,5 +18,5 @@ During the WeMM-Embedding-2B evaluation, our GGUF text embeddings matched the tr
 
 - Upstream llama.cpp `45451c3` narrows the gap (Q4_K_M images 0.985–0.988 vs 0.946–0.970) but lowers Flickr recall by 0.7–1.2 points. A closer match to transformers does not automatically mean better retrieval in our pipeline, so measure any fix with the benchmark.
 
-- Reproduction scripts lived in `../imgsearch-bench/refcheck/` during the evaluation (reference.py, compare.py).
+- Reproduction (scripts were temporary and are deleted): crop fixtures to 384×256 PNG, embed them with the transformers model (`AutoModel.from_pretrained(..., trust_remote_code=True).embedding(...)`, fp32) and with the GGUF via `embedImagePathLocked` (skips our JPEG re-encode), then compare cosine per input.
 - Parent: [Evaluate WeMM-Embedding-2B](evaluate-wemm-embedding-2b.md).
