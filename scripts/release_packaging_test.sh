@@ -29,7 +29,8 @@ assert_not_contains() {
 assert_contains "${package_script}" 'build_atelier_frontend'
 assert_contains "${package_script}" 'npm ci --no-audit --no-fund --silent'
 assert_contains "${package_script}" 'npm run build'
-assert_contains "${package_script}" 'The default 2B Qwen GGUF files'
+assert_contains "${package_script}" 'The default WeMM-Embedding-2B GGUF files'
+assert_not_contains "${package_script}" 'default 2B Qwen'
 assert_contains "${package_script}" 'Qwen3-VL-Embedding-8B-Q4_K_M.gguf'
 assert_contains "${package_script}" '-llama-native-dimensions 4096'
 assert_contains "${package_script}" 'SQLITE_VECTOR_PATH="$script_dir/tools/sqlite-vector/vector"'
@@ -71,5 +72,6 @@ assert_contains "${release_workflow}" '-DGGML_NATIVE=OFF'
 assert_contains "${release_workflow}" 'scripts/package_release.sh'
 assert_contains "${release_workflow}" 'the built Atelier frontend'
 assert_not_contains "${release_workflow}" 'default 8B Qwen'
+assert_not_contains "${release_workflow}" 'default 2B Qwen'
 
 echo "ok"

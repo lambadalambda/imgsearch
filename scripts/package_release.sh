@@ -199,7 +199,7 @@ Contents:
 
 First run:
 1. Run ./run.sh (or the preset wrappers) so bundled shared libraries are used and video transcription is enabled.
-2. The default 2B Qwen GGUF files, the default Gemma e4b annotator files, and the Parakeet transcription bundle are downloaded automatically if missing.
+2. The default WeMM-Embedding-2B GGUF files, the default Gemma e4b annotator files, and the Parakeet transcription bundle are downloaded automatically if missing.
 3. Add --enable-annotations=false if you want to skip loading the Gemma annotator.
 4. Running ./imgsearch directly works too, but video transcription stays off unless you pass -parakeet-onnxruntime-lib lib/<libonnxruntime>; the startup log says so.
 
