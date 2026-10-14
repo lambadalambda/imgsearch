@@ -15,7 +15,7 @@
    - Without this step the server answers `/` with an "Atelier frontend not built yet" page. The `mise run serve*` tasks run it for you.
 5. Start the app with native embedding + sqlite-vector:
    - `go run ./cmd/imgsearch -vector-backend sqlite-vector -sqlite-vector-path ./tools/sqlite-vector/vector`
-6. On first run, if `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf` or `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf` are missing, imgsearch downloads them automatically from `VesNFF/Qwen3-VL-Embedding-2B-GGUF` on Hugging Face.
+6. On first run, if `./models/lainsoykaf/WeMM-Embedding-2B-GGUF/WeMM-Embedding-2B-Q4_K_M.gguf` or `./models/lainsoykaf/WeMM-Embedding-2B-GGUF/mmproj-WeMM-Embedding-2B-f16.gguf` are missing, imgsearch downloads them automatically from `lainsoykaf/WeMM-Embedding-2B-GGUF` on Hugging Face.
 7. Open the UI:
    - `http://127.0.0.1:8080/`
 
@@ -86,7 +86,7 @@ Convenience tasks:
 
 Notes:
 
-- Native defaults target `VesNFF/Qwen3-VL-Embedding-2B-GGUF` at `2048` dimensions. Use the 8B paths with `-llama-native-dimensions 4096` or `mise run "serve:8b"` for the higher-memory search profile.
+- Native defaults target `lainsoykaf/WeMM-Embedding-2B-GGUF` (Q4_K_M) at `2048` dimensions with the `wemm` prompt format. The format is inferred from known model file names; set `-llama-native-prompt-format` for renamed or custom files. The Qwen3-VL 2B (`VesNFF/...`) and 8B (`-llama-native-dimensions 4096`, `mise run "serve:8b"`) pairs remain downloadable. The `llama-cpp-native-test*` and `llama-cpp-native-bench` tasks default `LLAMA_NATIVE_PROMPT_FORMAT` to `wemm` (the Go test helpers do not infer it); set it to `qwen3vl` when pointing them at a Qwen model.
 - Native path defaults to `-llama-native-image-max-side 384` to reduce normal indexing latency while keeping fixture retrieval quality green.
 - Native image embedding preprocesses every image through libvips (direct cgo calls in `internal/embedder/llamacppnative`, so the packaged Ubuntu 24.04 libvips works) and writes a temporary JPEG before mtmd, which avoids WEBP/AVIF decode failures in llama.cpp input handling.
 - Native prompting uses Qwen chat-template style framing (`system` + `user` + assistant generation prompt) for text and image embeddings.

@@ -28,6 +28,8 @@ Use `-prompt-format wemm` for WeMM-Embedding models, and `-limit N` for a quick 
 
 ## Results: WeMM-Embedding-2B vs Qwen3-VL-Embedding (2026-10-13)
 
+Outcome: WeMM-Embedding-2B Q4_K_M is the default search model since 2026-10-14 ([ADR-014](decisions.md)) and runs on the home instance.
+
 Flickr30k 1k test, Apple M2 Max (Metal), `-image-max-side 384`, one sequence. Recall in %, time per item.
 
 | Model | Quant | Dims | T2I@1 | T2I@5 | T2I@10 | I2T@1 | I2T@5 | ms/image | ms/caption |

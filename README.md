@@ -23,7 +23,7 @@ It runs as a small local web app that:
 4. macOS: install `libvips` (for example `brew install vips`), then run `./run.sh` (or `./imgsearch` without video transcription).
 5. Open `http://127.0.0.1:8080/` for Atelier, the only supported UI (`/legacy` URLs are retired and return 404).
 
-On first run, `imgsearch` downloads the default 2B embedding model into `./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/` if it is missing, and also downloads the default Gemma `e4b` annotator files when annotations are enabled.
+On first run, `imgsearch` downloads the default WeMM-Embedding-2B model into `./models/lainsoykaf/WeMM-Embedding-2B-GGUF/` if it is missing, and also downloads the default Gemma `e4b` annotator files when annotations are enabled.
 
 ### Import Images
 
@@ -132,8 +132,11 @@ Search embedding models:
 
 | Model | Dimensions | Best For | Download |
 | --- | ---: | --- | --- |
-| Qwen3-VL-Embedding-2B-Q6_K | 2048 | Default profile for CPU-only, low-VRAM, and modest unified-memory systems | Auto-downloaded at default paths |
-| Qwen3-VL-Embedding-8B-Q4_K_M | 4096 | Higher-quality search profile for good GPUs and high-memory unified-memory systems | Auto-downloaded when the 8B paths below are selected |
+| WeMM-Embedding-2B-Q4_K_M | 2048 | Default for all systems: best retrieval quality and fastest of the three | Auto-downloaded at default paths |
+| Qwen3-VL-Embedding-2B-Q6_K | 2048 | Previous default; keep it to avoid re-embedding an existing library | Auto-downloaded when its paths are selected |
+| Qwen3-VL-Embedding-8B-Q4_K_M | 4096 | Previous high-memory profile; slower and not better than WeMM | Auto-downloaded when its paths are selected |
+
+WeMM scores 84.1 text-to-image R@1 on Flickr30k against 80.8 (Qwen 2B) and 81.1 (Qwen 8B), and embeds about 2.5× faster than the 8B. See [embedding model evaluation](docs/embedding-model-evaluation.md).
 
 Annotation models:
 
@@ -142,34 +145,36 @@ Annotation models:
 | Gemma-4-E4B-Uncensored-HauhauCS-Aggressive-Q4_K_P | `e4b` | Default descriptions/tags with lower memory than 26B | Auto-downloaded when annotations are enabled |
 | gemma-4-26b-a4b-it-heretic.q4_k_m | `26b` | Richer descriptions/tags on high-memory systems | Auto-downloaded with `-llama-native-annotator-variant 26b` |
 
-Vision models require two files: the base `.gguf` and the matching `mmproj-*.gguf`. Do not mix 2B and 8B model files, and keep `-llama-native-dimensions` matched to the embedding model (`4096` for 8B, `2048` for 2B).
+Vision models require two files: the base `.gguf` and the matching `mmproj-*.gguf`. Do not mix files of different models, and keep `-llama-native-dimensions` matched to the embedding model (`2048` for WeMM and Qwen 2B, `4096` for Qwen 8B).
 
-Default 2B search files are downloaded automatically when these paths are missing:
+Known model files are recognized by file name in any directory: they are downloaded where their path points, a missing partner file is placed next to them, and the prompt format follows the pair (`wemm` for `WeMM-Embedding-2B-Q4_K_M.gguf`, `qwen3vl` for everything else). Set `-llama-native-prompt-format wemm` for other WeMM quants or renamed files. Combining a model and mmproj from different known models is rejected at startup.
+
+Default search files are downloaded automatically when these paths are missing:
 
 ```text
-./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf
-./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf
+./models/lainsoykaf/WeMM-Embedding-2B-GGUF/WeMM-Embedding-2B-Q4_K_M.gguf
+./models/lainsoykaf/WeMM-Embedding-2B-GGUF/mmproj-WeMM-Embedding-2B-f16.gguf
 ```
 
-Manual pre-download for the default 2B search model:
+Manual pre-download for the default search model:
 
 ```bash
-mkdir -p ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF
-curl -L -o ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf \
-  https://huggingface.co/VesNFF/Qwen3-VL-Embedding-2B-GGUF/resolve/main/Qwen3-VL-Embedding-2B-Q6_K.gguf
-curl -L -o ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf \
-  https://huggingface.co/VesNFF/Qwen3-VL-Embedding-2B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-2B-f16.gguf
+mkdir -p ./models/lainsoykaf/WeMM-Embedding-2B-GGUF
+curl -L -o ./models/lainsoykaf/WeMM-Embedding-2B-GGUF/WeMM-Embedding-2B-Q4_K_M.gguf \
+  https://huggingface.co/lainsoykaf/WeMM-Embedding-2B-GGUF/resolve/main/WeMM-Embedding-2B-Q4_K_M.gguf
+curl -L -o ./models/lainsoykaf/WeMM-Embedding-2B-GGUF/mmproj-WeMM-Embedding-2B-f16.gguf \
+  https://huggingface.co/lainsoykaf/WeMM-Embedding-2B-GGUF/resolve/main/mmproj-WeMM-Embedding-2B-f16.gguf
 ```
 
-The larger 8B search model is also auto-downloaded when you run with the 8B model path and `-llama-native-dimensions 4096`. Optional manual pre-download:
+To stay on the previous Qwen3-VL 2B default (no re-embed), pass its paths:
 
 ```bash
-mkdir -p ./models/Qwen
-curl -L -o ./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf \
-  https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf
-curl -L -o ./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf \
-  https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf
+./imgsearch \
+  -llama-native-model-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf \
+  -llama-native-mmproj-path ./models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf
 ```
+
+The Qwen 8B files are auto-downloaded when you run with `./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf`, `./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf` and `-llama-native-dimensions 4096` (`mise run "serve:8b"` from a source checkout).
 
 The default `e4b` and optional `26b` annotators are also downloaded automatically when their default paths are used. Skip annotation downloads and model loading with:
 
@@ -201,7 +206,9 @@ If automatic downloads fail, use the direct URLs in `cmd/imgsearch/default_model
 
 ### Switching Models Reindexes Your Library
 
-`imgsearch` versions the embedding configuration. Changing the search model path, mmproj path, embedding dimensions, image size, image token cap, or retrieval instructions creates a new model version.
+`imgsearch` versions the embedding configuration. Changing the search model path, mmproj path, embedding dimensions, prompt format, image size, image token cap, or retrieval instructions (Qwen3-VL only) creates a new model version.
+
+Upgrading from a release whose default was Qwen3-VL-Embedding-2B switches existing installs that use the default paths to WeMM: the first start downloads about 2.2 GB and re-embeds the library once. Pass the Qwen 2B paths shown above to avoid this.
 
 On startup after a model/config change, the app removes old embeddings and queues the library for re-embedding. Images and videos stay in the library, but search results are incomplete until the worker catches up. For large libraries, change model settings during idle time or back up `./data` first.
 
@@ -209,26 +216,15 @@ On startup after a model/config change, the app removes old embeddings and queue
 
 ### Good GPU Or Unified Memory
 
-Use the 8B search model plus the default `e4b` annotator:
+The default search model is the best choice here too; spend extra memory on the larger annotator instead:
 
 ```bash
-./imgsearch \
-  -llama-native-model-path ./models/Qwen/Qwen3-VL-Embedding-8B-Q4_K_M.gguf \
-  -llama-native-mmproj-path ./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf \
-  -llama-native-dimensions 4096
+./imgsearch -llama-native-annotator-variant 26b
 ```
-
-From a source checkout, the matching developer command is:
-
-```bash
-mise run "serve:8b"
-```
-
-This trades higher memory use for better search quality while keeping image/video search, background indexing, and generated descriptions/tags.
 
 ### CPU-Only Or Low VRAM
 
-The default search model is already 2B. Disable annotations first if memory is tight; it is usually the biggest remaining memory reduction.
+The default search model is already small (2B, Q4_K_M). Disable annotations first if memory is tight; it is usually the biggest remaining memory reduction.
 
 ```bash
 ./imgsearch -enable-annotations=false
@@ -240,13 +236,13 @@ For CPU-only, add:
 -llama-native-use-gpu=false -llama-native-gpu-layers 0
 ```
 
-If a low-VRAM GPU still runs out of memory with the 2B model, add smaller runtime knobs:
+If a low-VRAM GPU still runs out of memory with the default model, add smaller runtime knobs:
 
 ```bash
 -llama-native-gpu-layers 20 -llama-native-batch-size 128 -llama-native-image-max-side 320
 ```
 
-For `mise run serve`, no 2B embedder override is needed. To skip annotations from a source checkout, run the binary directly:
+For `mise run serve`, no embedder override is needed. To skip annotations from a source checkout, run the binary directly:
 
 ```bash
 go run ./cmd/imgsearch -enable-annotations=false
@@ -326,8 +322,8 @@ This is documented in `meta/issues/054-harden-ui-api-cookie-auth.md` so the trus
 
 - The app binds to `127.0.0.1:8080` by default.
 - Supported formats: JPEG, PNG, WEBP, and AVIF images; MP4, WebM, QuickTime, and Matroska videos. `scripts/import_images.sh` also converts GIFs to MP4 with ffmpeg.
-- Embedding uses the in-process `llama-cpp-native` runtime with the Qwen3-VL-Embedding-2B GGUF pair by default.
-- The default Qwen 2B embedding files and the default Gemma `e4b` annotator files are downloaded automatically on first run when missing.
+- Embedding uses the in-process `llama-cpp-native` runtime with the WeMM-Embedding-2B GGUF pair by default.
+- The default WeMM embedding files and the default Gemma `e4b` annotator files are downloaded automatically on first run when missing.
 - Add `-enable-annotations=false` if you want to run the API without loading the Gemma annotation model.
 - Add `-mode=api` or `-mode=worker` if you want to split the HTTP server and background worker into separate processes.
 - `/api/*` routes are authenticated by default.
