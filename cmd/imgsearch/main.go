@@ -58,6 +58,9 @@ func main() {
 			log.Printf("WARNING: using built-in default API key; set -api-key or IMGSEARCH_API_KEY for non-development use")
 		}
 	}
+	if cfg.EmbedderAssetWarning != "" {
+		log.Printf("WARNING: %s", cfg.EmbedderAssetWarning)
+	}
 	if cfg.AnnotationModeWarning != "" {
 		log.Printf("%s", cfg.AnnotationModeWarning)
 	}

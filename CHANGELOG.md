@@ -3,6 +3,8 @@
 All notable changes to this project are tracked in this file.
 
 ## Unreleased
+- feat(models): make WeMM-Embedding-2B Q4_K_M the default search model (better Flickr30k retrieval than Qwen3-VL 2B and 8B, and faster), downloaded from `lainsoykaf/WeMM-Embedding-2B-GGUF`. The prompt format is inferred from known model file names when `-llama-native-prompt-format` is unset. Installs on the old default paths download about 2.2 GB and re-embed once on first start; pass the Qwen3-VL 2B paths to keep the previous model.
+- fix(models): recognize known model files by file name, so they also download outside `./models` (fixes first-run downloads into the CUDA container's `/models`), pair a lone model with its own mmproj, and reject model/mmproj files from different known models before any embeddings are purged.
 - feat(embedder): add `-llama-native-prompt-format` (`qwen3vl` default, `wemm`) so WeMM-Embedding GGUFs embed with their reference prompt; unknown values fail at startup before any embeddings are purged. Qwen3-VL prompts and model versions are unchanged, so existing libraries are not re-embedded.
 - feat(ui): add Video summaries and sampling controls for external direct-image versus frame-description input and frames per new upload, with native-mode guidance, timestamps/resource-limit explanations, draft retention and browser validation.
 - feat(annotations): add opt-in external-API direct video summaries from every stored sampled image with chronological timestamps; skip per-frame text generation, retain evidence on all retry paths and pin backend/mode/budgets for each video job. Native/default behavior and frame embeddings stay intact; video reannotation now retains previous metadata/NSFW visibility until replacement succeeds.

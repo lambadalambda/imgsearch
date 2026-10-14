@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"imgsearch/internal/embedder/llamacppnative"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -102,15 +104,15 @@ func TestEnsureDefaultAssetPairDownloadsMissingDefaults(t *testing.T) {
 func TestEnsureKnownAssetPairDownloadsAlternateKnownPair(t *testing.T) {
 	tmp := t.TempDir()
 	defaultPair := knownModelAssetPair{
-		modelPath:  filepath.Join(tmp, "8b", "model.gguf"),
+		modelPath:  filepath.Join(tmp, "8b", "8b-model.gguf"),
 		modelURL:   "http://example.invalid/8b-model.gguf",
-		mmprojPath: filepath.Join(tmp, "8b", "mmproj.gguf"),
+		mmprojPath: filepath.Join(tmp, "8b", "8b-mmproj.gguf"),
 		mmprojURL:  "http://example.invalid/8b-mmproj.gguf",
 	}
 	altPair := knownModelAssetPair{
-		modelPath:  filepath.Join(tmp, "2b", "model.gguf"),
+		modelPath:  filepath.Join(tmp, "2b", "2b-model.gguf"),
 		modelURL:   "",
-		mmprojPath: filepath.Join(tmp, "2b", "mmproj.gguf"),
+		mmprojPath: filepath.Join(tmp, "2b", "2b-mmproj.gguf"),
 		mmprojURL:  "",
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -291,5 +293,100 @@ func TestDownloadFileRejectsContentLengthMismatch(t *testing.T) {
 	}
 	if _, statErr := os.Stat(destPath); !os.IsNotExist(statErr) {
 		t.Fatalf("expected no final file on failure, stat err=%v", statErr)
+	}
+}
+
+func TestInferLlamaNativePromptFormatFromKnownModelPaths(t *testing.T) {
+	absWeMM, err := filepath.Abs(llamaNativeSearchWeMMModelPath)
+	if err != nil {
+		t.Fatalf("absolute model path: %v", err)
+	}
+	cases := map[string]llamacppnative.PromptFormat{
+		llamaNativeSearchWeMMModelPath: llamacppnative.PromptFormatWeMM,
+		absWeMM:                        llamacppnative.PromptFormatWeMM,
+		llamaNativeSearch2BModelPath:   llamacppnative.PromptFormatQwen3VL,
+		llamaNativeSearch8BModelPath:   llamacppnative.PromptFormatQwen3VL,
+		"/models/custom/model.gguf":    llamacppnative.PromptFormatQwen3VL,
+		"/models/tencent/WeMM-Embedding-2B-GGUF/WeMM-Embedding-2B-Q4_K_M.gguf": llamacppnative.PromptFormatWeMM,
+		"/models/Qwen3-VL-Embedding-2B-Q6_K.gguf":                              llamacppnative.PromptFormatQwen3VL,
+	}
+	for path, want := range cases {
+		if got := inferLlamaNativePromptFormat(path); got != want {
+			t.Fatalf("inferLlamaNativePromptFormat(%q) = %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestEnsureDefaultModelAssetDownloadsKnownFileNameInOtherDirectory(t *testing.T) {
+	tmp := t.TempDir()
+	defaultPath := filepath.Join(tmp, "models", "known", "model.gguf")
+	targetPath := filepath.Join(tmp, "mounted", "known", "model.gguf")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("model-bytes"))
+	}))
+	defer server.Close()
+
+	resolved, err := ensureDefaultModelAsset(context.Background(), server.Client(), targetPath, defaultPath, server.URL+"/model.gguf")
+	if err != nil {
+		t.Fatalf("ensure asset: %v", err)
+	}
+	if resolved != targetPath {
+		t.Fatalf("resolved path: got=%q want=%q", resolved, targetPath)
+	}
+	if content, err := os.ReadFile(targetPath); err != nil || string(content) != "model-bytes" {
+		t.Fatalf("expected download at mounted path, content=%q err=%v", content, err)
+	}
+}
+
+func TestSelectKnownAssetPairMatchesModelOutsideModelsDirByFileName(t *testing.T) {
+	modelPath := filepath.Join("/data", "qwen", filepath.Base(llamaNativeSearch2BModelPath))
+	pair, resolvedModelPath, resolvedMMProjPath := selectKnownAssetPair(modelPath, defaultLlamaNativeMMProjPath, llamaNativeSearchAssetPairs)
+	if pair.modelPath != llamaNativeSearch2BModelPath {
+		t.Fatalf("selected pair: got=%q want Qwen 2B", pair.modelPath)
+	}
+	if resolvedModelPath != modelPath {
+		t.Fatalf("resolved model path: got=%q want=%q", resolvedModelPath, modelPath)
+	}
+	wantMMProj := filepath.Join("/data", "qwen", filepath.Base(llamaNativeSearch2BMMProjPath))
+	if resolvedMMProjPath != wantMMProj {
+		t.Fatalf("resolved mmproj path: got=%q want=%q", resolvedMMProjPath, wantMMProj)
+	}
+}
+
+func TestValidateKnownAssetPairRejectsMixedKnownFiles(t *testing.T) {
+	if err := validateKnownAssetPair(llamaNativeSearchWeMMModelPath, llamaNativeSearch2BMMProjPath, llamaNativeSearchAssetPairs); err == nil {
+		t.Fatal("expected error for WeMM model with Qwen 2B mmproj")
+	}
+	if err := validateKnownAssetPair(llamaNativeSearch2BModelPath, llamaNativeSearch2BMMProjPath, llamaNativeSearchAssetPairs); err != nil {
+		t.Fatalf("matched pair rejected: %v", err)
+	}
+	if err := validateKnownAssetPair("/m/custom.gguf", llamaNativeSearch2BMMProjPath, llamaNativeSearchAssetPairs); err != nil {
+		t.Fatalf("custom model rejected: %v", err)
+	}
+}
+
+func TestKnownSearchAssetFileNamesAreUnique(t *testing.T) {
+	seen := map[string]bool{}
+	for _, pair := range llamaNativeSearchAssetPairs {
+		for _, path := range []string{pair.modelPath, pair.mmprojPath} {
+			name := filepath.Base(path)
+			if seen[name] {
+				t.Fatalf("known asset file name %q is not unique; pairs are matched by file name", name)
+			}
+			seen[name] = true
+		}
+	}
+}
+
+func TestLlamaNativeAssetPairWarning(t *testing.T) {
+	custom := "/m/Qwen3-VL-Embedding-2B-Q8_0.gguf"
+	if w := llamaNativeAssetPairWarning(custom, defaultLlamaNativeMMProjPath, llamaNativeSearchAssetPairs); !strings.Contains(w, "mmproj") {
+		t.Fatalf("expected warning for unknown model with default mmproj, got %q", w)
+	}
+	if w := llamaNativeAssetPairWarning(custom, "/m/mmproj-custom.gguf", llamaNativeSearchAssetPairs); w != "" {
+		t.Fatalf("unexpected warning with explicit mmproj: %q", w)
+	}
+	if w := llamaNativeAssetPairWarning(defaultLlamaNativeModelPath, defaultLlamaNativeMMProjPath, llamaNativeSearchAssetPairs); w != "" {
+		t.Fatalf("unexpected warning for default pair: %q", w)
 	}
 }

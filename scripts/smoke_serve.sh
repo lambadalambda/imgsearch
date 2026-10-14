@@ -30,8 +30,8 @@ SQLITE_VECTOR_PATH="${repo_root}/tools/sqlite-vector/vector" \
   -addr "${addr}" \
   -data-dir "${data_dir}" \
   -vector-backend sqlite-vector \
-  -llama-native-model-path "${LLAMA_NATIVE_MODEL_PATH:-${repo_root}/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf}" \
-  -llama-native-mmproj-path "${LLAMA_NATIVE_MMPROJ_PATH:-${repo_root}/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf}" \
+  -llama-native-model-path "${LLAMA_NATIVE_MODEL_PATH:-${repo_root}/models/lainsoykaf/WeMM-Embedding-2B-GGUF/WeMM-Embedding-2B-Q4_K_M.gguf}" \
+  -llama-native-mmproj-path "${LLAMA_NATIVE_MMPROJ_PATH:-${repo_root}/models/lainsoykaf/WeMM-Embedding-2B-GGUF/mmproj-WeMM-Embedding-2B-f16.gguf}" \
   -llama-native-dimensions "${LLAMA_NATIVE_DIMS:-2048}" \
   -llama-native-gpu-layers "${LLAMA_NATIVE_GPU_LAYERS:-99}" \
   -llama-native-use-gpu="${LLAMA_NATIVE_USE_GPU:-true}" \

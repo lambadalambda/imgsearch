@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -125,7 +126,7 @@ func TestParseRuntimeConfigKeepsFlagDefaults(t *testing.T) {
 	if cfg.DataDir != "./data" || cfg.Addr != "127.0.0.1:8080" || cfg.Mode != runtimeModeAll {
 		t.Fatalf("unexpected basic defaults: %+v", cfg)
 	}
-	if cfg.LlamaNativeModelPath != llamaNativeSearch2BModelPath || cfg.LlamaNativeMMProjPath != llamaNativeSearch2BMMProjPath {
+	if cfg.LlamaNativeModelPath != llamaNativeSearchWeMMModelPath || cfg.LlamaNativeMMProjPath != llamaNativeSearchWeMMMMProjPath || cfg.LlamaNativePromptFormat != "wemm" {
 		t.Fatalf("unexpected native model defaults: %+v", cfg)
 	}
 	if cfg.AnnotatorVariant != defaultLlamaNativeAnnotatorVariant {
@@ -182,5 +183,50 @@ func TestParseRuntimeConfigRejectsUnknownPromptFormat(t *testing.T) {
 	_, err := parseRuntimeConfig([]string{"-llama-native-prompt-format", "wem"}, func(string) string { return "" })
 	if err == nil || !strings.Contains(err.Error(), "prompt format") {
 		t.Fatalf("expected prompt format error, got %v", err)
+	}
+}
+
+func TestParseRuntimeConfigInfersPromptFormatFromKnownModel(t *testing.T) {
+	cfg, err := parseRuntimeConfig([]string{"-llama-native-model-path", llamaNativeSearchWeMMModelPath}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if cfg.LlamaNativePromptFormat != "wemm" {
+		t.Fatalf("prompt format: got=%q want=wemm", cfg.LlamaNativePromptFormat)
+	}
+
+	cfg, err = parseRuntimeConfig([]string{"-llama-native-model-path", llamaNativeSearchWeMMModelPath, "-llama-native-prompt-format", "qwen3vl"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if cfg.LlamaNativePromptFormat != "qwen3vl" {
+		t.Fatalf("explicit prompt format must win: got=%q", cfg.LlamaNativePromptFormat)
+	}
+}
+
+func TestParseRuntimeConfigInfersPromptFormatAfterPairSelection(t *testing.T) {
+	cases := map[string][]string{
+		"explicit Qwen 2B model":    {"-llama-native-model-path", llamaNativeSearch2BModelPath},
+		"only Qwen 2B mmproj":       {"-llama-native-mmproj-path", llamaNativeSearch2BMMProjPath},
+		"Qwen 2B model outside dir": {"-llama-native-model-path", "/data/" + filepath.Base(llamaNativeSearch2BModelPath)},
+	}
+	for name, args := range cases {
+		cfg, err := parseRuntimeConfig(args, func(string) string { return "" })
+		if err != nil {
+			t.Fatalf("%s: parse config: %v", name, err)
+		}
+		if cfg.LlamaNativePromptFormat != "qwen3vl" {
+			t.Fatalf("%s: prompt format got=%q want=qwen3vl", name, cfg.LlamaNativePromptFormat)
+		}
+		if filepath.Base(cfg.LlamaNativeMMProjPath) != filepath.Base(llamaNativeSearch2BMMProjPath) {
+			t.Fatalf("%s: mmproj got=%q want Qwen 2B mmproj", name, cfg.LlamaNativeMMProjPath)
+		}
+	}
+}
+
+func TestParseRuntimeConfigRejectsMixedKnownModelFiles(t *testing.T) {
+	_, err := parseRuntimeConfig([]string{"-llama-native-model-path", llamaNativeSearch8BModelPath, "-llama-native-mmproj-path", llamaNativeSearch2BMMProjPath, "-llama-native-dimensions", "4096"}, func(string) string { return "" })
+	if err == nil || !strings.Contains(err.Error(), "mmproj") {
+		t.Fatalf("expected mixed model/mmproj error, got %v", err)
 	}
 }

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"imgsearch/internal/embedder/llamacppnative"
 )
 
 const (
@@ -21,11 +23,15 @@ const (
 	llamaNativeSearch8BMMProjPath                  = "./models/Qwen/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
 	llamaNativeSearch8BModelURL                    = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/Qwen3-VL-Embedding-8B-Q4_K_M.gguf"
 	llamaNativeSearch8BMMProjURL                   = "https://huggingface.co/lainsoykaf/Qwen3-VL-Embedding-8B-GGUF/resolve/main/mmproj-Qwen3-VL-Embedding-8B-f16.gguf"
-	defaultLlamaNativeModelPath                    = llamaNativeSearch2BModelPath
-	defaultLlamaNativeMMProjPath                   = llamaNativeSearch2BMMProjPath
+	llamaNativeSearchWeMMModelPath                 = "./models/lainsoykaf/WeMM-Embedding-2B-GGUF/WeMM-Embedding-2B-Q4_K_M.gguf"
+	llamaNativeSearchWeMMMMProjPath                = "./models/lainsoykaf/WeMM-Embedding-2B-GGUF/mmproj-WeMM-Embedding-2B-f16.gguf"
+	llamaNativeSearchWeMMModelURL                  = "https://huggingface.co/lainsoykaf/WeMM-Embedding-2B-GGUF/resolve/main/WeMM-Embedding-2B-Q4_K_M.gguf"
+	llamaNativeSearchWeMMMMProjURL                 = "https://huggingface.co/lainsoykaf/WeMM-Embedding-2B-GGUF/resolve/main/mmproj-WeMM-Embedding-2B-f16.gguf"
+	defaultLlamaNativeModelPath                    = llamaNativeSearchWeMMModelPath
+	defaultLlamaNativeMMProjPath                   = llamaNativeSearchWeMMMMProjPath
 	defaultLlamaNativeDimensions                   = 2048
-	defaultLlamaNativeModelURL                     = llamaNativeSearch2BModelURL
-	defaultLlamaNativeMMProjURL                    = llamaNativeSearch2BMMProjURL
+	defaultLlamaNativeModelURL                     = llamaNativeSearchWeMMModelURL
+	defaultLlamaNativeMMProjURL                    = llamaNativeSearchWeMMMMProjURL
 	defaultLlamaNativeEmbedderContextSize          = 512
 	defaultLlamaNativeAnnotationTemperature        = 1.0
 	defaultLlamaNativeAnnotationSeed         int64 = -1
@@ -54,25 +60,49 @@ const (
 )
 
 type knownModelAssetPair struct {
-	modelPath  string
-	modelURL   string
-	mmprojPath string
-	mmprojURL  string
+	modelPath    string
+	modelURL     string
+	mmprojPath   string
+	mmprojURL    string
+	promptFormat llamacppnative.PromptFormat
 }
 
+// llamaNativeSearchAssetPairs lists downloadable search models; the first entry is the default.
 var llamaNativeSearchAssetPairs = []knownModelAssetPair{
 	{
-		modelPath:  defaultLlamaNativeModelPath,
-		modelURL:   defaultLlamaNativeModelURL,
-		mmprojPath: defaultLlamaNativeMMProjPath,
-		mmprojURL:  defaultLlamaNativeMMProjURL,
+		modelPath:    llamaNativeSearchWeMMModelPath,
+		modelURL:     llamaNativeSearchWeMMModelURL,
+		mmprojPath:   llamaNativeSearchWeMMMMProjPath,
+		mmprojURL:    llamaNativeSearchWeMMMMProjURL,
+		promptFormat: llamacppnative.PromptFormatWeMM,
 	},
 	{
-		modelPath:  llamaNativeSearch8BModelPath,
-		modelURL:   llamaNativeSearch8BModelURL,
-		mmprojPath: llamaNativeSearch8BMMProjPath,
-		mmprojURL:  llamaNativeSearch8BMMProjURL,
+		modelPath:    llamaNativeSearch2BModelPath,
+		modelURL:     llamaNativeSearch2BModelURL,
+		mmprojPath:   llamaNativeSearch2BMMProjPath,
+		mmprojURL:    llamaNativeSearch2BMMProjURL,
+		promptFormat: llamacppnative.PromptFormatQwen3VL,
 	},
+	{
+		modelPath:    llamaNativeSearch8BModelPath,
+		modelURL:     llamaNativeSearch8BModelURL,
+		mmprojPath:   llamaNativeSearch8BMMProjPath,
+		mmprojURL:    llamaNativeSearch8BMMProjURL,
+		promptFormat: llamacppnative.PromptFormatQwen3VL,
+	},
+}
+
+// inferLlamaNativePromptFormat picks the prompt format of a known search model
+// by file name, so copies outside ./models are recognized too; unknown models
+// use the Qwen3-VL format.
+func inferLlamaNativePromptFormat(modelPath string) llamacppnative.PromptFormat {
+	name := filepath.Base(strings.TrimSpace(modelPath))
+	for _, pair := range llamaNativeSearchAssetPairs {
+		if name == filepath.Base(pair.modelPath) {
+			return pair.promptFormat
+		}
+	}
+	return llamacppnative.PromptFormatQwen3VL
 }
 
 func ensureDefaultLlamaNativeAssets(ctx context.Context, modelPath string, mmprojPath string) (string, string, error) {
@@ -113,22 +143,71 @@ func selectKnownAssetPair(modelPath string, mmprojPath string, pairs []knownMode
 		resolvedMMProjPath = defaultPair.mmprojPath
 	}
 
+	// Known files are matched by file name, so pairs kept outside ./models
+	// (for example a mounted /models directory) are still recognized.
 	for _, pair := range pairs {
-		modelMatches := sameAssetPath(resolvedModelPath, pair.modelPath)
-		mmprojMatches := sameAssetPath(resolvedMMProjPath, pair.mmprojPath)
-		modelIsDefault := sameAssetPath(resolvedModelPath, defaultPair.modelPath)
-		mmprojIsDefault := sameAssetPath(resolvedMMProjPath, defaultPair.mmprojPath)
+		modelMatches := sameAssetName(resolvedModelPath, pair.modelPath)
+		mmprojMatches := sameAssetName(resolvedMMProjPath, pair.mmprojPath)
+		modelIsDefault := sameAssetName(resolvedModelPath, defaultPair.modelPath)
+		mmprojIsDefault := sameAssetName(resolvedMMProjPath, defaultPair.mmprojPath)
 		switch {
 		case modelMatches && mmprojMatches:
 			return pair, resolvedModelPath, resolvedMMProjPath
 		case modelMatches && mmprojIsDefault:
-			return pair, resolvedModelPath, pair.mmprojPath
+			return pair, resolvedModelPath, siblingAssetPath(resolvedModelPath, pair.modelPath, pair.mmprojPath)
 		case modelIsDefault && mmprojMatches:
-			return pair, pair.modelPath, resolvedMMProjPath
+			return pair, siblingAssetPath(resolvedMMProjPath, pair.mmprojPath, pair.modelPath), resolvedMMProjPath
 		}
 	}
 
 	return defaultPair, resolvedModelPath, resolvedMMProjPath
+}
+
+// siblingAssetPath places the other file of a known pair next to the given one;
+// at the pair's own location it returns the pair's path unchanged.
+func siblingAssetPath(givenPath string, pairGivenPath string, pairOtherPath string) string {
+	if sameAssetPath(filepath.Dir(givenPath), filepath.Dir(pairGivenPath)) {
+		return pairOtherPath
+	}
+	return filepath.Join(filepath.Dir(givenPath), filepath.Base(pairOtherPath))
+}
+
+// validateKnownAssetPair rejects a model and mmproj that belong to different
+// known models; mixing them would silently embed with the wrong projector.
+func validateKnownAssetPair(modelPath string, mmprojPath string, pairs []knownModelAssetPair) error {
+	modelPair, mmprojPair := -1, -1
+	for i, pair := range pairs {
+		if sameAssetName(modelPath, pair.modelPath) {
+			modelPair = i
+		}
+		if sameAssetName(mmprojPath, pair.mmprojPath) {
+			mmprojPair = i
+		}
+	}
+	if modelPair >= 0 && mmprojPair >= 0 && modelPair != mmprojPair {
+		return fmt.Errorf("model %q and mmproj %q belong to different known models", filepath.Base(modelPath), filepath.Base(mmprojPath))
+	}
+	return nil
+}
+
+// llamaNativeAssetPairWarning flags an unknown model combined with the default
+// pair's mmproj, which is only right for custom quants of the default model.
+func llamaNativeAssetPairWarning(modelPath string, mmprojPath string, pairs []knownModelAssetPair) string {
+	if len(pairs) == 0 || !sameAssetName(mmprojPath, pairs[0].mmprojPath) {
+		return ""
+	}
+	for _, pair := range pairs {
+		if sameAssetName(modelPath, pair.modelPath) {
+			return ""
+		}
+	}
+	return fmt.Sprintf("llama-cpp-native model %q is not a known search model and uses the default mmproj %q; pass -llama-native-mmproj-path unless it is a quant of that model", filepath.Base(modelPath), filepath.Base(mmprojPath))
+}
+
+func sameAssetName(left string, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	return left != "" && right != "" && filepath.Base(left) == filepath.Base(right)
 }
 
 func sameAssetPath(left string, right string) bool {
@@ -243,7 +322,7 @@ func ensureDefaultModelAsset(ctx context.Context, httpClient *http.Client, path 
 	if resolvedPath == "" {
 		resolvedPath = defaultPath
 	}
-	if !sameAssetPath(resolvedPath, defaultPath) {
+	if !sameAssetName(resolvedPath, defaultPath) {
 		return resolvedPath, nil
 	}
 	if err := ensureRegularFile(resolvedPath); err == nil {

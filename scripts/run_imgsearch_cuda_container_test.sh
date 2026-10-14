@@ -75,13 +75,13 @@ if [[ "$default_addr" != "127.0.0.1:8080" ]]; then
   exit 1
 fi
 default_model="$(extract_flag_value "-llama-native-model-path" "$args_file")"
-if [[ "$default_model" != "$tmp_dir/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/Qwen3-VL-Embedding-2B-Q6_K.gguf" ]]; then
-  echo "expected default 2B model path, got '$default_model'" >&2
+if [[ "$default_model" != "$tmp_dir/models/lainsoykaf/WeMM-Embedding-2B-GGUF/WeMM-Embedding-2B-Q4_K_M.gguf" ]]; then
+  echo "expected default model path, got '$default_model'" >&2
   exit 1
 fi
 default_mmproj="$(extract_flag_value "-llama-native-mmproj-path" "$args_file")"
-if [[ "$default_mmproj" != "$tmp_dir/models/VesNFF/Qwen3-VL-Embedding-2B-GGUF/mmproj-Qwen3-VL-Embedding-2B-f16.gguf" ]]; then
-  echo "expected default 2B mmproj path, got '$default_mmproj'" >&2
+if [[ "$default_mmproj" != "$tmp_dir/models/lainsoykaf/WeMM-Embedding-2B-GGUF/mmproj-WeMM-Embedding-2B-f16.gguf" ]]; then
+  echo "expected default mmproj path, got '$default_mmproj'" >&2
   exit 1
 fi
 default_dims="$(extract_flag_value "-llama-native-dimensions" "$args_file")"
