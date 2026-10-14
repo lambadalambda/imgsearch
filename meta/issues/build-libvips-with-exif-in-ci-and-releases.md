@@ -17,3 +17,7 @@ The shared `native-deps` GitHub action builds libvips 8.18 from source without `
 ## Notes
 
 - The rolling release does not wait for CI; see [gate rolling release publication](gate-rolling-release-publication-on-verification.md).
+
+## Outcome — 2026-10-14
+
+Fixed in `3d983c3`: `libexif-dev` is installed, libvips is configured with `-Dexif=enabled` (the build now fails instead of silently dropping EXIF), and the libvips cache key moved to `v2`. CI run 38597501529 passed on Ubuntu and macOS, including `TestThumbnailWebP/rotated`. Rolling Release run 38597501403 built Linux libvips with "EXIF metadata support with libexif: YES"; the archive bundles `libexif` through the existing `ldd`-based dependency copy. The release published earlier from `5f05d96` lacked EXIF support and is replaced by this run.
