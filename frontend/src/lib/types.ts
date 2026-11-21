@@ -23,6 +23,12 @@ export interface ImageRecord {
   description?: string;
   full_description?: string;
   tags?: string[];
+  people: PersonRef[];
+}
+
+export interface PersonRef {
+  id: number;
+  name: string;
 }
 
 export interface VideoRecord extends ImageRecord {
@@ -54,6 +60,7 @@ export interface SearchResult {
   description?: string;
   full_description?: string;
   tags?: string[];
+  people: PersonRef[];
   is_anchor?: boolean;
   /** Tag-based searches set this to "tag" so the UI can suppress similarity badges. */
   search_source?: "tag" | "embedding" | string;
@@ -137,7 +144,7 @@ export interface BuildInfo {
 export type CapabilityState = "configured" | "disabled" | "unconfigured" | "unknown";
 
 export interface StatsResponse {
-  capabilities?: { worker: "local" | "unknown"; annotations: CapabilityState; transcription: CapabilityState };
+  capabilities?: { worker: "local" | "unknown"; annotations: CapabilityState; transcription: CapabilityState; faces?: CapabilityState };
   video_transcription_empty?: number;
   build?: BuildInfo;
   images_total: number;
@@ -191,6 +198,7 @@ export interface Pin {
   fullDescription?: string;
   filename: string;
   tags: string[];
+  people: PersonRef[];
   /** 0-1 similarity (1 - distance) when this pin came from a search result. */
   matchScore?: number;
   /** Raw backend vector distance; lower is closer. Used for Feed reranking. */
@@ -344,6 +352,50 @@ export interface CollectionItemsPage {
   items: CollectionItem[];
   total: number;
   item_count: number;
+}
+
+export interface Person {
+  id: number;
+  uuid: string;
+  name: string;
+  created_at: string;
+}
+
+export interface PersonCover {
+  image_id: number;
+  thumbnail_path?: string;
+}
+
+/** Index-only summary; detail and CRUD continue to use basic Person. */
+export interface PersonSummary extends Person {
+  face_count: number;
+  covers: PersonCover[];
+}
+
+export type PersonItem =
+  | { media_type: "image"; image: ImageRecord }
+  | { media_type: "video"; video: VideoRecord };
+
+export interface PersonItemsPage {
+  items: PersonItem[];
+  total: number;
+  item_count: number;
+}
+
+export interface FaceView {
+  id: number;
+  image_id: number;
+  person_id: number | null;
+  box_x: number;
+  box_y: number;
+  box_w: number;
+  box_h: number;
+  confidence: number;
+  created_at: string;
+  original_name: string;
+  storage_path: string;
+  thumbnail_path?: string;
+  captured_at?: string;
 }
 
 export interface DuplicateConsolidationRequest {

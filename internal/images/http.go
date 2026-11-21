@@ -35,14 +35,15 @@ type ImageItem struct {
 	// CapturedAt is the EXIF capture time when known, else the upload time.
 	CapturedAt string `json:"captured_at"`
 	// AnnotationState is one of queued, annotating, failed, done, none.
-	AnnotationState     string   `json:"annotation_state"`
-	AnnotationUpdatedAt string   `json:"annotation_updated_at"`
-	Title               string   `json:"title,omitempty"`
-	Summary             string   `json:"summary,omitempty"`
-	Description         string   `json:"description,omitempty"`
-	FullDescription     string   `json:"full_description,omitempty"`
-	Tags                []string `json:"tags,omitempty"`
-	ThumbnailPath       string   `json:"thumbnail_path,omitempty"`
+	AnnotationState     string      `json:"annotation_state"`
+	AnnotationUpdatedAt string      `json:"annotation_updated_at"`
+	Title               string      `json:"title,omitempty"`
+	Summary             string      `json:"summary,omitempty"`
+	Description         string      `json:"description,omitempty"`
+	FullDescription     string      `json:"full_description,omitempty"`
+	Tags                []string    `json:"tags,omitempty"`
+	ThumbnailPath       string      `json:"thumbnail_path,omitempty"`
+	People              []PersonRef `json:"people"`
 	// FileSizeBytes is populated only by duplicate discovery when safely available.
 	FileSizeBytes *int64 `json:"file_size_bytes,omitempty"`
 }
@@ -128,8 +129,30 @@ LIMIT ? OFFSET ?
 	if err := rows.Err(); err != nil {
 		return ListResponse{}, fmt.Errorf("iterate image rows: %w", err)
 	}
+	if err := attachPeople(ctx, db, items); err != nil {
+		return ListResponse{}, err
+	}
 
 	return ListResponse{Images: items, Total: total}, nil
+}
+
+// attachPeople fills each item's grouped persons with one batched query.
+func attachPeople(ctx context.Context, db *sql.DB, items []ImageItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.ImageID)
+	}
+	byImage, err := PeopleForImages(ctx, db, ids)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		items[i].People = byImage[items[i].ImageID]
+	}
+	return nil
 }
 
 // imageItemSelect lists the columns scanImageItem expects; it takes the
@@ -160,6 +183,7 @@ type rowScanner interface {
 
 func scanImageItem(row rowScanner) (ImageItem, error) {
 	var item ImageItem
+	item.People = []PersonRef{}
 	var thumb sql.NullString
 	var tagsJSON string
 	var title string
@@ -218,7 +242,11 @@ WHERE i.id = ?`, modelID, jobkind.EmbedImage, modelID, jobkind.AnnotateImage, im
 		}
 		return ImageItem{}, err
 	}
-	return item, nil
+	items := []ImageItem{item}
+	if err := attachPeople(ctx, db, items); err != nil {
+		return ImageItem{}, err
+	}
+	return items[0], nil
 }
 
 // Update applies a metadata patch (manual title and tags) and returns the

@@ -10,6 +10,7 @@ import (
 
 	"imgsearch/internal/annotationtext"
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/images"
 	"imgsearch/internal/jobkind"
 	"imgsearch/internal/mediaops"
 	"imgsearch/internal/nsfwsql"
@@ -23,27 +24,28 @@ type Handler struct {
 }
 
 type VideoItem struct {
-	VideoID         int64    `json:"video_id"`
-	ImageID         int64    `json:"image_id,omitempty"`
-	MediaType       string   `json:"media_type"`
-	OriginalName    string   `json:"original_name"`
-	StoragePath     string   `json:"storage_path"`
-	PreviewPath     string   `json:"preview_path,omitempty"`
-	PreviewWidth    int      `json:"preview_width,omitempty"`
-	PreviewHeight   int      `json:"preview_height,omitempty"`
-	TranscriptText  string   `json:"transcript_text,omitempty"`
-	Title           string   `json:"title,omitempty"`
-	Summary         string   `json:"summary,omitempty"`
-	Description     string   `json:"description,omitempty"`
-	FullDescription string   `json:"full_description,omitempty"`
-	Tags            []string `json:"tags,omitempty"`
-	MimeType        string   `json:"mime_type"`
-	DurationMS      int64    `json:"duration_ms"`
-	Width           int      `json:"width"`
-	Height          int      `json:"height"`
-	FrameCount      int      `json:"frame_count"`
-	IndexState      string   `json:"index_state"`
-	CreatedAt       string   `json:"created_at"`
+	VideoID         int64              `json:"video_id"`
+	ImageID         int64              `json:"image_id,omitempty"`
+	MediaType       string             `json:"media_type"`
+	OriginalName    string             `json:"original_name"`
+	StoragePath     string             `json:"storage_path"`
+	PreviewPath     string             `json:"preview_path,omitempty"`
+	PreviewWidth    int                `json:"preview_width,omitempty"`
+	PreviewHeight   int                `json:"preview_height,omitempty"`
+	TranscriptText  string             `json:"transcript_text,omitempty"`
+	Title           string             `json:"title,omitempty"`
+	Summary         string             `json:"summary,omitempty"`
+	Description     string             `json:"description,omitempty"`
+	FullDescription string             `json:"full_description,omitempty"`
+	Tags            []string           `json:"tags,omitempty"`
+	MimeType        string             `json:"mime_type"`
+	People          []images.PersonRef `json:"people"`
+	DurationMS      int64              `json:"duration_ms"`
+	Width           int                `json:"width"`
+	Height          int                `json:"height"`
+	FrameCount      int                `json:"frame_count"`
+	IndexState      string             `json:"index_state"`
+	CreatedAt       string             `json:"created_at"`
 	// CapturedAt mirrors CreatedAt: videos carry no capture metadata yet.
 	CapturedAt string `json:"captured_at"`
 	// AnnotationState is one of queued, annotating, failed, done, none.
@@ -277,10 +279,24 @@ LIMIT ? OFFSET ?
 		item.Description = text.Description
 		item.FullDescription = text.FullDescription
 		item.MediaType = "video"
+		item.People = []images.PersonRef{}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return ListResponse{}, fmt.Errorf("iterate video rows: %w", err)
+	}
+	if len(items) > 0 {
+		ids := make([]int64, 0, len(items))
+		for _, item := range items {
+			ids = append(ids, item.VideoID)
+		}
+		byVideo, err := images.PeopleForVideos(ctx, db, ids)
+		if err != nil {
+			return ListResponse{}, err
+		}
+		for i := range items {
+			items[i].People = byVideo[items[i].VideoID]
+		}
 	}
 
 	return ListResponse{Videos: items, Total: total}, nil

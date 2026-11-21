@@ -16,8 +16,10 @@ import (
 	"imgsearch/internal/annotationtext"
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/faces"
 	"imgsearch/internal/jobkind"
 	"imgsearch/internal/mediaops"
+	"imgsearch/internal/people"
 	"imgsearch/internal/tagutil"
 	"imgsearch/internal/transcribe"
 	"imgsearch/internal/vectorindex"
@@ -38,6 +40,7 @@ type Queue struct {
 	TextEmbedder    embedder.TextEmbedder
 	Annotator       embedder.ImageAnnotator
 	Transcriber     transcribe.VideoTranscriber
+	FaceDetector    people.Detector
 	Index           vectorindex.VectorIndex
 }
 
@@ -568,6 +571,8 @@ func (q *Queue) executeClaimedJob(ctx context.Context, job claimedJob) (bool, bo
 	switch job.Kind {
 	case jobkind.EmbedImage:
 		result = q.handleEmbedImageJob(ctx, job, absPath, imageTask)
+	case jobkind.IndexFaces:
+		result = q.handleIndexFacesJob(ctx, job, absPath)
 	case jobkind.AnnotateImage:
 		result = q.handleAnnotateImageJob(ctx, job, absPath, imageTask)
 	case jobkind.AnnotateVideo:
@@ -645,6 +650,29 @@ func (q *Queue) handleEmbedImageJob(ctx context.Context, job claimedJob, absPath
 	if err := q.Index.Upsert(ctx, job.ImageID, job.ModelID, vec); err != nil {
 		_ = q.failOrRetry(ctx, job, err)
 		return jobHandlerResult{processed: true, skipCompletion: true, err: err}
+	}
+	return jobHandlerResult{processed: true, batchProcessed: true}
+}
+
+func (q *Queue) handleIndexFacesJob(ctx context.Context, job claimedJob, absPath string) jobHandlerResult {
+	if q.FaceDetector == nil {
+		return jobHandlerResult{}
+	}
+	log.Printf("worker detecting faces image id=%d", job.ImageID)
+	dets, err := q.FaceDetector.DetectFaces(ctx, absPath)
+	if err != nil {
+		if errors.Is(err, faces.ErrUnsupportedFormat) {
+			// Formats with no pure-Go decoder are skipped, not failed:
+			// retrying would never succeed.
+			log.Printf("worker skipping face detection image id=%d: %v", job.ImageID, err)
+			return jobHandlerResult{processed: true, batchProcessed: true}
+		}
+		_ = q.failOrRetry(ctx, job, err)
+		return jobHandlerResult{processed: true, skipCompletion: true}
+	}
+	if err := people.AssignDetections(ctx, q.DB, job.ImageID, dets, people.DefaultMatchThreshold); err != nil {
+		_ = q.failOrRetry(ctx, job, err)
+		return jobHandlerResult{processed: true, skipCompletion: true}
 	}
 	return jobHandlerResult{processed: true, batchProcessed: true}
 }
@@ -1379,6 +1407,12 @@ func (q *Queue) claimableKindSQL() (string, string) {
 	kinds := []string{embedImageKind}
 	orderParts := []string{fmt.Sprintf("WHEN %s THEN 0", embedImageKind)}
 	priority := 1
+	if q.FaceDetector != nil {
+		indexFacesKind := quoteJobKindSQL(jobkind.IndexFaces)
+		kinds = append(kinds, indexFacesKind)
+		orderParts = append(orderParts, fmt.Sprintf("WHEN %s THEN %d", indexFacesKind, priority))
+		priority++
+	}
 	if q.Transcriber != nil {
 		transcribeVideoKind := quoteJobKindSQL(jobkind.TranscribeVideo)
 		kinds = append(kinds, transcribeVideoKind)

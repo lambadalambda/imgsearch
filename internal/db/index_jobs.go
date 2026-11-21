@@ -127,6 +127,33 @@ WHERE trim(COALESCE(v.transcript_text, '')) = ''
 	return rows, nil
 }
 
+// EnsureFaceJobsForModel enqueues face-detection jobs for images that have
+// none. Faces apply to every image row, including sampled video frames, since
+// video membership is derived through video_frames.
+func EnsureFaceJobsForModel(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
+	if db == nil {
+		return 0, fmt.Errorf("db is nil")
+	}
+	if modelID <= 0 {
+		return 0, fmt.Errorf("invalid model id")
+	}
+
+	res, err := db.ExecContext(ctx, `
+INSERT OR IGNORE INTO index_jobs(kind, image_id, model_id, state)
+SELECT ?, i.id, ?, 'pending'
+FROM images i
+`, jobkind.IndexFaces, modelID)
+	if err != nil {
+		return 0, fmt.Errorf("ensure face jobs for model %d: %w", modelID, err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected for face jobs model %d: %w", modelID, err)
+	}
+	return rows, nil
+}
+
 func EnsureVideoAnnotationJobsForModel(ctx context.Context, db *sql.DB, modelID int64) (int64, error) {
 	if db == nil {
 		return 0, fmt.Errorf("db is nil")

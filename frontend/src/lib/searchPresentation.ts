@@ -28,6 +28,8 @@ export function filterSummary(
   if (mode === "duplicates") return `Images only · ${visibility}`;
   if (mode === "collection" || mode === "collections")
     return `All saved media · ${visibility}`;
+  if (mode === "person" || mode === "people")
+    return `All grouped faces · ${visibility}`;
   const ranked = ["search", "similar", "byimage"].includes(mode);
   return `All media · ${ranked ? "Relevance · " : ""}${visibility}`;
 }

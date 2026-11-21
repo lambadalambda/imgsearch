@@ -43,7 +43,7 @@ func NewRetryFailedHandler(h *RetryFailedHandler) http.Handler {
 		if query.Has("kind") {
 			kind := query.Get("kind")
 			switch kind {
-			case jobkind.EmbedImage, jobkind.AnnotateImage, jobkind.AnnotateVideo, jobkind.TranscribeVideo:
+			case jobkind.EmbedImage, jobkind.AnnotateImage, jobkind.AnnotateVideo, jobkind.TranscribeVideo, jobkind.IndexFaces:
 			default:
 				httputil.WriteJSONError(w, http.StatusBadRequest, "unknown job kind")
 				return

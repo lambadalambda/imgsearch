@@ -326,6 +326,36 @@ CREATE INDEX idx_collection_items_image_lookup ON collection_items(image_id) WHE
 CREATE INDEX idx_collection_items_video_lookup ON collection_items(video_id) WHERE video_id IS NOT NULL;
 `,
 	},
+	{
+		// People / face grouping. A face is always detected on an image row;
+		// video membership is derived through video_frames, so faces never
+		// reference videos directly. person_id is nullable so detector output
+		// can sit in an unassigned pool before clustering assigns it.
+		// Box coordinates are relative (0..1) so they survive re-encoding.
+		version: 17,
+		sql: `
+CREATE TABLE persons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  uuid TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE face_detections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  image_id INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+  person_id INTEGER REFERENCES persons(id) ON DELETE SET NULL,
+  box_x REAL NOT NULL DEFAULT 0,
+  box_y REAL NOT NULL DEFAULT 0,
+  box_w REAL NOT NULL DEFAULT 0,
+  box_h REAL NOT NULL DEFAULT 0,
+  embedding_blob BLOB,
+  confidence REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_face_detections_person ON face_detections(person_id);
+CREATE INDEX idx_face_detections_image ON face_detections(image_id);
+`,
+	},
 }
 
 func LatestVersion() int {

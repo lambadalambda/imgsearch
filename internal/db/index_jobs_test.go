@@ -71,6 +71,26 @@ func TestEnsureIndexJobsForModelEnqueuesMissingRows(t *testing.T) {
 	}
 }
 
+func TestEnsureFaceJobsForModelEnqueuesAllImages(t *testing.T) {
+	dbConn := openIndexJobsDB(t)
+
+	inserted, err := EnsureFaceJobsForModel(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("ensure face jobs: %v", err)
+	}
+	if inserted != 3 {
+		t.Fatalf("inserted: got=%d want=3", inserted)
+	}
+
+	insertedAgain, err := EnsureFaceJobsForModel(context.Background(), dbConn, 1)
+	if err != nil {
+		t.Fatalf("ensure face jobs second run: %v", err)
+	}
+	if insertedAgain != 0 {
+		t.Fatalf("inserted second run: got=%d want=0", insertedAgain)
+	}
+}
+
 func TestEnsureAnnotationJobsForModelEnqueuesMissingAnnotationRows(t *testing.T) {
 	dbConn := openIndexJobsDB(t)
 

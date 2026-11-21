@@ -182,6 +182,50 @@ func TestStoreCreatesImageAndQueueJob(t *testing.T) {
 	}
 }
 
+func TestStoreEnqueuesFaceJobWhenEnabled(t *testing.T) {
+	svc, sqlDB := setupService(t)
+	svc.EnableFaces = true
+
+	out, err := svc.Store(context.Background(), "sample.png", bytes.NewReader(pngBytes(t)))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	if out.Duplicate {
+		t.Fatal("expected new image, got duplicate")
+	}
+
+	var faceJobs int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'index_faces' AND image_id = ?`, out.ImageID).Scan(&faceJobs); err != nil {
+		t.Fatalf("count face jobs: %v", err)
+	}
+	if faceJobs != 1 {
+		t.Fatalf("expected 1 face job, got %d", faceJobs)
+	}
+
+	var jobCount int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs`).Scan(&jobCount); err != nil {
+		t.Fatalf("count jobs: %v", err)
+	}
+	if jobCount != 3 {
+		t.Fatalf("expected 3 jobs, got %d", jobCount)
+	}
+}
+
+func TestStoreSkipsFaceJobByDefault(t *testing.T) {
+	svc, sqlDB := setupService(t)
+
+	if _, err := svc.Store(context.Background(), "sample.png", bytes.NewReader(pngBytes(t))); err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	var faceJobs int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM index_jobs WHERE kind = 'index_faces'`).Scan(&faceJobs); err != nil {
+		t.Fatalf("count face jobs: %v", err)
+	}
+	if faceJobs != 0 {
+		t.Fatalf("expected no face jobs by default, got %d", faceJobs)
+	}
+}
+
 func TestStoreIsIdempotentByContentHash(t *testing.T) {
 	svc, sqlDB := setupService(t)
 	content := pngBytes(t)

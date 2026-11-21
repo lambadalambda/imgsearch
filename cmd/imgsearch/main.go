@@ -19,7 +19,9 @@ import (
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/embedder/openaicompat"
+	"imgsearch/internal/faces"
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/people"
 	"imgsearch/internal/settings"
 	"imgsearch/internal/transcribe"
 	"imgsearch/internal/transcribe/parakeetonnx"
@@ -285,6 +287,34 @@ func main() {
 		log.Printf("video transcription disabled: pass -parakeet-onnxruntime-lib <path to the ONNX Runtime shared library> to enable it (release archives bundle it under lib/ and run.sh passes it; source builds: scripts/resolve_onnxruntime_lib.sh)")
 	}
 
+	var faceDetector people.Detector
+	facesLib := strings.TrimSpace(cfg.FacesONNXRuntimeLib)
+	if facesLib == "" {
+		facesLib = strings.TrimSpace(cfg.ParakeetONNXRuntimeLib)
+	}
+	if cfg.FacesEnabled && facesLib != "" {
+		detPath, recPath, err := ensureDefaultFaceAssets(rootCtx, cfg.FacesDetModelPath, cfg.FacesRecModelPath)
+		if err != nil {
+			log.Fatalf("ensure face assets: %v", err)
+		}
+		faceDetector = &faces.Engine{Config: faces.EngineConfig{
+			ONNXRuntimeLib: facesLib,
+			DetModelPath:   detPath,
+			RecModelPath:   recPath,
+			UseCoreML:      cfg.FacesONNXCoreML,
+		}}
+		enqueuedFaceJobs, err := db.EnsureFaceJobsForModel(rootCtx, sqlDB, modelID)
+		if err != nil {
+			log.Fatalf("ensure face jobs: %v", err)
+		}
+		if enqueuedFaceJobs > 0 {
+			log.Printf("enqueued %d face jobs for model_id=%d", enqueuedFaceJobs, modelID)
+		}
+		log.Printf("face grouping enabled via %s", detPath)
+	} else {
+		log.Printf("face grouping disabled: pass -faces-onnxruntime-lib <path to the ONNX Runtime shared library> (or -parakeet-onnxruntime-lib) to enable it with -enable-faces")
+	}
+
 	var imageAnnotator embedder.ImageAnnotator
 	var modelSwitchboard *llamaModelSwitchboard
 	var annotationResolver *annotatorResolver
@@ -346,6 +376,9 @@ func main() {
 	if closer, ok := videoTranscriber.(app.Closer); ok {
 		closers = append(closers, closer)
 	}
+	if closer, ok := faceDetector.(app.Closer); ok {
+		closers = append(closers, closer)
+	}
 	if modelSwitchboard != nil {
 		closers = append(closers, modelSwitchboard)
 	} else if closer, ok := activeEmbedder.(app.Closer); ok {
@@ -366,6 +399,7 @@ func main() {
 		Embedder:                   activeEmbedder,
 		Annotator:                  imageAnnotator,
 		Transcriber:                videoTranscriber,
+		FaceDetector:               faceDetector,
 		Index:                      index,
 		Closers:                    closers,
 		WorkerLeaseDuration:        30 * time.Second,

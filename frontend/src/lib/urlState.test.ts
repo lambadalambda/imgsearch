@@ -7,6 +7,9 @@ describe("parseSearch", () => {
     expect(parseSearch("?view=stats")).toEqual({ mode: "stats" });
     expect(parseSearch("?view=settings")).toEqual({ mode: "settings" });
     expect(parseSearch("?view=duplicates")).toEqual({ mode: "duplicates" });
+    expect(parseSearch("?view=people")).toEqual({ mode: "people" });
+    expect(parseSearch("?view=person&person_id=7")).toEqual({ mode: "person", personId: 7 });
+    expect(parseSearch("?view=person&person_id=no")).toEqual({ mode: "people" });
     expect(parseSearch("?q=warm+portrait")).toEqual({ mode: "search", query: "warm portrait" });
     expect(parseSearch("?similar=42")).toEqual({ mode: "similar", similarTo: 42 });
     expect(parseSearch("?tag=cat&tag=indoor&tag_mode=all")).toEqual({ mode: "tag", tags: ["cat", "indoor"], tagMode: "all" });
@@ -28,6 +31,8 @@ describe("searchFor", () => {
       { mode: "settings" },
       { mode: "duplicates" },
       { mode: "search", query: "a b & c" },
+      { mode: "people" },
+      { mode: "person", personId: 7 },
       { mode: "similar", similarTo: 9 },
       { mode: "tag", tags: ["cat", "sun set"], tagMode: "any" },
       { mode: "tag", tags: ["cat"], tagMode: "all" },

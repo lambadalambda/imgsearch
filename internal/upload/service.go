@@ -184,6 +184,9 @@ type Service struct {
 	VideoFrameCountForUpload func(context.Context) (int, error)
 	VideoSampler             VideoSampler
 	EnableVideoTranscripts   bool
+	// EnableFaces enqueues face-detection jobs for new images and sampled
+	// video frames. Off until a face backend is configured.
+	EnableFaces bool
 	// DeduplicateStrict opts into unattended, lossy dHash matching of incoming
 	// standalone images. It never sweeps existing duplicate groups.
 	DeduplicateStrict bool
@@ -386,6 +389,16 @@ ON CONFLICT DO NOTHING
 `, jobkind.AnnotateImage, s.ModelID, out.ImageID); err != nil {
 		_ = tx.Rollback()
 		return StoreResult{}, fmt.Errorf("insert annotation job: %w", err)
+	}
+	if s.EnableFaces {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO index_jobs(kind, image_id, model_id, state)
+VALUES(?, ?, ?, 'pending')
+ON CONFLICT DO NOTHING
+`, jobkind.IndexFaces, out.ImageID, s.ModelID); err != nil {
+			_ = tx.Rollback()
+			return StoreResult{}, fmt.Errorf("insert face job: %w", err)
+		}
 	}
 
 	if !out.Duplicate || out.ReplacedImageID != 0 {
@@ -591,6 +604,15 @@ VALUES(?, ?, ?, 'pending')
 ON CONFLICT DO NOTHING
 `, jobkind.EmbedImage, imageID, s.ModelID); err != nil {
 		return 0, "", fmt.Errorf("insert sampled frame embed job: %w", err)
+	}
+	if s.EnableFaces {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO index_jobs(kind, image_id, model_id, state)
+VALUES(?, ?, ?, 'pending')
+ON CONFLICT DO NOTHING
+`, jobkind.IndexFaces, imageID, s.ModelID); err != nil {
+			return 0, "", fmt.Errorf("insert sampled frame face job: %w", err)
+		}
 	}
 
 	if rows > 0 {

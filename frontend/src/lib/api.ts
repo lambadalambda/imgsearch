@@ -1,4 +1,4 @@
-import type { Collection, CollectionSummary, CollectionItemsPage, ImagesPage, ModelListResult, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse, DuplicateConsolidationRequest, DuplicateConsolidationPreview, MediaStatusResponse } from "./types";
+import type { Collection, CollectionSummary, CollectionItemsPage, FaceView, ImagesPage, ModelListResult, Person, PersonItemsPage, PersonSummary, ProbeResult, ReannotateAllResponse, SearchResponse, SettingsResponse, SettingsUpdateRequest, StatsResponse, TagCloudResponse, UploadBatchResponse, VideosPage, ImageRecord, VideoRecord, DuplicatesResponse, DuplicateConsolidationRequest, DuplicateConsolidationPreview, MediaStatusResponse } from "./types";
 
 class ApiError extends Error {
   constructor(
@@ -489,6 +489,69 @@ export function listCollectionItems(id: number, opts: { limit?: number; offset?:
 
 export function setCollectionMembership(id: number, target: CollectionTarget, saved: boolean): Promise<void> {
   return getJSON(`/api/collections/${id}/items/${target.kind}/${target.id}`, { method: saved ? "PUT" : "DELETE" });
+}
+
+export function listPeople(signal?: AbortSignal): Promise<{ people: Person[] }> {
+  return getJSON("/api/people", { signal });
+}
+
+export function listPersonSummaries(opts: { signal?: AbortSignal } = {}): Promise<{ people: PersonSummary[] }> {
+  return getJSON("/api/people?summary=true", { signal: opts.signal });
+}
+
+export function createPerson(name?: string): Promise<Person> {
+  return getJSON("/api/people", jsonInit("POST", name === undefined ? {} : { name }));
+}
+
+export function getPerson(id: number, signal?: AbortSignal): Promise<Person> {
+  return getJSON(`/api/people/${id}`, { signal });
+}
+
+export function renamePerson(id: number, name: string): Promise<Person> {
+  return getJSON(`/api/people/${id}`, jsonInit("PATCH", { name }));
+}
+
+export function deletePerson(id: number): Promise<void> {
+  return getJSON(`/api/people/${id}`, { method: "DELETE" });
+}
+
+export function listPersonItems(id: number, opts: { limit?: number; offset?: number; includeNSFW?: boolean; signal?: AbortSignal } = {}): Promise<PersonItemsPage> {
+  const params = new URLSearchParams({
+    limit: String(opts.limit ?? 50), offset: String(opts.offset ?? 0),
+    include_nsfw: String(opts.includeNSFW ?? false),
+  });
+  return getJSON(`/api/people/${id}/items?${params}`, { signal: opts.signal });
+}
+
+export function mergePeople(fromIds: number[], intoId: number): Promise<void> {
+  return getJSON("/api/people/merge", jsonInit("POST", { from_ids: fromIds, into_id: intoId }));
+}
+
+export function splitPerson(id: number, faceIds: number[], name?: string): Promise<SplitResult> {
+  return getJSON(`/api/people/${id}/split`, jsonInit("POST", name === undefined ? { face_ids: faceIds } : { face_ids: faceIds, name }));
+}
+
+export interface SplitResult {
+  person: Person;
+  deleted_source_id: number | null;
+}
+
+export function listFaces(opts: { personId?: number; unassigned?: boolean; limit?: number; offset?: number; signal?: AbortSignal } = {}): Promise<{ faces: FaceView[] }> {
+  const params = new URLSearchParams({
+    limit: String(opts.limit ?? 100), offset: String(opts.offset ?? 0),
+  });
+  if (opts.personId !== undefined) params.set("person_id", String(opts.personId));
+  if (opts.unassigned) params.set("unassigned", "true");
+  return getJSON(`/api/faces?${params}`, { signal: opts.signal });
+}
+
+export function reassignFace(faceId: number, personId: number | null): Promise<ReassignResult> {
+  return getJSON(`/api/faces/${faceId}/reassign`, jsonInit("POST", { person_id: personId }));
+}
+
+export interface ReassignResult {
+  face: FaceView;
+  deleted_person_id: number | null;
 }
 
 /** Preview by default. Confirm only with the token from the reviewed preview. */

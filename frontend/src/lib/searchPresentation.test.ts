@@ -14,6 +14,8 @@ describe("search scope presentation", () => {
       "duplicates",
       "collections",
       "collection",
+      "people",
+      "person",
     ] as const) {
       expect(hasSearchChrome(mode)).toBe(false);
     }
@@ -44,6 +46,9 @@ describe("search scope presentation", () => {
     expect(filterSummary("collection", "videos", "captured", false)).toBe(
       "All saved media · NSFW hidden",
     );
+    expect(filterSummary("person", "videos", "newest", true)).toBe(
+      "All grouped faces · NSFW shown",
+    );
   });
 
   it("does not present capped ranked batches as exhaustive totals", () => {
@@ -52,7 +57,7 @@ describe("search scope presentation", () => {
         "Visible results: 48 · Top results returned (not exhaustive)",
       );
     }
-    for (const mode of ["library", "tag", "collection"] as const) {
+    for (const mode of ["library", "tag", "collection", "person"] as const) {
       expect(resultsCountLabel(mode, 48, 150)).toBe(
         "Visible results: 48 · 150 results in this scope",
       );

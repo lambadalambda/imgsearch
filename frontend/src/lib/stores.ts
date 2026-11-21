@@ -184,6 +184,11 @@ export const collectionEpoch = writable(0);
 export function refreshCollections(): void { collectionEpoch.update((n) => n + 1); }
 export function setCollections(): void { mode.set({ mode: "collections" }); }
 export function setCollection(collectionId: number): void { mode.set({ mode: "collection", collectionId }); }
+export const personName = writable("");
+export const personEpoch = writable(0);
+export function refreshPeople(): void { personEpoch.update((n) => n + 1); }
+export function setPeople(): void { mode.set({ mode: "people" }); }
+export function setPerson(personId: number): void { mode.set({ mode: "person", personId }); }
 // Capture before the underlying view becomes inert (which blurs its focus).
 export let collectionPickerOpener: HTMLElement | null = null;
 export function openCollectionPicker(pin: Pin): void {
@@ -191,9 +196,11 @@ export function openCollectionPicker(pin: Pin): void {
   collectionPickerTarget.set(pin);
 }
 
-export const headline = derived([mode, collectionName], ([$mode, $collectionName]) => {
+export const headline = derived([mode, collectionName, personName], ([$mode, $collectionName, $personName]) => {
   if ($mode.mode === "collections") return "Collections";
   if ($mode.mode === "collection") return $collectionName || "Collection";
+  if ($mode.mode === "people") return "People";
+  if ($mode.mode === "person") return $personName || "Person";
   if ($mode.mode === "search" && $mode.query) {
     return $mode.query;
   }

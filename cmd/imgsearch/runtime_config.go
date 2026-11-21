@@ -61,6 +61,11 @@ type runtimeConfig struct {
 	ParakeetONNXBundleDir   string
 	ParakeetONNXRuntimeLib  string
 	ParakeetONNXCoreML      bool
+	FacesEnabled            bool
+	FacesDetModelPath       string
+	FacesRecModelPath       string
+	FacesONNXRuntimeLib     string
+	FacesONNXCoreML         bool
 	EnableAnnotations       bool
 	AnnotatorModelPath      string
 	AnnotatorMMProjPath     string
@@ -123,6 +128,11 @@ func defaultRuntimeConfig(getenv func(string) string) runtimeConfig {
 		ParakeetONNXBundleDir:   parakeetBundleDefault,
 		ParakeetONNXRuntimeLib:  strings.TrimSpace(getenv("PARAKEET_ONNXRUNTIME_LIB")),
 		ParakeetONNXCoreML:      getenv("PARAKEET_ONNX_COREML") == "1",
+		FacesEnabled:            true,
+		FacesDetModelPath:       defaultFacesDetModelPath,
+		FacesRecModelPath:       defaultFacesRecModelPath,
+		FacesONNXRuntimeLib:     strings.TrimSpace(getenv("FACES_ONNXRUNTIME_LIB")),
+		FacesONNXCoreML:         getenv("FACES_ONNX_COREML") == "1",
 		EnableAnnotations:       true,
 		AnnotatorVariant:        defaultLlamaNativeAnnotatorVariant,
 		AnnotatorGPULayers:      99,
@@ -175,6 +185,11 @@ func registerRuntimeFlags(fs *flag.FlagSet, cfg *runtimeConfig) {
 	fs.StringVar(&cfg.ParakeetONNXBundleDir, "parakeet-onnx-bundle-dir", cfg.ParakeetONNXBundleDir, "directory containing the Parakeet ONNX bundle for video transcription")
 	fs.StringVar(&cfg.ParakeetONNXRuntimeLib, "parakeet-onnxruntime-lib", cfg.ParakeetONNXRuntimeLib, "path to the ONNX Runtime shared library used for Parakeet video transcription")
 	fs.BoolVar(&cfg.ParakeetONNXCoreML, "parakeet-onnx-coreml", cfg.ParakeetONNXCoreML, "whether to request the CoreML execution provider for Parakeet ONNX video transcription")
+	fs.BoolVar(&cfg.FacesEnabled, "enable-faces", cfg.FacesEnabled, "whether to detect faces and group people (requires the ONNX Runtime shared library)")
+	fs.StringVar(&cfg.FacesDetModelPath, "faces-det-model-path", cfg.FacesDetModelPath, "path to the SCRFD face detection ONNX model")
+	fs.StringVar(&cfg.FacesRecModelPath, "faces-rec-model-path", cfg.FacesRecModelPath, "path to the ArcFace-class face recognition ONNX model")
+	fs.StringVar(&cfg.FacesONNXRuntimeLib, "faces-onnxruntime-lib", cfg.FacesONNXRuntimeLib, "path to the ONNX Runtime shared library used for face grouping (defaults to the Parakeet library)")
+	fs.BoolVar(&cfg.FacesONNXCoreML, "faces-onnx-coreml", cfg.FacesONNXCoreML, "whether to request the CoreML execution provider for face grouping")
 	fs.BoolVar(&cfg.EnableAnnotations, "enable-annotations", cfg.EnableAnnotations, "whether to load and run image annotation models")
 	fs.StringVar(&cfg.AnnotatorModelPath, "llama-native-annotator-model-path", cfg.AnnotatorModelPath, "optional path to a separate llama.cpp GGUF vision model used only for image descriptions/tags")
 	fs.StringVar(&cfg.AnnotatorMMProjPath, "llama-native-annotator-mmproj-path", cfg.AnnotatorMMProjPath, "optional path to a separate llama.cpp GGUF mmproj used only for image descriptions/tags")

@@ -16,6 +16,7 @@ import (
 	"imgsearch/internal/annotationtext"
 	"imgsearch/internal/embedder"
 	"imgsearch/internal/httputil"
+	"imgsearch/internal/images"
 	"imgsearch/internal/nsfwsql"
 	"imgsearch/internal/tagutil"
 	"imgsearch/internal/thumbnails"
@@ -31,28 +32,29 @@ type Handler struct {
 }
 
 type SearchResult struct {
-	ImageID          int64    `json:"image_id"`
-	MediaType        string   `json:"media_type,omitempty"`
-	VideoID          int64    `json:"video_id,omitempty"`
-	PreviewPath      string   `json:"preview_path,omitempty"`
-	MatchTimestampMS int64    `json:"match_timestamp_ms,omitempty"`
-	TranscriptText   string   `json:"transcript_text,omitempty"`
-	SearchSource     string   `json:"search_source,omitempty"`
-	MimeType         string   `json:"mime_type,omitempty"`
-	DurationMS       int64    `json:"duration_ms,omitempty"`
-	Width            int      `json:"width,omitempty"`
-	Height           int      `json:"height,omitempty"`
-	FrameCount       int      `json:"frame_count,omitempty"`
-	Distance         float64  `json:"distance"`
-	OriginalName     string   `json:"original_name"`
-	StoragePath      string   `json:"storage_path"`
-	ThumbnailPath    string   `json:"thumbnail_path,omitempty"`
-	Title            string   `json:"title,omitempty"`
-	Summary          string   `json:"summary,omitempty"`
-	Description      string   `json:"description,omitempty"`
-	FullDescription  string   `json:"full_description,omitempty"`
-	Tags             []string `json:"tags,omitempty"`
-	IsAnchor         bool     `json:"is_anchor,omitempty"`
+	ImageID          int64              `json:"image_id"`
+	MediaType        string             `json:"media_type,omitempty"`
+	VideoID          int64              `json:"video_id,omitempty"`
+	PreviewPath      string             `json:"preview_path,omitempty"`
+	MatchTimestampMS int64              `json:"match_timestamp_ms,omitempty"`
+	TranscriptText   string             `json:"transcript_text,omitempty"`
+	SearchSource     string             `json:"search_source,omitempty"`
+	MimeType         string             `json:"mime_type,omitempty"`
+	DurationMS       int64              `json:"duration_ms,omitempty"`
+	Width            int                `json:"width,omitempty"`
+	Height           int                `json:"height,omitempty"`
+	FrameCount       int                `json:"frame_count,omitempty"`
+	Distance         float64            `json:"distance"`
+	OriginalName     string             `json:"original_name"`
+	StoragePath      string             `json:"storage_path"`
+	ThumbnailPath    string             `json:"thumbnail_path,omitempty"`
+	Title            string             `json:"title,omitempty"`
+	Summary          string             `json:"summary,omitempty"`
+	Description      string             `json:"description,omitempty"`
+	FullDescription  string             `json:"full_description,omitempty"`
+	Tags             []string           `json:"tags,omitempty"`
+	People           []images.PersonRef `json:"people"`
+	IsAnchor         bool               `json:"is_anchor,omitempty"`
 }
 
 type SearchResponse struct {
@@ -1108,7 +1110,44 @@ func (h *Handler) enrich(ctx context.Context, hits []vectorindex.SearchHit, incl
 			}
 		}
 	}
+	if err := h.attachPeople(ctx, results); err != nil {
+		return nil, err
+	}
 	return results, nil
+}
+
+// attachPeople fills each result's grouped persons with two batched
+// queries. Video results aggregate faces over sampled frames.
+func (h *Handler) attachPeople(ctx context.Context, results []SearchResult) error {
+	if len(results) == 0 {
+		return nil
+	}
+	imageIDs := make([]int64, 0, len(results))
+	videoIDs := make([]int64, 0, len(results))
+	for _, r := range results {
+		if r.MediaType == "video" && r.VideoID > 0 {
+			videoIDs = append(videoIDs, r.VideoID)
+		} else if r.ImageID > 0 {
+			imageIDs = append(imageIDs, r.ImageID)
+		}
+	}
+	byImage, err := images.PeopleForImages(ctx, h.DB, imageIDs)
+	if err != nil {
+		return err
+	}
+	byVideo, err := images.PeopleForVideos(ctx, h.DB, videoIDs)
+	if err != nil {
+		return err
+	}
+	for i := range results {
+		results[i].People = []images.PersonRef{}
+		if results[i].MediaType == "video" && results[i].VideoID > 0 {
+			results[i].People = byVideo[results[i].VideoID]
+		} else if results[i].ImageID > 0 {
+			results[i].People = byImage[results[i].ImageID]
+		}
+	}
+	return nil
 }
 
 func (h *Handler) searchByTags(ctx context.Context, tags []string, limit int, offset int, matchAll bool, includeNSFW bool) ([]SearchResult, int64, error) {
@@ -1390,6 +1429,9 @@ OFFSET ?
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("iterate tag match rows: %w", err)
 	}
+	if err := h.attachPeople(ctx, results); err != nil {
+		return nil, 0, err
+	}
 
 	return results, total, nil
 }
@@ -1552,6 +1594,9 @@ WHERE vte.model_id = ?
 	})
 	if len(results) > limit {
 		results = results[:limit]
+	}
+	if err := h.attachPeople(ctx, results); err != nil {
+		return nil, err
 	}
 	return results, nil
 }

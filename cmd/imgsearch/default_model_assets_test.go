@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"io"
 	"net/http"
@@ -226,6 +227,64 @@ func TestEnsureDefaultLlamaNativeAnnotatorAssetsForVariantRejectsUnknownVariant(
 	_, _, err := ensureDefaultLlamaNativeAnnotatorAssetsForVariant(context.Background(), "weird", "", "")
 	if err == nil {
 		t.Fatal("expected error for unknown annotator variant")
+	}
+}
+
+func TestEnsureDefaultFaceAssetsUsesCustomPathsWithoutDownload(t *testing.T) {
+	det, rec, err := ensureDefaultFaceAssets(context.Background(), "/custom/det.onnx", "/custom/rec.onnx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if det != "/custom/det.onnx" || rec != "/custom/rec.onnx" {
+		t.Fatalf("got %q %q", det, rec)
+	}
+}
+
+func TestExtractZipMembersAcceptsDotSlashDest(t *testing.T) {
+	// Regression: default face model paths carry a "./" prefix, which
+	// filepath.Join cleans away. The containment check must compare cleaned
+	// paths or every default install refuses its own download.
+	dir, err := os.MkdirTemp(".", "facestest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	zipPath := filepath.Join(dir, "models.zip")
+	w, err := os.Create(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(w)
+	for _, name := range []string{"det_10g.onnx", "w600k_r50.onnx"} {
+		f, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write([]byte("fake-" + name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"det_10g.onnx":   "./" + filepath.Join(dir, "det_10g.onnx"),
+		"w600k_r50.onnx": "./" + filepath.Join(dir, "w600k_r50.onnx"),
+	}
+	if err := extractZipMembers(zipPath, dir, want); err != nil {
+		t.Fatal(err)
+	}
+	for name, dest := range want {
+		content, err := os.ReadFile(dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(content) != "fake-"+name {
+			t.Fatalf("%s: got %q", name, content)
+		}
 	}
 }
 

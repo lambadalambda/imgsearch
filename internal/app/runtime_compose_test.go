@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"imgsearch/internal/db"
 	"imgsearch/internal/embedder"
+	"imgsearch/internal/people"
 	"imgsearch/internal/settings"
 	"imgsearch/internal/stats"
 	"imgsearch/internal/transcribe"
@@ -140,18 +141,27 @@ func (healthTranscriber) TranscribeVideo(context.Context, string) (transcribe.Tr
 	return transcribe.Transcript{}, nil
 }
 
+type healthFaceDetector struct{}
+
+func (healthFaceDetector) DetectFaces(context.Context, string) ([]people.Detection, error) {
+	return nil, nil
+}
+
 func TestRuntimeHealthCapabilities(t *testing.T) {
 	for _, tc := range []struct {
 		name                                   string
 		local, off, on, transcriber, annotator bool
+		face                                   bool
 		annotation, transcription, worker      string
+		faces                                  string
 	}{
-		{"API cannot know worker config", false, true, false, false, false, "unknown", "unknown", "unknown"},
-		{"disabled", true, true, false, false, true, "disabled", "disabled", "local"},
-		{"unconfigured", true, false, true, false, false, "unconfigured", "unconfigured", "local"},
-		{"transcriber configured", true, false, true, true, false, "unconfigured", "configured", "local"},
-		{"annotations configured", true, false, false, false, true, "configured", "disabled", "local"},
-		{"API even with local backends", false, false, true, true, true, "unknown", "unknown", "unknown"},
+		{"API cannot know worker config", false, true, false, false, false, false, "unknown", "unknown", "unknown", "unknown"},
+		{"disabled", true, true, false, false, true, false, "disabled", "disabled", "local", "unconfigured"},
+		{"unconfigured", true, false, true, false, false, false, "unconfigured", "unconfigured", "local", "unconfigured"},
+		{"transcriber configured", true, false, true, true, false, false, "unconfigured", "configured", "local", "unconfigured"},
+		{"annotations configured", true, false, false, false, true, false, "configured", "disabled", "local", "unconfigured"},
+		{"faces configured", true, false, false, false, false, true, "unconfigured", "disabled", "local", "configured"},
+		{"API even with local backends", false, false, true, true, true, true, "unknown", "unknown", "unknown", "unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			conn := openDB(t)
@@ -165,6 +175,9 @@ func TestRuntimeHealthCapabilities(t *testing.T) {
 			if tc.transcriber {
 				opts.Transcriber = healthTranscriber{}
 			}
+			if tc.face {
+				opts.FaceDetector = healthFaceDetector{}
+			}
 			runtime, err := NewRuntime(opts)
 			if err != nil {
 				t.Fatal(err)
@@ -175,7 +188,7 @@ func TestRuntimeHealthCapabilities(t *testing.T) {
 			if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
 			}
-			want := stats.Capabilities{Worker: tc.worker, Annotations: tc.annotation, Transcription: tc.transcription}
+			want := stats.Capabilities{Worker: tc.worker, Annotations: tc.annotation, Transcription: tc.transcription, Faces: tc.faces}
 			if got.Capabilities != want {
 				t.Fatalf("got %+v want %+v", got.Capabilities, want)
 			}

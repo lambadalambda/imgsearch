@@ -1,8 +1,7 @@
 <script lang="ts">
-  import type { CollectionCover } from "../lib/types";
   import { mediaUrl } from "../lib/utils";
 
-  let { covers }: { covers: CollectionCover[] } = $props();
+  let { covers }: { covers: Array<{ thumbnail_path?: string }> } = $props();
   let failed = $state<string[]>([]);
 </script>
 

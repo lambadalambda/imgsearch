@@ -10,6 +10,8 @@
   import Lightbox from "./components/Lightbox.svelte";
   import Upload from "./components/Upload.svelte";
   import CollectionsPane from "./components/CollectionsPane.svelte";
+  import PeoplePane from "./components/PeoplePane.svelte";
+  import PersonFaces from "./components/PersonFaces.svelte";
   import CollectionPicker from "./components/CollectionPicker.svelte";
   import Feed from "./components/Feed.svelte";
 
@@ -20,6 +22,8 @@
     mode,
     collectionEpoch,
     collectionName,
+    personEpoch,
+    personName,
     lightboxPin,
     collectionPickerTarget,
     pins,
@@ -38,7 +42,9 @@
   } from "./lib/stores";
   import {
     getCollection,
+    getPerson,
     listCollectionItems,
+    listPersonItems,
     listImages,
     listTagCloud,
     listVideos,
@@ -52,6 +58,7 @@
   import { appendUniquePins, pinFromImage, pinFromSearchResult, pinFromVideo } from "./lib/utils";
   import { hasSearchChrome, resultsCountLabel } from "./lib/searchPresentation";
   import { collectionPresentation } from "./lib/collectionPresentation";
+  import { personItemsPresentation } from "./lib/personPresentation";
   import { combineLibraryPins, newLibrarySeed } from "./lib/library";
   import type { Pin } from "./lib/types";
 
@@ -84,14 +91,20 @@
   let libraryRandomSeed = newLibrarySeed();
   let collectionItemCount = $state(0);
   let loadedCollectionScope = $state("");
+  let personItemCount = $state(0);
+  let loadedPersonScope = $state("");
   const collectionScope = $derived(`${$mode.collectionId}:${$includeNSFW}:${$collectionEpoch}:${$dataEpoch}`);
   const collectionCurrent = $derived($mode.mode !== "collection" || loadedCollectionScope === collectionScope);
+  const personScope = $derived(`${$mode.personId}:${$includeNSFW}:${$personEpoch}:${$dataEpoch}`);
+  const personCurrent = $derived($mode.mode !== "person" || loadedPersonScope === personScope);
   // Rendering follows the requested scope immediately, before the fetch effect
   // runs. An append keeps this key and the loaded cards; replacements cannot.
   const requestScope = $derived([
     $mode.mode,
     $mode.collectionId ?? "",
+    $mode.personId ?? "",
     $mode.mode === "collection" ? $collectionEpoch : "",
+    $mode.mode === "person" ? $personEpoch : "",
     $mode.mode === "byimage" ? String($queryImage?.id ?? "") : "",
     $mode.query ?? "",
     $mode.similarTo ?? "",
@@ -103,8 +116,9 @@
     $dataEpoch,
   ].join("\u0001"));
   let loadedResultsScope = $state("");
-  const resultsCurrent = $derived(collectionCurrent && (!hasSearchChrome($mode.mode) || loadedResultsScope === requestScope));
+  const resultsCurrent = $derived(collectionCurrent && personCurrent && (!hasSearchChrome($mode.mode) || loadedResultsScope === requestScope));
   const collectionCopy = $derived(collectionPresentation(collectionItemCount, $resultsMeta.total));
+  const personCopy = $derived(personItemsPresentation(personItemCount, $resultsMeta.total));
 
   function scrollSimilarResultsToTop(): void {
     if (typeof document === "undefined") return;
@@ -137,7 +151,7 @@
     lastRetryAttempt = retryAttempt;
     const retry = untrack(() => failedRequest);
     const state = $mode;
-    const detailScope = state.mode === "collection" ? collectionScope : "";
+    const detailScope = state.mode === "collection" ? collectionScope : state.mode === "person" ? personScope : "";
     const includeNsfw = $includeNSFW;
     const media = $libraryMedia;
     const sort = $librarySort;
@@ -150,7 +164,7 @@
     }
     const dataKey = requestScope;
     const token = ++currentRequestToken;
-    if (["collections", "settings", "stats", "duplicates"].includes(state.mode)) {
+    if (["collections", "people", "settings", "stats", "duplicates"].includes(state.mode)) {
       pins.set([]);
       lightboxPin.set(null);
       loadedResultsScope = "";
@@ -189,6 +203,10 @@
         collectionItemCount = 0;
         loadedCollectionScope = "";
       }
+      if (state.mode === "person") {
+        personItemCount = 0;
+        loadedPersonScope = "";
+      }
     }
 
     const start = performance.now();
@@ -196,7 +214,9 @@
     const current = () => token === currentRequestToken && !ac.signal.aborted && dataKey === requestScope
       && includeNsfw === get(includeNSFW)
       && (state.mode !== "collection" || (get(mode).mode === "collection"
-        && detailScope === `${get(mode).collectionId}:${get(includeNSFW)}:${get(collectionEpoch)}:${get(dataEpoch)}`));
+        && detailScope === `${get(mode).collectionId}:${get(includeNSFW)}:${get(collectionEpoch)}:${get(dataEpoch)}`))
+      && (state.mode !== "person" || (get(mode).mode === "person"
+        && detailScope === `${get(mode).personId}:${get(includeNSFW)}:${get(personEpoch)}:${get(dataEpoch)}`));
     void (async () => {
       try {
         let nextPins: Pin[] = [];
@@ -212,6 +232,18 @@
           collectionName.set(collection.name);
           collectionItemCount = response.item_count;
           loadedCollectionScope = detailScope;
+          nextPins = response.items.map((item) => item.media_type === "image" ? pinFromImage(item.image) : pinFromVideo(item.video));
+          total = response.total;
+        } else if (state.mode === "person" && state.personId !== undefined) {
+          if (!appending) personName.set("");
+          const [person, response] = await Promise.all([
+            getPerson(state.personId, ac.signal),
+            listPersonItems(state.personId, { limit: PAGE_SIZE, offset: currentOffset, includeNSFW: includeNsfw, signal: ac.signal }),
+          ]);
+          if (!current()) return;
+          personName.set(person.name);
+          personItemCount = response.item_count;
+          loadedPersonScope = detailScope;
           nextPins = response.items.map((item) => item.media_type === "image" ? pinFromImage(item.image) : pinFromVideo(item.video));
           total = response.total;
         } else if (state.mode === "search" && state.query) {
@@ -367,6 +399,7 @@
       return `No items tagged ${$mode.tags.join(", ")}.`;
     }
     if ($mode.mode === "collection") return collectionCopy.message;
+    if ($mode.mode === "person") return personCopy.message;
     if ($libraryMedia === "images") return "No images yet. Click Upload to add some media.";
     if ($libraryMedia === "videos") return "No videos yet. Click Upload to add some media.";
     return "Library is empty. Click Upload to add some media.";
@@ -390,6 +423,8 @@
       <DuplicatesPane />
     {:else if $mode.mode === "collections"}
       <CollectionsPane />
+    {:else if $mode.mode === "people"}
+      <PeoplePane />
     {:else}
       <div
         data-results-meta
@@ -424,6 +459,7 @@
           <span>
             {resultsCountLabel($mode.mode, $pins.length, $resultsMeta.total)}
             {#if $mode.mode === "collection" && collectionCurrent} · {collectionCopy.count}{/if}
+            {#if $mode.mode === "person" && personCurrent} · {personCopy.count}{/if}
             {#if $resultsMeta.durationMs && $mode.mode !== "library"}
               · in {Math.round($resultsMeta.durationMs)} ms
             {/if}
@@ -434,7 +470,18 @@
         {/if}
       </div>
 
-      {#if $mode.mode === "collection" && collectionCurrent && !$resultsMeta.loading && !$resultsMeta.error && $pins.length === 0}
+      {#if $mode.mode === "person" && personCurrent && !$resultsMeta.loading && !$resultsMeta.error && $pins.length === 0}
+        <section data-results class="px-5 sm:px-9 pb-16 pt-4" aria-label="Results">
+          <p data-results-empty class="text-muted mb-3">{emptyMessage}</p>
+          {#if personCopy.action === "browse"}
+            <p class="text-sm text-muted mb-3">Face grouping runs in the background after indexing.</p>
+            <button class="px-4 py-2 bg-ink text-white rounded-lg cursor-pointer" onclick={setLibrary}>Browse library</button>
+          {:else if personCopy.action === "show"}
+            <p class="text-sm text-muted mb-3">This turns on the global NSFW setting, showing hidden items throughout the library.</p>
+            <button class="px-4 py-2 bg-ink text-white rounded-lg cursor-pointer" onclick={() => includeNSFW.set(true)}>Show hidden items</button>
+          {/if}
+        </section>
+      {:else if $mode.mode === "collection" && collectionCurrent && !$resultsMeta.loading && !$resultsMeta.error && $pins.length === 0}
         <section data-results class="px-5 sm:px-9 pb-16 pt-4" aria-label="Results">
           <p data-results-empty class="text-muted mb-3">{emptyMessage}</p>
           {#if collectionCopy.action === "browse"}
@@ -449,6 +496,9 @@
         {#if $mode.mode === "collection" && collectionCurrent && !$resultsMeta.loading && !$resultsMeta.error && collectionCopy.action === "show"}
           <p class="px-5 sm:px-9 my-2 text-sm text-muted">{collectionCopy.message} Enable the global NSFW setting to show them.</p>
         {/if}
+        {#if $mode.mode === "person" && personCurrent && !$resultsMeta.loading && !$resultsMeta.error && personCopy.action === "show"}
+          <p class="px-5 sm:px-9 my-2 text-sm text-muted">{personCopy.message} Enable the global NSFW setting to show them.</p>
+        {/if}
         <Masonry
           pins={resultsCurrent ? $pins : []}
           loading={!resultsCurrent || $resultsMeta.loading}
@@ -457,6 +507,9 @@
           {loadingMore}
           onLoadMore={loadMore}
         />
+        {#if $mode.mode === "person" && $mode.personId !== undefined && personCurrent && !$resultsMeta.loading && !$resultsMeta.error}
+          <PersonFaces personId={$mode.personId} />
+        {/if}
       {/if}
     {/if}
   </div>

@@ -12,6 +12,7 @@ import (
 	"imgsearch/internal/jobs"
 	"imgsearch/internal/live"
 	"imgsearch/internal/mediastatus"
+	"imgsearch/internal/people"
 	"imgsearch/internal/search"
 	"imgsearch/internal/settings"
 	"imgsearch/internal/stats"
@@ -35,6 +36,7 @@ type RuntimeOptions struct {
 	Embedder             embedder.Embedder
 	Annotator            embedder.ImageAnnotator
 	Transcriber          transcribe.VideoTranscriber
+	FaceDetector         people.Detector
 	Index                vectorindex.VectorIndex
 	Closers              []Closer
 	WorkerLeaseDuration  time.Duration
@@ -129,6 +131,7 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 		},
 		VideoSampler:           opts.VideoSampler,
 		DeduplicateStrict:      opts.DeduplicateStrict,
+		EnableFaces:            opts.FaceDetector != nil,
 		EnableVideoTranscripts: opts.VideoTranscriptsOn,
 		MaxImageBytes:          opts.UploadMaxImageBytes,
 		MaxVideoBytes:          opts.UploadMaxVideoBytes,
@@ -144,6 +147,7 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 		TextEmbedder:   opts.Embedder,
 		Annotator:      opts.Annotator,
 		Transcriber:    opts.Transcriber,
+		FaceDetector:   opts.FaceDetector,
 		Index:          opts.Index,
 	}
 
@@ -161,6 +165,7 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 		}
 		capabilities.Annotations = capability(!opts.AnnotationsDisabled, opts.Annotator != nil)
 		capabilities.Transcription = capability(opts.VideoTranscriptsOn, opts.Transcriber != nil)
+		capabilities.Faces = capability(true, opts.FaceDetector != nil)
 	}
 	blocked := func(state string) bool { return state == "disabled" || state == "unconfigured" }
 	mux := http.NewServeMux()
@@ -176,11 +181,16 @@ func NewRuntime(opts RuntimeOptions) (*Runtime, error) {
 	collectionHandler := collections.NewHandler(&collections.Handler{DB: opts.Data.DB, ModelID: opts.ModelID})
 	mux.Handle("/api/collections", collectionHandler)
 	mux.Handle("/api/collections/", collectionHandler)
+	peopleHandler := people.NewHandler(&people.Handler{DB: opts.Data.DB, ModelID: opts.ModelID})
+	mux.Handle("/api/people", peopleHandler)
+	mux.Handle("/api/people/", peopleHandler)
+	mux.Handle("/api/faces", peopleHandler)
+	mux.Handle("/api/faces/", peopleHandler)
 	mux.Handle("/api/stats", stats.NewHandler(&stats.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, Capabilities: capabilities}))
 	mux.Handle("/api/media/status", mediastatus.NewHandler(&mediastatus.Handler{DB: opts.Data.DB, ModelID: opts.ModelID}))
 	mux.Handle("/api/duplicates", images.NewDuplicatesHandler(&images.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, DataDir: opts.DataDir}))
 	mux.Handle("/api/live", live.NewHandler(&live.Handler{DB: opts.Data.DB, ModelID: opts.ModelID, Capabilities: capabilities, Interval: opts.LiveInterval, ImagesLimit: opts.LiveImagesLimit, ImagesOffset: opts.LiveImagesOffset}))
-	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: opts.Data.DB, ModelID: opts.ModelID, BlockedKinds: map[string]bool{"annotate_image": blocked(capabilities.Annotations), "annotate_video": blocked(capabilities.Annotations), "transcribe_video": blocked(capabilities.Transcription)}}))
+	mux.Handle("/api/jobs/retry-failed", jobs.NewRetryFailedHandler(&jobs.RetryFailedHandler{DB: opts.Data.DB, ModelID: opts.ModelID, BlockedKinds: map[string]bool{"annotate_image": blocked(capabilities.Annotations), "annotate_video": blocked(capabilities.Annotations), "transcribe_video": blocked(capabilities.Transcription), "index_faces": blocked(capabilities.Faces)}}))
 	mux.Handle("/api/jobs/reannotate-all", jobs.NewReannotateAllHandler(&jobs.ReannotateAllHandler{DB: opts.Data.DB, ModelID: opts.ModelID}))
 	settingsHandler := settings.NewHandler(&settings.Handler{
 		DB:                  opts.Data.DB,

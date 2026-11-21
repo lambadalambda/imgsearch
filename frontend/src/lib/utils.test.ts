@@ -145,3 +145,32 @@ describe("fallbackToOriginal", () => {
     expect(setAttribute).not.toHaveBeenCalled();
   });
 });
+
+describe("grouped people on pins", () => {
+  const people = [
+    { id: 7, name: "Aunt Jessie" },
+    { id: 9, name: "Bob" },
+  ];
+  const image = {
+    image_id: 79,
+    original_name: "original.jpg",
+    storage_path: "images/original.jpg",
+    mime_type: "image/jpeg",
+    width: 1600,
+    height: 1200,
+    index_state: "done",
+    people,
+  };
+
+  it("carries grouped people from image, video, and search records", () => {
+    expect(pinFromImage(image).people).toEqual(people);
+    expect(pinFromVideo({ ...image, video_id: 4 }).people).toEqual(people);
+    expect(pinFromSearchResult({ ...image, media_type: "image", distance: 0.2 }).people).toEqual(people);
+  });
+
+  it("defaults to no people when the backend omits them", () => {
+    const { people: _omitted, ...bare } = image;
+    expect(pinFromImage(bare).people).toEqual([]);
+    expect(_omitted).toHaveLength(2);
+  });
+});

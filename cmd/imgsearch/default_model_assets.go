@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"fmt"
 	"io"
@@ -54,6 +55,10 @@ const (
 	defaultParakeetOnnxVocabURL                    = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt"
 	defaultParakeetOnnxDecoderURL                  = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/decoder_joint-model.int8.onnx"
 	defaultParakeetOnnxEncoderURL                  = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/encoder-model.int8.onnx"
+	defaultFacesModelDir                           = "./models/insightface/buffalo_l"
+	defaultFacesDetModelPath                       = "./models/insightface/buffalo_l/det_10g.onnx"
+	defaultFacesRecModelPath                       = "./models/insightface/buffalo_l/w600k_r50.onnx"
+	defaultFacesModelZipURL                        = "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip"
 	defaultDownloadUserAgent                       = "imgsearch/1.0"
 	defaultDownloadTimeout                         = 30 * time.Minute
 	defaultDownloadProgressPeriod                  = 5 * time.Second
@@ -289,6 +294,103 @@ func ensureDefaultParakeetOnnxAssets(ctx context.Context, bundleDir string) (str
 		}
 	}
 	return bundleDir, nil
+}
+
+func ensureDefaultFaceAssets(ctx context.Context, detPath string, recPath string) (string, string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	detPath = strings.TrimSpace(detPath)
+	if detPath == "" {
+		detPath = defaultFacesDetModelPath
+	}
+	recPath = strings.TrimSpace(recPath)
+	if recPath == "" {
+		recPath = defaultFacesRecModelPath
+	}
+	// Custom locations are used as-is; only the default pair downloads.
+	if !sameAssetPath(detPath, defaultFacesDetModelPath) || !sameAssetPath(recPath, defaultFacesRecModelPath) {
+		return detPath, recPath, nil
+	}
+	if err := ensureRegularFile(detPath); err == nil {
+		if err := ensureRegularFile(recPath); err == nil {
+			return detPath, recPath, nil
+		} else if !os.IsNotExist(err) {
+			return "", "", err
+		}
+	} else if !os.IsNotExist(err) {
+		return "", "", err
+	}
+	if err := os.MkdirAll(defaultFacesModelDir, 0o755); err != nil {
+		return "", "", fmt.Errorf("create face model directory: %w", err)
+	}
+	tmpFile, err := os.CreateTemp("", "buffalo_l-*.zip")
+	if err != nil {
+		return "", "", fmt.Errorf("create temporary face model download: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	_ = tmpFile.Close()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := downloadFile(ctx, nil, defaultFacesModelZipURL, tmpPath); err != nil {
+		return "", "", err
+	}
+	want := map[string]string{
+		"det_10g.onnx":   detPath,
+		"w600k_r50.onnx": recPath,
+	}
+	if err := extractZipMembers(tmpPath, defaultFacesModelDir, want); err != nil {
+		return "", "", err
+	}
+	return detPath, recPath, nil
+}
+
+// extractZipMembers extracts only the named members of a zip archive into
+// dir, refusing absolute paths and path escapes.
+func extractZipMembers(zipPath string, dir string, want map[string]string) error {
+	reader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("open face model archive: %w", err)
+	}
+	defer func() { _ = reader.Close() }()
+	found := map[string]bool{}
+	for _, member := range reader.File {
+		dest, ok := want[filepath.Base(member.Name)]
+		if !ok || member.FileInfo().IsDir() {
+			continue
+		}
+		if filepath.Clean(dest) != filepath.Join(dir, filepath.Base(dest)) {
+			return fmt.Errorf("refusing face model path %q", dest)
+		}
+		src, err := member.Open()
+		if err != nil {
+			return fmt.Errorf("open archived face model %s: %w", member.Name, err)
+		}
+		tmp, err := os.CreateTemp(dir, filepath.Base(dest)+".*.part")
+		if err != nil {
+			_ = src.Close()
+			return fmt.Errorf("create face model file: %w", err)
+		}
+		_, copyErr := io.Copy(tmp, src)
+		_ = src.Close()
+		if closeErr := tmp.Close(); closeErr != nil && copyErr == nil {
+			copyErr = closeErr
+		}
+		if copyErr != nil {
+			_ = os.Remove(tmp.Name())
+			return fmt.Errorf("write face model %s: %w", filepath.Base(dest), copyErr)
+		}
+		if err := os.Rename(tmp.Name(), dest); err != nil {
+			_ = os.Remove(tmp.Name())
+			return fmt.Errorf("move face model %s into place: %w", filepath.Base(dest), err)
+		}
+		found[filepath.Base(member.Name)] = true
+	}
+	for name := range want {
+		if !found[name] {
+			return fmt.Errorf("face model archive is missing %s", name)
+		}
+	}
+	return nil
 }
 
 func ensureDefaultAssetPair(ctx context.Context, httpClient *http.Client, modelPath string, mmprojPath string, defaultModelPath string, defaultModelURL string, defaultMMProjPath string, defaultMMProjURL string) (string, string, error) {

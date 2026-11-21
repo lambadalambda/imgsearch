@@ -23,10 +23,11 @@ type Capabilities struct {
 	Worker        string `json:"worker"`
 	Annotations   string `json:"annotations"`
 	Transcription string `json:"transcription"`
+	Faces         string `json:"faces"`
 }
 
 func UnknownCapabilities() Capabilities {
-	return Capabilities{Worker: "unknown", Annotations: "unknown", Transcription: "unknown"}
+	return Capabilities{Worker: "unknown", Annotations: "unknown", Transcription: "unknown", Faces: "unknown"}
 }
 
 type QueueStats struct {

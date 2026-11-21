@@ -971,3 +971,27 @@ UPDATE images SET description = 'Text.', annotation_updated_at = '2026-09-22 09:
 		t.Fatalf("annotation states: %v updated: %v", states, updated)
 	}
 }
+
+func TestGetItemAttachesGroupedPeople(t *testing.T) {
+	dbConn := setupImagesDB(t)
+	if _, err := dbConn.Exec(`INSERT INTO persons(id,uuid,name) VALUES(1,'u1','Aunt Jessie')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dbConn.Exec(`INSERT INTO face_detections(image_id,person_id,box_x,box_y,box_w,box_h,confidence) VALUES(1,1,0.1,0.1,0.2,0.2,0.9)`); err != nil {
+		t.Fatal(err)
+	}
+	item, err := GetItem(context.Background(), dbConn, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(item.People) != 1 || item.People[0] != (PersonRef{ID: 1, Name: "Aunt Jessie"}) {
+		t.Fatalf("%+v", item.People)
+	}
+	plain, err := GetItem(context.Background(), dbConn, 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.People == nil || len(plain.People) != 0 {
+		t.Fatalf("faceless image must carry empty people, got %+v", plain.People)
+	}
+}

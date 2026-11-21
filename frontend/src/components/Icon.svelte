@@ -1,6 +1,7 @@
 <script lang="ts">
   type IconName =
     | "collections"
+    | "people"
     | "library"
     | "search"
     | "tags"
@@ -35,6 +36,14 @@
   <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
     {#if title}<title>{title}</title>{/if}
     <path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+  </svg>
+{:else if name === "people"}
+  <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>
+    {#if title}<title>{title}</title>{/if}
+    <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4" />
+    </g>
   </svg>
 {:else if name === "library"}
   <svg viewBox="0 0 24 24" data-icon={name} class={className} aria-hidden={!title} role={title ? "img" : undefined}>

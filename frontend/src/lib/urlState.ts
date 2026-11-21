@@ -1,8 +1,9 @@
-export type ViewMode = "library" | "search" | "similar" | "tag" | "stats" | "settings" | "duplicates" | "byimage" | "collections" | "collection";
+export type ViewMode = "library" | "search" | "similar" | "tag" | "stats" | "settings" | "duplicates" | "byimage" | "collections" | "collection" | "people" | "person";
 
 export interface AppMode {
   mode: ViewMode;
   collectionId?: number;
+  personId?: number;
   query?: string;
   similarTo?: number;
   tags?: string[];
@@ -28,6 +29,11 @@ export function parseSearch(search: string): AppMode {
     const id = Number(params.get("collection_id"));
     return Number.isSafeInteger(id) && id > 0 ? { mode: "collection", collectionId: id } : { mode: "collections" };
   }
+  if (params.get("view") === "people") return { mode: "people" };
+  if (params.get("view") === "person") {
+    const id = Number(params.get("person_id"));
+    return Number.isSafeInteger(id) && id > 0 ? { mode: "person", personId: id } : { mode: "people" };
+  }
   const q = params.get("q");
   const similar = params.get("similar");
   const tags = params.getAll("tag").filter(Boolean);
@@ -52,6 +58,11 @@ export function searchFor(state: AppMode): string {
   } else if (state.mode === "collection" && state.collectionId !== undefined) {
     params.set("view", "collection");
     params.set("collection_id", String(state.collectionId));
+  } else if (state.mode === "people") {
+    params.set("view", "people");
+  } else if (state.mode === "person" && state.personId !== undefined) {
+    params.set("view", "person");
+    params.set("person_id", String(state.personId));
   } else if (state.mode === "stats") {
     params.set("view", "stats");
   } else if (state.mode === "settings") {

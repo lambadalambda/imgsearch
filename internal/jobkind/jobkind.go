@@ -5,4 +5,5 @@ const (
 	AnnotateImage   = "annotate_image"
 	AnnotateVideo   = "annotate_video"
 	TranscribeVideo = "transcribe_video"
+	IndexFaces      = "index_faces"
 )

@@ -10,6 +10,7 @@
     openFeed,
     setLibrary,
     setCollections,
+    setPeople,
     setSettings,
     setStats,
     setDuplicates,
@@ -19,6 +20,7 @@
   type RailItem = {
     id:
       | "collections"
+      | "people"
       | "library"
       | "search"
       | "stats"
@@ -117,6 +119,12 @@
       label: "Collections",
       onClick: setCollections,
       activeWhen: (s) => s.mode === "collections" || s.mode === "collection",
+    },
+    {
+      id: "people",
+      label: "People",
+      onClick: setPeople,
+      activeWhen: (s) => s.mode === "people" || s.mode === "person",
     },
     {
       id: "settings",

@@ -2,7 +2,7 @@
   import type { Pin } from "../lib/types";
   import { relativeMatchLabel } from "../lib/searchPresentation";
   import { fallbackToOriginal, formatDuration, tagTone } from "../lib/utils";
-  import { setSimilar, setTagSearch, lightboxPin, openFeed, openCollectionPicker } from "../lib/stores";
+  import { setSimilar, setTagSearch, setPerson, lightboxPin, openFeed, openCollectionPicker } from "../lib/stores";
   import { createMediaActions } from "../lib/mediaActions";
   import ConfirmDialog from "./ConfirmDialog.svelte";
 
@@ -69,6 +69,10 @@
 
   function handleTagClick(tag: string) {
     setTagSearch([tag]);
+  }
+
+  function handlePersonClick(id: number) {
+    setPerson(id);
   }
 
   function handleMenuKey(event: KeyboardEvent) {
@@ -312,8 +316,20 @@
           {pin.summary}
         </p>
       {/if}
-      {#if tagsToShow.length}
+      {#if pin.people.length || tagsToShow.length}
         <div class="flex gap-[5px] flex-wrap">
+          {#each pin.people as person (person.id)}
+            <button
+              type="button"
+              data-pin-person={person.id}
+              class="text-[11.5px] font-semibold leading-none text-accent-strong bg-accent-soft border border-accent/40 px-[9px] py-[3px] rounded-full cursor-pointer transition-[background-color,color] duration-100 ease-soft hover:bg-accent hover:text-[#fffdf9]"
+              onclick={() => handlePersonClick(person.id)}
+              aria-label={`Open ${person.name} in People`}
+              title={`Open ${person.name} in People`}
+            >
+              {person.name}
+            </button>
+          {/each}
           {#each tagsToShow as tag (tag)}
             {@const tone = tagTone(tag)}
             <button

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { lightboxPin, pins, collectionPickerTarget, openCollectionPicker, setSimilar, setTagSearch } from "../lib/stores";
+  import { lightboxPin, pins, collectionPickerTarget, openCollectionPicker, setPerson, setSimilar, setTagSearch } from "../lib/stores";
   import { formatDuration } from "../lib/utils";
   import { relativeMatchLabel } from "../lib/searchPresentation";
   import { focusTrap } from "../lib/focus";
@@ -333,8 +333,19 @@
                 class="text-[12px] leading-none bg-surface border border-line-2 rounded-full px-[9px] py-[5px] outline-none min-w-[96px] focus:border-accent/60"
               />
             </div>
-          {:else if pin.tags?.length}
+          {:else if pin.tags?.length || pin.people?.length}
             <div class="flex flex-wrap gap-[5px]">
+              {#each pin.people ?? [] as person (person.id)}
+                <button
+                  type="button"
+                  data-lightbox-person={person.id}
+                  class="text-[12px] font-semibold leading-none text-accent-strong bg-accent-soft border border-accent/40 px-[9px] py-1 rounded-full cursor-pointer transition-colors duration-100 ease-soft hover:bg-accent hover:text-[#fffdf9]"
+                  onclick={() => { setPerson(person.id); close(); }}
+                  title={`Open ${person.name} in People`}
+                >
+                  {person.name}
+                </button>
+              {/each}
               {#each pin.tags as tag (tag)}
                 <button
                   type="button"
